@@ -1,40 +1,37 @@
 {
-  // Más info: https://aka.ms/tsconfig
   "compilerOptions": {
-    /* === Layout === */
-    "rootDir": "./src",         // código fuente
-    "outDir": "./dist",         // salida compilada
+    "rootDir": "./src",
+    "outDir": "./dist",
 
-    /* === Ambiente (Node + ESM) === */
-    "module": "NodeNext",       // soporte ESM en Node
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"],   // <-- nota el "./*"
+      "@": ["./"]       // <-- permite importar "@/lib/prisma" y "@"
+    },
+
+    "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "target": "ES2022",         // genera JS moderno compatible
-    "lib": ["ES2022"],          // APIs disponibles
-    "types": ["node"],          // tipos de Node.js
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
 
-    /* === Outputs === */
-    "sourceMap": true,          // genera .map para debug
-    "declaration": true,        // genera archivos .d.ts
-    "declarationMap": true,     // genera mapas para d.ts
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
 
-    /* === Chequeos estrictos === */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-
-    /* === Estilo / buenas prácticas === */
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
 
-    /* === Recomendados === */
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
 
-    /* === Import/Export (ESM) === */
-    "verbatimModuleSyntax": true, // obliga a usar extensión .js en imports relativos
-    "isolatedModules": true       // cada archivo se transpila de forma independiente
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

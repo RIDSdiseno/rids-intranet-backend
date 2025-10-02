@@ -3,22 +3,123 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
 }
 
-model Usuario {
-  id        String   @id @default(cuid())
-  nombre    String
-  email     String   @unique
-  password  String
-  rol       Rol      @default(USER)
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Empresa {
+  id_empresa   Int           @id @default(autoincrement())
+  nombre       String        @unique
+  solicitantes Solicitante[]
+  visitas      Visita[]      @relation("Empresa_Visita")
 }
 
-enum Rol {
-  ADMIN
-  USER
+model Solicitante {
+  id_solicitante Int         @id @default(autoincrement())
+  nombre         String
+  empresaId      Int
+  empresa        Empresa     @relation(fields: [empresaId], references: [id_empresa])
+  equipos        Equipo[]
+  visitas        Visita[]    @relation("Solicitante_Visita")
+  historiales    Historial[] @relation("Solicitante_Historial")
+
+  @@index([empresaId])
+}
+
+model Equipo {
+  id_equipo     Int         @id @default(autoincrement())
+  idSolicitante Int
+  serial        String
+  marca         String
+  modelo        String
+  procesador    String
+  ram           String
+  disco         String
+  propiedad     String
+  solicitante   Solicitante @relation(fields: [idSolicitante], references: [id_solicitante])
+
+  @@index([idSolicitante])
+}
+
+model Historial {
+  tecnicoId          Int
+  solicitante        String
+  inicio             DateTime
+  fin                DateTime
+  realizado          String?
+  solicitanteId      Int
+  actualizaciones    Boolean     @default(false)
+  antivirus          Boolean     @default(false)
+  ccleaner           Boolean     @default(false)
+  estadoDisco        Boolean     @default(false)
+  id                 Int         @id @default(autoincrement())
+  licenciaOffice     Boolean     @default(false)
+  licenciaWindows    Boolean     @default(false)
+  mantenimientoReloj Boolean     @default(false)
+  rendimientoEquipo  Boolean     @default(false)
+  tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
+}
+
+model RefreshToken {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  rtHash            String
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId Int?
+  userAgent         String?
+  ip                String?
+  user              Tecnico   @relation(fields: [userId], references: [id_tecnico])
+
+  @@index([rtHash])
+  @@index([userId])
+}
+
+model Tecnico {
+  id_tecnico   Int            @id @default(autoincrement())
+  nombre       String
+  email        String         @unique
+  passwordHash String
+  status       Boolean        @default(true)
+  tokens       RefreshToken[]
+  historiales  Historial[]
+  visitas      Visita[]
+}
+
+model Visita {
+  id_visita          Int          @id @default(autoincrement())
+  empresaId          Int
+  tecnicoId          Int
+  solicitante        String
+  inicio             DateTime
+  fin                DateTime?
+  confImpresoras     Boolean      @default(false)
+  confTelefonos      Boolean      @default(false)
+  confPiePagina      Boolean      @default(false)
+  otros              Boolean      @default(false)
+  otrosDetalle       String?
+  status             EstadoVisita @default(PENDIENTE)
+  solicitanteId      Int?
+  actualizaciones    Boolean      @default(false)
+  antivirus          Boolean      @default(false)
+  ccleaner           Boolean      @default(false)
+  estadoDisco        Boolean      @default(false)
+  licenciaOffice     Boolean      @default(false)
+  licenciaWindows    Boolean      @default(false)
+  mantenimientoReloj Boolean      @default(false)
+  rendimientoEquipo  Boolean      @default(false)
+  empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
+  tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([tecnicoId])
+}
+
+enum EstadoVisita {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
 }

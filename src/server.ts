@@ -1,6 +1,6 @@
-import { app } from './app.js';
-import { env } from './config/env.js';
+import app from "./app.js"; // 👈 default import (sin llaves)
 
-app.listen(env.PORT, () => {
-  console.log(`API escuchando en http://localhost:${env.PORT}`);
+const PORT = Number(process.env.PORT ?? 3000);
+app.listen(PORT, () => {
+  console.log(`🚀 API escuchando en http://localhost:${PORT}`);
 });

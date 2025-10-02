@@ -1,17 +1,18 @@
-import express from 'express';
-import cors from 'cors';
-import morgan from 'morgan';
-import routes from './routes.js';
-import { env } from './config/env.js';
-import { errorHandler } from './middlewares/error.js';
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
+import { api } from "./routes.js";
 
-export const app = express();
+const app = express();
 
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: false }));
+app.use(helmet());
 app.use(express.json());
-app.use(morgan('dev'));
+app.use(cookieParser());
+app.use(cors({ origin: process.env.CORS_ORIGIN ?? true, credentials: true }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
-app.use('/api', routes);
+app.use("/api", api);
 
-// manejador de errores al final
-app.use(errorHandler);
+export default app; // 👈 export default

@@ -1,12 +1,15 @@
-import { Router } from 'express';
+// src/api.ts
+import { Router } from "express";
+import { authRouter } from "./routes/auth.routes.js";
+import { solicitantesRouter } from "./routes/solicitantes.routes.js";
+import { visitasRouter } from "./routes/visitas.routes.js";
+import {equiposRouter} from "./routes/equipos.routes.js"; // 👈 default
 
-const router = Router();
+export const api = Router();
 
-router.get('/health', (_req, res) => res.json({ ok: true, service: 'API CMR', ts: Date.now() }));
+api.use("/auth", authRouter);
+api.use("/solicitantes", solicitantesRouter);
+api.use("/visitas", visitasRouter);
+api.use("/equipos", equiposRouter);
 
-// Stubs (sin controllers aún)
-router.use('/auth', (_req, res) => res.status(501).json({ ok: false, message: 'Not implemented: /auth' }));
-router.use('/clientes', (_req, res) => res.status(501).json({ ok: false, message: 'Not implemented: /clientes' }));
-router.use('/leads', (_req, res) => res.status(501).json({ ok: false, message: 'Not implemented: /leads' }));
-
-export default router;
+export default api;
