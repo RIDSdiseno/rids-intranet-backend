@@ -6,6 +6,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { solicitantesRouter } from "./routes/solicitantes.routes.js";
 import { visitasRouter } from "./routes/visitas.routes.js";
 import { equiposRouter } from "./routes/equipos.routes.js";
+import equiposProductosRouter from "./routes/equiposProductos.routes.js";
 
 // Freshdesk
 import { fdRouter } from "./routes/fd.js";         
@@ -21,6 +22,7 @@ api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
+api.use("/equiposProductos", equiposProductosRouter);
 
 // === Freshdesk ===
 api.use("/fd", fdRouter);

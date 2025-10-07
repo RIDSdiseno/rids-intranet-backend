@@ -50,6 +50,19 @@ model Equipo {
   @@index([idSolicitante])
 }
 
+model EquipoProducto {
+  id           Int      @id @default(autoincrement())
+  nombre       String
+  descripcion  String?
+  precio       Decimal
+  stock        Int      @default(0)
+  marca        String
+  modelo       String
+  estado       String   // nuevo, usado, etc.
+  creadoEn     DateTime @default(now())
+  actualizadoEn DateTime @updatedAt 
+}
+
 model DetalleEquipo {
   id         Int       @id @default(autoincrement()) @map("id_detalle_equipo")
   idEquipo   Int
