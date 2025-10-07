@@ -3,32 +3,39 @@ generator client {
 }
 
 datasource db {
-  provider     = "postgresql"
-  url          = env("DATABASE_URL")
-  relationMode = "prisma"
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  relationMode      = "prisma"
 }
 
 model Empresa {
-  id_empresa   Int           @id @default(autoincrement())
-  nombre       String        @unique
+  id_empresa   Int                   @id @default(autoincrement())
+  nombre       String                @unique
   solicitantes Solicitante[]
-  visitas      Visita[]      @relation("Empresa_Visita")
+  visitas      Visita[]              @relation("Empresa_Visita")
+  tickets      FreshdeskTicket[]
+  companyMaps  FreshdeskCompanyMap[] // <- LEGADO (no lo usa el flujo nuevo de tickets)
 }
 
 model Solicitante {
-  id_solicitante Int         @id @default(autoincrement())
+  id_solicitante Int                     @id @default(autoincrement())
   nombre         String
+  email          String?                 @unique
+  telefono       String?
   empresaId      Int
-  empresa        Empresa     @relation(fields: [empresaId], references: [id_empresa])
+  empresa        Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos        Equipo[]
-  visitas        Visita[]    @relation("Solicitante_Visita")
-  historiales    Historial[] @relation("Solicitante_Historial")
+  visitas        Visita[]                @relation("Solicitante_Visita")
+  historiales    Historial[]             @relation("Solicitante_Historial")
+  tickets        FreshdeskTicket[]
+  requesterMaps  FreshdeskRequesterMap[] // <- LEGADO (no lo usa el flujo nuevo de tickets)
 
   @@index([empresaId])
 }
 
 model Equipo {
-  id_equipo     Int         @id @default(autoincrement())
+  id_equipo     Int             @id @default(autoincrement())
   idSolicitante Int
   serial        String
   marca         String
@@ -37,9 +44,27 @@ model Equipo {
   ram           String
   disco         String
   propiedad     String
-  solicitante   Solicitante @relation(fields: [idSolicitante], references: [id_solicitante])
+  solicitante   Solicitante     @relation(fields: [idSolicitante], references: [id_solicitante])
+  equipo        DetalleEquipo[]
 
   @@index([idSolicitante])
+}
+
+model DetalleEquipo {
+  id         Int       @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo   Int
+  macWifi    String?
+  so         String?
+  tipoDd     String?
+  estadoAlm  String?
+  office     String?
+  correo     String?
+  teamViewer String?
+  claveTv    String?
+  revisado   DateTime?
+  equipo     Equipo?   @relation(fields: [idEquipo], references: [id_equipo])
+
+  @@index([idEquipo])
 }
 
 model Historial {
@@ -53,13 +78,16 @@ model Historial {
   antivirus          Boolean     @default(false)
   ccleaner           Boolean     @default(false)
   estadoDisco        Boolean     @default(false)
-  id                 Int         @id @default(autoincrement())
   licenciaOffice     Boolean     @default(false)
   licenciaWindows    Boolean     @default(false)
   mantenimientoReloj Boolean     @default(false)
   rendimientoEquipo  Boolean     @default(false)
+  id_historial       Int         @id @default(autoincrement())
   tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([tecnicoId])
+  @@index([solicitanteId])
 }
 
 model RefreshToken {
@@ -115,7 +143,105 @@ model Visita {
   tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
 
+  @@index([empresaId])
   @@index([tecnicoId])
+  @@index([solicitanteId])
+}
+
+/** LEGADO: ya no lo usa el flujo nuevo de tickets */
+model FreshdeskCompanyMap {
+  companyId BigInt  @id
+  empresaId Int
+  domain    String?
+  empresa   Empresa @relation(fields: [empresaId], references: [id_empresa])
+
+  @@index([empresaId])
+  @@index([domain])
+}
+
+/** LEGADO: ya no lo usa el flujo nuevo de tickets */
+model FreshdeskRequesterMap {
+  requesterId   BigInt      @id
+  solicitanteId Int
+  empresaId     Int
+  solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([empresaId])
+  @@index([solicitanteId])
+}
+
+/** CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester) */
+model FreshdeskTicket {
+  id               BigInt         @id
+  subject          String
+  status           Int
+  priority         Int
+  type             String?
+  requesterEmail   String?
+  createdAt        DateTime
+  updatedAt        DateTime
+  source           String?
+  capturedAt       DateTime?
+
+  // (Legado / otros módulos) — pueden quedar nulos
+  empresaId        Int?
+  solicitanteId    Int?
+  empresa          Empresa?       @relation(fields: [empresaId], references: [id_empresa])
+  solicitante      Solicitante?   @relation(fields: [solicitanteId], references: [id_solicitante])
+
+  // Agrupación por organización de tickets
+  ticketOrgId      Int?
+  ticketOrg        TicketOrg?     @relation(fields: [ticketOrgId], references: [id])
+
+  // NUEVO: solicitante específico para tickets (se deduplica por email o fdRequesterId)
+  ticketRequesterId Int?
+  ticketRequester   TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
+
+  @@index([empresaId])
+  @@index([solicitanteId])
+  @@index([ticketOrgId])
+  @@index([ticketRequesterId])
+  @@index([requesterEmail])
+  @@index([createdAt])
+}
+
+/** Agrupación lógica de tickets (no toca tu Empresa) */
+model TicketOrg {
+  id        Int               @id @default(autoincrement())
+  name      String            @unique
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  maps      FdSourceMap[]
+  tickets   FreshdeskTicket[]
+  requesters TicketRequester[]
+}
+
+/** Mapa domain/companyId → TicketOrg */
+model FdSourceMap {
+  id          Int       @id @default(autoincrement())
+  companyId   BigInt?   @unique
+  domain      String?   @unique
+  ticketOrgId Int
+  ticketOrg   TicketOrg @relation(fields: [ticketOrgId], references: [id])
+
+  @@index([ticketOrgId])
+}
+
+/** NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId) */
+model TicketRequester {
+  id             Int               @id @default(autoincrement())
+  name           String
+  email          String?           @unique
+  phone          String?
+  fdRequesterId  BigInt?           @unique
+  ticketOrgId    Int?
+  ticketOrg      TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
+  tickets        FreshdeskTicket[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([ticketOrgId])
 }
 
 enum EstadoVisita {

@@ -7,4 +7,7 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET || 'change_me',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '1d',
   DATABASE_URL: process.env.DATABASE_URL || '',
+  FD_DOMAIN: process.env.FD_DOMAIN!,
+  FD_API_KEY: process.env.FD_API_KEY ?? "",
+  FD_WEBHOOK_SECRET: process.env.FD_WEBHOOK_SECRET!,
 };
