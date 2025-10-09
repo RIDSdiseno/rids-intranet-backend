@@ -26,6 +26,7 @@ api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
+
 api.use("/equiposProductos", equiposProductosRouter);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
