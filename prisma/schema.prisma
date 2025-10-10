@@ -48,6 +48,9 @@ model Solicitante {
   tickets        FreshdeskTicket[]
   requesterMaps  FreshdeskRequesterMap[]
 
+  clienteId      Int?          @unique
+  cliente        Cliente?      @relation("ClienteSolicitante", fields: [clienteId], references: [id])
+
   @@index([empresaId])
 }
 
@@ -55,9 +58,10 @@ model Cliente {
   id        Int              @id @default(autoincrement())
   rut       String           @unique
   nombre    String
-  direccion String
   telefono  String
   email     String           @unique
+
+  solicitante  Solicitante?  @relation("ClienteSolicitante")
 }
 
 model Equipo {

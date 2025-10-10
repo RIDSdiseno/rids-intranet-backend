@@ -16,7 +16,7 @@ const clienteUpdateSchema = clienteSchema.partial();
 
 /* ================== CRUD ================== */
 
-//  CREATE
+// CREATE
 
 export async function createCliente(req: Request, res: Response) {
   try {
@@ -33,29 +33,86 @@ export async function createCliente(req: Request, res: Response) {
 //  READ ALL
 export async function getClientes(req: Request, res: Response) {
   try {
-    const clientes = await prisma.cliente.findMany({ orderBy: { id: "asc" } });
-    return res.status(200).json(clientes);
+    const clientes = await prisma.solicitante.findMany({
+      orderBy: { id_solicitante: "asc" },
+      select: {
+        nombre: true,
+        email: true,
+        empresa: {
+          select: {
+            nombre: true
+          }
+        },
+        historiales: {
+          select: {
+            id_historial: true,
+            realizado: true,
+            inicio: true,
+            fin: true
+          }
+        }
+      }
+    });
+
+    // Formatea el resultado para que se vea como "clientes"
+    const resultado = clientes.map(c => ({
+      nombre: c.nombre,
+      email: c.email,
+      empresa: c.empresa?.nombre ?? null,
+      historiales: c.historiales
+    }));
+
+    return res.status(200).json(resultado);
   } catch (err: any) {
     console.error("Error al obtener clientes:", err);
     return res.status(500).json({ error: "Error al obtener clientes" });
   }
 }
 
-//  READ ONE
+// READ ONE
 export async function getClienteById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
-    const cliente = await prisma.cliente.findUnique({ where: { id } });
+    const cliente = await prisma.solicitante.findUnique({
+      where: { id_solicitante: id },
+      select: {
+        nombre: true,
+        email: true,
+        empresa: {
+          select: {
+            nombre: true
+          }
+        },
+        historiales: {
+          select: {
+            id_historial: true,
+            realizado: true,
+            inicio: true,
+            fin: true
+          }
+        }
+      }
+    });
+
     if (!cliente) return res.status(404).json({ error: "Cliente no encontrado" });
 
-    return res.status(200).json(cliente);
+    // Formatear la respuesta igual que en getClientes
+    const resultado = {
+      nombre: cliente.nombre,
+      email: cliente.email,
+      empresa: cliente.empresa?.nombre ?? null,
+      historiales: cliente.historiales
+    };
+
+    return res.status(200).json(resultado);
   } catch (err: any) {
     console.error("Error al obtener cliente:", err);
     return res.status(500).json({ error: "Error al obtener cliente" });
   }
 }
+
 
 //  UPDATE
 export async function updateCliente(req: Request, res: Response) {
