@@ -1,7 +1,15 @@
-// src/routes/solicitantes.routes.ts
 import { Router } from "express";
-import { listSolicitantes } from "../controllers/solicitante.controller.js";
-import auth from "../middlewares/auth.js";
+import {
+  listSolicitantes,
+  listSolicitantesByEmpresa,
+} from "../controllers/solicitante.controller.js";
 
 export const solicitantesRouter = Router();
-solicitantesRouter.get("/", auth, listSolicitantes);
+
+solicitantesRouter.get("/mini", (req, res, next) => {
+  Promise.resolve(listSolicitantesByEmpresa(req, res)).catch(next);
+});
+
+solicitantesRouter.get("/", (req, res, next) => {
+  Promise.resolve(listSolicitantes(req, res)).catch(next);
+});

@@ -20,7 +20,7 @@ const MAPPINGS: Array<{
   companyIds?: Array<string | number | bigint>;
 }> = [
   { org: "ALIANZ", domains: ["alianz.cl"] },
-  { org: "ASUR", domains: ["asur.cl"] },
+  { org: "ASUR", domains: ["asursa.com"] },
   { org: "BDK", domains: ["bdk.cl"] },
   { org: "BODEGAL", domains: ["bodegal.cl"] },
   { org: "CLINICA NACE", domains: ["clinicanace.cl", "nace.cl"] },
@@ -32,6 +32,8 @@ const MAPPINGS: Array<{
   { org: "RWAY", domains: ["rway.cl"] },
   { org: "T-SALES", domains: ["t-sales.cl", "tsales.cl"] },
   { org: "VPRIME", domains: ["vprime.cl"] },
+  { org: "PINI", domains: ["pini.cl"]},
+  { org: "RIDS", domains: ["rids.cl"]},
 
   // Si algún cliente usa Freshdesk Company IDs conocidos, agrega aquí:
   // { org: "BODEGAL", companyIds: [73000589521] }, // ejemplo

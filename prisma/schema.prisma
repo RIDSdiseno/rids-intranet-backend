@@ -15,13 +15,13 @@ model Empresa {
   solicitantes Solicitante[]
   visitas      Visita[]              @relation("Empresa_Visita")
   tickets      FreshdeskTicket[]
-  companyMaps  FreshdeskCompanyMap[] // <- LEGADO (no lo usa el flujo nuevo de tickets)
+  companyMaps  FreshdeskCompanyMap[]
 }
 
 model Solicitante {
   id_solicitante Int                     @id @default(autoincrement())
   nombre         String
-  email          String?                 @unique
+  email          String?
   telefono       String?
   empresaId      Int
   empresa        Empresa                 @relation(fields: [empresaId], references: [id_empresa])
@@ -29,7 +29,7 @@ model Solicitante {
   visitas        Visita[]                @relation("Solicitante_Visita")
   historiales    Historial[]             @relation("Solicitante_Historial")
   tickets        FreshdeskTicket[]
-  requesterMaps  FreshdeskRequesterMap[] // <- LEGADO (no lo usa el flujo nuevo de tickets)
+  requesterMaps  FreshdeskRequesterMap[]
 
   @@index([empresaId])
 }
@@ -51,18 +51,17 @@ model Equipo {
 }
 
 model DetalleEquipo {
-  id         Int       @id @default(autoincrement()) @map("id_detalle_equipo")
+  id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
   idEquipo   Int
   macWifi    String?
   so         String?
   tipoDd     String?
   estadoAlm  String?
   office     String?
-  correo     String?
   teamViewer String?
   claveTv    String?
-  revisado   DateTime?
-  equipo     Equipo?   @relation(fields: [idEquipo], references: [id_equipo])
+  revisado   String?
+  equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
 
   @@index([idEquipo])
 }
@@ -148,7 +147,7 @@ model Visita {
   @@index([solicitanteId])
 }
 
-/** LEGADO: ya no lo usa el flujo nuevo de tickets */
+/// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskCompanyMap {
   companyId BigInt  @id
   empresaId Int
@@ -159,7 +158,7 @@ model FreshdeskCompanyMap {
   @@index([domain])
 }
 
-/** LEGADO: ya no lo usa el flujo nuevo de tickets */
+/// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskRequesterMap {
   requesterId   BigInt      @id
   solicitanteId Int
@@ -170,31 +169,25 @@ model FreshdeskRequesterMap {
   @@index([solicitanteId])
 }
 
-/** CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester) */
+/// * CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester)
 model FreshdeskTicket {
-  id               BigInt         @id
-  subject          String
-  status           Int
-  priority         Int
-  type             String?
-  requesterEmail   String?
-  createdAt        DateTime
-  updatedAt        DateTime
-  source           String?
-  capturedAt       DateTime?
-
-  // (Legado / otros módulos) — pueden quedar nulos
-  empresaId        Int?
-  solicitanteId    Int?
-  empresa          Empresa?       @relation(fields: [empresaId], references: [id_empresa])
-  solicitante      Solicitante?   @relation(fields: [solicitanteId], references: [id_solicitante])
-
-  // Agrupación por organización de tickets
-  ticketOrgId      Int?
-  ticketOrg        TicketOrg?     @relation(fields: [ticketOrgId], references: [id])
-
-  // NUEVO: solicitante específico para tickets (se deduplica por email o fdRequesterId)
+  id                BigInt           @id
+  subject           String
+  status            Int
+  priority          Int
+  type              String?
+  requesterEmail    String?
+  createdAt         DateTime
+  updatedAt         DateTime
+  source            String?
+  capturedAt        DateTime?
+  empresaId         Int?
+  solicitanteId     Int?
+  ticketOrgId       Int?
   ticketRequesterId Int?
+  empresa           Empresa?         @relation(fields: [empresaId], references: [id_empresa])
+  solicitante       Solicitante?     @relation(fields: [solicitanteId], references: [id_solicitante])
+  ticketOrg         TicketOrg?       @relation(fields: [ticketOrgId], references: [id])
   ticketRequester   TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
 
   @@index([empresaId])
@@ -205,19 +198,19 @@ model FreshdeskTicket {
   @@index([createdAt])
 }
 
-/** Agrupación lógica de tickets (no toca tu Empresa) */
+/// * Agrupación lógica de tickets (no toca tu Empresa)
 model TicketOrg {
-  id        Int               @id @default(autoincrement())
-  name      String            @unique
-  notes     String?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  maps      FdSourceMap[]
-  tickets   FreshdeskTicket[]
+  id         Int               @id @default(autoincrement())
+  name       String            @unique
+  notes      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  maps       FdSourceMap[]
+  tickets    FreshdeskTicket[]
   requesters TicketRequester[]
 }
 
-/** Mapa domain/companyId → TicketOrg */
+/// * Mapa domain/companyId → TicketOrg
 model FdSourceMap {
   id          Int       @id @default(autoincrement())
   companyId   BigInt?   @unique
@@ -228,20 +221,33 @@ model FdSourceMap {
   @@index([ticketOrgId])
 }
 
-/** NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId) */
+/// * NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId)
 model TicketRequester {
-  id             Int               @id @default(autoincrement())
-  name           String
-  email          String?           @unique
-  phone          String?
-  fdRequesterId  BigInt?           @unique
-  ticketOrgId    Int?
-  ticketOrg      TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
-  tickets        FreshdeskTicket[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id            Int               @id @default(autoincrement())
+  name          String
+  email         String?           @unique
+  phone         String?
+  fdRequesterId BigInt?           @unique
+  ticketOrgId   Int?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  ticketOrg     TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
+  tickets       FreshdeskTicket[]
 
   @@index([ticketOrgId])
+}
+
+model EquipoProducto {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  descripcion   String?
+  precio        Decimal
+  stock         Int      @default(0)
+  marca         String
+  modelo        String
+  estado        String
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime
 }
 
 enum EstadoVisita {
