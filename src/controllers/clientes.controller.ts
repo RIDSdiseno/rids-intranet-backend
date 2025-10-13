@@ -5,11 +5,26 @@ import { z } from "zod";
 /* ================== Schemas ================== */
 
 const clienteSchema = z.object({
-  rut: z.string(),
-  nombre: z.string(),
-  direccion: z.string(),
+  nombre: z.string().min(1),
+  email: z.string().email(),
   telefono: z.string(),
-  email: z.string().email()
+  empresaId: z.number().optional(),
+  historiales: z
+    .array(
+      z.object({
+        realizado: z.string().optional(),
+        inicio: z.string(),
+        fin: z.string(),
+        tecnicoId: z.number(),
+      })
+    )
+    .optional(),
+  equipos: z
+    .object({
+      serial: z.string(),
+      modelo: z.string(),
+    })
+    .optional(),
 });
 
 const clienteUpdateSchema = clienteSchema.partial();
@@ -17,52 +32,61 @@ const clienteUpdateSchema = clienteSchema.partial();
 /* ================== CRUD ================== */
 
 // CREATE
-
 export async function createCliente(req: Request, res: Response) {
   try {
-    const data = clienteSchema.parse(req.body);
-    const nuevo = await prisma.cliente.create({ data });
-    return res.status(201).json(nuevo);
+    const { nombre, email, telefono, empresaId, historiales, equipos } = req.body;
+
+    if (!nombre || !email) {
+      return res.status(400).json({ error: "Faltan campos obligatorios: nombre o email" });
+    }
+
+    const data: any = {
+      nombre,
+      email,
+      telefono,
+      ...(empresaId && { empresa: { connect: { id_empresa: Number(empresaId) } } }),
+      ...(historiales?.length && {
+        historiales: {
+          create: historiales.map((h: any) => ({
+            realizado: h.realizado ?? null,
+            inicio: new Date(h.inicio),
+            fin: new Date(h.fin),
+            tecnicoId: Number(h.tecnicoId),
+          })),
+        },
+      }),
+      ...(equipos && { equipos: { create: { serial: equipos.serial, modelo: equipos.modelo } } }),
+    };
+
+    const nuevoCliente = await prisma.solicitante.create({
+      data,
+      include: {
+        empresa: true,
+        historiales: true,
+        equipos: true, // <-- incluye equipo en la respuesta
+      },
+    });
+
+    return res.status(201).json(nuevoCliente);
   } catch (err: any) {
-    console.error("Error al crear cliente:", err);
-    if (err.code === "P2002") return res.status(400).json({ error: "RUT o email ya existe" });
-    return res.status(500).json({ error: "Error al crear cliente" });
+    console.error("Error al crear cliente extendido:", err);
+    return res.status(500).json({ error: "Error al crear cliente extendido" });
   }
 }
 
-//  READ ALL
+// READ ALL
 export async function getClientes(req: Request, res: Response) {
   try {
     const clientes = await prisma.solicitante.findMany({
       orderBy: { id_solicitante: "asc" },
-      select: {
-        nombre: true,
-        email: true,
-        empresa: {
-          select: {
-            nombre: true
-          }
-        },
-        historiales: {
-          select: {
-            id_historial: true,
-            realizado: true,
-            inicio: true,
-            fin: true
-          }
-        }
-      }
+      include: {
+        empresa: true,
+        historiales: true,
+        equipos: true,
+      },
     });
 
-    // Formatea el resultado para que se vea como "clientes"
-    const resultado = clientes.map(c => ({
-      nombre: c.nombre,
-      email: c.email,
-      empresa: c.empresa?.nombre ?? null,
-      historiales: c.historiales
-    }));
-
-    return res.status(200).json(resultado);
+    return res.status(200).json(clientes);
   } catch (err: any) {
     console.error("Error al obtener clientes:", err);
     return res.status(500).json({ error: "Error al obtener clientes" });
@@ -77,75 +101,61 @@ export async function getClienteById(req: Request, res: Response) {
 
     const cliente = await prisma.solicitante.findUnique({
       where: { id_solicitante: id },
-      select: {
-        nombre: true,
-        email: true,
-        empresa: {
-          select: {
-            nombre: true
-          }
-        },
-        historiales: {
-          select: {
-            id_historial: true,
-            realizado: true,
-            inicio: true,
-            fin: true
-          }
-        }
-      }
+      include: {
+        empresa: true,
+        historiales: true,
+        equipos: true,
+      },
     });
 
     if (!cliente) return res.status(404).json({ error: "Cliente no encontrado" });
 
-    // Formatear la respuesta igual que en getClientes
-    const resultado = {
-      nombre: cliente.nombre,
-      email: cliente.email,
-      empresa: cliente.empresa?.nombre ?? null,
-      historiales: cliente.historiales
-    };
-
-    return res.status(200).json(resultado);
+    return res.status(200).json(cliente);
   } catch (err: any) {
     console.error("Error al obtener cliente:", err);
     return res.status(500).json({ error: "Error al obtener cliente" });
   }
 }
 
-
-//  UPDATE
+// UPDATE
 export async function updateCliente(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
-    const parsedData = clienteUpdateSchema.parse(req.body);
+    const { nombre, email, empresaId } = req.body;
 
-    // Convierte los campos definidos a formato Prisma { set: value }
-    const data = Object.fromEntries(
-      Object.entries(parsedData)
-        .filter(([_, v]) => v !== undefined)
-        .map(([k, v]) => [k, { set: v }])
-    );
+    const data: any = {
+      ...(nombre && { nombre }),
+      ...(email && { email }),
+      ...(empresaId && { empresa: { connect: { id_empresa: Number(empresaId) } } }),
+    };
 
-    const actualizado = await prisma.cliente.update({ where: { id }, data });
+    const actualizado = await prisma.solicitante.update({
+      where: { id_solicitante: id },
+      data,
+      include: {
+        empresa: true,
+        historiales: true,
+        equipos: true,
+      },
+    });
+
     return res.status(200).json(actualizado);
   } catch (err: any) {
     console.error("Error al actualizar cliente:", err);
-    if (err.code === "P2002") return res.status(400).json({ error: "RUT o email ya existe" });
     if (err.code === "P2025") return res.status(404).json({ error: "Cliente no encontrado" });
     return res.status(500).json({ error: "Error al actualizar cliente" });
   }
 }
 
-//  DELETE
+// DELETE
 export async function deleteCliente(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
-    await prisma.cliente.delete({ where: { id } });
+    await prisma.solicitante.delete({ where: { id_solicitante: id } });
     return res.status(204).send();
   } catch (err: any) {
     console.error("Error al eliminar cliente:", err);

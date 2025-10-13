@@ -56,7 +56,6 @@ model Solicitante {
 
 model Cliente {
   id        Int              @id @default(autoincrement())
-  rut       String           @unique
   nombre    String
   telefono  String
   email     String           @unique
