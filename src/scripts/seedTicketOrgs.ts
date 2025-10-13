@@ -16,6 +16,8 @@ const ORGS = [
   "RWAY",
   "T-SALES",
   "VPRIME",
+  "PINI",
+  "RIDS",
 ];
 
 async function main() {

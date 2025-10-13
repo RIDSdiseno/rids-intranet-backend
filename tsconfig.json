@@ -33,6 +33,6 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["src"],
+  "include": ["src", "src/types/xlsx-populate.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
