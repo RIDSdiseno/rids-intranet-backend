@@ -16,6 +16,26 @@ model Empresa {
   visitas      Visita[]              @relation("Empresa_Visita")
   tickets      FreshdeskTicket[]
   companyMaps  FreshdeskCompanyMap[]
+<<<<<<< HEAD
+=======
+  
+  detalleEmpresa DetalleEmpresa?
+  detalleTrabajos DetalleTrabajo[]
+}
+
+model DetalleEmpresa {
+  id          Int     @id @default(autoincrement())
+  rut         String  @unique
+  direccion   String
+  telefono    String
+  email       String
+  
+  // Campo único para relación uno-a-uno
+  empresa_id  Int     @unique
+  empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
+  
+  @@map("detalle_empresas")
+>>>>>>> 89e99b1246fee1ecf21735e9bd147b751ba2c68e
 }
 
 model Solicitante {
@@ -30,12 +50,28 @@ model Solicitante {
   historiales    Historial[]             @relation("Solicitante_Historial")
   tickets        FreshdeskTicket[]
   requesterMaps  FreshdeskRequesterMap[]
+<<<<<<< HEAD
+=======
+
+  clienteId      Int?          @unique
+  cliente        Cliente?      @relation("ClienteSolicitante", fields: [clienteId], references: [id])
+>>>>>>> 89e99b1246fee1ecf21735e9bd147b751ba2c68e
 
   @@index([empresaId])
 }
 
+model Cliente {
+  id        Int              @id @default(autoincrement())
+  rut       String           @unique
+  nombre    String
+  telefono  String
+  email     String           @unique
+
+  solicitante  Solicitante?  @relation("ClienteSolicitante")
+}
+
 model Equipo {
-  id_equipo     Int             @id @default(autoincrement())
+  id_equipo     Int              @id @default(autoincrement())
   idSolicitante Int
   serial        String
   marca         String
@@ -44,10 +80,25 @@ model Equipo {
   ram           String
   disco         String
   propiedad     String
-  solicitante   Solicitante     @relation(fields: [idSolicitante], references: [id_solicitante])
+  solicitante   Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
+  
   equipo        DetalleEquipo[]
+  detalleTrabajos DetalleTrabajo[]
 
   @@index([idSolicitante])
+}
+
+model EquipoProducto {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  descripcion   String?
+  precio        Decimal
+  stock         Int      @default(0)
+  marca         String
+  modelo        String
+  estado        String
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
 }
 
 model DetalleEquipo {
@@ -64,6 +115,35 @@ model DetalleEquipo {
   equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
 
   @@index([idEquipo])
+}
+
+model DetalleTrabajo {
+  id            Int       @id @default(autoincrement())
+  fecha_ingreso DateTime
+  fecha_egreso  DateTime?
+  trabajo       String
+  accesorios    String?
+  prioridad     Prioridad
+  estado        String
+  notas         String?
+
+  empresa_id   Int?
+  empresa      Empresa?   @relation(fields: [empresa_id], references: [id_empresa])
+
+  equipo_id    Int?
+  equipo       Equipo?    @relation(fields: [equipo_id], references: [id_equipo])
+
+  tecnico_id   Int?
+  tecnico      Tecnico?   @relation(fields: [tecnico_id], references: [id_tecnico])
+
+  @@map("detalle_trabajos")
+}
+
+// Enum para prioridad
+enum Prioridad {
+  baja
+  normal
+  alta
 }
 
 model Historial {
@@ -106,14 +186,16 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico   Int            @id @default(autoincrement())
+  id_tecnico   Int              @id @default(autoincrement())
   nombre       String
-  email        String         @unique
+  email        String           @unique
   passwordHash String
-  status       Boolean        @default(true)
+  status       Boolean          @default(true)
   tokens       RefreshToken[]
   historiales  Historial[]
   visitas      Visita[]
+
+  detalleTrabajos DetalleTrabajo[]
 }
 
 model Visita {
