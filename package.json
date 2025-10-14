@@ -2,13 +2,19 @@
   "name": "backend",
   "version": "1.0.0",
   "type": "module",
+  "engines": { "node": "20.x" },
   "scripts": {
     "dev": "cross-env DOTENV_CONFIG_PATH=apps/backend/.env tsx watch -r dotenv/config --require tsconfig-paths/register src/server.ts",
-    "start": "node -r dotenv/config dist/server.js",
-    "seed:orgs": "tsx scripts/seedTicketOrgs.ts",
-    "seed:map": "tsx scripts/seedFdSourceMap.ts"
+    "build": "tsc",
+    "start": "node --enable-source-maps -r dotenv/config dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "seed:orgs": "tsx -r dotenv/config scripts/seedTicketOrgs.ts",
+    "seed:map": "tsx -r dotenv/config scripts/seedFdSourceMap.ts",
+    "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
+    "@prisma/client": "^6.16.3",
     "argon2": "^0.44.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
@@ -26,7 +32,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@prisma/client": "^6.16.3",
     "@types/argon2": "^0.14.1",
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",

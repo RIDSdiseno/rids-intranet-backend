@@ -5,8 +5,8 @@
 
     "baseUrl": "./src",
     "paths": {
-      "@/*": ["./*"],   // <-- nota el "./*"
-      "@": ["./"]       // <-- permite importar "@/lib/prisma" y "@"
+      "@/*": ["./*"],
+      "@": ["./"]
     },
 
     "module": "NodeNext",
@@ -14,6 +14,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "types": ["node"],
+    "resolveJsonModule": true,
 
     "sourceMap": true,
     "declaration": true,
@@ -29,7 +30,6 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },

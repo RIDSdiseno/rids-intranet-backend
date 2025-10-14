@@ -18,6 +18,7 @@ const ORGS = [
   "VPRIME",
   "PINI",
   "RIDS",
+  "BDK-SPA"
 ];
 
 async function main() {
