@@ -10,29 +10,25 @@ datasource db {
 }
 
 model Empresa {
-  id_empresa   Int                   @id @default(autoincrement())
-  nombre       String                @unique
-  solicitantes Solicitante[]
-  visitas      Visita[]              @relation("Empresa_Visita")
-  tickets      FreshdeskTicket[]
-  companyMaps  FreshdeskCompanyMap[]
-
-  
-  detalleEmpresa DetalleEmpresa?
+  id_empresa      Int                   @id @default(autoincrement())
+  nombre          String                @unique
+  solicitantes    Solicitante[]
+  visitas         Visita[]              @relation("Empresa_Visita")
+  tickets         FreshdeskTicket[]
+  companyMaps     FreshdeskCompanyMap[]
+  detalleEmpresa  DetalleEmpresa?
   detalleTrabajos DetalleTrabajo[]
 }
 
 model DetalleEmpresa {
-  id          Int     @id @default(autoincrement())
-  rut         String  @unique
-  direccion   String
-  telefono    String
-  email       String
-  
-  // Campo único para relación uno-a-uno
-  empresa_id  Int     @unique
-  empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
-  
+  id         Int     @id @default(autoincrement())
+  rut        String  @unique
+  direccion  String
+  telefono   String
+  email      String
+  empresa_id Int     @unique
+  empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
+
   @@map("detalle_empresas")
 }
 
@@ -42,42 +38,38 @@ model Solicitante {
   email          String?
   telefono       String?
   empresaId      Int
+  clienteId      Int?                    @unique
   empresa        Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos        Equipo[]
   visitas        Visita[]                @relation("Solicitante_Visita")
   historiales    Historial[]             @relation("Solicitante_Historial")
   tickets        FreshdeskTicket[]
   requesterMaps  FreshdeskRequesterMap[]
-
-
-  clienteId      Int?          @unique
-  cliente        Cliente?      @relation("ClienteSolicitante", fields: [clienteId], references: [id])
+  cliente        Cliente?                @relation("ClienteSolicitante", fields: [clienteId], references: [id])
 
   @@index([empresaId])
 }
 
 model Cliente {
-  id        Int              @id @default(autoincrement())
-  nombre    String
-  telefono  String
-  email     String           @unique
-
-  solicitante  Solicitante?  @relation("ClienteSolicitante")
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  telefono    String
+  email       String       @unique
+  solicitante Solicitante? @relation("ClienteSolicitante")
 }
 
 model Equipo {
-  id_equipo     Int              @id @default(autoincrement())
-  idSolicitante Int
-  serial        String
-  marca         String
-  modelo        String
-  procesador    String
-  ram           String
-  disco         String
-  propiedad     String
-  solicitante   Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
-  
-  equipo        DetalleEquipo[]
+  id_equipo       Int              @id @default(autoincrement())
+  idSolicitante   Int
+  serial          String
+  marca           String
+  modelo          String
+  procesador      String
+  ram             String
+  disco           String
+  propiedad       String
+  solicitante     Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
+  equipo          DetalleEquipo[]
   detalleTrabajos DetalleTrabajo[]
 
   @@index([idSolicitante])
@@ -121,24 +113,14 @@ model DetalleTrabajo {
   prioridad     Prioridad
   estado        String
   notas         String?
-
-  empresa_id   Int?
-  empresa      Empresa?   @relation(fields: [empresa_id], references: [id_empresa])
-
-  equipo_id    Int?
-  equipo       Equipo?    @relation(fields: [equipo_id], references: [id_equipo])
-
-  tecnico_id   Int?
-  tecnico      Tecnico?   @relation(fields: [tecnico_id], references: [id_tecnico])
+  empresa_id    Int?
+  equipo_id     Int?
+  tecnico_id    Int?
+  empresa       Empresa?  @relation(fields: [empresa_id], references: [id_empresa])
+  equipo        Equipo?   @relation(fields: [equipo_id], references: [id_equipo])
+  tecnico       Tecnico?  @relation(fields: [tecnico_id], references: [id_tecnico])
 
   @@map("detalle_trabajos")
-}
-
-// Enum para prioridad
-enum Prioridad {
-  baja
-  normal
-  alta
 }
 
 model Historial {
@@ -181,15 +163,14 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico   Int              @id @default(autoincrement())
-  nombre       String
-  email        String           @unique
-  passwordHash String
-  status       Boolean          @default(true)
-  tokens       RefreshToken[]
-  historiales  Historial[]
-  visitas      Visita[]
-
+  id_tecnico      Int              @id @default(autoincrement())
+  nombre          String
+  email           String           @unique
+  passwordHash    String
+  status          Boolean          @default(true)
+  tokens          RefreshToken[]
+  historiales     Historial[]
+  visitas         Visita[]
   detalleTrabajos DetalleTrabajo[]
 }
 
@@ -314,17 +295,10 @@ model TicketRequester {
   @@index([ticketOrgId])
 }
 
-model EquipoProducto {
-  id            Int      @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  precio        Decimal
-  stock         Int      @default(0)
-  marca         String
-  modelo        String
-  estado        String
-  creadoEn      DateTime @default(now())
-  actualizadoEn DateTime
+enum Prioridad {
+  baja
+  normal
+  alta
 }
 
 enum EstadoVisita {
