@@ -16,8 +16,7 @@ model Empresa {
   visitas      Visita[]              @relation("Empresa_Visita")
   tickets      FreshdeskTicket[]
   companyMaps  FreshdeskCompanyMap[]
-<<<<<<< HEAD
-=======
+
   
   detalleEmpresa DetalleEmpresa?
   detalleTrabajos DetalleTrabajo[]
@@ -35,7 +34,6 @@ model DetalleEmpresa {
   empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
   
   @@map("detalle_empresas")
->>>>>>> 89e99b1246fee1ecf21735e9bd147b751ba2c68e
 }
 
 model Solicitante {
@@ -50,12 +48,10 @@ model Solicitante {
   historiales    Historial[]             @relation("Solicitante_Historial")
   tickets        FreshdeskTicket[]
   requesterMaps  FreshdeskRequesterMap[]
-<<<<<<< HEAD
-=======
+
 
   clienteId      Int?          @unique
   cliente        Cliente?      @relation("ClienteSolicitante", fields: [clienteId], references: [id])
->>>>>>> 89e99b1246fee1ecf21735e9bd147b751ba2c68e
 
   @@index([empresaId])
 }
