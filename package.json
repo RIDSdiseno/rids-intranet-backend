@@ -6,16 +6,12 @@
   "scripts": {
     "dev": "cross-env DOTENV_CONFIG_PATH=.env tsx watch -r dotenv/config --require tsconfig-paths/register src/server.ts",
 
-    "build": "tsc -p tsconfig.json && prisma generate --schema prisma/schema.prisma",
-
+    "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.build.json",
     "start": "node --enable-source-maps -r dotenv/config dist/server.js",
 
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
-    "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
-
-    "seed:orgs": "tsx -r dotenv/config scripts/seedTicketOrgs.ts",
-    "seed:map": "tsx -r dotenv/config scripts/seedFdSourceMap.ts"
+    "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
 
 
   },
