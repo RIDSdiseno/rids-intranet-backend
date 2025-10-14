@@ -4,10 +4,7 @@
     "outDir": "./dist",
 
     "baseUrl": "./src",
-    "paths": {
-      "@/*": ["./*"],
-      "@": ["./"]
-    },
+    "paths": { "@/*": ["./*"], "@": ["./"] },
 
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -33,6 +30,6 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["src", "src/types/xlsx-populate.d.ts"],
+  "include": ["src"],
   "exclude": ["node_modules", "dist"]
 }
