@@ -5,12 +5,18 @@
   "engines": { "node": "20.x" },
   "scripts": {
     "dev": "cross-env DOTENV_CONFIG_PATH=apps/backend/.env tsx watch -r dotenv/config --require tsconfig-paths/register apps/backend/src/server.ts",
+
     "build": "tsc -p apps/backend/tsconfig.json",
+
     "start": "node --enable-source-maps -r dotenv/config apps/backend/dist/server.js",
+
     "prisma:generate": "prisma generate --schema apps/backend/prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema apps/backend/prisma/schema.prisma",
     "prisma:deploy": "prisma migrate deploy --schema apps/backend/prisma/schema.prisma",
+
     "seed:orgs": "tsx -r dotenv/config apps/backend/scripts/seedTicketOrgs.ts",
     "seed:map": "tsx -r dotenv/config apps/backend/scripts/seedFdSourceMap.ts",
+
     "postinstall": "npm run prisma:generate"
   },
   "dependencies": {
