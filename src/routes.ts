@@ -31,8 +31,6 @@ api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 
 
-/* ===================== Freshdesk ===================== */
-api.use("/fd", fdRouter);            // GET/aux de FD
 
 api.use("/equiposProductos", equiposProductosRouter);
 api.use("/clientes", clientesRouter);
