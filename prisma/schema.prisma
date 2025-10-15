@@ -17,14 +17,6 @@ model Empresa {
   tickets         FreshdeskTicket[]
   companyMaps     FreshdeskCompanyMap[]
   detalleEmpresa  DetalleEmpresa?
-  id_empresa   Int                   @id @default(autoincrement())
-  nombre       String                @unique
-  solicitantes Solicitante[]
-  visitas      Visita[]              @relation("Empresa_Visita")
-  tickets      FreshdeskTicket[]
-  companyMaps  FreshdeskCompanyMap[]
-  
-  detalleEmpresa DetalleEmpresa?
   detalleTrabajos DetalleTrabajo[]
 }
 
@@ -54,9 +46,6 @@ model Solicitante {
   tickets        FreshdeskTicket[]
   requesterMaps  FreshdeskRequesterMap[]
   cliente        Cliente?                @relation("ClienteSolicitante", fields: [clienteId], references: [id])
-
-  clienteId      Int?          @unique
-  cliente        Cliente?      @relation("ClienteSolicitante", fields: [clienteId], references: [id])
 
   @@index([empresaId])
 }

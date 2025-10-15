@@ -1,4 +1,4 @@
-// src/controllers/tickets.controller.ts
+// src/controllers/tickets.controller.ts - VERSIÓN CORREGIDA
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 
@@ -11,6 +11,7 @@ export async function listTickets(req: Request, res: Response) {
     const statusParam = req.query.status;
     const year = req.query.year ? Number(req.query.year) : undefined;
     const month = req.query.month ? Number(req.query.month) : undefined;
+    const empresa = (req.query.empresa as string)?.trim(); // NUEVO: parámetro para filtrar por empresa
 
     const where: any = {};
 
@@ -37,11 +38,21 @@ export async function listTickets(req: Request, res: Response) {
       ];
     }
 
+    // NUEVO: Filtro por empresa
+    if (empresa && empresa.length > 0) {
+      where.ticketOrg = {
+        name: {
+          contains: empresa,
+          mode: "insensitive"
+        }
+      };
+    }
+
     // Si all=true, traemos todos los tickets sin paginar
     const rows = await prisma.freshdeskTicket.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      ...(all ? {} : { skip: 0, take: 1000 }), // ejemplo de límite si no es all
+      ...(all ? {} : { skip: 0, take: 1000 }),
       select: {
         id: true,
         subject: true,
