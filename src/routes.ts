@@ -20,13 +20,10 @@ import { fdRouter } from "./routes/fd.js";
 import { fdWebhookRouter } from "./routes/fd.webhook.js";
 import ticketsApiRouter from "./routes/tickets.routes.js";
 
-<<<<<<< Updated upstream
 
 // === Reportes ===
-import reportesRouter from "./routes/reportes.routes.js"; // GET /api/reportes/empresa/:empresaId?month=YYYY-MM
 
-=======
->>>>>>> Stashed changes
+
 export const api = Router();
 
 /* ===================== App Core ===================== */
@@ -35,11 +32,8 @@ api.use("/solicitantes", solicitantesRouter);
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 
-<<<<<<< Updated upstream
 
 
-=======
->>>>>>> Stashed changes
 api.use("/equiposProductos", equiposProductosRouter);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
@@ -49,10 +43,9 @@ api.use("/empresas", empresasRouter);
 
 // === Freshdesk ===
 api.use("/fd", fdRouter);
-<<<<<<< Updated upstream
 
-=======
->>>>>>> Stashed changes
+
+
 api.use("/tickets", ticketsApiRouter);
 api.use("/fd", fdWebhookRouter);     // POST /api/fd/webhook
 
