@@ -63,14 +63,8 @@ const corsOptions: cors.CorsOptions = {
 app.use(cors(corsOptions));
 
 // Preflight global con respuesta 204 (más limpio que el 200 con body)
-app.options("*", (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.status(204).end();
-});
+// Delega el preflight al mismo corsOptions (no hagas headers a mano)
+app.options("*", cors(corsOptions));
 
 /* ========= Logs ========= */
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
