@@ -35,6 +35,8 @@ const MAPPINGS: Array<{
   { org: "PINI", domains: ["pini.cl"]},
   { org: "RIDS", domains: ["rids.cl"]},
   { org: "BDK-SPA", domains: ["bdk-spa.cl"]},
+  { org: "BERCIA", domains: ["bercia.cl"]},
+
 
   // Si algún cliente usa Freshdesk Company IDs conocidos, agrega aquí:
   // { org: "BODEGAL", companyIds: [73000589521] }, // ejemplo

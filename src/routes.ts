@@ -30,7 +30,7 @@ api.use("/solicitantes", solicitantesRouter);
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 
-
+api.use("/fd", fdRouter);
 
 api.use("/equiposProductos", equiposProductosRouter);
 api.use("/clientes", clientesRouter);
