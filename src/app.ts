@@ -56,10 +56,14 @@ app.use(cookieParser());
 const corsOptions: cors.CorsOptions = {
   origin: makeCorsOriginValidator(allowedOrigins),
   credentials: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  maxAge: 600, // cache preflight 10m
+  methods: ["GET","HEAD","PUT","PATCH","POST","DELETE","OPTIONS"],
+  // sin allowedHeaders
+  maxAge: 600,
 };
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
 app.use(cors(corsOptions));
 
 // Preflight global con respuesta 204 (más limpio que el 200 con body)
