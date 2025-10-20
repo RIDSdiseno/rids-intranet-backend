@@ -8,7 +8,7 @@ import {
   getSolicitanteById,
   updateSolicitante,
   deleteSolicitante,
-} from "../controllers/solicitantes.controller.js"; // <-- PLURAL y .js en runtime
+} from "../controllers/solicitante.controller.js"; // <-- PLURAL y .js en runtime
 
 export const solicitantesRouter = Router();
 const asyncHandler =
