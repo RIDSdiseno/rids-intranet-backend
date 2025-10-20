@@ -21,6 +21,7 @@ const ORGS = [
   "BDK-SPA",
   "BERCIA",
   "SOFTLAND",
+  "INTCOMEX"
 ];
 
 async function main() {

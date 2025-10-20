@@ -37,6 +37,8 @@ const MAPPINGS: Array<{
   { org: "BDK-SPA", domains: ["bdk-spa.cl"]},
   { org: "BERCIA", domains: ["bercia.cl"]},
   { org: "SOFTLAND", domains: ["softland.cl"]},
+  { org: "INTCOMEX", domains: ["intcomex.com"]},
+
 
 
   // Si algún cliente usa Freshdesk Company IDs conocidos, agrega aquí:
