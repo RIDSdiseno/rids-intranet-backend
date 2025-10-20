@@ -28,7 +28,7 @@ export const api = Router();
 
 /* ===================== App Core ===================== */
 api.use("/auth", authRouter);
-api.use("/solicitante", solicitantesRouter);
+api.use("/solicitantes", solicitantesRouter);
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 
