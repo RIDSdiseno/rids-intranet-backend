@@ -2,18 +2,16 @@
   "name": "backend",
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "cross-env DOTENV_CONFIG_PATH=.env tsx watch -r dotenv/config --require tsconfig-paths/register src/server.ts",
-
     "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.build.json",
     "start": "node --enable-source-maps -r dotenv/config dist/server.js",
-
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
     "prisma:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
-
-
   },
   "dependencies": {
     "@prisma/client": "^6.16.3",
@@ -24,11 +22,12 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dayjs": "^1.11.18",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
+    "node-fetch": "^3.3.2",
     "p-limit": "^7.1.1",
     "xlsx-populate": "^1.21.0",
     "zod": "^3.23.8"
@@ -39,10 +38,11 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
-    "@types/express": "^4.17.21",
+    "@types/express": "^4.17.23",
     "@types/helmet": "^0.0.48",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/morgan": "^1.9.10",
+    "@types/node": "^24.9.1",
     "cross-env": "^7.0.3",
     "prisma": "^6.16.3",
     "tsconfig-paths": "^4.2.0",
