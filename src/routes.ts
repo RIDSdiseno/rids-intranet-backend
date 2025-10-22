@@ -22,8 +22,6 @@ import ticketsApiRouter from "./routes/tickets.routes.js";
 
 
 // === Reportes ===
-
-
 export const api = Router();
 
 /* ===================== App Core ===================== */
@@ -44,8 +42,6 @@ api.use("/empresas", empresasRouter);
 // === Freshdesk ===
 api.use("/fd", fdRouter);
 
-
-
 api.use("/tickets", ticketsApiRouter);
 api.use("/fd", fdWebhookRouter);     // POST /api/fd/webhook
 
@@ -60,5 +56,4 @@ import { debugRouter } from "./routes/debug.js";
 api.use("/debug", debugRouter);
 
 // Si prefieres montar desde aquí:
-// export default function routes(app: Express) { app.use("/api", api); }
 export default api;
