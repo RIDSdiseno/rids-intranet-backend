@@ -4,7 +4,6 @@ import app from "./app.js"; // 👈 default import (sin llaves)
 import { Server as IOServer } from "socket.io";
 
 /* ==== Carga tareas programadas (cron) al arrancar ==== */
-import "./jobs/cronSync.js";
 
 /* ==== Puente de eventos → sockets (tiempo real) ==== */
 import { bus } from "./lib/events.js";
