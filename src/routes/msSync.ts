@@ -1,5 +1,5 @@
 // src/routes/msSync.ts
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import pLimit from "p-limit";
 import { listUsersWithLicenses } from "../ms/graph.js";
 import { upsertSolicitanteFromMicrosoft } from "../service/solicitanteSyncMs.js";
@@ -92,7 +92,7 @@ async function syncMsUsersBatch(
   const tDb0 = Date.now();
   for (let i = 0; i < chunks.length; i++) {
     const part: MsUserInput[] | undefined = chunks[i];
-    if (!part || part.length === 0) continue; // <- fix: guard clause
+    if (!part || part.length === 0) continue; // guard clause
 
     await Promise.all(
       part.map(u =>
@@ -143,46 +143,56 @@ async function selectMsUsers(domain?: string, email?: string) {
 /**
  * GET /api/ms/debug/users?domain=colchagua.cl&limit=10
  */
-msSyncRouter.get("/ms/debug/users", async (req, res) => {
-  try {
-    const domain = (req.query.domain as string | undefined)?.trim() || undefined;
-    const limit = Number(req.query.limit ?? 0);
+msSyncRouter.get(
+  "/ms/debug/users",
+  async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const domain = (req.query.domain as string | undefined)?.trim() || undefined;
+      const limit = Number(req.query.limit ?? 0);
 
-    const sel = await selectMsUsers(domain, undefined);
+      const sel = await selectMsUsers(domain, undefined);
 
-    res.json({
-      ok: true,
-      timings: sel.timings,
-      total: sel.allCount,
-      sample: limit > 0 ? sel.target.slice(0, limit) : sel.target.slice(0, 5),
-      users: limit > 0 ? sel.target.slice(0, limit) : undefined,
-    });
-  } catch (e: any) {
-    console.error("[GET /ms/debug/users] ERROR:", e?.response?.data || e);
-    res.status(500).json({ ok: false, error: e?.message || "internal" });
+      res.json({
+        ok: true,
+        timings: sel.timings,
+        total: sel.allCount,
+        sample: limit > 0 ? sel.target.slice(0, limit) : sel.target.slice(0, 5),
+        users: limit > 0 ? sel.target.slice(0, limit) : undefined,
+      });
+      return;
+    } catch (e: any) {
+      console.error("[GET /ms/debug/users] ERROR:", e?.response?.data || e);
+      res.status(500).json({ ok: false, error: e?.message || "internal" });
+      return;
+    }
   }
-});
+);
 
 /**
  * GET /api/ms/debug/domains
  */
-msSyncRouter.get("/ms/debug/domains", async (_req, res) => {
-  try {
-    const users: MsUser[] = await listUsersWithLicenses();
-    const domains: Record<string, number> = {};
+msSyncRouter.get(
+  "/ms/debug/domains",
+  async (_req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const users: MsUser[] = await listUsersWithLicenses();
+      const domains: Record<string, number> = {};
 
-    for (const u of users) {
-      const em = (u.email || "").toLowerCase();
-      const dom = em.includes("@") ? em.split("@").pop()! : "(sin-dominio)";
-      domains[dom] = (domains[dom] || 0) + 1;
+      for (const u of users) {
+        const em = (u.email || "").toLowerCase();
+        const dom = em.includes("@") ? em.split("@").pop()! : "(sin-dominio)";
+        domains[dom] = (domains[dom] || 0) + 1;
+      }
+
+      res.json({ ok: true, total: users.length, domains, sample: users.slice(0, 5) });
+      return;
+    } catch (e: any) {
+      console.error("[GET /ms/debug/domains] ERROR:", e?.response?.data || e);
+      res.status(500).json({ ok: false, error: e?.message || "internal" });
+      return;
     }
-
-    res.json({ ok: true, total: users.length, domains, sample: users.slice(0, 5) });
-  } catch (e: any) {
-    console.error("[GET /ms/debug/domains] ERROR:", e?.response?.data || e);
-    res.status(500).json({ ok: false, error: e?.message || "internal" });
   }
-});
+);
 
 /* =========== Rutas de sync =========== */
 
@@ -191,54 +201,68 @@ msSyncRouter.get("/ms/debug/domains", async (_req, res) => {
  * body: { empresaId: number, domain?: string, concurrency?: number, chunkSize?: number }
  * Re-sincroniza TODO el dominio (o tenant).
  */
-msSyncRouter.post("/sync/microsoft/users", async (req, res) => {
-  try {
-    const { empresaId, domain, concurrency, chunkSize } = req.body as {
-      empresaId?: number; domain?: string; concurrency?: number; chunkSize?: number;
-    };
-    if (!empresaId || isNaN(Number(empresaId))) {
-      return res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
+msSyncRouter.post(
+  "/sync/microsoft/users",
+  async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const { empresaId, domain, concurrency, chunkSize } = req.body as {
+        empresaId?: number; domain?: string; concurrency?: number; chunkSize?: number;
+      };
+
+      if (!empresaId || isNaN(Number(empresaId))) {
+        res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
+        return;
+      }
+
+      const sel = await selectMsUsers(domain?.trim() || undefined, undefined);
+      const normalized = normalizeForUpsert(sel.target);
+
+      const opts: { concurrency?: number; chunkSize?: number } = {
+        ...(typeof concurrency === "number" ? { concurrency } : {}),
+        ...(typeof chunkSize === "number" ? { chunkSize } : {}),
+      };
+
+      const r = await syncMsUsersBatch(normalized, Number(empresaId), opts);
+
+      res.json({ ok: true, ...r, timings: { ...sel.timings, ...r.timings } });
+      return;
+    } catch (e: any) {
+      console.error("[POST /sync/microsoft/users] ERROR:", e?.response?.data || e);
+      res.status(500).json({ ok: false, error: e?.message || "internal" });
+      return;
     }
-
-    const sel = await selectMsUsers(domain?.trim() || undefined, undefined);
-    const normalized = normalizeForUpsert(sel.target);
-
-    // ✅ construir opciones omitiendo claves undefined (exactOptionalPropertyTypes friendly)
-    const opts: { concurrency?: number; chunkSize?: number } = {
-      ...(typeof concurrency === "number" ? { concurrency } : {}),
-      ...(typeof chunkSize === "number" ? { chunkSize } : {}),
-    };
-
-    const r = await syncMsUsersBatch(normalized, Number(empresaId), opts);
-    res.json({ ok: true, ...r, timings: { ...sel.timings, ...r.timings } });
-  } catch (e: any) {
-    console.error("[POST /sync/microsoft/users] ERROR:", e?.response?.data || e);
-    res.status(500).json({ ok: false, error: e?.message || "internal" });
   }
-});
+);
 
 /**
  * GET /api/sync/microsoft/users?empresaId=123&domain=colchagua.cl
  * (atajo para Postman; mismo efecto que POST)
  */
-msSyncRouter.get("/sync/microsoft/users", async (req, res) => {
-  try {
-    const empresaId = Number(req.query.empresaId);
-    const domain = (req.query.domain as string | undefined)?.trim() || undefined;
+msSyncRouter.get(
+  "/sync/microsoft/users",
+  async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const empresaId = Number(req.query.empresaId);
+      const domain = (req.query.domain as string | undefined)?.trim() || undefined;
 
-    if (!empresaId || isNaN(empresaId)) {
-      return res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
+      if (!empresaId || isNaN(empresaId)) {
+        res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
+        return;
+      }
+
+      const sel = await selectMsUsers(domain, undefined);
+      const normalized = normalizeForUpsert(sel.target);
+      const r = await syncMsUsersBatch(normalized, empresaId);
+
+      res.json({ ok: true, ...r, timings: { ...sel.timings, ...r.timings } });
+      return;
+    } catch (e: any) {
+      console.error("[GET /sync/microsoft/users] ERROR:", e?.response?.data || e);
+      res.status(500).json({ ok: false, error: e?.message || "internal" });
+      return;
     }
-
-    const sel = await selectMsUsers(domain, undefined);
-    const normalized = normalizeForUpsert(sel.target);
-    const r = await syncMsUsersBatch(normalized, empresaId);
-    res.json({ ok: true, ...r, timings: { ...sel.timings, ...r.timings } });
-  } catch (e: any) {
-    console.error("[GET /sync/microsoft/users] ERROR:", e?.response?.data || e);
-    res.status(500).json({ ok: false, error: e?.message || "internal" });
   }
-});
+);
 
 /**
  * PUT /api/sync/microsoft/users
@@ -246,49 +270,56 @@ msSyncRouter.get("/sync/microsoft/users", async (req, res) => {
  * - Sin `email`: re-sincroniza todo.
  * - Con `email`: re-sincroniza solo ese usuario.
  */
-msSyncRouter.put("/sync/microsoft/users", async (req, res) => {
-  try {
-    const { empresaId, domain, email, concurrency } = req.body as {
-      empresaId?: number; domain?: string; email?: string; concurrency?: number;
-    };
+msSyncRouter.put(
+  "/sync/microsoft/users",
+  async (req: Request, res: Response, _next: NextFunction): Promise<void> => {
+    try {
+      const { empresaId, domain, email, concurrency } = req.body as {
+        empresaId?: number; domain?: string; email?: string; concurrency?: number;
+      };
 
-    if (!empresaId || isNaN(Number(empresaId))) {
-      return res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
-    }
+      if (!empresaId || isNaN(Number(empresaId))) {
+        res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
+        return;
+      }
 
-    const sel = await selectMsUsers(
-      domain?.trim() || undefined,
-      email?.trim().toLowerCase()
-    );
+      const sel = await selectMsUsers(
+        domain?.trim() || undefined,
+        email?.trim().toLowerCase()
+      );
 
-    if (email && sel.target.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: `No se encontró ${email} en Microsoft${domain ? ` (${domain})` : ""}`,
+      if (email && sel.target.length === 0) {
+        res.status(404).json({
+          ok: false,
+          error: `No se encontró ${email} en Microsoft${domain ? ` (${domain})` : ""}`,
+        });
+        return;
+      }
+
+      const normalized = normalizeForUpsert(sel.target);
+
+      // construir opciones omitiendo claves undefined
+      const opts: { concurrency?: number } = {
+        ...(typeof concurrency === "number" ? { concurrency } : {}),
+      };
+
+      const r = await syncMsUsersBatch(normalized, Number(empresaId), opts);
+
+      res.json({
+        ok: true,
+        domain: domain ?? null,
+        empresaId: Number(empresaId),
+        filter: email ?? null,
+        ...r,
+        timings: { ...sel.timings, ...r.timings }
       });
+      return;
+    } catch (e: any) {
+      console.error("[PUT /sync/microsoft/users] ERROR:", e?.response?.data || e);
+      res.status(500).json({ ok: false, error: e?.message || "internal" });
+      return;
     }
-
-    const normalized = normalizeForUpsert(sel.target);
-
-    // ✅ construir opciones omitiendo claves undefined
-    const opts: { concurrency?: number } = {
-      ...(typeof concurrency === "number" ? { concurrency } : {}),
-    };
-
-    const r = await syncMsUsersBatch(normalized, Number(empresaId), opts);
-
-    res.json({
-      ok: true,
-      domain: domain ?? null,
-      empresaId: Number(empresaId),
-      filter: email ?? null,
-      ...r,
-      timings: { ...sel.timings, ...r.timings }
-    });
-  } catch (e: any) {
-    console.error("[PUT /sync/microsoft/users] ERROR:", e?.response?.data || e);
-    res.status(500).json({ ok: false, error: e?.message || "internal" });
   }
-});
+);
 
 export default msSyncRouter;

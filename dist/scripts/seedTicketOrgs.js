@@ -17,7 +17,10 @@ const ORGS = [
     "VPRIME",
     "PINI",
     "RIDS",
-    "BDK-SPA"
+    "BDK-SPA",
+    "BERCIA",
+    "SOFTLAND",
+    "INTCOMEX",
 ];
 async function main() {
     let count = 0;

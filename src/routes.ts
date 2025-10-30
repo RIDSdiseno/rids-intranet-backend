@@ -20,7 +20,7 @@ import ticketsApiRouter from "./routes/tickets.routes.js";
 
 /* ===================== Google Sync ===================== */
 import syncGoogleRouter from "./routes/syncGoogle.routes.js";
-import cronRoutes from "./routes/cron.routes.js";
+
 
 /* ===================== Microsoft Sync ===================== */
 import { msSyncRouter } from "./routes/msSync.js";
@@ -53,8 +53,7 @@ api.use("/tickets", ticketsApiRouter);
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)
 api.use(syncGoogleRouter);
-// Cron admin (ej: /api/admin/cron/sync-google-users/*)
-api.use(cronRoutes);
+
 
 // Microsoft Graph sync 
 api.use(msSyncRouter);
