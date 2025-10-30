@@ -24,11 +24,13 @@
     "dayjs": "^1.11.18",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "googleapis": "^164.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
     "node-fetch": "^3.3.2",
     "p-limit": "^7.1.1",
+    "socket.io": "^4.8.1",
     "xlsx-populate": "^1.21.0",
     "zod": "^3.23.8"
   },
@@ -45,8 +47,9 @@
     "@types/node": "^24.9.1",
     "cross-env": "^7.0.3",
     "prisma": "^6.16.3",
+    "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.9.3"
   }
 }
