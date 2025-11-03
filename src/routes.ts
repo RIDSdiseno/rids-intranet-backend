@@ -28,6 +28,9 @@ import { msSyncRouter } from "./routes/msSync.js";
 /* ===================== Debug ===================== */
 import { debugRouter } from "./routes/debug.js";
 
+/* ===================== Whatchimp ===================== */
+import whatchimpRouter from "./routes/whatchimp.routes.js";
+
 /* ========================================================= */
 export const api = Router();
 
@@ -63,6 +66,9 @@ api.use("/reportes", reportesRouter);
 
 /* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
+
+/* ===================== Whatchimp ===================== */
+api.use(whatchimpRouter);
 
 /* ===================== Export ===================== */
 export default api;

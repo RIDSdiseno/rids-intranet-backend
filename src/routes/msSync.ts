@@ -13,7 +13,7 @@ export const msSyncRouter = Router();
 type MsUser = {
   id?: string | null;
   email?: string | null;
-  name?: string | null; // string en tu implementación actual
+  name?: string | null;
   suspended?: boolean | null;
   licenses?: Array<{ skuId: string; skuPartNumber: string; displayName?: string }>;
 };
@@ -31,14 +31,13 @@ function normalizeForUpsert(target: MsUser[]): MsUserInput[] {
       (u.licenses ?? []).map(l => ({
         skuId: l.skuId,
         skuPartNumber: l.skuPartNumber,
-        // Evitamos poner displayName cuando venga undefined (por exactOptionalPropertyTypes)
         ...(l.displayName !== undefined ? { displayName: l.displayName } : {}),
       })) as MsUserInput["licenses"];
 
     return {
       id: (u.id ?? "").trim(),
       email: emailStr,
-      name: nameStr, // string, como exige el servicio
+      name: nameStr,
       suspended,
       licenses,
     };
@@ -92,23 +91,16 @@ async function syncMsUsersBatch(
   const tDb0 = Date.now();
   for (let i = 0; i < chunks.length; i++) {
     const part: MsUserInput[] | undefined = chunks[i];
-    if (!part || part.length === 0) continue; // guard clause
+    if (!part || part.length === 0) continue;
 
     await Promise.all(
       part.map(u =>
         limit(async () => {
-          if (!u.id || !u.email) { skipped++; return; }
+          // solo exigimos id (email puede ser null)
+          if (!u.id) { skipped++; return; }
 
-          // Solo para métrica created/updated; si no te interesa, elimínalo para ahorrar una consulta
-          const existed = await prisma.solicitante.findUnique({
-            where: { microsoftUserId: u.id },
-            select: { id_solicitante: true },
-          }).catch(() => null);
-
-          const result = await upsertSolicitanteFromMicrosoft(u, empresaId);
-          if (result === null) { skipped++; return; }
-
-          if (existed) updated++; else created++;
+          const { created: wasCreated } = await upsertSolicitanteFromMicrosoft(u, empresaId);
+          if (wasCreated) created++; else updated++;
         })
       )
     );
@@ -298,7 +290,6 @@ msSyncRouter.put(
 
       const normalized = normalizeForUpsert(sel.target);
 
-      // construir opciones omitiendo claves undefined
       const opts: { concurrency?: number } = {
         ...(typeof concurrency === "number" ? { concurrency } : {}),
       };

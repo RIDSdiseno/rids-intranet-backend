@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 export type MsUserInput = {
   id: string;
   email: string | null;
-  name: string; // <- string
+  name: string; // string obligatorio aquí
   suspended: boolean;
   licenses: Array<{
     skuId: string;
@@ -46,48 +46,25 @@ async function retry<T>(
 }
 
 /**
- * Upsert principal (¡sin upserts de SKUs dentro del tx!).
- * - Crea/actualiza catálogo de SKUs **fuera** de la transacción (createMany + skipDuplicates).
+ * Upsert principal (sin upserts de SKUs aquí).
+ * - El catálogo de SKUs se pre-crea en lote desde el router.
  * - Transacción solo para Solicitante + diff de licencias.
  * - Timeout e isolationLevel ajustados para reducir deadlocks.
  * - Retries ante deadlocks/tx cerrada.
+ *
+ * Devuelve: { solicitante, created }
  */
 export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: number) {
   const cleanEmail = (u.email || "").trim().toLowerCase() || null;
-  const cleanName = (u.name || "").trim() || "Usuario";
-  const active = !u.suspended;
+  const cleanName  = (u.name  || "").trim() || "Usuario";
+  const active     = !u.suspended;
 
-  // 0) Catálogo de SKUs (fuera de la transacción; idempotente)
-  if (u.licenses?.length) {
-    const uniqueSkus = Array.from(
-      new Map(
-        u.licenses.map((l) => [
-          l.skuId,
-          {
-            skuId: l.skuId,
-            skuPartNumber: l.skuPartNumber,
-            displayName: l.displayName ?? l.skuPartNumber,
-          },
-        ])
-      ).values()
-    );
-
-    if (uniqueSkus.length) {
-      // Esto evita N upserts y evita locks dentro del tx
-      await prisma.msSku.createMany({
-        data: uniqueSkus,
-        skipDuplicates: true,
-      });
-    }
-  }
-
-  // 1) Transacción con retries ante deadlocks
   return await retry(async () => {
     return prisma.$transaction(
       async (tx) => {
-        // 2) Resolver target por prioridad:
-        //    a) por microsoftUserId (evita conflicto)
-        //    b) por email (preferimos misma empresa)
+        // 1) Resolver target por prioridad:
+        //    a) por microsoftUserId
+        //    b) por email (misma empresa > cualquiera)
         const byMs = await tx.solicitante.findUnique({
           where: { microsoftUserId: u.id },
           select: { id_solicitante: true },
@@ -111,20 +88,26 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
           }
         }
 
-        // 3) Crear / actualizar Solicitante (sin tocar msSku aquí)
-        const solicitante = targetId
-          ? await tx.solicitante.update({
-              where: { id_solicitante: targetId },
-              data: {
-                ...(byMs ? {} : { microsoftUserId: u.id }),
-                nombre: cleanName,
-                email: cleanEmail,
-                empresaId,
-                isActive: active,
-                accountType: "microsoft" as any,
-              },
-            })
-          : await tx.solicitante.create({
+        // 2) Crear / actualizar Solicitante
+        let created = false;
+        let solicitante;
+
+        if (targetId) {
+          solicitante = await tx.solicitante.update({
+            where: { id_solicitante: targetId },
+            data: {
+              ...(byMs ? {} : { microsoftUserId: u.id }),
+              nombre: cleanName,
+              email: cleanEmail,
+              empresaId,
+              isActive: active,
+              accountType: "microsoft" as any,
+            },
+          });
+        } else {
+          // Blindaje por carrera: si create choca por P2002, resolvemos con update
+          try {
+            solicitante = await tx.solicitante.create({
               data: {
                 microsoftUserId: u.id,
                 nombre: cleanName,
@@ -134,8 +117,34 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
                 accountType: "microsoft" as any,
               },
             });
+            created = true;
+          } catch (e: any) {
+            if (e?.code === "P2002") {
+              // Otro worker lo creó en paralelo (por microsoftUserId o PK)
+              const already = await tx.solicitante.findUnique({
+                where: { microsoftUserId: u.id },
+                select: { id_solicitante: true },
+              });
+              if (!already) throw e;
 
-        // 4) Diff de licencias (solo tabla relacional)
+              solicitante = await tx.solicitante.update({
+                where: { id_solicitante: already.id_solicitante },
+                data: {
+                  nombre: cleanName,
+                  email: cleanEmail,
+                  empresaId,
+                  isActive: active,
+                  accountType: "microsoft" as any,
+                },
+              });
+              created = false;
+            } else {
+              throw e;
+            }
+          }
+        }
+
+        // 3) Diff de licencias (solo tabla relacional)
         const solicitanteId = solicitante.id_solicitante;
 
         const current = await tx.solicitanteMsLicense.findMany({
@@ -144,7 +153,7 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
         });
 
         const currentSet = new Set(current.map((x) => x.skuId));
-        const nextSet = new Set((u.licenses ?? []).map((x) => x.skuId));
+        const nextSet    = new Set((u.licenses ?? []).map((x) => x.skuId));
 
         const toRemove = [...currentSet].filter((skuId) => !nextSet.has(skuId));
         if (toRemove.length) {
@@ -161,13 +170,11 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
           });
         }
 
-        return solicitante;
+        return { solicitante, created };
       },
       {
-        // reduce el tiempo esperando un slot de tx
-        maxWait: 8_000, // ms
-        // tiempo total de la transacción antes de cerrar
-        timeout: 10_000, // ms
+        maxWait: 8_000,   // ms: reduce espera por slot
+        timeout: 10_000,  // ms: tiempo total de la tx
         isolationLevel: "ReadCommitted",
       }
     );
