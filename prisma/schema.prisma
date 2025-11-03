@@ -174,9 +174,9 @@ model Historial {
   tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
 
-  @@index([tecnicoId])
   @@index([solicitanteId])
   @@index([sucursalId])
+  @@index([tecnicoId, fin(sort: Desc)])
 }
 
 model RefreshToken {
