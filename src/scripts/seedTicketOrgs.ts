@@ -19,7 +19,9 @@ const ORGS = [
   "PINI",
   "RIDS",
   "BDK-SPA",
-  "BERCIA"
+  "BERCIA",
+  "SOFTLAND",
+  "INTCOMEX",
 ];
 
 async function main() {
