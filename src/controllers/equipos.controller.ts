@@ -5,37 +5,17 @@ import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 
 /* ================== Schemas ================== */
-
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(200).default(20),
-
-  // filtros
-  search: z.string().trim().optional(), // busca en serial/marca/modelo/procesador/solicitante/empresa
+  search: z.string().trim().optional(),
   marca: z.string().trim().optional(),
   empresaId: z.coerce.number().int().optional(),
   solicitanteId: z.coerce.number().int().optional(),
-
-  // orden
-  sortBy: z
-    .enum([
-      "id_equipo",
-      "serial",
-      "marca",
-      "modelo",
-      "procesador",
-      "ram",
-      "disco",
-      "propiedad",
-      "empresa",
-      "solicitante",
-    ])
-    .default("id_equipo")
-    .optional(),
+  sortBy: z.enum(["id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad", "empresa", "solicitante"]).default("id_equipo").optional(),
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 
-// Schema para crear un equipo
 const equipoSchema = z.object({
   idSolicitante: z.coerce.number().int().positive(),
   serial: z.string().trim().min(1),
@@ -47,11 +27,22 @@ const equipoSchema = z.object({
   propiedad: z.string().trim().min(1),
 });
 
-// Schema parcial para actualizar
 const equipoUpdateSchema = equipoSchema.partial();
 
-/* ================== Helpers ================== */
+/* ================== CACHE SIMPLE ================== */
+// ✅ AGREGAR: Cache para resultados de consultas frecuentes
+const equiposCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 15000; // 15 segundos
 
+function getCacheKey(q: any): string {
+  return `equipos:${JSON.stringify(q)}`;
+}
+
+function clearCache(): void {
+  equiposCache.clear();
+}
+
+/* ================== Helpers Optimizados ================== */
 function mapOrderBy(
   sortBy: string | undefined,
   sortDir: Prisma.SortOrder
@@ -63,20 +54,17 @@ function mapOrderBy(
     return { solicitante: { nombre: sortDir } };
   }
   const allowed: Array<keyof Prisma.EquipoOrderByWithRelationInput> = [
-    "id_equipo",
-    "serial",
-    "marca",
-    "modelo",
-    "procesador",
-    "ram",
-    "disco",
-    "propiedad",
+    "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad",
   ];
   const key = (allowed.includes(sortBy as any) ? sortBy : "id_equipo") as keyof Prisma.EquipoOrderByWithRelationInput;
   return { [key]: sortDir } as Prisma.EquipoOrderByWithRelationInput;
 }
 
+// ✅ OPTIMIZADO: Función más eficiente
 function flattenRow(e: any) {
+  const solicitante = e.solicitante;
+  const empresa = solicitante?.empresa;
+
   return {
     id_equipo: e.id_equipo,
     serial: e.serial,
@@ -86,48 +74,78 @@ function flattenRow(e: any) {
     ram: e.ram,
     disco: e.disco,
     propiedad: e.propiedad,
-    solicitante: e.solicitante?.nombre ?? null,
-    empresa: e.solicitante?.empresa?.nombre ?? null,
-    // ids de apoyo (útiles en frontend)
+    solicitante: solicitante?.nombre ?? null,
+    empresa: empresa?.nombre ?? null,
     idSolicitante: e.idSolicitante,
-    empresaId: e.solicitante?.empresaId ?? null,
+    empresaId: empresa?.id_empresa ?? null,
   };
 }
 
-/* ================== Controller: sólo GET list ================== */
+/* ================== Controller Optimizado ================== */
 
-/** GET /equipos  -> lista general para tabla */
+/** GET /equipos - LISTA OPTIMIZADA */
 export async function listEquipos(req: Request, res: Response) {
+  const startTime = Date.now(); // ✅ MEDIR TIEMPO
+
   try {
     const q = listQuerySchema.parse(req.query);
     const INS = "insensitive" as Prisma.QueryMode;
 
-    // Tipado explícito para evitar errores con exactOptionalPropertyTypes
+    // ✅ VERIFICAR CACHE PRIMERO
+    const cacheKey = getCacheKey(q);
+    const cached = equiposCache.get(cacheKey);
+
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`✅ Cache hit para equipos: ${Date.now() - startTime}ms`);
+      return res.json(cached.data);
+    }
+
+    // ✅ WHERE CLAUSE OPTIMIZADO
     const where: Prisma.EquipoWhereInput = {
-      ...(q.empresaId ? { solicitante: { is: { empresaId: q.empresaId } } } : {}),
+      ...(q.empresaId ? { solicitante: { empresaId: q.empresaId } } : {}),
       ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
       ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
-      ...(q.search
-        ? {
-          OR: [
-            { serial: { contains: q.search, mode: INS } },
-            { marca: { contains: q.search, mode: INS } },
-            { modelo: { contains: q.search, mode: INS } },
-            { procesador: { contains: q.search, mode: INS } },
-            { solicitante: { is: { nombre: { contains: q.search, mode: INS } } } },
-            { solicitante: { is: { empresa: { is: { nombre: { contains: q.search, mode: INS } } } } } },
-          ] satisfies Prisma.EquipoWhereInput[],
-        }
-        : {}),
+      ...(q.search ? {
+        OR: [
+          { serial: { contains: q.search, mode: INS } },
+          { marca: { contains: q.search, mode: INS } },
+          { modelo: { contains: q.search, mode: INS } },
+          { procesador: { contains: q.search, mode: INS } },
+          { solicitante: { nombre: { contains: q.search, mode: INS } } },
+          { solicitante: { empresa: { nombre: { contains: q.search, mode: INS } } } },
+        ]
+      } : {}),
     };
 
     const orderBy = mapOrderBy(q.sortBy, q.sortDir as Prisma.SortOrder);
 
+    // ✅ CONSULTA OPTIMIZADA - SOLO CAMPOS NECESARIOS
     const [total, rows] = await Promise.all([
       prisma.equipo.count({ where }),
       prisma.equipo.findMany({
         where,
-        include: { solicitante: { include: { empresa: true } } },
+        select: { // ✅ SELECT EXPLÍCITO - NO USAR INCLUDE
+          id_equipo: true,
+          serial: true,
+          marca: true,
+          modelo: true,
+          procesador: true,
+          ram: true,
+          disco: true,
+          propiedad: true,
+          idSolicitante: true,
+          solicitante: {
+            select: {
+              nombre: true,
+              empresa: {
+                select: {
+                  id_empresa: true,
+                  nombre: true
+                }
+              }
+            }
+          }
+        },
         orderBy,
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
@@ -135,14 +153,24 @@ export async function listEquipos(req: Request, res: Response) {
     ]);
 
     const items = rows.map(flattenRow);
-
-    return res.json({
+    const result = {
       page: q.page,
       pageSize: q.pageSize,
       total,
       totalPages: Math.ceil(total / q.pageSize),
       items,
+    };
+
+    // ✅ GUARDAR EN CACHE
+    equiposCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
     });
+
+    const endTime = Date.now();
+    console.log(` Tiempo listEquipos: ${endTime - startTime}ms`);
+
+    return res.json(result);
   } catch (err: any) {
     console.error("listEquipos error:", err);
     if (err instanceof z.ZodError) {
@@ -152,12 +180,10 @@ export async function listEquipos(req: Request, res: Response) {
   }
 }
 
-// 🟢 CREATE /equipos
+// 🟢 CREATE /equipos - OPTIMIZADO
 export async function createEquipo(req: Request, res: Response) {
   try {
     const data = equipoSchema.parse(req.body);
-
-    // Exclude idSolicitante from the main data object
     const { idSolicitante, ...equipoData } = data;
 
     const nuevo = await prisma.equipo.create({
@@ -165,8 +191,31 @@ export async function createEquipo(req: Request, res: Response) {
         ...equipoData,
         solicitante: { connect: { id_solicitante: idSolicitante } },
       },
-      include: { solicitante: true },
+      select: { // ✅ SELECT OPTIMIZADO
+        id_equipo: true,
+        serial: true,
+        marca: true,
+        modelo: true,
+        procesador: true,
+        ram: true,
+        disco: true,
+        propiedad: true,
+        idSolicitante: true,
+        solicitante: {
+          select: {
+            nombre: true,
+            empresa: {
+              select: {
+                nombre: true
+              }
+            }
+          }
+        }
+      },
     });
+
+    // ✅ LIMPIAR CACHE AL CREAR NUEVO REGISTRO
+    clearCache();
 
     return res.status(201).json(nuevo);
   } catch (err: any) {
@@ -178,7 +227,7 @@ export async function createEquipo(req: Request, res: Response) {
   }
 }
 
-// 🟣 READ ONE /equipos/:id
+// 🟣 READ ONE /equipos/:id - OPTIMIZADO
 export async function getEquipoById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
@@ -186,7 +235,31 @@ export async function getEquipoById(req: Request, res: Response) {
 
     const equipo = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: { solicitante: true, equipo: true },
+      select: { // ✅ SELECT OPTIMIZADO - EVITAR INCLUDE COMPLETO
+        id_equipo: true,
+        serial: true,
+        marca: true,
+        modelo: true,
+        procesador: true,
+        ram: true,
+        disco: true,
+        propiedad: true,
+        idSolicitante: true,
+        solicitante: {
+          select: {
+            id_solicitante: true,
+            nombre: true,
+            email: true,
+            empresa: {
+              select: {
+                id_empresa: true,
+                nombre: true
+              }
+            }
+          }
+        }
+        // ❌ ELIMINAR: equipo: true (si no es necesario)
+      },
     });
 
     if (!equipo) return res.status(404).json({ error: "Equipo no encontrado" });
@@ -198,26 +271,48 @@ export async function getEquipoById(req: Request, res: Response) {
   }
 }
 
-// 🟠 UPDATE /equipos/:id
+// 🟠 UPDATE /equipos/:id - OPTIMIZADO
 export async function updateEquipo(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
     const data = equipoUpdateSchema.parse(req.body);
-
-    // Prepara data para Prisma sin idSolicitante directo
     const dataToUpdate: any = { ...data };
+
     if (data.idSolicitante !== undefined) {
       dataToUpdate.solicitante = { connect: { id_solicitante: data.idSolicitante } };
-      delete dataToUpdate.idSolicitante; // <-- eliminamos para evitar conflicto
+      delete dataToUpdate.idSolicitante;
     }
 
     const actualizado = await prisma.equipo.update({
       where: { id_equipo: id },
       data: dataToUpdate,
-      include: { solicitante: true },
+      select: { // ✅ SELECT OPTIMIZADO
+        id_equipo: true,
+        serial: true,
+        marca: true,
+        modelo: true,
+        procesador: true,
+        ram: true,
+        disco: true,
+        propiedad: true,
+        idSolicitante: true,
+        solicitante: {
+          select: {
+            nombre: true,
+            empresa: {
+              select: {
+                nombre: true
+              }
+            }
+          }
+        }
+      },
     });
+
+    // ✅ LIMPIAR CACHE AL ACTUALIZAR
+    clearCache();
 
     return res.status(200).json(actualizado);
   } catch (err: any) {
@@ -230,13 +325,17 @@ export async function updateEquipo(req: Request, res: Response) {
   }
 }
 
-// 🔴 DELETE /equipos/:id
+// 🔴 DELETE /equipos/:id - OPTIMIZADO
 export async function deleteEquipo(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
     await prisma.equipo.delete({ where: { id_equipo: id } });
+
+    // ✅ LIMPIAR CACHE AL ELIMINAR
+    clearCache();
+
     return res.status(204).send();
   } catch (err: any) {
     console.error("Error al eliminar equipo:", err);
@@ -244,3 +343,9 @@ export async function deleteEquipo(req: Request, res: Response) {
     return res.status(500).json({ error: "Error al eliminar equipo" });
   }
 }
+
+// ✅ LIMPIAR CACHE PERIÓDICAMENTE
+setInterval(() => {
+  equiposCache.clear();
+  console.log('Cache de equipos limpiado');
+}, CACHE_TTL * 4); // Cada minuto

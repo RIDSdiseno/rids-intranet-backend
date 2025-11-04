@@ -33,21 +33,25 @@ model DetalleEmpresa {
 }
 
 model Solicitante {
-  id_solicitante Int                     @id @default(autoincrement())
-  nombre         String
-  email          String?
-  telefono       String?
-  empresaId      Int
-  clienteId      Int?                    @unique
-  empresa        Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos        Equipo[]
-  visitas        Visita[]                @relation("Solicitante_Visita")
-  historiales    Historial[]             @relation("Solicitante_Historial")
-  tickets        FreshdeskTicket[]
-  requesterMaps  FreshdeskRequesterMap[]
-  cliente        Cliente?                @relation("ClienteSolicitante", fields: [clienteId], references: [id])
+  id_solicitante  Int                     @id @default(autoincrement())
+  nombre          String
+  email           String?
+  telefono        String?
+  empresaId       Int
+  clienteId       Int?                    @unique
+  googleUserId    String?                 @unique
+  isActive        Boolean                 @default(true)
+  microsoftUserId String?                 @unique
+  empresa         Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+  equipos         Equipo[]
+  visitas         Visita[]                @relation("Solicitante_Visita")
+  historiales     Historial[]             @relation("Solicitante_Historial")
+  tickets         FreshdeskTicket[]
+  requesterMaps   FreshdeskRequesterMap[]
+  cliente         Cliente?                @relation("ClienteSolicitante", fields: [clienteId], references: [id])
 
   @@index([empresaId])
+  @@index([isActive])
 }
 
 model Cliente {
@@ -138,6 +142,7 @@ model Historial {
   licenciaWindows    Boolean     @default(false)
   mantenimientoReloj Boolean     @default(false)
   rendimientoEquipo  Boolean     @default(false)
+  direccion_visita   String?
   id_historial       Int         @id @default(autoincrement())
   tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
@@ -196,6 +201,7 @@ model Visita {
   licenciaWindows    Boolean      @default(false)
   mantenimientoReloj Boolean      @default(false)
   rendimientoEquipo  Boolean      @default(false)
+  direccion_visita   String?
   empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
   tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
@@ -293,6 +299,23 @@ model TicketRequester {
   tickets       FreshdeskTicket[]
 
   @@index([ticketOrgId])
+}
+
+model MsSku {
+  skuId         String  @id
+  skuPartNumber String
+  displayName   String?
+}
+
+model SolicitanteMsLicense {
+  id            Int       @id @default(autoincrement())
+  solicitanteId Int
+  skuId         String
+  assignedAt    DateTime? @default(now())
+
+  @@unique([solicitanteId, skuId])
+  @@index([skuId])
+  @@index([solicitanteId])
 }
 
 enum Prioridad {
