@@ -214,38 +214,36 @@ export async function getEmpresasStats(_req: Request, res: Response): Promise<vo
 /* =======================================================
    GET /api/empresas/:id - OPTIMIZADO
    ======================================================= */
+/* =======================================================
+   GET /api/empresas/:id - OPTIMIZADO (FIX duplicados)
+   ======================================================= */
 export async function getEmpresaById(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
-
   try {
     const id = Number(req.params.id);
 
-    // ✅ SELECT ESPECÍFICO BASADO EN TU ESQUEMA
     const empresa = await prisma.empresa.findUnique({
       where: { id_empresa: id },
       select: {
         id_empresa: true,
         nombre: true,
-        detalleEmpresa: true,
-        companyMaps: {
+        detalleEmpresa: true, // ← solo una vez
+        companyMaps: {        // ← solo una vez
           select: {
             companyId: true,
-            domain: true
-          }
+            domain: true,
+          },
         },
-        // ✅ SOLICITANTES CON DATOS LIMITADOS
+        // ✅ SOLICITANTES con datos relacionados
         solicitantes: {
           include: {
-            equipos: { include: { equipo: true } }, // DetalleEquipo[]
+            equipos: { include: { equipo: true } }, // DetalleEquipo[] (ajusta según tu esquema)
             tickets: true,
             visitas: true,
           },
         },
         tickets: true,
         visitas: { include: { tecnico: true, solicitanteRef: true } },
-        detalleEmpresa: true,
         detalleTrabajos: { include: { equipo: true, tecnico: true } },
-        companyMaps: true,
       },
     });
 
@@ -260,6 +258,7 @@ export async function getEmpresaById(req: Request, res: Response): Promise<void>
     res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 }
+
 
 /* =======================================================
    POST /api/empresas - OPTIMIZADO
