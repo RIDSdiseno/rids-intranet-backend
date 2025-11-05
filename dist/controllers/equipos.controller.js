@@ -10,22 +10,7 @@ const listQuerySchema = z.object({
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
-    // orden
-    sortBy: z
-        .enum([
-        "id_equipo",
-        "serial",
-        "marca",
-        "modelo",
-        "procesador",
-        "ram",
-        "disco",
-        "propiedad",
-        "empresa",
-        "solicitante",
-    ])
-        .default("id_equipo")
-        .optional(),
+    sortBy: z.enum(["id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad", "empresa", "solicitante"]).default("id_equipo").optional(),
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 // ⚠️ OJO: el schema de BD NO cambia. Solo el payload de creación.
@@ -56,7 +41,17 @@ const equipoUpdateSchema = z.object({
     // para escoger el placeholder de ESA empresa (si quieres permitir ese caso).
     empresaId: z.coerce.number().int().positive().optional(),
 });
-/* ================== Helpers ================== */
+/* ================== CACHE SIMPLE ================== */
+// ✅ AGREGAR: Cache para resultados de consultas frecuentes
+const equiposCache = new Map();
+const CACHE_TTL = 15000; // 15 segundos
+function getCacheKey(q) {
+    return `equipos:${JSON.stringify(q)}`;
+}
+function clearCache() {
+    equiposCache.clear();
+}
+/* ================== Helpers Optimizados ================== */
 function mapOrderBy(sortBy, sortDir) {
     if (sortBy === "empresa") {
         return { solicitante: { empresa: { nombre: sortDir } } };
@@ -65,14 +60,7 @@ function mapOrderBy(sortBy, sortDir) {
         return { solicitante: { nombre: sortDir } };
     }
     const allowed = [
-        "id_equipo",
-        "serial",
-        "marca",
-        "modelo",
-        "procesador",
-        "ram",
-        "disco",
-        "propiedad",
+        "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad",
     ];
     const key = (allowed.includes(sortBy)
         ? sortBy
@@ -91,9 +79,8 @@ function flattenRow(e) {
         propiedad: e.propiedad,
         solicitante: e.solicitante?.nombre ?? null,
         empresa: e.solicitante?.empresa?.nombre ?? null,
-        // ids de apoyo (útiles en frontend)
+        empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
-        empresaId: e.solicitante?.empresaId ?? null,
     };
 }
 // Crea/obtiene el solicitante placeholder para una empresa
@@ -117,6 +104,7 @@ async function ensurePlaceholderSolicitante(empresaId) {
 }
 /* ================== Controller: LIST ================== */
 export async function listEquipos(req, res) {
+    const startTime = Date.now(); // ✅ MEDIR TIEMPO
     try {
         const q = listQuerySchema.parse(req.query);
         const INS = "insensitive";
@@ -141,11 +129,33 @@ export async function listEquipos(req, res) {
                 : {}),
         };
         const orderBy = mapOrderBy(q.sortBy, q.sortDir);
+        // ✅ CONSULTA OPTIMIZADA - SOLO CAMPOS NECESARIOS
         const [total, rows] = await Promise.all([
             prisma.equipo.count({ where }),
             prisma.equipo.findMany({
                 where,
-                include: { solicitante: { include: { empresa: true } } },
+                select: {
+                    id_equipo: true,
+                    serial: true,
+                    marca: true,
+                    modelo: true,
+                    procesador: true,
+                    ram: true,
+                    disco: true,
+                    propiedad: true,
+                    idSolicitante: true,
+                    solicitante: {
+                        select: {
+                            nombre: true,
+                            empresa: {
+                                select: {
+                                    id_empresa: true,
+                                    nombre: true
+                                }
+                            }
+                        }
+                    }
+                },
                 orderBy,
                 skip: (q.page - 1) * q.pageSize,
                 take: q.pageSize,
@@ -214,6 +224,8 @@ export async function createEquipo(req, res) {
             },
             include: { solicitante: { include: { empresa: true } } },
         });
+        // ✅ LIMPIAR CACHE AL CREAR NUEVO REGISTRO
+        clearCache();
         return res.status(201).json(nuevo);
     }
     catch (err) {
@@ -304,6 +316,8 @@ export async function updateEquipo(req, res) {
             data: dataToUpdate,
             include: { solicitante: { include: { empresa: true } } },
         });
+        // ✅ LIMPIAR CACHE AL ACTUALIZAR
+        clearCache();
         return res.status(200).json(actualizado);
     }
     catch (err) {
@@ -326,6 +340,8 @@ export async function deleteEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         await prisma.equipo.delete({ where: { id_equipo: id } });
+        // ✅ LIMPIAR CACHE AL ELIMINAR
+        clearCache();
         return res.status(204).send();
     }
     catch (err) {

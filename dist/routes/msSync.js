@@ -15,13 +15,12 @@ function normalizeForUpsert(target) {
         const licenses = (u.licenses ?? []).map(l => ({
             skuId: l.skuId,
             skuPartNumber: l.skuPartNumber,
-            // Evitamos poner displayName cuando venga undefined (por exactOptionalPropertyTypes)
             ...(l.displayName !== undefined ? { displayName: l.displayName } : {}),
         }));
         return {
             id: (u.id ?? "").trim(),
             email: emailStr,
-            name: nameStr, // string, como exige el servicio
+            name: nameStr,
             suspended,
             licenses,
         };
@@ -70,26 +69,18 @@ async function syncMsUsersBatch(msUsers, empresaId, opts) {
     for (let i = 0; i < chunks.length; i++) {
         const part = chunks[i];
         if (!part || part.length === 0)
-            continue; // guard clause
+            continue;
         await Promise.all(part.map(u => limit(async () => {
-            if (!u.id || !u.email) {
+            // solo exigimos id (email puede ser null)
+            if (!u.id) {
                 skipped++;
                 return;
             }
-            // Solo para métrica created/updated; si no te interesa, elimínalo para ahorrar una consulta
-            const existed = await prisma.solicitante.findUnique({
-                where: { microsoftUserId: u.id },
-                select: { id_solicitante: true },
-            }).catch(() => null);
-            const result = await upsertSolicitanteFromMicrosoft(u, empresaId);
-            if (result === null) {
-                skipped++;
-                return;
-            }
-            if (existed)
-                updated++;
-            else
+            const { created: wasCreated } = await upsertSolicitanteFromMicrosoft(u, empresaId);
+            if (wasCreated)
                 created++;
+            else
+                updated++;
         })));
     }
     const dbMs = Date.now() - tDb0;
@@ -232,7 +223,6 @@ msSyncRouter.put("/sync/microsoft/users", async (req, res, _next) => {
             return;
         }
         const normalized = normalizeForUpsert(sel.target);
-        // construir opciones omitiendo claves undefined
         const opts = {
             ...(typeof concurrency === "number" ? { concurrency } : {}),
         };

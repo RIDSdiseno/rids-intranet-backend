@@ -13,6 +13,8 @@ import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { detalleTrabajoRouter } from "./routes/detalle-trabajo.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 
+import  tecnicosRouter from "./routes/tecnicos.routes.js";
+
 /* ===================== Freshdesk ===================== */
 import { fdRouter } from "./routes/fd.js";
 import { fdWebhookRouter } from "./routes/fd.webhook.js";
@@ -44,6 +46,8 @@ api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/detalle-trabajo", detalleTrabajoRouter);
 api.use("/empresas", empresasRouter);
+
+api.use("/tecnicos", tecnicosRouter);
 
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)

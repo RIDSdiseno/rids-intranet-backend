@@ -113,10 +113,10 @@ function flattenRow(e: RowWithRels) {
     ram: e.ram,
     disco: e.disco,
     propiedad: e.propiedad,
-    solicitante: solicitante?.nombre ?? null,
-    empresa: empresa?.nombre ?? null,
+    solicitante: e.solicitante?.nombre ?? null,
+    empresa: e.solicitante?.empresa?.nombre ?? null,
+    empresaId: e.solicitante?.empresa?.id_empresa ?? null,
     idSolicitante: e.idSolicitante,
-    empresaId: empresa?.id_empresa ?? null,
   };
 }
 
@@ -158,15 +158,15 @@ export async function listEquipos(req: Request, res: Response) {
       ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
       ...(q.search
         ? {
-            OR: [
-              { serial: { contains: q.search, mode: INS } },
-              { marca: { contains: q.search, mode: INS } },
-              { modelo: { contains: q.search, mode: INS } },
-              { procesador: { contains: q.search, mode: INS } },
-              { solicitante: { is: { nombre: { contains: q.search, mode: INS } } } },
-              { solicitante: { is: { empresa: { is: { nombre: { contains: q.search, mode: INS } } } } } },
-            ] as Prisma.EquipoWhereInput[],
-          }
+          OR: [
+            { serial: { contains: q.search, mode: INS } },
+            { marca: { contains: q.search, mode: INS } },
+            { modelo: { contains: q.search, mode: INS } },
+            { procesador: { contains: q.search, mode: INS } },
+            { solicitante: { is: { nombre: { contains: q.search, mode: INS } } } },
+            { solicitante: { is: { empresa: { is: { nombre: { contains: q.search, mode: INS } } } } } },
+          ] as Prisma.EquipoWhereInput[],
+        }
         : {}),
     };
 

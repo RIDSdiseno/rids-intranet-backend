@@ -34,7 +34,7 @@ model DetalleEmpresa {
 }
 
 model Solicitante {
-  id_solicitante  Int                     @id @default(autoincrement())
+  id_solicitante  Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
   nombre          String
   email           String?
   telefono        String?
@@ -132,15 +132,29 @@ model DetalleEquipo {
   @@index([idEquipo])
 }
 
+enum Area {
+  entrada
+  domicilio
+  reparacion
+  salida
+}
+
 model DetalleTrabajo {
   id            Int       @id @default(autoincrement())
   fecha_ingreso DateTime
   fecha_egreso  DateTime?
+  fecha_prometida DateTime?
   trabajo       String
-  accesorios    String?
+  accesorios    String?         
+  diagnostico   Boolean? @default(false)  
+  garantia      Boolean? @default(false)  
+  contrasena    String?          
+  presupuesto   Float?           
+  adelanto      Float?
   prioridad     Prioridad
   estado        String
   notas         String?
+  area          Area     @default(entrada)
   empresa_id    Int?
   equipo_id     Int?
   tecnico_id    Int?
@@ -166,7 +180,6 @@ model Historial {
   licenciaWindows    Boolean     @default(false)
   mantenimientoReloj Boolean     @default(false)
   rendimientoEquipo  Boolean     @default(false)
-  direccion_visita   String?
   id_historial       Int         @id @default(autoincrement())
   direccion_visita   String?
   ecografo           Boolean     @default(false)
