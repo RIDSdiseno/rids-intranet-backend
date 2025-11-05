@@ -15,7 +15,18 @@ const listQuerySchema = z.object({
   empresaId: z.coerce.number().int().optional(),
   empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
-  sortBy: z.enum(["id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad", "empresa", "solicitante"]).default("id_equipo").optional(),
+  sortBy: z.enum([
+    "id_equipo",
+    "serial",
+    "marca",
+    "modelo",
+    "procesador",
+    "ram",
+    "disco",
+    "propiedad",
+    "empresa",
+    "solicitante",
+  ]).default("id_equipo").optional(),
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 
@@ -54,11 +65,8 @@ const equipoUpdateSchema = z.object({
 /* ================== CACHE SIMPLE ================== */
 // ✅ AGREGAR: Cache para resultados de consultas frecuentes
 const equiposCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 15000; // 15 segundos
 
-function getCacheKey(q: any): string {
-  return `equipos:${JSON.stringify(q)}`;
-}
+
 
 function clearCache(): void {
   equiposCache.clear();
@@ -84,7 +92,7 @@ function mapOrderBy(
   return { [key]: sortDir } as Prisma.EquipoOrderByWithRelationInput;
 }
 
-// Tipado del row con relaciones que realmente usamos
+// Tipado del row con relaciones que realmente usamos (coherente con tu `select`)
 type RowWithRels = {
   id_equipo: number;
   serial: string;
@@ -94,16 +102,17 @@ type RowWithRels = {
   ram: string;
   disco: string;
   propiedad: string;
-  idSolicitante: number;
+  idSolicitante: number; // si en tu modelo puede ser null, cámbialo a number | null
   solicitante: {
-    id_solicitante: number;
     nombre: string;
-    empresaId: number | null;
     empresa: { id_empresa: number; nombre: string } | null;
   } | null;
 };
 
 function flattenRow(e: RowWithRels) {
+  const s = e.solicitante ?? null;
+  const emp = s?.empresa ?? null;
+
   return {
     id_equipo: e.id_equipo,
     serial: e.serial,
@@ -113,10 +122,12 @@ function flattenRow(e: RowWithRels) {
     ram: e.ram,
     disco: e.disco,
     propiedad: e.propiedad,
-    solicitante: solicitante?.nombre ?? null,
-    empresa: empresa?.nombre ?? null,
+
+    solicitante: s?.nombre ?? null,
+    empresa: emp?.nombre ?? null,
+
     idSolicitante: e.idSolicitante,
-    empresaId: empresa?.id_empresa ?? null,
+    empresaId: emp?.id_empresa ?? null,
   };
 }
 
@@ -133,7 +144,7 @@ async function ensurePlaceholderSolicitante(empresaId: number) {
     data: {
       empresaId,
       nombre: PLACEHOLDER_NAME,
-      // email y teléfono opcionales; email es unique en Cliente, no en Solicitante, así que OK
+      // email y teléfono opcionales; email es unique en Cliente, no en Solicitante
     },
     select: { id_solicitante: true },
   });
@@ -143,7 +154,7 @@ async function ensurePlaceholderSolicitante(empresaId: number) {
 /* ================== Controller: LIST ================== */
 
 export async function listEquipos(req: Request, res: Response) {
-  const startTime = Date.now(); // ✅ MEDIR TIEMPO
+  
 
   try {
     const q = listQuerySchema.parse(req.query);
@@ -193,11 +204,11 @@ export async function listEquipos(req: Request, res: Response) {
               empresa: {
                 select: {
                   id_empresa: true,
-                  nombre: true
-                }
-              }
-            }
-          }
+                  nombre: true,
+                },
+              },
+            },
+          },
         },
         orderBy,
         skip: (q.page - 1) * q.pageSize,
@@ -213,6 +224,8 @@ export async function listEquipos(req: Request, res: Response) {
       total,
       totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
       items,
+      // opcional: tiempo de respuesta para logging
+      // tookMs: Date.now() - startTime,
     });
   } catch (err) {
     console.error("listEquipos error:", err);

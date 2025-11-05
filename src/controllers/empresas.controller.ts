@@ -212,9 +212,6 @@ export async function getEmpresasStats(_req: Request, res: Response): Promise<vo
 }
 
 /* =======================================================
-   GET /api/empresas/:id - OPTIMIZADO
-   ======================================================= */
-/* =======================================================
    GET /api/empresas/:id - OPTIMIZADO (FIX duplicados)
    ======================================================= */
 export async function getEmpresaById(req: Request, res: Response): Promise<void> {
@@ -258,6 +255,7 @@ export async function getEmpresaById(req: Request, res: Response): Promise<void>
     res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 }
+
 
 
 /* =======================================================
