@@ -12,11 +12,8 @@ const listQuerySchema = z.object({
   // filtros
   search: z.string().trim().optional(),        // serial/marca/modelo/procesador/solicitante/empresa
 
-  // filtros
-  search: z.string().trim().optional(),        // serial/marca/modelo/procesador/solicitante/empresa
   marca: z.string().trim().optional(),
   empresaId: z.coerce.number().int().optional(),
-  empresaName: z.string().trim().optional(),
   empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
   sortBy: z.enum([
@@ -72,9 +69,6 @@ function mapOrderBy(
   const allowed: Array<keyof Prisma.EquipoOrderByWithRelationInput> = [
     "id_equipo","serial","marca","modelo","procesador","ram","disco","propiedad"
   ];
-  const key = (allowed.includes(sortBy as any)
-    ? (sortBy as keyof Prisma.EquipoOrderByWithRelationInput)
-    : "id_equipo") as keyof Prisma.EquipoOrderByWithRelationInput;
   const key = (allowed.includes(sortBy as any)
     ? (sortBy as keyof Prisma.EquipoOrderByWithRelationInput)
     : "id_equipo") as keyof Prisma.EquipoOrderByWithRelationInput;
@@ -195,10 +189,7 @@ export async function listEquipos(req: Request, res: Response) {
       pageSize: q.pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
-      totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
       items,
-    });
-  } catch (err) {
     });
   } catch (err) {
     console.error("listEquipos error:", err);
@@ -271,7 +262,6 @@ export async function createEquipo(req: Request, res: Response) {
 
     clearCache();
     return res.status(201).json(nuevo);
-  } catch (err) {
   } catch (err) {
     console.error("Error al crear equipo:", err);
     if (err instanceof z.ZodError) {
@@ -393,7 +383,6 @@ export async function updateEquipo(req: Request, res: Response) {
     clearCache();
     return res.status(200).json(actualizado);
   } catch (err) {
-  } catch (err) {
     console.error("Error al actualizar equipo:", err);
     if ((err as { code?: string })?.code === "P2025") {
       return res.status(404).json({ error: "Equipo no encontrado" });
@@ -420,7 +409,6 @@ export async function deleteEquipo(req: Request, res: Response) {
     await prisma.equipo.delete({ where: { id_equipo: id } });
     clearCache();
     return res.status(204).send();
-  } catch (err) {
   } catch (err) {
     console.error("Error al eliminar equipo:", err);
     if ((err as { code?: string })?.code === "P2025") {
