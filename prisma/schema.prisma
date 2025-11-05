@@ -34,7 +34,7 @@ model DetalleEmpresa {
 }
 
 model Solicitante {
-  id_solicitante  Int                     @id @default(autoincrement())
+  id_solicitante  Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
   nombre          String
   email           String?
   telefono        String?
@@ -133,20 +133,26 @@ model DetalleEquipo {
 }
 
 model DetalleTrabajo {
-  id            Int       @id @default(autoincrement())
-  fecha_ingreso DateTime
-  fecha_egreso  DateTime?
-  trabajo       String
-  accesorios    String?
-  prioridad     Prioridad
-  estado        String
-  notas         String?
-  empresa_id    Int?
-  equipo_id     Int?
-  tecnico_id    Int?
-  empresa       Empresa?  @relation(fields: [empresa_id], references: [id_empresa])
-  equipo        Equipo?   @relation(fields: [equipo_id], references: [id_equipo])
-  tecnico       Tecnico?  @relation(fields: [tecnico_id], references: [id_tecnico])
+  id              Int       @id @default(autoincrement())
+  fecha_ingreso   DateTime
+  fecha_egreso    DateTime?
+  trabajo         String
+  accesorios      String?
+  prioridad       Prioridad
+  estado          String
+  notas           String?
+  empresa_id      Int?
+  equipo_id       Int?
+  tecnico_id      Int?
+  adelanto        Float?
+  contrasena      String?
+  diagnostico     Boolean?  @default(false)
+  fecha_prometida DateTime?
+  garantia        Boolean?  @default(false)
+  presupuesto     Float?
+  empresa         Empresa?  @relation(fields: [empresa_id], references: [id_empresa])
+  equipo          Equipo?   @relation(fields: [equipo_id], references: [id_equipo])
+  tecnico         Tecnico?  @relation(fields: [tecnico_id], references: [id_tecnico])
 
   @@map("detalle_trabajos")
 }
