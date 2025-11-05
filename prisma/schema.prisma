@@ -14,6 +14,9 @@ model Cliente {
   nombre   String
   telefono String
   email    String @unique
+
+  // back-relations
+  solicitantes Solicitante[] // por Solicitante.clienteId
 }
 
 model DetalleEquipo {
@@ -28,6 +31,9 @@ model DetalleEquipo {
   claveTv           String?
   revisado          String?
 
+  // relations
+  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo])
+
   @@index([idEquipo])
 }
 
@@ -35,6 +41,18 @@ model Empresa {
   id_empresa      Int     @id @default(autoincrement())
   nombre          String  @unique
   tieneSucursales Boolean @default(false)
+
+  // back-relations que usan tus controladores
+  solicitantes    Solicitante[]
+  visitas         Visita[]
+  tickets         FreshdeskTicket[] // back-rel de FreshdeskTicket.empresa
+  detalleEmpresa  detalle_empresas?
+  detalleTrabajos detalle_trabajos[]
+  sucursales      Sucursal[]
+
+  // mapas Freshdesk / utilidades
+  freshdeskCompanyMaps   FreshdeskCompanyMap[]
+  freshdeskRequesterMaps FreshdeskRequesterMap[]
 }
 
 model Equipo {
@@ -47,6 +65,11 @@ model Equipo {
   ram           String?
   disco         String?
   propiedad     String  @default("ASUR")
+
+  // relations
+  solicitante Solicitante        @relation(fields: [idSolicitante], references: [id_solicitante])
+  detalles    DetalleEquipo[]
+  trabajos    detalle_trabajos[] // por detalle_trabajos.equipo_id
 
   @@index([idSolicitante])
 }
@@ -70,6 +93,9 @@ model FdSourceMap {
   domain      String? @unique
   ticketOrgId Int
 
+  // relations
+  ticketOrg TicketOrg @relation(fields: [ticketOrgId], references: [id])
+
   @@index([ticketOrgId])
 }
 
@@ -77,6 +103,9 @@ model FreshdeskCompanyMap {
   companyId BigInt  @id
   empresaId Int
   domain    String?
+
+  // relations
+  empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
 
   @@index([domain])
   @@index([empresaId])
@@ -86,6 +115,10 @@ model FreshdeskRequesterMap {
   requesterId   BigInt @id
   solicitanteId Int
   empresaId     Int
+
+  // relations
+  solicitante Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+  empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa])
 
   @@index([empresaId])
   @@index([solicitanteId])
@@ -106,6 +139,12 @@ model FreshdeskTicket {
   solicitanteId     Int?
   ticketOrgId       Int?
   ticketRequesterId Int?
+
+  // relations (nombres usados en controladores)
+  empresa         Empresa?         @relation(fields: [empresaId], references: [id_empresa])
+  solicitante     Solicitante?     @relation(fields: [solicitanteId], references: [id_solicitante])
+  ticketOrg       TicketOrg?       @relation(fields: [ticketOrgId], references: [id])
+  ticketRequester TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
 
   @@index([createdAt])
   @@index([empresaId])
@@ -135,6 +174,11 @@ model Historial {
   ecografo           Boolean  @default(false)
   sucursalId         Int?
 
+  // relations
+  tecnico        Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+  sucursal       Sucursal?   @relation(fields: [sucursalId], references: [id_sucursal])
+
   @@index([solicitanteId])
   @@index([sucursalId])
   @@index([tecnicoId, fin(sort: Desc)])
@@ -144,6 +188,9 @@ model MsSku {
   skuId         String  @id
   skuPartNumber String
   displayName   String?
+
+  // back-rel
+  assignments SolicitanteMsLicense[] // por SolicitanteMsLicense.skuId
 }
 
 model RefreshToken {
@@ -173,6 +220,17 @@ model Solicitante {
   microsoftUserId String?      @unique
   accountType     AccountType?
 
+  // relations
+  empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa])
+  cliente     Cliente?    @relation(fields: [clienteId], references: [id])
+  equipos     Equipo[]
+  historiales Historial[]
+  visitas     Visita[]
+
+  msLicenses            SolicitanteMsLicense[]
+  freshdeskTickets      FreshdeskTicket[] // back-rel de FreshdeskTicket.solicitante
+  FreshdeskRequesterMap FreshdeskRequesterMap[]
+
   @@index([accountType])
   @@index([empresaId])
   @@index([isActive])
@@ -183,6 +241,10 @@ model SolicitanteMsLicense {
   solicitanteId Int
   skuId         String
   assignedAt    DateTime? @default(now())
+
+  // relations
+  solicitante Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+  sku         MsSku       @relation(fields: [skuId], references: [skuId]) // ← nombre 'sku' usado en controladores
 
   @@unique([solicitanteId, skuId])
   @@index([skuId])
@@ -196,6 +258,11 @@ model Sucursal {
   telefono    String?
   empresaId   Int
 
+  // relations
+  empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa])
+  visitas     Visita[]
+  historiales Historial[]
+
   @@index([empresaId])
 }
 
@@ -205,6 +272,11 @@ model Tecnico {
   email        String  @unique
   passwordHash String
   status       Boolean @default(true)
+
+  // back-relations
+  visitas     Visita[]
+  historiales Historial[]
+  trabajos    detalle_trabajos[] // por detalle_trabajos.tecnico_id
 }
 
 model TicketOrg {
@@ -213,6 +285,11 @@ model TicketOrg {
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime
+
+  // back-relations
+  tickets    FreshdeskTicket[]
+  requesters TicketRequester[]
+  sourceMaps FdSourceMap[]
 }
 
 model TicketRequester {
@@ -224,6 +301,12 @@ model TicketRequester {
   ticketOrgId   Int?
   createdAt     DateTime @default(now())
   updatedAt     DateTime
+
+  // relations
+  ticketOrg TicketOrg? @relation(fields: [ticketOrgId], references: [id])
+
+  // back-rel
+  tickets FreshdeskTicket[] // por FreshdeskTicket.ticketRequesterId
 
   @@index([ticketOrgId])
 }
@@ -254,6 +337,12 @@ model Visita {
   ecografo           Boolean      @default(false)
   sucursalId         Int?
 
+  // relations (nombres usados en controladores)
+  empresa        Empresa      @relation(fields: [empresaId], references: [id_empresa])
+  tecnico        Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante])
+  sucursal       Sucursal?    @relation(fields: [sucursalId], references: [id_sucursal])
+
   @@index([empresaId])
   @@index([solicitanteId])
   @@index([tecnicoId])
@@ -266,6 +355,9 @@ model detalle_empresas {
   telefono   String
   email      String
   empresa_id Int    @unique
+
+  // relations
+  empresa Empresa @relation(fields: [empresa_id], references: [id_empresa])
 }
 
 model detalle_trabajos {
@@ -287,6 +379,11 @@ model detalle_trabajos {
   garantia        Boolean?  @default(false)
   presupuesto     Float?
   area            Area      @default(entrada)
+
+  // relations
+  empresa Empresa? @relation(fields: [empresa_id], references: [id_empresa])
+  equipo  Equipo?  @relation(fields: [equipo_id], references: [id_equipo])
+  tecnico Tecnico? @relation(fields: [tecnico_id], references: [id_tecnico])
 }
 
 enum AccountType {
