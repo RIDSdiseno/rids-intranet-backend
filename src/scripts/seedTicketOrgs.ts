@@ -2,25 +2,10 @@
 import { prisma } from "../lib/prisma.js";
 
 const ORGS = [
-  "ALIANZ",
-  "ASUR",
-  "BDK",
-  "BODEGAL",
-  "CLINICA NACE",
-  "GRUPO COLCHAGUA",
-  "FIJACIONES PROCET",    // (corrección del nombre que tenías raro)
-  "INFINITYCONNECT",      // (corrección de INIFINITYCONNECT)
-  "INFINET",
-  "JPL",
-  "RWAY",
-  "T-SALES",
-  "VPRIME",
-  "PINI",
-  "RIDS",
-  "BDK-SPA",
-  "BERCIA",
-  "SOFTLAND",
-  "INTCOMEX",
+  "ALIANZ","ASUR","BDK","BODEGAL","CLINICA NACE","GRUPO COLCHAGUA",
+  "FIJACIONES PROCET","INFINITYCONNECT","INFINET","JPL","RWAY",
+  "T-SALES","VPRIME","PINI","RIDS","BDK-SPA","BERCIA","SOFTLAND","INTCOMEX",
+  "CINTAX",
 ];
 
 async function main() {
