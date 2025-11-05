@@ -26,7 +26,6 @@ const localPart = (email) => {
 };
 /** Resuelve TicketOrgId usando FdSourceMap (domain/companyId).  */
 async function resolveTicketOrgId(params) {
-    // 1) companyId (si viene)
     const cid = toBigInt(params.companyId ?? null);
     if (cid && cid > 0n) {
         const byCompany = await prisma.fdSourceMap.findUnique({
@@ -36,7 +35,6 @@ async function resolveTicketOrgId(params) {
         if (byCompany)
             return byCompany.ticketOrgId;
     }
-    // 2) domain (normalizado en lower-case)
     const dom = (params.domain ?? "").trim().toLowerCase();
     if (dom) {
         const byDomain = await prisma.fdSourceMap.findUnique({
@@ -54,13 +52,12 @@ async function upsertTicketRequesterByAny(params) {
     const rid = toBigInt(fdRequesterId);
     const emailNorm = (email ?? "").trim().toLowerCase() || null;
     const name = (nameFallback?.trim() || localPart(emailNorm) || "Solicitante");
-    // 1) Si viene fdRequesterId (único), gana esa deduplicación
+    // 1) Si viene fdRequesterId (único)
     if (rid) {
         const foundByRid = await prisma.ticketRequester.findUnique({
             where: { fdRequesterId: rid },
         });
         if (foundByRid) {
-            // Actualiza datos “blandos” si cambiaron o si están vacíos
             const updateData = {};
             if (emailNorm && !foundByRid.email)
                 updateData.email = emailNorm;
@@ -71,6 +68,7 @@ async function upsertTicketRequesterByAny(params) {
             if (ticketOrgId && !foundByRid.ticketOrgId)
                 updateData.ticketOrgId = ticketOrgId;
             if (Object.keys(updateData).length > 0) {
+                updateData.updatedAt = new Date(); // 👈 AÑADIDO
                 const upd = await prisma.ticketRequester.update({
                     where: { fdRequesterId: rid },
                     data: updateData,
@@ -79,7 +77,7 @@ async function upsertTicketRequesterByAny(params) {
             }
             return foundByRid.id;
         }
-        // No existe por rid → probamos por email para no duplicar
+        // No existe por rid → probamos por email
         if (emailNorm) {
             const byEmail = await prisma.ticketRequester.findUnique({
                 where: { email: emailNorm },
@@ -92,6 +90,7 @@ async function upsertTicketRequesterByAny(params) {
                         phone: phone ?? byEmail.phone,
                         name: name || byEmail.name,
                         ...(ticketOrgId ? { ticketOrgId } : {}),
+                        updatedAt: new Date(), // 👈 AÑADIDO
                     },
                 });
                 return upd.id;
@@ -105,6 +104,7 @@ async function upsertTicketRequesterByAny(params) {
                 phone: phone ?? null,
                 fdRequesterId: rid,
                 ticketOrgId: ticketOrgId ?? null,
+                updatedAt: new Date(), // 👈 AÑADIDO (obligatorio)
             },
         });
         return created.id;
@@ -123,6 +123,7 @@ async function upsertTicketRequesterByAny(params) {
             if (ticketOrgId && !byEmail.ticketOrgId)
                 updateData.ticketOrgId = ticketOrgId;
             if (Object.keys(updateData).length > 0) {
+                updateData.updatedAt = new Date(); // 👈 AÑADIDO
                 const upd = await prisma.ticketRequester.update({
                     where: { email: emailNorm },
                     data: updateData,
@@ -137,17 +138,19 @@ async function upsertTicketRequesterByAny(params) {
                 email: emailNorm,
                 phone: phone ?? null,
                 ticketOrgId: ticketOrgId ?? null,
+                updatedAt: new Date(), // 👈 AÑADIDO
             },
         });
         return created.id;
     }
-    // 3) Sin rid y sin email → crea genérico (quedará difícil de deduplicar luego)
+    // 3) Sin rid y sin email → genérico
     const created = await prisma.ticketRequester.create({
         data: {
             name,
             email: null,
             phone: phone ?? null,
             ticketOrgId: ticketOrgId ?? null,
+            updatedAt: new Date(), // 👈 AÑADIDO
         },
     });
     return created.id;
@@ -155,23 +158,20 @@ async function upsertTicketRequesterByAny(params) {
 /* ========= Upsert de tickets ========= */
 export async function upsertTicketBatch(tickets) {
     for (const t of tickets) {
-        // Solo cerrados (status = 5). Si quieres probar con abiertos, comenta estas 2 líneas.
+        // Solo cerrados (status = 5). Si quieres incluir abiertos, comenta la siguiente línea.
         if (Number(t.status) !== 5)
             continue;
-        // Datos de requester
         const requesterEmailRaw = String((t.email ?? t.requester?.email) ?? "").toLowerCase();
         const requesterEmail = requesterEmailRaw || null;
         const requesterName = (t.requester?.name ?? "Solicitante");
         const requesterId = toBigInt(t.requester_id ?? t.requester?.id ?? null);
         const telefonoRaw = t.requester?.phone ?? null;
         const telefono = telefonoRaw ? String(telefonoRaw).replace(/[^\d+]/g, "") : null;
-        // TicketOrg por domain/company_id
         const domain = getEmailDomain(requesterEmail);
         const ticketOrgId = await resolveTicketOrgId({
             domain,
             companyId: t.requester?.company_id ?? t.company_id ?? null,
         });
-        // TicketRequester (nuevo)
         const ticketRequesterId = await upsertTicketRequesterByAny({
             ticketOrgId,
             fdRequesterId: requesterId,
@@ -193,11 +193,9 @@ export async function upsertTicketBatch(tickets) {
                 createdAt: new Date(t.created_at),
                 updatedAt: new Date(t.updated_at),
                 source: t.source?.toString() ?? null,
-                // Nuevos enlaces:
                 ticketOrgId,
                 ticketRequesterId,
                 capturedAt: new Date(),
-                // No tocamos empresaId / solicitanteId (quedan null)
             },
             create: {
                 id: ticketId,

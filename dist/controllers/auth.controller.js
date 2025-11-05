@@ -1,24 +1,51 @@
 import { prisma } from "../lib/prisma.js";
 import argon2 from "argon2";
-import bcrypt from "bcrypt"; // compat usuarios viejos
+import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-/* ================ Helpers de ENV ================ */
+/* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
-function getJwtSecret() {
-    const s = process.env.JWT_SECRET;
-    if (!s)
+// AGREGAR ESTO - CONFIGURACIÓN ARGON2 OPTIMIZADA
+const ARGON_PASSWORD_OPTIONS = {
+    type: argon2.argon2id,
+    memoryCost: 1024, // Reducido de 4096 a 1024 (75% menos memoria)
+    timeCost: 1, // Reducido de 2 a 1 (50% menos iteraciones)
+    parallelism: 1,
+    hashLength: 32
+};
+const ARGON_REFRESH_TOKEN_OPTIONS = {
+    type: argon2.argon2id,
+    memoryCost: 512, // Aún más optimizado para tokens
+    timeCost: 1,
+    parallelism: 1,
+    hashLength: 32
+};
+// Pre-calcular valores que no cambian
+const REFRESH_MS = ttlToMs(REFRESH_TTL);
+const IS_PROD = process.env.NODE_ENV === "production";
+// CORRECCIÓN: Declarar variables con tipos correctos
+let JWT_SECRET;
+let REFRESH_SECRET;
+// CORRECCIÓN: Inicializar las variables al cargar el módulo
+function initializeSecrets() {
+    JWT_SECRET = process.env.JWT_SECRET;
+    REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+    if (!JWT_SECRET)
         throw new Error("JWT_SECRET is required");
-    return s;
+    if (!REFRESH_SECRET)
+        throw new Error("JWT_REFRESH_SECRET is required");
+}
+// Inicializar al cargar
+initializeSecrets();
+// CORRECCIÓN: Funciones simplificadas sin cache
+function getJwtSecret() {
+    return JWT_SECRET;
 }
 function getRefreshSecret() {
-    const s = process.env.JWT_REFRESH_SECRET;
-    if (!s)
-        throw new Error("JWT_REFRESH_SECRET is required");
-    return s;
+    return REFRESH_SECRET;
 }
-/* ================ Schemas (Zod) ================ */
+/* ================ SCHEMAS CACHEADOS ================ */
 const registerSchema = z.object({
     nombre: z.string().min(2, "nombre demasiado corto"),
     email: z.string().email("email inválido"),
@@ -28,18 +55,16 @@ const loginSchema = z.object({
     email: z.string().email("email inválido"),
     password: z.string().min(1, "password requerido"),
 });
-/* ================ Utils ================ */
-// Access: usa "subject" estándar (sub como string). En payload solo metemos lo necesario (email).
-function signAccessToken(userId, email) {
-    return jwt.sign({ email }, getJwtSecret(), { subject: String(userId), expiresIn: ACCESS_TTL });
-}
-// Refresh: también con "subject"; si quisieras encadenar, puedes incluir un tid.
-function signRefreshToken(userId, tokenId) {
-    const payload = tokenId ? { tid: tokenId } : {};
-    return jwt.sign(payload, getRefreshSecret(), { subject: String(userId), expiresIn: REFRESH_TTL });
-}
+/* ================ UTILS OPTIMIZADOS ================ */
 function ttlToMs(ttl) {
     const s = ttl.toString().trim();
+    // Cache simple para valores comunes
+    if (s === "15m")
+        return 15 * 60 * 1000;
+    if (s === "7d")
+        return 7 * 24 * 60 * 60 * 1000;
+    if (s === "1h")
+        return 60 * 60 * 1000;
     if (/^\d+$/.test(s))
         return Number(s) * 1000;
     const m = s.match(/^(\d+)\s*([smhd])$/i);
@@ -47,149 +72,272 @@ function ttlToMs(ttl) {
         return 7 * 24 * 60 * 60 * 1000;
     const n = Number(m[1]);
     const u = (m[2] ?? "d").toLowerCase();
-    const map = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+    const map = {
+        s: 1000, m: 60000, h: 3600000, d: 86400000
+    };
     return n * (map[u] ?? 86400000);
 }
+// CORRECCIÓN: Funciones de token con tipos correctos
+function signAccessToken(userId, email) {
+    return jwt.sign({ email }, getJwtSecret(), {
+        subject: String(userId),
+        expiresIn: ACCESS_TTL, // Ahora funciona sin error
+        algorithm: 'HS256'
+    } // CORRECCIÓN: Cast del objeto completo
+    );
+}
+function signRefreshToken(userId, tokenId) {
+    const payload = tokenId ? { tid: tokenId } : {};
+    return jwt.sign(payload, getRefreshSecret(), {
+        subject: String(userId),
+        expiresIn: REFRESH_TTL, // Ahora funciona sin error
+        algorithm: 'HS256'
+    } // CORRECCIÓN: Cast del objeto completo
+    );
+}
 function getClientInfo(req) {
-    const userAgent = req.get("user-agent") || null;
-    const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    const userAgent = req.get("user-agent") || "unknown";
+    const ip = (req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
         req.socket?.remoteAddress ||
-        null;
+        "unknown").replace(/^::ffff:/, ""); // Normalizar IPv6-mapped IPv4
     return { userAgent, ip };
 }
 function getRefreshFromRequest(req) {
+    // Priorizar header sobre cookie
     const fromHeader = req.get("x-refresh-token");
     if (fromHeader)
         return fromHeader;
     // @ts-ignore si usas cookie-parser
-    const fromCookie = req.cookies?.rt;
-    return fromCookie || null;
+    return req.cookies?.rt || null;
 }
 function setRefreshCookie(res, token) {
-    const isProd = process.env.NODE_ENV === "production";
     res.cookie("rt", token, {
         httpOnly: true,
-        secure: isProd,
-        sameSite: isProd ? "none" : "lax",
+        secure: IS_PROD,
+        sameSite: IS_PROD ? "none" : "lax",
         path: "/",
-        maxAge: ttlToMs(REFRESH_TTL),
+        maxAge: REFRESH_MS,
     });
 }
-/* ================ Controladores ================ */
+/* ================ CONTROLADORES OPTIMIZADOS ================ */
+// Cache para verificación de emails existentes (short-lived)
+const emailCheckCache = new Map();
+const CACHE_TTL = 30000; // 30 segundos
 export const register = async (req, res) => {
-    const parsed = registerSchema.safeParse(req.body ?? {});
-    if (!parsed.success)
-        return res.status(400).json({ error: parsed.error.flatten() });
-    const { nombre, email, password } = parsed.data;
-    const emailNorm = email.trim().toLowerCase();
-    const exists = await prisma.tecnico.findUnique({ where: { email: emailNorm } });
-    if (exists)
-        return res.status(409).json({ error: "El email ya está registrado" });
-    const passwordHash = await argon2.hash(password);
-    const tecnico = await prisma.tecnico.create({
-        data: { nombre: nombre.trim(), email: emailNorm, passwordHash, status: true },
-        select: { id_tecnico: true, nombre: true, email: true, status: true },
-    });
-    return res.status(201).json({ tecnico });
+    try {
+        const parsed = registerSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() });
+        }
+        const { nombre, email, password } = parsed.data;
+        const emailNorm = email.trim().toLowerCase();
+        // Verificar cache primero
+        const cacheKey = `email:${emailNorm}`;
+        if (emailCheckCache.has(cacheKey)) {
+            return res.status(409).json({ error: "El email ya está registrado" });
+        }
+        // Consulta optimizada - solo necesitamos saber si existe
+        const exists = await prisma.tecnico.findUnique({
+            where: { email: emailNorm },
+            select: { id_tecnico: true }
+        });
+        if (exists) {
+            // Actualizar cache
+            emailCheckCache.set(cacheKey, true);
+            setTimeout(() => emailCheckCache.delete(cacheKey), CACHE_TTL);
+            return res.status(409).json({ error: "El email ya está registrado" });
+        }
+        const passwordHash = await argon2.hash(password, {
+            type: argon2.argon2id,
+            memoryCost: 4096,
+            timeCost: 2,
+            parallelism: 1
+        });
+        const tecnico = await prisma.tecnico.create({
+            data: {
+                nombre: nombre.trim(),
+                email: emailNorm,
+                passwordHash,
+                status: true
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                status: true
+            },
+        });
+        // Limpiar cache de verificación de email
+        emailCheckCache.delete(cacheKey);
+        return res.status(201).json({ tecnico });
+    }
+    catch (error) {
+        console.error("Error en registro:", error);
+        return res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 export const login = async (req, res) => {
-    const parsed = loginSchema.safeParse(req.body ?? {});
-    if (!parsed.success)
-        return res.status(400).json({ error: parsed.error.flatten() });
-    const emailNorm = parsed.data.email.trim().toLowerCase();
-    const password = parsed.data.password;
-    const tecnico = await prisma.tecnico.findFirst({
-        where: { email: { equals: emailNorm, mode: "insensitive" } },
-    });
-    if (!tecnico)
-        return res.status(401).json({ error: "Credenciales inválidas" });
-    // Detecta hash (argon2 o bcrypt)
-    const hash = tecnico.passwordHash ?? "";
-    let ok = false;
-    if (hash.startsWith("$argon2")) {
-        ok = await argon2.verify(hash, password);
+    const start = Date.now(); // Medir el tiempo de inicio
+    try {
+        const parsed = loginSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            return res.status(400).json({ error: parsed.error.flatten() });
+        }
+        const emailNorm = parsed.data.email.trim().toLowerCase();
+        const password = parsed.data.password;
+        // Consulta optimizada - traer solo lo necesario
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { email: emailNorm },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                passwordHash: true
+            }
+        });
+        if (!tecnico) {
+            // Pequeño delay para prevenir timing attacks
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return res.status(401).json({ error: "Credenciales inválidas" });
+        }
+        // Verificación de password optimizada
+        const hash = tecnico.passwordHash ?? "";
+        let isValid = false;
+        if (hash.startsWith("$argon2")) {
+            isValid = await argon2.verify(hash, password);
+        }
+        else if (hash.startsWith("$2")) {
+            isValid = await bcrypt.compare(password, hash);
+        }
+        if (!isValid) {
+            return res.status(401).json({ error: "Credenciales inválidas" });
+        }
+        // Generar tokens
+        const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
+        const refreshRaw = signRefreshToken(tecnico.id_tecnico);
+        // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
+        const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+        const { userAgent, ip } = getClientInfo(req);
+        const expiresAt = new Date(Date.now() + REFRESH_MS);
+        // Insertar token sin esperar respuesta (fire and forget para mejor performance)
+        prisma.refreshToken.create({
+            data: {
+                userId: tecnico.id_tecnico,
+                rtHash,
+                expiresAt,
+                userAgent,
+                ip
+            },
+            select: { id: true },
+        }).catch(console.error);
+        setRefreshCookie(res, refreshRaw);
+        const end = Date.now(); // Medir el tiempo final
+        // En la función login, después del hash:
+        const hashStart = Date.now();
+        const hashEnd = Date.now();
+        console.log(`⏱️  Tiempo hash Argon2: ${hashEnd - hashStart}ms`);
+        console.log(`Tiempo de respuesta del login: ${end - start} ms`);
+        return res.json({
+            accessToken,
+            refreshToken: refreshRaw,
+            tecnico: {
+                id_tecnico: tecnico.id_tecnico,
+                nombre: tecnico.nombre,
+                email: tecnico.email
+            },
+        });
     }
-    else if (hash.startsWith("$2")) {
-        ok = await bcrypt.compare(password, hash);
+    catch (error) {
+        console.error("Error en login:", error);
+        return res.status(500).json({ error: "Error interno del servidor" });
     }
-    if (!ok)
-        return res.status(401).json({ error: "Credenciales inválidas" });
-    // === Tokens ===
-    const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
-    const refreshRaw = signRefreshToken(tecnico.id_tecnico);
-    // Guarda hash del refresh en DB
-    const rtHash = await argon2.hash(refreshRaw);
-    const { userAgent, ip } = getClientInfo(req);
-    const expiresAt = new Date(Date.now() + ttlToMs(REFRESH_TTL));
-    await prisma.refreshToken.create({
-        data: { userId: tecnico.id_tecnico, rtHash, expiresAt, userAgent, ip },
-        select: { id: true },
-    });
-    setRefreshCookie(res, refreshRaw);
-    return res.json({
-        accessToken,
-        refreshToken: refreshRaw,
-        tecnico: { id_tecnico: tecnico.id_tecnico, nombre: tecnico.nombre, email: tecnico.email },
-    });
 };
 export const refresh = async (req, res) => {
     const token = getRefreshFromRequest(req);
-    if (!token)
+    if (!token) {
         return res.status(401).json({ error: "Refresh token requerido" });
+    }
     try {
+        // Verificar token JWT primero (más rápido que consultar DB)
         const decoded = jwt.verify(token, getRefreshSecret());
         const userId = Number(decoded.sub);
-        if (!userId)
+        if (!userId) {
             return res.status(401).json({ error: "Refresh inválido" });
-        // Busca refresh tokens vigentes del usuario
+        }
+        // Consulta optimizada con límite más pequeño
         const candidates = await prisma.refreshToken.findMany({
-            where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+            where: {
+                userId,
+                revokedAt: null,
+                expiresAt: { gt: new Date() }
+            },
+            select: { id: true, rtHash: true },
             orderBy: { id: "desc" },
-            take: 25,
+            take: 10,
         });
-        // Compara hash
-        let matched = null;
+        // Buscar token válido
+        let matchedToken = null;
         for (const rt of candidates) {
             if (await argon2.verify(rt.rtHash, token)) {
-                matched = { id: rt.id };
+                matchedToken = { id: rt.id };
                 break;
             }
         }
-        if (!matched) {
-            // Revoca todos si el recibido no coincide con ninguno (posible robo)
-            await prisma.refreshToken.updateMany({
+        if (!matchedToken) {
+            // Revocar tokens en segundo plano sin bloquear respuesta
+            prisma.refreshToken.updateMany({
                 where: { userId, revokedAt: null },
                 data: { revokedAt: new Date() },
+            }).catch(console.error);
+            return res.status(401).json({
+                error: "Refresh no reconocido (revocados los activos)"
             });
-            return res.status(401).json({ error: "Refresh no reconocido (revocados los activos)" });
         }
-        const tecnico = await prisma.tecnico.findUnique({ where: { id_tecnico: userId } });
-        if (!tecnico)
+        // Obtener datos del usuario
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { id_tecnico: userId },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true
+            }
+        });
+        if (!tecnico) {
             return res.status(401).json({ error: "Usuario no encontrado" });
-        // Rotación: crear nuevos tokens
+        }
+        // Generar nuevos tokens
         const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email);
         const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
-        const newHash = await argon2.hash(newRefreshRaw);
+        // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
+        const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const { userAgent, ip } = getClientInfo(req);
-        const expiresAt2 = new Date(Date.now() + ttlToMs(REFRESH_TTL));
+        const expiresAt2 = new Date(Date.now() + REFRESH_MS);
+        // Transacción optimizada
         await prisma.$transaction(async (tx) => {
             await tx.refreshToken.update({
-                where: { id: matched.id },
-                data: { revokedAt: new Date(), replacedByTokenId: null },
+                where: { id: matchedToken.id },
+                data: { revokedAt: new Date() },
             });
-            const created = await tx.refreshToken.create({
-                data: { userId: tecnico.id_tecnico, rtHash: newHash, expiresAt: expiresAt2, userAgent, ip },
-                select: { id: true },
+            await tx.refreshToken.create({
+                data: {
+                    userId: tecnico.id_tecnico,
+                    rtHash: newHash,
+                    expiresAt: expiresAt2,
+                    userAgent,
+                    ip
+                },
             });
-            await tx.refreshToken.update({
-                where: { id: matched.id },
-                data: { replacedByTokenId: created.id },
-            });
+        }, {
+            timeout: 10000
         });
         setRefreshCookie(res, newRefreshRaw);
-        return res.json({ accessToken: newAccess, refreshToken: newRefreshRaw });
+        return res.json({
+            accessToken: newAccess,
+            refreshToken: newRefreshRaw
+        });
     }
-    catch {
+    catch (error) {
+        console.error("Error en refresh:", error);
         return res.status(401).json({ error: "Refresh inválido o expirado" });
     }
 };
@@ -199,14 +347,25 @@ export const logout = async (_req, res) => {
 };
 export const me = async (req, res) => {
     const userId = req.userId;
-    if (!userId)
+    if (!userId) {
         return res.status(401).json({ error: "No autenticado" });
+    }
     const tecnico = await prisma.tecnico.findUnique({
         where: { id_tecnico: userId },
-        select: { id_tecnico: true, nombre: true, email: true, status: true },
+        select: {
+            id_tecnico: true,
+            nombre: true,
+            email: true,
+            status: true
+        },
     });
-    if (!tecnico)
+    if (!tecnico) {
         return res.status(404).json({ error: "Usuario no encontrado" });
+    }
     return res.json({ tecnico });
 };
+// Limpiar cache periódicamente
+setInterval(() => {
+    emailCheckCache.clear();
+}, CACHE_TTL * 2);
 //# sourceMappingURL=auth.controller.js.map

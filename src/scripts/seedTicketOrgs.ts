@@ -1,27 +1,10 @@
 // apps/backend/scripts/seedTicketOrgs.ts
 import { prisma } from "../lib/prisma.js";
 
-// Lista base de "organizaciones de tickets" (NO toca tu tabla Empresa).
 const ORGS = [
-  "ALIANZ",
-  "ASUR",
-  "BDK",
-  "BODEGAL",
-  "CLINICA NACE",
-  "GRUPO COLCHAGUA",
-  "FIJACIONES PROCET",    // (corrección del nombre que tenías raro)
-  "INFINITYCONNECT",      // (corrección de INIFINITYCONNECT)
-  "INFINET",
-  "JPL",
-  "RWAY",
-  "T-SALES",
-  "VPRIME",
-  "PINI",
-  "RIDS",
-  "BDK-SPA",
-  "BERCIA",
-  "SOFTLAND",
-  "INTCOMEX",
+  "ALIANZ","ASUR","BDK","BODEGAL","CLINICA NACE","GRUPO COLCHAGUA",
+  "FIJACIONES PROCET","INFINITYCONNECT","INFINET","JPL","RWAY",
+  "T-SALES","VPRIME","PINI","RIDS","BDK-SPA","BERCIA","SOFTLAND","INTCOMEX",
 ];
 
 async function main() {
@@ -29,8 +12,8 @@ async function main() {
   for (const name of ORGS) {
     await prisma.ticketOrg.upsert({
       where: { name },
-      update: {},
-      create: { name },
+      update: { updatedAt: new Date() },            // <— importante
+      create: { name, updatedAt: new Date() },      // <— importante
     });
     count++;
   }

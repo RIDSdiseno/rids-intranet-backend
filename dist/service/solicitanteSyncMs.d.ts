@@ -10,22 +10,16 @@ export type MsUserInput = {
     }>;
 };
 /**
- * Upsert principal (¡sin upserts de SKUs dentro del tx!).
- * - Crea/actualiza catálogo de SKUs **fuera** de la transacción (createMany + skipDuplicates).
+ * Upsert principal (sin upserts de SKUs aquí).
+ * - El catálogo de SKUs se pre-crea en lote desde el router.
  * - Transacción solo para Solicitante + diff de licencias.
  * - Timeout e isolationLevel ajustados para reducir deadlocks.
  * - Retries ante deadlocks/tx cerrada.
+ *
+ * Devuelve: { solicitante, created }
  */
 export declare function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: number): Promise<{
-    nombre: string;
-    email: string | null;
-    id_solicitante: number;
-    empresaId: number;
-    telefono: string | null;
-    clienteId: number | null;
-    googleUserId: string | null;
-    isActive: boolean;
-    microsoftUserId: string | null;
-    accountType: import("@prisma/client").$Enums.AccountType | null;
+    solicitante: any;
+    created: boolean;
 }>;
 //# sourceMappingURL=solicitanteSyncMs.d.ts.map
