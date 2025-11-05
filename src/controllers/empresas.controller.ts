@@ -389,6 +389,7 @@ export async function getEmpresaById(req: Request, res: Response): Promise<void>
 /* =======================================================
    POST /api/empresas - SIN nested create (no hay relación Prisma)
    ======================================================= */
+
 export async function createEmpresa(req: Request, res: Response): Promise<void> {
   try {
     const { nombre, rut, direccion, telefono, email } = req.body;
@@ -408,12 +409,16 @@ export async function createEmpresa(req: Request, res: Response): Promise<void> 
         select: { id_empresa: true, nombre: true, tieneSucursales: true },
       });
 
-      let detalle = null;
+      // Tipado seguro con GetPayload (no depende de que se exporte el tipo de modelo)
+      type DetalleEmpresaRow = Prisma.detalle_empresasGetPayload<{}>;
+      let detalle: DetalleEmpresaRow | null = null;
+
       if (rut && direccion && telefono && email) {
         detalle = await tx.detalle_empresas.create({
           data: { rut, direccion, telefono, email, empresa_id: nueva.id_empresa },
         });
       }
+
       return { nueva, detalle };
     });
 
@@ -433,6 +438,7 @@ export async function createEmpresa(req: Request, res: Response): Promise<void> 
     res.status(500).json({ success: false, error: "Error al crear empresa" });
   }
 }
+
 
 /* =======================================================
    PUT /api/empresas/:id - SIN nested update
