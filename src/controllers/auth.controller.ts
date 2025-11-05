@@ -11,9 +11,6 @@ import type { Prisma } from "@prisma/client";
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
 
-// AGREGAR ESTO - CONFIGURACIÓN ARGON2 OPTIMIZADA
-
-
 const ARGON_REFRESH_TOKEN_OPTIONS = {
   type: argon2.argon2id,
   memoryCost: 512,     // Aún más optimizado para tokens
