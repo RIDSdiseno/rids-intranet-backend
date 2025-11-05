@@ -11,11 +11,17 @@ const listQuerySchema = z.object({
 
   // filtros
   search: z.string().trim().optional(),        // serial/marca/modelo/procesador/solicitante/empresa
+
+  // filtros
+  search: z.string().trim().optional(),        // serial/marca/modelo/procesador/solicitante/empresa
   marca: z.string().trim().optional(),
   empresaId: z.coerce.number().int().optional(),
   empresaName: z.string().trim().optional(),
+  empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
-  sortBy: z.enum(["id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad", "empresa", "solicitante"]).default("id_equipo").optional(),
+  sortBy: z.enum([
+    "id_equipo","serial","marca","modelo","procesador","ram","disco","propiedad"
+  ]).default("id_equipo").optional(), // ⚠️ quitamos empresa/solicitante porque ya no hay relaciones
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 
@@ -52,32 +58,23 @@ const equipoUpdateSchema = z.object({
 });
 
 /* ================== CACHE SIMPLE ================== */
-// ✅ AGREGAR: Cache para resultados de consultas frecuentes
 const equiposCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 15000; // 15 segundos
-
-function getCacheKey(q: any): string {
-  return `equipos:${JSON.stringify(q)}`;
-}
 
 function clearCache(): void {
   equiposCache.clear();
 }
 
-/* ================== Helpers Optimizados ================== */
+/* ================== Helpers ================== */
 function mapOrderBy(
   sortBy: string | undefined,
   sortDir: Prisma.SortOrder
 ): Prisma.EquipoOrderByWithRelationInput {
-  if (sortBy === "empresa") {
-    return { solicitante: { empresa: { nombre: sortDir } } };
-  }
-  if (sortBy === "solicitante") {
-    return { solicitante: { nombre: sortDir } };
-  }
   const allowed: Array<keyof Prisma.EquipoOrderByWithRelationInput> = [
-    "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad",
+    "id_equipo","serial","marca","modelo","procesador","ram","disco","propiedad"
   ];
+  const key = (allowed.includes(sortBy as any)
+    ? (sortBy as keyof Prisma.EquipoOrderByWithRelationInput)
+    : "id_equipo") as keyof Prisma.EquipoOrderByWithRelationInput;
   const key = (allowed.includes(sortBy as any)
     ? (sortBy as keyof Prisma.EquipoOrderByWithRelationInput)
     : "id_equipo") as keyof Prisma.EquipoOrderByWithRelationInput;
@@ -143,8 +140,6 @@ async function ensurePlaceholderSolicitante(empresaId: number) {
 /* ================== Controller: LIST ================== */
 
 export async function listEquipos(req: Request, res: Response) {
-  const startTime = Date.now(); // ✅ MEDIR TIEMPO
-
   try {
     const q = listQuerySchema.parse(req.query);
     const INS: Prisma.QueryMode = "insensitive";
@@ -172,12 +167,11 @@ export async function listEquipos(req: Request, res: Response) {
 
     const orderBy = mapOrderBy(q.sortBy, q.sortDir as Prisma.SortOrder);
 
-    // ✅ CONSULTA OPTIMIZADA - SOLO CAMPOS NECESARIOS
     const [total, rows] = await Promise.all([
       prisma.equipo.count({ where }),
       prisma.equipo.findMany({
         where,
-        select: { // ✅ SELECT EXPLÍCITO - NO USAR INCLUDE
+        select: {
           id_equipo: true,
           serial: true,
           marca: true,
@@ -187,17 +181,6 @@ export async function listEquipos(req: Request, res: Response) {
           disco: true,
           propiedad: true,
           idSolicitante: true,
-          solicitante: {
-            select: {
-              nombre: true,
-              empresa: {
-                select: {
-                  id_empresa: true,
-                  nombre: true
-                }
-              }
-            }
-          }
         },
         orderBy,
         skip: (q.page - 1) * q.pageSize,
@@ -212,7 +195,10 @@ export async function listEquipos(req: Request, res: Response) {
       pageSize: q.pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+      totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
       items,
+    });
+  } catch (err) {
     });
   } catch (err) {
     console.error("listEquipos error:", err);
@@ -283,10 +269,9 @@ export async function createEquipo(req: Request, res: Response) {
       include: { solicitante: { include: { empresa: true } } },
     });
 
-    // ✅ LIMPIAR CACHE AL CREAR NUEVO REGISTRO
     clearCache();
-
     return res.status(201).json(nuevo);
+  } catch (err) {
   } catch (err) {
     console.error("Error al crear equipo:", err);
     if (err instanceof z.ZodError) {
@@ -309,10 +294,29 @@ export async function getEquipoById(req: Request, res: Response) {
       where: { id_equipo: id },
       include: { solicitante: { include: { empresa: true } } },
     });
-
     if (!equipo) return res.status(404).json({ error: "Equipo no encontrado" });
 
-    return res.status(200).json(equipo);
+    // enriquecer con nombres
+    let solicitante: string | null = null;
+    let empresa: string | null = null;
+    let empresaId: number | null = null;
+    if (equipo.idSolicitante != null) {
+      const sol = await prisma.solicitante.findUnique({
+        where: { id_solicitante: equipo.idSolicitante },
+        select: { nombre: true, empresaId: true },
+      });
+      solicitante = sol?.nombre ?? null;
+      empresaId = sol?.empresaId ?? null;
+      if (empresaId != null) {
+        const emp = await prisma.empresa.findUnique({
+          where: { id_empresa: empresaId },
+          select: { nombre: true },
+        });
+        empresa = emp?.nombre ?? null;
+      }
+    }
+
+    return res.status(200).json({ ...equipo, solicitante, empresaId, empresa });
   } catch (err) {
     console.error("Error al obtener equipo:", err);
     return res.status(500).json({ error: "Error al obtener equipo" });
@@ -386,12 +390,14 @@ export async function updateEquipo(req: Request, res: Response) {
       include: { solicitante: { include: { empresa: true } } },
     });
 
-    // ✅ LIMPIAR CACHE AL ACTUALIZAR
     clearCache();
-
     return res.status(200).json(actualizado);
   } catch (err) {
+  } catch (err) {
     console.error("Error al actualizar equipo:", err);
+    if ((err as { code?: string })?.code === "P2025") {
+      return res.status(404).json({ error: "Equipo no encontrado" });
+    }
     if ((err as { code?: string })?.code === "P2025") {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }
@@ -412,13 +418,14 @@ export async function deleteEquipo(req: Request, res: Response) {
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
     await prisma.equipo.delete({ where: { id_equipo: id } });
-
-    // ✅ LIMPIAR CACHE AL ELIMINAR
     clearCache();
-
     return res.status(204).send();
   } catch (err) {
+  } catch (err) {
     console.error("Error al eliminar equipo:", err);
+    if ((err as { code?: string })?.code === "P2025") {
+      return res.status(404).json({ error: "Equipo no encontrado" });
+    }
     if ((err as { code?: string })?.code === "P2025") {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }

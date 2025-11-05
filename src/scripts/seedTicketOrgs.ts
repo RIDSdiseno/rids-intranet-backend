@@ -1,7 +1,6 @@
 // apps/backend/scripts/seedTicketOrgs.ts
 import { prisma } from "../lib/prisma.js";
 
-// Lista base de "organizaciones de tickets" (NO toca tu tabla Empresa).
 const ORGS = [
   "ALIANZ",
   "ASUR",
@@ -29,8 +28,8 @@ async function main() {
   for (const name of ORGS) {
     await prisma.ticketOrg.upsert({
       where: { name },
-      update: {},
-      create: { name },
+      update: { updatedAt: new Date() },            // <— importante
+      create: { name, updatedAt: new Date() },      // <— importante
     });
     count++;
   }

@@ -21,6 +21,8 @@ export async function createProducto(req, res) {
         const dataWithDescripcion = {
             ...data,
             descripcion: data.descripcion ?? null,
+            // 👇 requerido por el schema
+            actualizadoEn: new Date(),
         };
         const nuevo = await prisma.equipoProducto.create({ data: dataWithDescripcion });
         return res.status(201).json(nuevo);
@@ -89,6 +91,8 @@ export async function updateProducto(req, res) {
             dataWithOperators.modelo = { set: data.modelo };
         if (data.estado !== undefined)
             dataWithOperators.estado = { set: data.estado };
+        // 👇 actualiza timestamp cada modificación
+        dataWithOperators.actualizadoEn = { set: new Date() };
         const actualizado = await prisma.equipoProducto.update({
             where: { id },
             data: dataWithOperators,

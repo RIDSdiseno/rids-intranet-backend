@@ -11,10 +11,6 @@ const toBigInt = (v) => {
     const s = String(v).trim();
     return s ? BigInt(s) : null;
 };
-/**
- * Define los mapeos de dominio y/o companyId de Freshdesk
- * hacia cada TicketOrg. Puedes ajustar los dominios reales.
- */
 const MAPPINGS = [
     { org: "ALIANZ", domains: ["alianz.cl"] },
     { org: "ASUR", domains: ["asursa.com"] },
@@ -35,18 +31,17 @@ const MAPPINGS = [
     { org: "BERCIA", domains: ["bercia.cl"] },
     { org: "SOFTLAND", domains: ["softland.cl"] },
     { org: "INTCOMEX", domains: ["intcomex.com"] },
-    // Si algún cliente usa Freshdesk Company IDs conocidos, agrega aquí:
-    // { org: "BODEGAL", companyIds: [73000589521] }, // ejemplo
+    // { org: "BODEGAL", companyIds: [73000589521] },
 ];
 async function main() {
     let domCount = 0;
     let cidCount = 0;
     for (const m of MAPPINGS) {
-        // Asegura que la org exista
+        // Asegura que la org exista (setea updatedAt)
         const org = await prisma.ticketOrg.upsert({
             where: { name: m.org },
-            update: {},
-            create: { name: m.org },
+            update: { updatedAt: new Date() }, // <-- importante
+            create: { name: m.org, updatedAt: new Date() }, // <-- importante
             select: { id: true, name: true },
         });
         // Mapear dominios
@@ -61,7 +56,7 @@ async function main() {
                 domCount++;
             }
         }
-        // Mapear companyIds de Freshdesk
+        // Mapear companyIds
         if (m.companyIds?.length) {
             for (const raw of m.companyIds) {
                 const cid = toBigInt(raw);

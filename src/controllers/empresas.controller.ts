@@ -1,638 +1,566 @@
 // src/controllers/empresas.controller.ts
 import type { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
-
-/* ================ CACHE PARA DATOS FRECUENTES ================ */
-const empresasCache = {
-  listado: null as { data: any; timestamp: number } | null,
-  stats: null as { data: any; timestamp: number } | null,
-};
-
-const CACHE_TTL = 30000; // 30 segundos
-
-function clearEmpresasCache(): void {
-  empresasCache.listado = null;
-  empresasCache.stats = null;
-}
-
-/* ================ SELECTS OPTIMIZADOS BASADOS EN TU ESQUEMA ================ */
-const empresaListSelect = {
-  id_empresa: true,
-  nombre: true,
-  detalleEmpresa: true,
-  solicitantes: {
-    select: {
-      id_solicitante: true,
-      nombre: true,
-      email: true,
-      _count: {
-        select: {
-          equipos: true
-        }
-      }
-    }
-  },
-  _count: {
-    select: {
-      tickets: true,
-      visitas: true,
-      detalleTrabajos: true
-    }
-  }
-};
+import type { Prisma } from "@prisma/client";
+import { EstadoVisita } from "@prisma/client";
+import { prisma } from "../lib/prisma.js";
 
 /* =======================================================
-   GET /api/empresas - OPTIMIZADO
+   GET /api/empresas  (rápido por defecto)
+   Query flags:
+     - withStats=1  → incluye estadísticas agregadas
+     - full=1       → payload completo (pesado)
    ======================================================= */
 export async function getEmpresas(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
-
   try {
-    // ✅ VERIFICAR CACHE PRIMERO
-    if (empresasCache.listado && Date.now() - empresasCache.listado.timestamp < CACHE_TTL) {
-      console.log(`✅ Cache hit para empresas listado: ${Date.now() - startTime}ms`);
-      res.json(empresasCache.listado.data);
+    const withStats = String(req.query.withStats ?? "").toLowerCase() === "1";
+    const full = String(req.query.full ?? "").toLowerCase() === "1";
+
+    // Base: empresas (solo id + nombre)
+    const empresasBase = await prisma.empresa.findMany({
+      select: { id_empresa: true, nombre: true, tieneSucursales: true },
+      orderBy: { nombre: "asc" },
+    });
+
+    if (empresasBase.length === 0) {
+      res.json({ success: true, data: [], total: 0 });
       return;
     }
 
-    // ✅ OBTENER DATOS ADICIONALES EN PARALELO PARA ESTADÍSTICAS
-    const [empresas, ticketsAbiertosPorEmpresa, visitasPendientesPorEmpresa, trabajosPendientesPorEmpresa] = await Promise.all([
-      // Empresas básicas
-      prisma.empresa.findMany({
-        select: empresaListSelect,
-        orderBy: { nombre: "asc" },
-      }),
+    const empresaIds = empresasBase.map((e) => e.id_empresa);
 
-      // Tickets abiertos por empresa (status ≠ 5)
-      prisma.freshdeskTicket.groupBy({
-        by: ['empresaId'],
-        where: {
-          empresaId: { not: null },
-          status: { not: 5 }
+    if (full) {
+      // ------ FULL: Traemos "todo" con consultas separadas y luego agregamos en memoria
+
+      // DetalleEmpresa (uno a uno por empresa)
+      const detalles = await prisma.detalle_empresas.findMany({
+        where: { empresa_id: { in: empresaIds } },
+      });
+      const detallePorEmpresa = new Map(detalles.map((d) => [d.empresa_id, d]));
+
+      // Solicitantes por empresa
+      const solicitantes = await prisma.solicitante.findMany({
+        where: { empresaId: { in: empresaIds } },
+        select: {
+          id_solicitante: true,
+          nombre: true,
+          email: true,
+          empresaId: true,
         },
-        _count: { _all: true }
-      }),
+      });
 
-      // Visitas pendientes por empresa
-      prisma.visita.groupBy({
-        by: ['empresaId'],
-        where: {
-          status: "PENDIENTE"
-        },
-        _count: { _all: true }
-      }),
+      // Equipos por solicitante (para armar equipos en solicitantes)
+      const solicitanteIds = solicitantes.map((s) => s.id_solicitante);
+      const equipos = solicitanteIds.length
+        ? await prisma.equipo.findMany({
+            where: { idSolicitante: { in: solicitanteIds } },
+            select: { id_equipo: true, idSolicitante: true },
+          })
+        : [];
 
-      // Trabajos pendientes por empresa
-      prisma.detalleTrabajo.groupBy({
-        by: ['empresa_id'],
-        where: {
-          empresa_id: { not: null },
-          OR: [
-            { estado: "pendiente" },
-            { estado: "PENDIENTE" }
-          ]
-        },
-        _count: { _all: true }
-      })
-    ]);
+      const equiposPorSolic = new Map<number, number[]>();
+      for (const eq of equipos) {
+        const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
+        arr.push(eq.id_equipo);
+        equiposPorSolic.set(eq.idSolicitante, arr);
+      }
 
-    // ✅ CREAR MAPAS PARA ACCESO RÁPIDO
-    const ticketsAbiertosMap = new Map(ticketsAbiertosPorEmpresa.map(t => [t.empresaId, t._count._all]));
-    const visitasPendientesMap = new Map(visitasPendientesPorEmpresa.map(v => [v.empresaId, v._count._all]));
-    const trabajosPendientesMap = new Map(trabajosPendientesPorEmpresa.map(t => [t.empresa_id, t._count._all]));
+      // Tickets Freshdesk
+      const tickets = await prisma.freshdeskTicket.findMany({
+        where: { empresaId: { in: empresaIds } },
+        select: { id: true, status: true, empresaId: true },
+      });
 
-    // ✅ CALCULAR ESTADÍSTICAS CON DATOS PRE-CALCULADOS
-    const empresasConStats = empresas.map((empresa) => {
-      const totalSolicitantes = empresa.solicitantes.length;
-      const totalEquipos = empresa.solicitantes.reduce(
-        (acc, sol) => acc + (sol._count?.equipos || 0),
-        0
-      );
-      const totalTickets = empresa._count.tickets;
-      const totalVisitas = empresa._count.visitas;
-      const totalTrabajos = empresa._count.detalleTrabajos;
+      // Visitas
+      const visitas = await prisma.visita.findMany({
+        where: { empresaId: { in: empresaIds } },
+        select: { id_visita: true, status: true, empresaId: true },
+      });
 
-      return {
-        id_empresa: empresa.id_empresa,
-        nombre: empresa.nombre,
-        detalleEmpresa: empresa.detalleEmpresa,
-        solicitantes: empresa.solicitantes.map(sol => ({
-          id_solicitante: sol.id_solicitante,
-          nombre: sol.nombre,
-          email: sol.email,
-          totalEquipos: sol._count?.equipos || 0
-        })),
-        estadisticas: {
-          totalSolicitantes,
-          totalEquipos,
-          totalTickets,
-          totalVisitas,
-          totalTrabajos,
-          ticketsAbiertos: ticketsAbiertosMap.get(empresa.id_empresa) || 0,
-          visitasPendientes: visitasPendientesMap.get(empresa.id_empresa) || 0,
-          trabajosPendientes: trabajosPendientesMap.get(empresa.id_empresa) || 0,
-        },
-      };
+      // Trabajos (detalle_trabajos)
+      const trabajos = await prisma.detalle_trabajos.findMany({
+        where: { empresa_id: { in: empresaIds } },
+        select: { id: true, estado: true, empresa_id: true },
+      });
+
+      // Agrupar solicitantes por empresa
+      const solPorEmpresa = new Map<number, Array<{ id_solicitante: number; nombre: string; email: string | null; equipos: { id_equipo: number }[] }>>();
+      for (const s of solicitantes) {
+        const eqIds = equiposPorSolic.get(s.id_solicitante) ?? [];
+        const entry = {
+          id_solicitante: s.id_solicitante,
+          nombre: s.nombre,
+          email: s.email ?? null,
+          equipos: eqIds.map((id_equipo) => ({ id_equipo })),
+        };
+        const arr = solPorEmpresa.get(s.empresaId) ?? [];
+        arr.push(entry);
+        solPorEmpresa.set(s.empresaId, arr);
+      }
+
+      // Agrupar tickets/visitas/trabajos por empresa
+      const ticketsPorEmpresa = new Map<number, { id: bigint; status: number }[]>();
+      for (const t of tickets) {
+        const empId = t.empresaId!;
+        const arr = ticketsPorEmpresa.get(empId) ?? [];
+        arr.push({ id: t.id, status: t.status });
+        ticketsPorEmpresa.set(empId, arr);
+      }
+
+      const visitasPorEmpresa = new Map<number, { id_visita: number; status: EstadoVisita }[]>();
+      for (const v of visitas) {
+        const empId = v.empresaId!;
+        const arr = visitasPorEmpresa.get(empId) ?? [];
+        arr.push({ id_visita: v.id_visita, status: v.status });
+        visitasPorEmpresa.set(empId, arr);
+      }
+
+      const trabajosPorEmpresa = new Map<number, { id: number; estado: string }[]>();
+      for (const t of trabajos) {
+        const empId = t.empresa_id!;
+        const arr = trabajosPorEmpresa.get(empId) ?? [];
+        arr.push({ id: t.id, estado: t.estado });
+        trabajosPorEmpresa.set(empId, arr);
+      }
+
+      const data = empresasBase.map((e) => {
+        const solicitantesEmp = solPorEmpresa.get(e.id_empresa) ?? [];
+        const ticketsEmp = ticketsPorEmpresa.get(e.id_empresa) ?? [];
+        const visitasEmp = visitasPorEmpresa.get(e.id_empresa) ?? [];
+        const trabajosEmp = trabajosPorEmpresa.get(e.id_empresa) ?? [];
+
+        const totalSolicitantes = solicitantesEmp.length;
+        const totalEquipos = solicitantesEmp.reduce(
+          (acc, s) => acc + (s.equipos?.length || 0),
+          0
+        );
+        const totalTickets = ticketsEmp.length;
+        const totalVisitas = visitasEmp.length;
+        const totalTrabajos = trabajosEmp.length;
+
+        const ticketsAbiertos = ticketsEmp.filter((t) => t.status !== 5).length;
+        const visitasPendientes = visitasEmp.filter(
+          (v) => v.status === EstadoVisita.PENDIENTE
+        ).length;
+        const trabajosPendientes = trabajosEmp.filter(
+          (t) => (t.estado ?? "").toUpperCase() === "PENDIENTE"
+        ).length;
+
+        return {
+          id_empresa: e.id_empresa,
+          nombre: e.nombre,
+          detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
+          solicitantes: solicitantesEmp,
+          estadisticas: {
+            totalSolicitantes,
+            totalEquipos,
+            totalTickets,
+            totalVisitas,
+            totalTrabajos,
+            ticketsAbiertos,
+            visitasPendientes,
+            trabajosPendientes,
+          },
+        };
+      });
+
+      res.json({ success: true, data, total: data.length });
+      return;
+    }
+
+    // ------- RÁPIDO: sin stats
+    if (!withStats) {
+      res.json({
+        success: true,
+        data: empresasBase.map((e) => ({ id_empresa: e.id_empresa, nombre: e.nombre })),
+        total: empresasBase.length,
+      });
+      return;
+    }
+
+    // ------- RÁPIDO CON STATS (agregados) -------
+
+    // 1) Solicitantes por empresa
+    const solCount = await prisma.solicitante.groupBy({
+      by: ["empresaId"],
+      where: { empresaId: { in: empresaIds } },
+      _count: { empresaId: true },
     });
 
-    const result = {
-      success: true,
-      data: empresasConStats,
-      total: empresasConStats.length
-    };
+    // 2) Tickets abiertos por empresa (status != 5)
+    const ticketsOpen = await prisma.freshdeskTicket.groupBy({
+      by: ["empresaId"],
+      where: { empresaId: { in: empresaIds }, status: { not: 5 } },
+      _count: { empresaId: true },
+    });
 
-    // ✅ GUARDAR EN CACHE
-    empresasCache.listado = {
-      data: result,
-      timestamp: Date.now()
-    };
+    // 3) Visitas pendientes por empresa
+    const visitasPend = await prisma.visita.groupBy({
+      by: ["empresaId"],
+      where: { empresaId: { in: empresaIds }, status: EstadoVisita.PENDIENTE },
+      _count: { empresaId: true },
+    });
 
-    const endTime = Date.now();
-    console.log(`Tiempo getEmpresas: ${endTime - startTime}ms`);
+    // 4) Trabajos pendientes por empresa
+    const trabajosPend = await prisma.detalle_trabajos.groupBy({
+      by: ["empresa_id"],
+      where: {
+        empresa_id: { in: empresaIds },
+        estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode },
+      },
+      _count: { empresa_id: true },
+    });
 
-    res.json(result);
+    // 5) Equipos por empresa (vía solicitantes)
+    const solicitantesDeEmp = await prisma.solicitante.findMany({
+      where: { empresaId: { in: empresaIds } },
+      select: { id_solicitante: true, empresaId: true },
+    });
+    const solicIds = solicitantesDeEmp.map((s) => s.id_solicitante);
+    const equiposCountPorSolic = solicIds.length
+      ? await prisma.equipo.groupBy({
+          by: ["idSolicitante"],
+          where: { idSolicitante: { in: solicIds } },
+          _count: { _all: true },
+        })
+      : [];
+
+    const empresaPorSolic = new Map(
+      solicitantesDeEmp.map((s) => [s.id_solicitante, s.empresaId])
+    );
+    const equiposPorEmpresa = new Map<number, number>();
+    for (const row of equiposCountPorSolic) {
+      const empId = empresaPorSolic.get(row.idSolicitante!)!;
+      equiposPorEmpresa.set(
+        empId,
+        (equiposPorEmpresa.get(empId) ?? 0) + (row._count as any)._all
+      );
+    }
+
+    const solMap = new Map(solCount.map((r) => [r.empresaId!, r._count.empresaId]));
+    const ticketOpenMap = new Map(ticketsOpen.map((r) => [r.empresaId!, r._count.empresaId]));
+    const visitaPendMap = new Map(visitasPend.map((r) => [r.empresaId!, r._count.empresaId]));
+    const trabajoPendMap = new Map(trabajosPend.map((r) => [r.empresa_id!, r._count.empresa_id]));
+
+    const data = empresasBase.map((e) => ({
+      id_empresa: e.id_empresa,
+      nombre: e.nombre,
+      estadisticas: {
+        totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
+        totalEquipos: equiposPorEmpresa.get(e.id_empresa) ?? 0,
+        totalTickets: undefined,
+        totalVisitas: undefined,
+        totalTrabajos: undefined,
+        ticketsAbiertos: ticketOpenMap.get(e.id_empresa) ?? 0,
+        visitasPendientes: visitaPendMap.get(e.id_empresa) ?? 0,
+        trabajosPendientes: trabajoPendMap.get(e.id_empresa) ?? 0,
+      },
+    }));
+
+    res.json({ success: true, data, total: data.length });
   } catch (error) {
     console.error("Error al obtener empresas:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno del servidor"
-    });
+    res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 }
 
 /* =======================================================
-   GET /api/empresas/stats - OPTIMIZADO
+   GET /api/empresas/stats  (agregado total del sistema)
    ======================================================= */
-export async function getEmpresasStats(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
-
+export async function getEmpresasStats(_req: Request, res: Response): Promise<void> {
   try {
-    // ✅ VERIFICAR CACHE PRIMERO
-    if (empresasCache.stats && Date.now() - empresasCache.stats.timestamp < CACHE_TTL) {
-      console.log(`✅ Cache hit para empresas stats: ${Date.now() - startTime}ms`);
-      res.json(empresasCache.stats.data);
-      return;
-    }
-
-    // ✅ CONSULTAS ESPECÍFICAS Y PARALELAS
-    const [
-      totalEmpresas,
-      totalSolicitantes,
-      totalEquipos,
-      totalTickets,
-      totalVisitas,
-      totalTrabajos,
-      ticketsAbiertos,
-      visitasPendientes,
-      trabajosPendientes
-    ] = await Promise.all([
+    const [empresas, solicitantes, equipos, tickets, visitas, trabajos] = await Promise.all([
       prisma.empresa.count(),
       prisma.solicitante.count(),
       prisma.equipo.count(),
       prisma.freshdeskTicket.count(),
       prisma.visita.count(),
-      prisma.detalleTrabajo.count(),
-      prisma.freshdeskTicket.count({
-        where: {
-          status: { not: 5 }
-        }
-      }),
-      prisma.visita.count({
-        where: {
-          status: "PENDIENTE"
-        }
-      }),
-      prisma.detalleTrabajo.count({
-        where: {
-          OR: [
-            { estado: "pendiente" },
-            { estado: "PENDIENTE" }
-          ]
-        }
-      })
+      prisma.detalle_trabajos.count(),
     ]);
 
-    const statsTotales = {
-      totalEmpresas,
-      totalSolicitantes,
-      totalEquipos,
-      totalTickets,
-      totalVisitas,
-      totalTrabajos,
-      ticketsAbiertos,
-      visitasPendientes,
-      trabajosPendientes,
-    };
-
-    const result = {
-      success: true,
-      data: statsTotales
-    };
-
-    // ✅ GUARDAR EN CACHE
-    empresasCache.stats = {
-      data: result,
-      timestamp: Date.now()
-    };
-
-    const endTime = Date.now();
-    console.log(`Tiempo getEmpresasStats: ${endTime - startTime}ms`);
-
-    res.json(result);
-  } catch (error) {
-    console.error("Error al obtener estadísticas:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno del servidor"
+    const ticketsAbiertos = await prisma.freshdeskTicket.count({ where: { status: { not: 5 } } });
+    const visitasPendientes = await prisma.visita.count({ where: { status: EstadoVisita.PENDIENTE } });
+    const trabajosPendientes = await prisma.detalle_trabajos.count({
+      where: { estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode } },
     });
-  }
-}
-
-/* =======================================================
-   GET /api/empresas/:id - OPTIMIZADO
-   ======================================================= */
-export async function getEmpresaById(req: Request, res: Response): Promise<void> {
-  const startTime = Date.now();
-
-  try {
-    const id = Number(req.params.id);
-
-    // ✅ SELECT ESPECÍFICO BASADO EN TU ESQUEMA
-    const empresa = await prisma.empresa.findUnique({
-      where: { id_empresa: id },
-      select: {
-        id_empresa: true,
-        nombre: true,
-        detalleEmpresa: true,
-        companyMaps: {
-          select: {
-            companyId: true,
-            domain: true
-          }
-        },
-        // ✅ SOLICITANTES CON DATOS LIMITADOS
-        solicitantes: {
-          select: {
-            id_solicitante: true,
-            nombre: true,
-            email: true,
-            telefono: true,
-            equipos: {
-              select: {
-                id_equipo: true,
-                serial: true,
-                marca: true,
-                modelo: true,
-                procesador: true,
-                propiedad: true
-              },
-              take: 20 // ✅ LIMITAR EQUIPOS POR SOLICITANTE
-            },
-            _count: {
-              select: {
-                tickets: true,
-                visitas: true
-              }
-            }
-          }
-        },
-        // ✅ TICKETS RECIENTES
-        tickets: {
-          select: {
-            id: true,
-            subject: true,
-            status: true,
-            priority: true,
-            type: true,
-            createdAt: true
-          },
-          take: 50,
-          orderBy: { createdAt: 'desc' }
-        },
-        // ✅ VISITAS RECIENTES
-        visitas: {
-          select: {
-            id_visita: true,
-            inicio: true,
-            fin: true,
-            status: true,
-            tecnico: {
-              select: {
-                nombre: true
-              }
-            },
-            solicitante: true
-          },
-          take: 50,
-          orderBy: { inicio: 'desc' }
-        },
-        // ✅ TRABAJOS RECIENTES
-        detalleTrabajos: {
-          select: {
-            id: true,
-            fecha_ingreso: true,
-            trabajo: true,
-            prioridad: true,
-            estado: true,
-            equipo: {
-              select: {
-                serial: true,
-                marca: true
-              }
-            },
-            tecnico: {
-              select: {
-                nombre: true
-              }
-            }
-          },
-          take: 50,
-          orderBy: { fecha_ingreso: 'desc' }
-        }
-      }
-    });
-
-    if (!empresa) {
-      res.status(404).json({
-        success: false,
-        error: "Empresa no encontrada"
-      });
-      return;
-    }
-
-    const endTime = Date.now();
-    console.log(`⏱️ Tiempo getEmpresaById: ${endTime - startTime}ms`);
 
     res.json({
       success: true,
-      data: empresa
+      data: {
+        totalEmpresas: empresas,
+        totalSolicitantes: solicitantes,
+        totalEquipos: equipos,
+        totalTickets: tickets,
+        totalVisitas: visitas,
+        totalTrabajos: trabajos,
+        ticketsAbiertos,
+        visitasPendientes,
+        trabajosPendientes,
+      },
     });
   } catch (error) {
-    console.error("Error al obtener empresa:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error interno del servidor"
-    });
+    console.error("Error al obtener estadísticas:", error);
+    res.status(500).json({ success: false, error: "Error interno del servidor" });
   }
 }
 
 /* =======================================================
-   POST /api/empresas - OPTIMIZADO
+   GET /api/empresas/:id - OPTIMIZADO (sin relaciones Prisma)
    ======================================================= */
+export async function getEmpresaById(req: Request, res: Response): Promise<void> {
+  try {
+    const id = Number(req.params.id);
+    const empresa = await prisma.empresa.findUnique({
+      where: { id_empresa: id },
+      select: { id_empresa: true, nombre: true, tieneSucursales: true },
+    });
+
+    if (!empresa) {
+      res.status(404).json({ success: false, error: "Empresa no encontrada" });
+      return;
+    }
+
+    // Traer anexos por separado
+    const [detalle, solicitantes, tickets, visitas, trabajos] = await Promise.all([
+      prisma.detalle_empresas.findUnique({ where: { empresa_id: id } }),
+      prisma.solicitante.findMany({
+        where: { empresaId: id },
+        select: { id_solicitante: true, nombre: true, email: true },
+      }),
+      prisma.freshdeskTicket.findMany({
+        where: { empresaId: id },
+        select: { id: true, status: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.visita.findMany({
+        where: { empresaId: id },
+        select: { id_visita: true, status: true, inicio: true, fin: true },
+        orderBy: { inicio: "desc" },
+      }),
+      prisma.detalle_trabajos.findMany({
+        where: { empresa_id: id },
+        select: { id: true, estado: true, fecha_ingreso: true, fecha_egreso: true },
+        orderBy: { id: "desc" },
+      }),
+    ]);
+
+    // Equipos por solicitante
+    const solicIds = solicitantes.map((s) => s.id_solicitante);
+    const equipos = solicIds.length
+      ? await prisma.equipo.findMany({
+          where: { idSolicitante: { in: solicIds } },
+          select: { id_equipo: true, idSolicitante: true, serial: true, marca: true, modelo: true },
+        })
+      : [];
+
+    const equiposPorSolic = new Map<number, any[]>();
+    for (const eq of equipos) {
+      const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
+      arr.push(eq);
+      equiposPorSolic.set(eq.idSolicitante, arr);
+    }
+
+    const solicitantesConEquipos = solicitantes.map((s) => ({
+      ...s,
+      equipos: (equiposPorSolic.get(s.id_solicitante) ?? []).map((e) => ({
+        id_equipo: e.id_equipo,
+        serial: e.serial,
+        marca: e.marca,
+        modelo: e.modelo,
+      })),
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        ...empresa,
+        detalleEmpresa: detalle ?? null,
+        solicitantes: solicitantesConEquipos,
+        tickets,
+        visitas,
+        detalleTrabajos: trabajos,
+      },
+    });
+  } catch (error) {
+    console.error("Error al obtener empresa:", error);
+    res.status(500).json({ success: false, error: "Error interno del servidor" });
+  }
+}
+
+/* =======================================================
+   POST /api/empresas - SIN nested create (no hay relación Prisma)
+   ======================================================= */
+
 export async function createEmpresa(req: Request, res: Response): Promise<void> {
   try {
     const { nombre, rut, direccion, telefono, email } = req.body;
 
-    // Validar campos obligatorios
     if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
       res.status(400).json({
         success: false,
-        error: "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios"
+        error:
+          "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios",
       });
       return;
     }
 
-    const data: any = {
-      nombre,
-    };
+    const result = await prisma.$transaction(async (tx) => {
+      const nueva = await tx.empresa.create({
+        data: { nombre },
+        select: { id_empresa: true, nombre: true, tieneSucursales: true },
+      });
 
-    if (rut && direccion && telefono && email) {
-      data.detalleEmpresa = {
-        create: {
-          rut,
-          direccion,
-          telefono,
-          email
-        },
-      };
-    }
+      // Tipado seguro con GetPayload (no depende de que se exporte el tipo de modelo)
+      type DetalleEmpresaRow = Prisma.detalle_empresasGetPayload<{}>;
+      let detalle: DetalleEmpresaRow | null = null;
 
-    const nuevaEmpresa = await prisma.empresa.create({
-      data,
-      select: {
-        id_empresa: true,
-        nombre: true,
-        detalleEmpresa: true
-      },
+      if (rut && direccion && telefono && email) {
+        detalle = await tx.detalle_empresas.create({
+          data: { rut, direccion, telefono, email, empresa_id: nueva.id_empresa },
+        });
+      }
+
+      return { nueva, detalle };
     });
-
-    // ✅ LIMPIAR CACHE
-    clearEmpresasCache();
 
     res.status(201).json({
       success: true,
-      data: nuevaEmpresa
+      data: { ...result.nueva, detalleEmpresa: result.detalle },
     });
   } catch (error: any) {
     console.error("Error al crear empresa:", error);
-
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
-      const errorMessage = field === "nombre"
-        ? "El nombre de la empresa ya existe"
-        : "El RUT de la empresa ya existe";
-
-      res.status(400).json({
-        success: false,
-        error: errorMessage
-      });
+      const errorMessage =
+        field === "nombre" ? "El nombre de la empresa ya existe" : "El RUT de la empresa ya existe";
+      res.status(400).json({ success: false, error: errorMessage });
       return;
     }
-
-    res.status(500).json({
-      success: false,
-      error: "Error al crear empresa"
-    });
+    res.status(500).json({ success: false, error: "Error al crear empresa" });
   }
 }
 
+
 /* =======================================================
-   PUT /api/empresas/:id - OPTIMIZADO
+   PUT /api/empresas/:id - SIN nested update
    ======================================================= */
 export async function updateEmpresa(req: Request, res: Response): Promise<void> {
   try {
     const id = Number(req.params.id);
     const { nombre, rut, direccion, telefono, email } = req.body;
 
-    // Validar campos obligatorios
     if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
       res.status(400).json({
         success: false,
-        error: "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios"
+        error:
+          "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios",
       });
       return;
     }
 
     const empresaExistente = await prisma.empresa.findUnique({
       where: { id_empresa: id },
-      select: {
-        id_empresa: true,
-        detalleEmpresa: true
-      },
+      select: { id_empresa: true },
     });
-
     if (!empresaExistente) {
-      res.status(404).json({
-        success: false,
-        error: "Empresa no encontrada"
-      });
+      res.status(404).json({ success: false, error: "Empresa no encontrada" });
       return;
     }
 
-    const data: any = {
-      nombre,
-    };
-
-    // Manejar DetalleEmpresa
-    if (rut && direccion && telefono && email) {
-      if (empresaExistente.detalleEmpresa) {
-        data.detalleEmpresa = {
-          update: {
-            rut,
-            direccion,
-            telefono,
-            email
-          },
-        };
-      } else {
-        data.detalleEmpresa = {
-          create: {
-            rut,
-            direccion,
-            telefono,
-            email
-          },
-        };
+    const result = await prisma.$transaction(async (tx) => {
+      if (typeof nombre === "string") {
+        await tx.empresa.update({ where: { id_empresa: id }, data: { nombre } });
       }
-    }
 
-    const empresaActualizada = await prisma.empresa.update({
-      where: { id_empresa: id },
-      data,
-      select: {
-        id_empresa: true,
-        nombre: true,
-        detalleEmpresa: true
-      },
+      let detalle = await tx.detalle_empresas.findUnique({ where: { empresa_id: id } });
+
+      if (rut && direccion && telefono && email) {
+        // upsert manual
+        if (detalle) {
+          detalle = await tx.detalle_empresas.update({
+            where: { empresa_id: id },
+            data: { rut, direccion, telefono, email },
+          });
+        } else {
+          detalle = await tx.detalle_empresas.create({
+            data: { rut, direccion, telefono, email, empresa_id: id },
+          });
+        }
+      }
+
+      const empresaAct = await tx.empresa.findUnique({
+        where: { id_empresa: id },
+        select: { id_empresa: true, nombre: true, tieneSucursales: true },
+      });
+
+      return { empresaAct, detalle };
     });
 
-    // ✅ LIMPIAR CACHE
-    clearEmpresasCache();
-
-    res.json({
-      success: true,
-      data: empresaActualizada
-    });
+    res.json({ success: true, data: { ...result.empresaAct, detalleEmpresa: result.detalle } });
   } catch (error: any) {
     console.error("Error al actualizar empresa:", error);
-
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
-      const errorMessage = field === "nombre"
-        ? "El nombre de la empresa ya existe"
-        : "El RUT de la empresa ya existe";
-
-      res.status(400).json({
-        success: false,
-        error: errorMessage
-      });
+      const errorMessage =
+        field === "nombre" ? "El nombre de la empresa ya existe" : "El RUT de la empresa ya existe";
+      res.status(400).json({ success: false, error: errorMessage });
       return;
     }
-
-    res.status(500).json({
-      success: false,
-      error: "Error al actualizar empresa"
-    });
+    res.status(500).json({ success: false, error: "Error al actualizar empresa" });
   }
 }
 
 /* =======================================================
-   DELETE /api/empresas/:id - OPTIMIZADO
+   DELETE /api/empresas/:id
    ======================================================= */
 export async function deleteEmpresa(req: Request, res: Response): Promise<void> {
   try {
     const id = Number(req.params.id);
 
-    // ✅ CONSULTA OPTIMIZADA CON _count
-    const empresaExistente = await prisma.empresa.findUnique({
+    const existe = await prisma.empresa.findUnique({
       where: { id_empresa: id },
-      select: {
-        id_empresa: true,
-        _count: {
-          select: {
-            solicitantes: true,
-            tickets: true,
-            visitas: true,
-            detalleTrabajos: true
-          }
-        }
-      }
+      select: { id_empresa: true },
     });
-
-    if (!empresaExistente) {
-      res.status(404).json({
-        success: false,
-        error: "Empresa no encontrada"
-      });
+    if (!existe) {
+      res.status(404).json({ success: false, error: "Empresa no encontrada" });
       return;
     }
 
-    // Verificar si tiene registros relacionados
-    const tieneRelaciones =
-      empresaExistente._count.solicitantes > 0 ||
-      empresaExistente._count.tickets > 0 ||
-      empresaExistente._count.visitas > 0 ||
-      empresaExistente._count.detalleTrabajos > 0;
+    // Verificaciones de registros relacionados (sin relaciones Prisma)
+    const [solCount, tkCount, vsCount, trCount] = await Promise.all([
+      prisma.solicitante.count({ where: { empresaId: id } }),
+      prisma.freshdeskTicket.count({ where: { empresaId: id } }),
+      prisma.visita.count({ where: { empresaId: id } }),
+      prisma.detalle_trabajos.count({ where: { empresa_id: id } }),
+    ]);
 
-    if (tieneRelaciones) {
+    if (solCount > 0 || tkCount > 0 || vsCount > 0 || trCount > 0) {
       res.status(400).json({
         success: false,
-        error: "No se puede eliminar la empresa porque tiene registros relacionados (solicitantes, tickets, visitas o trabajos)"
+        error:
+          "No se puede eliminar la empresa porque tiene registros relacionados (solicitantes, tickets, visitas o trabajos)",
       });
       return;
     }
 
     await prisma.$transaction(async (tx) => {
-      // Eliminar DetalleEmpresa si existe
-      await tx.detalleEmpresa.deleteMany({
-        where: { empresa_id: id }
-      });
-
-      // Eliminar la empresa
-      await tx.empresa.delete({
-        where: { id_empresa: id }
-      });
+      // borrar detalle si existe
+      const detalle = await tx.detalle_empresas.findUnique({ where: { empresa_id: id } });
+      if (detalle) {
+        await tx.detalle_empresas.delete({ where: { empresa_id: id } });
+      }
+      await tx.empresa.delete({ where: { id_empresa: id } });
     });
 
-    // ✅ LIMPIAR CACHE
-    clearEmpresasCache();
-
-    res.json({
-      success: true,
-      message: "Empresa eliminada correctamente"
-    });
+    res.json({ success: true, message: "Empresa eliminada correctamente" });
   } catch (error: any) {
     console.error("Error al eliminar empresa:", error);
-
     if (error.code === "P2003") {
       res.status(400).json({
         success: false,
-        error: "No se puede eliminar la empresa porque tiene registros relacionados"
+        error: "No se puede eliminar la empresa porque tiene registros relacionados",
       });
       return;
     }
-
-    res.status(500).json({
-      success: false,
-      error: "Error al eliminar empresa"
-    });
+    res.status(500).json({ success: false, error: "Error al eliminar empresa" });
   }
 }
-
-// ✅ LIMPIAR CACHE PERIÓDICAMENTE
-setInterval(() => {
-  clearEmpresasCache();
-  console.log('Cache de empresas limpiado');
-}, CACHE_TTL * 4);

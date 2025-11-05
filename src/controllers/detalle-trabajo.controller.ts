@@ -1,3 +1,4 @@
+// src/controllers/detalle-trabajo.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
@@ -27,8 +28,8 @@ const detalleTrabajoUpdateSchema = detalleTrabajoSchema.partial();
 
 /* ================== CREATE ================== */
 export async function createDetalleTrabajo(req: Request, res: Response) {
-    try {
-        const data = detalleTrabajoSchema.parse(req.body);
+  try {
+    const data = detalleTrabajoSchema.parse(req.body);
 
         const nuevo = await prisma.detalleTrabajo.create({
             data: {
@@ -106,9 +107,9 @@ export async function getDetallesTrabajo(req: Request, res: Response) {
 
 /* ================== READ ONE ================== */
 export async function getDetalleTrabajoById(req: Request, res: Response) {
-    try {
-        const id = Number(req.params.id);
-        if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
         const detalle = await prisma.detalleTrabajo.findUnique({
             where: { id },
@@ -138,9 +139,9 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
 
 /* ================== UPDATE ================== */
 export async function updateDetalleTrabajo(req: Request, res: Response) {
-    try {
-        const id = Number(req.params.id);
-        if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
         const parsed = detalleTrabajoUpdateSchema.parse(req.body);
         const data: any = {};
@@ -206,9 +207,9 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
 
 /* ================== DELETE ================== */
 export async function deleteDetalleTrabajo(req: Request, res: Response) {
-    try {
-        const id = Number(req.params.id);
-        if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
         await prisma.detalleTrabajo.delete({ where: { id } });
         return res.status(204).send();
@@ -221,3 +222,4 @@ export async function deleteDetalleTrabajo(req: Request, res: Response) {
         return res.status(500).json({ error: "Error al eliminar detalle trabajo" });
     }
 }
+

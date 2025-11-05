@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 export declare function getEmpresas(req: Request, res: Response): Promise<void>;
-export declare function getEmpresasStats(req: Request, res: Response): Promise<void>;
+export declare function getEmpresasStats(_req: Request, res: Response): Promise<void>;
 export declare function getEmpresaById(req: Request, res: Response): Promise<void>;
 export declare function createEmpresa(req: Request, res: Response): Promise<void>;
 export declare function updateEmpresa(req: Request, res: Response): Promise<void>;
