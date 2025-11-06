@@ -31,7 +31,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
   try {
     const data = detalleTrabajoSchema.parse(req.body);
 
-        const nuevo = await prisma.detalleTrabajo.create({
+        const nuevo = await prisma.detalle_trabajos.create({
             data: {
                 fecha_ingreso: new Date(data.fecha_ingreso),
                 fecha_egreso: data.fecha_egreso ? new Date(data.fecha_egreso) : null,
@@ -82,7 +82,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 /* ================== READ ALL ================== */
 export async function getDetallesTrabajo(req: Request, res: Response) {
     try {
-        const detalles = await prisma.detalleTrabajo.findMany({
+        const detalles = await prisma.detalle_trabajos.findMany({
             include: {
                 empresa: {
                     select: {
@@ -111,7 +111,7 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
-        const detalle = await prisma.detalleTrabajo.findUnique({
+        const detalle = await prisma.detalle_trabajos.findUnique({
             where: { id },
             include: {
                 empresa: {
@@ -176,7 +176,7 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
         if (parsed.equipo_id !== undefined) data.equipo_id = parsed.equipo_id;
         if (parsed.tecnico_id !== undefined) data.tecnico_id = parsed.tecnico_id;
 
-        const actualizado = await prisma.detalleTrabajo.update({
+        const actualizado = await prisma.detalle_trabajos.update({
             where: { id },
             data,
             include: {
@@ -211,7 +211,7 @@ export async function deleteDetalleTrabajo(req: Request, res: Response) {
     const id = Number(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "ID inválido" });
 
-        await prisma.detalleTrabajo.delete({ where: { id } });
+        await prisma.detalle_trabajos.delete({ where: { id } });
         return res.status(204).send();
     } catch (err: any) {
         console.error("Error al eliminar detalle trabajo:", err);
