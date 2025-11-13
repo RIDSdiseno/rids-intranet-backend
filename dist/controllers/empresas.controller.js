@@ -23,7 +23,7 @@ export async function getEmpresas(req, res) {
         if (full) {
             // ------ FULL: Traemos "todo" con consultas separadas y luego agregamos en memoria
             // DetalleEmpresa (uno a uno por empresa)
-            const detalles = await prisma.detalle_empresas.findMany({
+            const detalles = await prisma.detalle_empresa.findMany({
                 where: { empresa_id: { in: empresaIds } },
             });
             const detallePorEmpresa = new Map(detalles.map((d) => [d.empresa_id, d]));
@@ -62,7 +62,7 @@ export async function getEmpresas(req, res) {
                 select: { id_visita: true, status: true, empresaId: true },
             });
             // Trabajos (detalle_trabajos)
-            const trabajos = await prisma.detalle_trabajos.findMany({
+            const trabajos = await prisma.detalle_trabajo.findMany({
                 where: { empresa_id: { in: empresaIds } },
                 select: { id: true, estado: true, empresa_id: true },
             });
@@ -164,7 +164,7 @@ export async function getEmpresas(req, res) {
             _count: { empresaId: true },
         });
         // 4) Trabajos pendientes por empresa
-        const trabajosPend = await prisma.detalle_trabajos.groupBy({
+        const trabajosPend = await prisma.detalle_trabajo.groupBy({
             by: ["empresa_id"],
             where: {
                 empresa_id: { in: empresaIds },
@@ -227,11 +227,11 @@ export async function getEmpresasStats(_req, res) {
             prisma.equipo.count(),
             prisma.freshdeskTicket.count(),
             prisma.visita.count(),
-            prisma.detalle_trabajos.count(),
+            prisma.detalle_trabajo.count(),
         ]);
         const ticketsAbiertos = await prisma.freshdeskTicket.count({ where: { status: { not: 5 } } });
         const visitasPendientes = await prisma.visita.count({ where: { status: EstadoVisita.PENDIENTE } });
-        const trabajosPendientes = await prisma.detalle_trabajos.count({
+        const trabajosPendientes = await prisma.detalle_trabajo.count({
             where: { estado: { equals: "PENDIENTE", mode: "insensitive" } },
         });
         res.json({
@@ -270,7 +270,7 @@ export async function getEmpresaById(req, res) {
         }
         // Traer anexos por separado
         const [detalle, solicitantes, tickets, visitas, trabajos] = await Promise.all([
-            prisma.detalle_empresas.findUnique({ where: { empresa_id: id } }),
+            prisma.detalle_empresa.findUnique({ where: { empresa_id: id } }),
             prisma.solicitante.findMany({
                 where: { empresaId: id },
                 select: { id_solicitante: true, nombre: true, email: true },
@@ -285,7 +285,7 @@ export async function getEmpresaById(req, res) {
                 select: { id_visita: true, status: true, inicio: true, fin: true },
                 orderBy: { inicio: "desc" },
             }),
-            prisma.detalle_trabajos.findMany({
+            prisma.detalle_trabajo.findMany({
                 where: { empresa_id: id },
                 select: { id: true, estado: true, fecha_ingreso: true, fecha_egreso: true },
                 orderBy: { id: "desc" },
@@ -351,7 +351,7 @@ export async function createEmpresa(req, res) {
             });
             let detalle = null;
             if (rut && direccion && telefono && email) {
-                detalle = await tx.detalle_empresas.create({
+                detalle = await tx.detalle_empresa.create({
                     data: { rut, direccion, telefono, email, empresa_id: nueva.id_empresa },
                 });
             }
@@ -399,17 +399,17 @@ export async function updateEmpresa(req, res) {
             if (typeof nombre === "string") {
                 await tx.empresa.update({ where: { id_empresa: id }, data: { nombre } });
             }
-            let detalle = await tx.detalle_empresas.findUnique({ where: { empresa_id: id } });
+            let detalle = await tx.detalle_empresa.findUnique({ where: { empresa_id: id } });
             if (rut && direccion && telefono && email) {
                 // upsert manual
                 if (detalle) {
-                    detalle = await tx.detalle_empresas.update({
+                    detalle = await tx.detalle_empresa.update({
                         where: { empresa_id: id },
                         data: { rut, direccion, telefono, email },
                     });
                 }
                 else {
-                    detalle = await tx.detalle_empresas.create({
+                    detalle = await tx.detalle_empresa.create({
                         data: { rut, direccion, telefono, email, empresa_id: id },
                     });
                 }
@@ -452,7 +452,7 @@ export async function deleteEmpresa(req, res) {
             prisma.solicitante.count({ where: { empresaId: id } }),
             prisma.freshdeskTicket.count({ where: { empresaId: id } }),
             prisma.visita.count({ where: { empresaId: id } }),
-            prisma.detalle_trabajos.count({ where: { empresa_id: id } }),
+            prisma.detalle_trabajo.count({ where: { empresa_id: id } }),
         ]);
         if (solCount > 0 || tkCount > 0 || vsCount > 0 || trCount > 0) {
             res.status(400).json({
@@ -463,9 +463,9 @@ export async function deleteEmpresa(req, res) {
         }
         await prisma.$transaction(async (tx) => {
             // borrar detalle si existe
-            const detalle = await tx.detalle_empresas.findUnique({ where: { empresa_id: id } });
+            const detalle = await tx.detalle_empresa.findUnique({ where: { empresa_id: id } });
             if (detalle) {
-                await tx.detalle_empresas.delete({ where: { empresa_id: id } });
+                await tx.detalle_empresa.delete({ where: { empresa_id: id } });
             }
             await tx.empresa.delete({ where: { id_empresa: id } });
         });

@@ -14,7 +14,7 @@ const detalleEmpresaUpdateSchema = detalleEmpresaSchema.partial();
 export async function createDetalleEmpresa(req, res) {
     try {
         const data = detalleEmpresaSchema.parse(req.body);
-        const nuevo = await prisma.detalle_empresas.create({
+        const nuevo = await prisma.detalle_empresa.create({
             data,
             include: {
                 empresa: {
@@ -39,7 +39,7 @@ export async function createDetalleEmpresa(req, res) {
 // READ ALL
 export async function getDetallesEmpresa(_req, res) {
     try {
-        const detalles = await prisma.detalle_empresas.findMany({
+        const detalles = await prisma.detalle_empresa.findMany({
             include: {
                 empresa: {
                     select: {
@@ -63,7 +63,7 @@ export async function getDetalleEmpresaById(req, res) {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        const detalle = await prisma.detalle_empresas.findUnique({
+        const detalle = await prisma.detalle_empresa.findUnique({
             where: { id },
             include: {
                 empresa: {
@@ -89,7 +89,7 @@ export async function getDetalleEmpresaByEmpresaId(req, res) {
         const empresa_id = Number(req.params.empresa_id);
         if (isNaN(empresa_id))
             return res.status(400).json({ error: "ID de empresa inválido" });
-        const detalle = await prisma.detalle_empresas.findUnique({
+        const detalle = await prisma.detalle_empresa.findUnique({
             where: { empresa_id },
             include: {
                 empresa: {
@@ -134,7 +134,7 @@ export async function updateDetalleEmpresa(req, res) {
             data.empresa = { connect: { id_empresa: empresa_id } };
             // ⚠️ NO enviar empresa_id directamente en `data`
         }
-        const actualizado = await prisma.detalle_empresas.update({
+        const actualizado = await prisma.detalle_empresa.update({
             where: { id },
             data,
             include: {
@@ -162,7 +162,7 @@ export async function deleteDetalleEmpresa(req, res) {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        await prisma.detalle_empresas.delete({ where: { id } });
+        await prisma.detalle_empresa.delete({ where: { id } });
         return res.status(204).send();
     }
     catch (err) {

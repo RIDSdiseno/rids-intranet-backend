@@ -63,9 +63,10 @@ export async function createCliente(req: Request, res: Response) {
       include: {
         empresa: true,
         historiales: true,
-        equipos: true, // <-- incluye equipo en la respuesta
+        equipos: true,
       },
     });
+
 
     return res.status(201).json(nuevoCliente);
   } catch (err: any) {
@@ -85,6 +86,7 @@ export async function getClientes(req: Request, res: Response) {
         equipos: true,
       },
     });
+
 
     return res.status(200).json(clientes);
   } catch (err: any) {
@@ -107,6 +109,7 @@ export async function getClienteById(req: Request, res: Response) {
         equipos: true,
       },
     });
+
 
     if (!cliente) return res.status(404).json({ error: "Cliente no encontrado" });
 

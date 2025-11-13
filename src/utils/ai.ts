@@ -63,8 +63,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE ?? 0.2);
 
-// Donde n8n recibe el “cierre de conversación” para crear el ticket
-const N8N_TICKET_URL = process.env.N8N_TICKET_URL || "";
+// URL del flujo de Power Automate que crea el ticket en Freshdesk
+const PA_TICKET_URL = process.env.PA_TICKET_URL || "";
 
 // -----------------------------------------------------------------------------
 // PROMPT DE CONTROL
@@ -97,7 +97,7 @@ Estilo y formato:
 `;
 
 // -----------------------------------------------------------------------------
-// Herramienta: create_freshdesk_ticket (para que la IA pida crear ticket)
+// Herramienta: create_freshdesk_ticket (para que la IA dispare el flujo de PA)
 // -----------------------------------------------------------------------------
 const tools = [
   {
@@ -105,7 +105,7 @@ const tools = [
     function: {
       name: "create_freshdesk_ticket",
       description:
-        "Crear ticket en Freshdesk a través de n8n con correo, empresa y transcript. Úsala solo cuando el cliente confirme que quiere generar ticket y ya se cuente con email y empresa válidos.",
+        "Crear ticket en Freshdesk a través de Power Automate con correo, empresa y transcript. Úsala solo cuando el cliente confirme que quiere generar ticket y ya se cuente con email y empresa válidos.",
       parameters: {
         type: "object",
         properties: {
@@ -144,14 +144,18 @@ const tools = [
 // -----------------------------------------------------------------------------
 async function callOpenAI(messages: ChatMessage[]) {
   if (!OPENAI_API_KEY) {
-    return { text: "Hola 👋 Para generar tu ticket, ¿me compartes tu correo y el nombre de tu empresa?", toolCalls: [] as OpenAIToolCall[] };
+    return {
+      text:
+        "Hola 👋 Para generar tu ticket, ¿me compartes tu correo y el nombre de tu empresa?",
+      toolCalls: [] as OpenAIToolCall[]
+    };
   }
 
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
+      "Content-Type": "application/json"
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
@@ -162,7 +166,7 @@ async function callOpenAI(messages: ChatMessage[]) {
       messages,
       tools,
       tool_choice: "auto"
-    }),
+    })
   });
 
   if (!resp.ok) {
@@ -179,9 +183,9 @@ async function callOpenAI(messages: ChatMessage[]) {
 }
 
 // -----------------------------------------------------------------------------
-// Helper: disparar creación de ticket a n8n
+// Helper: disparar creación de ticket a Power Automate
 // -----------------------------------------------------------------------------
-async function sendTicketToN8N(payload: {
+async function sendTicketToPowerAutomate(payload: {
   name?: string;
   email: string;
   company: string;
@@ -192,18 +196,41 @@ async function sendTicketToN8N(payload: {
   priority?: 1 | 2 | 3 | 4;
   status?: 2 | 3 | 4 | 5;
 }) {
-  if (!N8N_TICKET_URL) {
-    console.warn("N8N_TICKET_URL no está configurada; omitiendo POST");
+  if (!PA_TICKET_URL) {
+    console.warn("PA_TICKET_URL no está configurada; omitiendo POST");
     return null;
   }
-  const resp = await fetch(N8N_TICKET_URL, {
+
+  // Convertimos el transcript en un string para el campo "conversation"
+  const conversationText =
+    payload.transcript
+      ?.map(
+        (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
+      )
+      .join("\n") || "";
+
+  const bodyForPA = {
+    name: payload.name,
+    email: payload.email,
+    company: payload.company,
+    phone: payload.phone,
+    conversation: conversationText,
+    // Podemos enviar las tags como "intent" o una combinación
+    intent:
+      payload.tags && payload.tags.length > 0
+        ? payload.tags.join(",")
+        : "whatsapp"
+  };
+
+  const resp = await fetch(PA_TICKET_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(bodyForPA)
   });
+
   if (!resp.ok) {
     const t = await resp.text().catch(() => "");
-    throw new Error(`n8n error HTTP ${resp.status}: ${t}`);
+    throw new Error(`Power Automate error HTTP ${resp.status}: ${t}`);
   }
   return await resp.json().catch(() => ({}));
 }
@@ -223,8 +250,12 @@ export async function runAI(input: RunAIInput): Promise<string> {
   const name = input.context?.name;
   const phone = input.context?.phone;
   const transcript = input.context?.transcript || [];
-  const prev = input.context?.lastUserMsg ? `\n[prev_user]: ${input.context.lastUserMsg}` : "";
-  const prevBot = input.context?.lastAIReply ? `\n[prev_bot]: ${input.context.lastAIReply}` : "";
+  const prev = input.context?.lastUserMsg
+    ? `\n[prev_user]: ${input.context.lastUserMsg}`
+    : "";
+  const prevBot = input.context?.lastAIReply
+    ? `\n[prev_bot]: ${input.context.lastAIReply}`
+    : "";
 
   const escalateLine =
     turns >= 10
@@ -249,16 +280,19 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
 
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: `${user}${prev}${prevBot}` },
+    { role: "user", content: `${user}${prev}${prevBot}` }
   ];
 
   // 1) Llamada a OpenAI (puede devolver text y/o toolCalls)
   const { text, toolCalls } = await callOpenAI(messages);
 
-  // 2) Si hay toolCalls → ejecutar creación de ticket vía n8n
+  // 2) Si hay toolCalls → ejecutar creación de ticket vía Power Automate
   if (toolCalls && toolCalls.length > 0) {
     for (const tc of toolCalls) {
-      if (tc.type === "function" && tc.function?.name === "create_freshdesk_ticket") {
+      if (
+        tc.type === "function" &&
+        tc.function?.name === "create_freshdesk_ticket"
+      ) {
         try {
           const args = JSON.parse(tc.function.arguments || "{}");
           const payload = {
@@ -266,31 +300,37 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
             email: args.email || email || "",
             company: args.company || company || "",
             phone: phone || args.phone,
-            subject: args.subject || `Soporte WhatsApp - ${args.company || company || "Cliente"}`,
-            transcript: (args.transcript || transcript) as Array<{ from: "client" | "bot"; text: string }>,
+            subject:
+              args.subject ||
+              `Soporte WhatsApp - ${args.company || company || "Cliente"}`,
+            transcript:
+              (args.transcript || transcript) as Array<{
+                from: "client" | "bot";
+                text: string;
+              }>,
             tags: args.tags || ["whatsapp", "chatbot"],
-            priority: (args.priority as 1|2|3|4) || 2,
-            status: (args.status as 2|3|4|5) || 2
+            priority: (args.priority as 1 | 2 | 3 | 4) || 2,
+            status: (args.status as 2 | 3 | 4 | 5) || 2
           };
 
           // Validar mínimos
           if (!payload.email || !payload.company) {
-            // Si por algún motivo vino sin datos, forzamos la respuesta pidiendo lo que falta
-            const faltante = !payload.email && !payload.company
-              ? "correo y empresa"
-              : !payload.email ? "correo"
-              : "empresa";
+            const faltante =
+              !payload.email && !payload.company
+                ? "correo y empresa"
+                : !payload.email
+                ? "correo"
+                : "empresa";
             return `Para generar tu ticket, ¿me compartes tu ${faltante}?`;
           }
 
-          // Disparar n8n
-          await sendTicketToN8N(payload);
+          // Disparar Power Automate
+          await sendTicketToPowerAutomate(payload);
 
-          // Mensaje final obligatorio según tus reglas:
-          // “se ha generado tu ticket gracias por contactarte con RIDSI tu bot de confianza.”
+          // Mensaje final obligatorio según tus reglas
           return "Se ha generado tu ticket, gracias por contactarte con RIDSI, tu bot de confianza. Un técnico se comunicará contigo a la brevedad.";
         } catch (e: any) {
-          console.error("Error creando ticket vía n8n:", e?.message || e);
+          console.error("Error creando ticket vía Power Automate:", e?.message || e);
           return "Ocurrió un problema al crear tu ticket 😓. ¿Me confirmas nuevamente tu correo y empresa para reintentar?";
         }
       }

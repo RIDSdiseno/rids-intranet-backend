@@ -16,17 +16,16 @@ const detalleTrabajoSchema = z.object({
     prioridad: z.enum(["baja", "normal", "alta"]),
     estado: z.string(),
     notas: z.string().optional().nullable(),
-    empresa_id: z.number(),
-    equipo_id: z.number(),
-    tecnico_id: z.number(),
+    empresa_id: z.number().optional().nullable(),
+    equipo_id: z.number().optional().nullable(),
+    tecnico_id: z.number().optional().nullable(),
 });
 const detalleTrabajoUpdateSchema = detalleTrabajoSchema.partial();
-/* ================== CRUD ================== */
-// CREATE
+/* ================== CREATE ================== */
 export async function createDetalleTrabajo(req, res) {
     try {
         const data = detalleTrabajoSchema.parse(req.body);
-        const nuevo = await prisma.detalle_trabajos.create({
+        const nuevo = await prisma.detalle_trabajo.create({
             data: {
                 fecha_ingreso: new Date(data.fecha_ingreso),
                 fecha_egreso: data.fecha_egreso ? new Date(data.fecha_egreso) : null,
@@ -43,27 +42,53 @@ export async function createDetalleTrabajo(req, res) {
                 prioridad: data.prioridad,
                 estado: data.estado,
                 notas: data.notas ?? null,
-                empresa_id: data.empresa_id,
-                equipo_id: data.equipo_id,
-                tecnico_id: data.tecnico_id,
+                area: data.area,
+                empresa_id: data.empresa_id ?? null,
+                equipo_id: data.equipo_id ?? null,
+                tecnico_id: data.tecnico_id ?? null,
+            },
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: { select: { telefono: true, email: true } },
+                    },
+                },
+                equipo: {
+                    select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                },
+                tecnico: { select: { id_tecnico: true, nombre: true } },
             },
         });
         return res.status(201).json(nuevo);
     }
     catch (err) {
         console.error("Error al crear detalle trabajo:", err);
-        if (err.code === "P2003") {
+        if (err.code === "P2003")
             return res
                 .status(400)
                 .json({ error: "Empresa, equipo o técnico no existen" });
-        }
         return res.status(500).json({ error: "Error al crear detalle trabajo" });
     }
 }
-// READ ALL
-export async function getDetallesTrabajo(_req, res) {
+/* ================== READ ALL ================== */
+export async function getDetallesTrabajo(req, res) {
     try {
-        const detalles = await prisma.detalle_trabajos.findMany({
+        const detalles = await prisma.detalle_trabajo.findMany({
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: { select: { telefono: true, email: true } },
+                    },
+                },
+                equipo: {
+                    select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                },
+                tecnico: { select: { id_tecnico: true, nombre: true } },
+            },
             orderBy: { id: "asc" },
         });
         return res.status(200).json(detalles);
@@ -73,13 +98,28 @@ export async function getDetallesTrabajo(_req, res) {
         return res.status(500).json({ error: "Error al obtener detalles trabajo" });
     }
 }
-// READ ONE BY ID
+/* ================== READ ONE ================== */
 export async function getDetalleTrabajoById(req, res) {
     try {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        const detalle = await prisma.detalle_trabajos.findUnique({ where: { id } });
+        const detalle = await prisma.detalle_trabajo.findUnique({
+            where: { id },
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: { select: { telefono: true, email: true } },
+                    },
+                },
+                equipo: {
+                    select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                },
+                tecnico: { select: { id_tecnico: true, nombre: true } },
+            },
+        });
         if (!detalle)
             return res.status(404).json({ error: "Detalle trabajo no encontrado" });
         return res.status(200).json(detalle);
@@ -89,7 +129,7 @@ export async function getDetalleTrabajoById(req, res) {
         return res.status(500).json({ error: "Error al obtener detalle trabajo" });
     }
 }
-// UPDATE
+/* ================== UPDATE ================== */
 export async function updateDetalleTrabajo(req, res) {
     try {
         const id = Number(req.params.id);
@@ -103,25 +143,54 @@ export async function updateDetalleTrabajo(req, res) {
             data.fecha_egreso = parsed.fecha_egreso
                 ? new Date(parsed.fecha_egreso)
                 : null;
+        if (parsed.fecha_prometida !== undefined)
+            data.fecha_prometida = parsed.fecha_prometida
+                ? new Date(parsed.fecha_prometida)
+                : null;
         if (parsed.trabajo !== undefined)
             data.trabajo = parsed.trabajo;
         if (parsed.accesorios !== undefined)
             data.accesorios = parsed.accesorios ?? null;
+        if (parsed.diagnostico !== undefined)
+            data.diagnostico = parsed.diagnostico;
+        if (parsed.garantia !== undefined)
+            data.garantia = parsed.garantia;
+        if (parsed.contrasena !== undefined)
+            data.contrasena = parsed.contrasena ?? null;
+        if (parsed.presupuesto !== undefined)
+            data.presupuesto = parsed.presupuesto ?? null;
+        if (parsed.adelanto !== undefined)
+            data.adelanto = parsed.adelanto ?? null;
         if (parsed.prioridad !== undefined)
             data.prioridad = parsed.prioridad;
         if (parsed.estado !== undefined)
             data.estado = parsed.estado;
         if (parsed.notas !== undefined)
             data.notas = parsed.notas ?? null;
+        if (parsed.area !== undefined)
+            data.area = parsed.area;
         if (parsed.empresa_id !== undefined)
             data.empresa_id = parsed.empresa_id;
         if (parsed.equipo_id !== undefined)
             data.equipo_id = parsed.equipo_id;
         if (parsed.tecnico_id !== undefined)
             data.tecnico_id = parsed.tecnico_id;
-        const actualizado = await prisma.detalle_trabajos.update({
+        const actualizado = await prisma.detalle_trabajo.update({
             where: { id },
             data,
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: { select: { telefono: true, email: true } },
+                    },
+                },
+                equipo: {
+                    select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                },
+                tecnico: { select: { id_tecnico: true, nombre: true } },
+            },
         });
         return res.status(200).json(actualizado);
     }
@@ -131,20 +200,16 @@ export async function updateDetalleTrabajo(req, res) {
             return res
                 .status(404)
                 .json({ error: "Detalle trabajo no encontrado" });
-        if (err.code === "P2003")
-            return res
-                .status(400)
-                .json({ error: "Empresa, equipo o técnico no existen" });
         return res.status(500).json({ error: "Error al actualizar detalle trabajo" });
     }
 }
-// DELETE
+/* ================== DELETE ================== */
 export async function deleteDetalleTrabajo(req, res) {
     try {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        await prisma.detalle_trabajos.delete({ where: { id } });
+        await prisma.detalle_trabajo.delete({ where: { id } });
         return res.status(204).send();
     }
     catch (err) {
