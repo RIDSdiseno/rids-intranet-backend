@@ -119,6 +119,10 @@ model ProductoGestioo {
   fechaIngreso  DateTime?               @default(now())
   garantiaMeses Int?
   activo        Boolean                 @default(true)
+
+  porcGanancia  Float?
+  precioTotal   Float?
+
   marcaId       Int?
   modeloId      Int?
   entidadId     Int?
@@ -143,7 +147,7 @@ model ServicioGestioo {
   estado        String?                 @default("disponible")
   activo        Boolean                 @default(true)
   fechaCreacion DateTime?               @default(now())
-  entidadId     Int? // Si el servicio pertenece a una entidad específica
+  entidadId     Int?
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
 
@@ -162,10 +166,9 @@ model DetalleTrabajoGestioo {
   entidadId   Int?
   productoId  Int?
   servicioId  Int?
-
-  entidad  EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio ServicioGestioo? @relation(fields: [servicioId], references: [id])
+  entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+  producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
+  servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
 
   @@index([entidadId])
   @@index([productoId])
@@ -452,11 +455,11 @@ model CotizacionGestioo {
   estado    EstadoCotizacionGestioo @default(BORRADOR)
   tipo      TipoCotizacionGestioo   @default(CLIENTE)
   entidadId Int?
-  entidad   EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   total     Float                   @default(0)
-  items     CotizacionItemGestioo[]
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
+  entidad   EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+  items     CotizacionItemGestioo[]
 
   @@index([entidadId])
 }
@@ -464,15 +467,13 @@ model CotizacionGestioo {
 model CotizacionItemGestioo {
   id           Int               @id @default(autoincrement())
   cotizacionId Int
+  tipo         ItemTipoGestioo
+  descripcion  String
+  cantidad     Int               @default(1)
+  precio       Float             @default(0)
+  porcentaje   Float?
+  createdAt    DateTime          @default(now())
   cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-
-  tipo        ItemTipoGestioo
-  descripcion String
-  cantidad    Int             @default(1)
-  precio      Float           @default(0)
-  porcentaje  Float?
-
-  createdAt DateTime @default(now())
 }
 
 enum AccountType {
