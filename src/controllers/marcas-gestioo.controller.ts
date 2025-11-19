@@ -37,7 +37,7 @@ export async function createMarca(req: Request, res: Response) {
 
 
 // ✅ Obtener todas las marcas con sus modelos
-export async function getMarcas(req: Request, res: Response) {
+export async function getMarcas(_req: Request, res: Response) {
     try {
         const marcas = await prisma.marcaGestioo.findMany({
             orderBy: { id: "asc" },
@@ -64,6 +64,9 @@ export async function getMarcaById(req: Request, res: Response) {
         console.error("❌ Error al obtener marca:", error);
         res.status(500).json({ error: "Error al obtener marca" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al obtener marca",
+    });
 }
 
 // ✅ Actualizar marca (solo nombre o modelos nuevos)

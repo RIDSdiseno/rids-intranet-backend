@@ -34,7 +34,7 @@ function normalizeCotizacionData(body: any) {
 /* =====================================================
       GET ALL - ASEGURAR INCLUSIÓN DE ITEMS
 ===================================================== */
-export async function getCotizaciones(req: Request, res: Response) {
+export async function getCotizaciones(_req: Request, res: Response) {
     try {
         const rows = await prisma.cotizacionGestioo.findMany({
             orderBy: { id: "desc" },
@@ -76,7 +76,9 @@ export async function getCotizacionById(req: Request, res: Response) {
             },
         });
 
-        if (!cot) return res.status(404).json({ error: "Cotización no encontrada" });
+        if (!cot) {
+            return res.status(404).json({ error: "Cotización no encontrada" });
+        }
 
         // Asegurar que items sea un array
         const cotConItems = {
@@ -84,12 +86,13 @@ export async function getCotizacionById(req: Request, res: Response) {
             items: cot.items || []
         };
 
-        res.json({ data: cotConItems });
+        return res.json({ data: cotConItems });  // ← RETURN agregado
     } catch (error: any) {
         console.error("❌ Error getCotizacionById:", error);
-        res.status(500).json({ error: "Error al obtener cotización" });
+        return res.status(500).json({ error: "Error al obtener cotización" }); // ← RETURN agregado
     }
 }
+
 
 /* =====================================================
       CREATE
@@ -123,12 +126,13 @@ export async function createCotizacion(req: Request, res: Response) {
             },
         });
 
-        res.status(201).json({ data: nueva });
+        return res.status(201).json({ data: nueva }); // ← RETURN OBLIGATORIO
     } catch (error: any) {
         console.error("❌ Error createCotizacion:", error);
-        res.status(500).json({ error: "Error al crear cotización" });
+        return res.status(500).json({ error: "Error al crear cotización" }); // ← RETURN OBLIGATORIO
     }
 }
+
 
 /* =====================================================
       UPDATE
@@ -227,11 +231,10 @@ export async function updateCotizacion(req: Request, res: Response) {
             });
         });
 
-        res.json({ data: updated });
+        return res.json({ data: updated }); // ✅ RETURN OBLIGATORIO
     } catch (error: any) {
         console.error("❌ Error updateCotizacion:", error);
 
-        // Mensajes de error más específicos
         if (error.code === 'P2025') {
             return res.status(404).json({ error: "Cotización no encontrada" });
         }
@@ -239,12 +242,13 @@ export async function updateCotizacion(req: Request, res: Response) {
             return res.status(400).json({ error: "Entidad no válida" });
         }
 
-        res.status(500).json({
+        return res.status(500).json({        // ✅ RETURN OBLIGATORIO
             error: "Error al actualizar cotización",
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 }
+
 
 /* =====================================================
       DELETE

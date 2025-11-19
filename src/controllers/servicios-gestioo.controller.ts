@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 const prisma = new PrismaClient();
 
 // ✅ Obtener todos los servicios
-export async function getServicios(req: Request, res: Response) {
+export async function getServicios(_req: Request, res: Response) {
   try {
     const servicios = await prisma.servicioGestioo.findMany({
       orderBy: { id: "asc" }
@@ -37,6 +37,9 @@ export async function getServicioById(req: Request, res: Response) {
     console.error("❌ Error al obtener servicio:", error);
     res.status(500).json({ error: "Error al obtener servicio" });
   }
+  return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+    error: "Error al obtener servicio",
+  });
 }
 
 // ✅ Crear servicio
@@ -71,6 +74,9 @@ export async function createServicio(req: Request, res: Response) {
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+  return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+    error: "Error al crear servicio",
+  });
 }
 
 // ✅ Actualizar servicio
@@ -122,6 +128,9 @@ export async function updateServicio(req: Request, res: Response) {
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+  return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+    error: "Error al actualizar servicio",
+  });
 }
 
 // ✅ Eliminar servicio
@@ -148,4 +157,7 @@ export async function deleteServicio(req: Request, res: Response) {
 
     res.status(500).json({ error: "Error al eliminar servicio" });
   }
+  return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+    error: "Error al eliminar servicio",
+  });
 }

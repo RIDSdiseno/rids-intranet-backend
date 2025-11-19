@@ -6,14 +6,6 @@ import { z } from "zod";
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
-// AGREGAR ESTO - CONFIGURACIÓN ARGON2 OPTIMIZADA
-const ARGON_PASSWORD_OPTIONS = {
-    type: argon2.argon2id,
-    memoryCost: 1024, // Reducido de 4096 a 1024 (75% menos memoria)
-    timeCost: 1, // Reducido de 2 a 1 (50% menos iteraciones)
-    parallelism: 1,
-    hashLength: 32
-};
 const ARGON_REFRESH_TOKEN_OPTIONS = {
     type: argon2.argon2id,
     memoryCost: 512, // Aún más optimizado para tokens

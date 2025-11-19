@@ -76,14 +76,23 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         select: { id_visita: true, status: true, empresaId: true },
       });
 
-      // Trabajos (detalle_trabajos)
+      // Trabajos (DetalleTrabajo)
       const trabajos = await prisma.detalleTrabajo.findMany({
         where: { empresa_id: { in: empresaIds } },
         select: { id: true, estado: true, empresa_id: true },
       });
 
       // Agrupar solicitantes por empresa
-      const solPorEmpresa = new Map<number, Array<{ id_solicitante: number; nombre: string; email: string | null; equipos: { id_equipo: number }[] }>>();
+      const solPorEmpresa = new Map<
+        number,
+        Array<{
+          id_solicitante: number;
+          nombre: string;
+          email: string | null;
+          equipos: { id_equipo: number }[];
+        }>
+      >();
+
       for (const s of solicitantes) {
         const eqIds = equiposPorSolic.get(s.id_solicitante) ?? [];
         const entry = {
@@ -171,7 +180,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     if (!withStats) {
       res.json({
         success: true,
-        data: empresasBase.map((e) => ({ id_empresa: e.id_empresa, nombre: e.nombre })),
+        data: empresasBase.map((e) => ({
+          id_empresa: e.id_empresa,
+          nombre: e.nombre,
+        })),
         total: empresasBase.length,
       });
       return;
@@ -237,9 +249,15 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     }
 
     const solMap = new Map(solCount.map((r) => [r.empresaId!, r._count.empresaId]));
-    const ticketOpenMap = new Map(ticketsOpen.map((r) => [r.empresaId!, r._count.empresaId]));
-    const visitaPendMap = new Map(visitasPend.map((r) => [r.empresaId!, r._count.empresaId]));
-    const trabajoPendMap = new Map(trabajosPend.map((r) => [r.empresa_id!, r._count.empresa_id]));
+    const ticketOpenMap = new Map(
+      ticketsOpen.map((r) => [r.empresaId!, r._count.empresaId])
+    );
+    const visitaPendMap = new Map(
+      visitasPend.map((r) => [r.empresaId!, r._count.empresaId])
+    );
+    const trabajoPendMap = new Map(
+      trabajosPend.map((r) => [r.empresa_id!, r._count.empresa_id])
+    );
 
     const data = empresasBase.map((e) => ({
       id_empresa: e.id_empresa,
@@ -266,21 +284,31 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
 /* =======================================================
    GET /api/empresas/stats  (agregado total del sistema)
    ======================================================= */
-export async function getEmpresasStats(_req: Request, res: Response): Promise<void> {
+export async function getEmpresasStats(
+  _req: Request,
+  res: Response
+): Promise<void> {
   try {
-    const [empresas, solicitantes, equipos, tickets, visitas, trabajos] = await Promise.all([
-      prisma.empresa.count(),
-      prisma.solicitante.count(),
-      prisma.equipo.count(),
-      prisma.freshdeskTicket.count(),
-      prisma.visita.count(),
-      prisma.detalleTrabajo.count(),
-    ]);
+    const [empresas, solicitantes, equipos, tickets, visitas, trabajos] =
+      await Promise.all([
+        prisma.empresa.count(),
+        prisma.solicitante.count(),
+        prisma.equipo.count(),
+        prisma.freshdeskTicket.count(),
+        prisma.visita.count(),
+        prisma.detalleTrabajo.count(),
+      ]);
 
-    const ticketsAbiertos = await prisma.freshdeskTicket.count({ where: { status: { not: 5 } } });
-    const visitasPendientes = await prisma.visita.count({ where: { status: EstadoVisita.PENDIENTE } });
+    const ticketsAbiertos = await prisma.freshdeskTicket.count({
+      where: { status: { not: 5 } },
+    });
+    const visitasPendientes = await prisma.visita.count({
+      where: { status: EstadoVisita.PENDIENTE },
+    });
     const trabajosPendientes = await prisma.detalleTrabajo.count({
-      where: { estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode } },
+      where: {
+        estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode },
+      },
     });
 
     res.json({
@@ -306,7 +334,10 @@ export async function getEmpresasStats(_req: Request, res: Response): Promise<vo
 /* =======================================================
    GET /api/empresas/:id - OPTIMIZADO (sin relaciones Prisma)
    ======================================================= */
-export async function getEmpresaById(req: Request, res: Response): Promise<void> {
+export async function getEmpresaById(
+  req: Request,
+  res: Response
+): Promise<void> {
   try {
     const id = Number(req.params.id);
     const empresa = await prisma.empresa.findUnique({
@@ -347,9 +378,15 @@ export async function getEmpresaById(req: Request, res: Response): Promise<void>
     const solicIds = solicitantes.map((s) => s.id_solicitante);
     const equipos = solicIds.length
       ? await prisma.equipo.findMany({
-        where: { idSolicitante: { in: solicIds } },
-        select: { id_equipo: true, idSolicitante: true, serial: true, marca: true, modelo: true },
-      })
+          where: { idSolicitante: { in: solicIds } },
+          select: {
+            id_equipo: true,
+            idSolicitante: true,
+            serial: true,
+            marca: true,
+            modelo: true,
+          },
+        })
       : [];
 
     const equiposPorSolic = new Map<number, any[]>();
@@ -387,10 +424,13 @@ export async function getEmpresaById(req: Request, res: Response): Promise<void>
 }
 
 /* =======================================================
-   POST /api/empresas - SIN nested create (no hay relación Prisma)
+   POST /api/empresas - SIN nested create (usa DetalleEmpresa separado)
    ======================================================= */
 
-export async function createEmpresa(req: Request, res: Response): Promise<void> {
+export async function createEmpresa(
+  req: Request,
+  res: Response
+): Promise<void> {
   try {
     const { nombre, rut, direccion, telefono, email } = req.body;
 
@@ -409,7 +449,7 @@ export async function createEmpresa(req: Request, res: Response): Promise<void> 
         select: { id_empresa: true, nombre: true, tieneSucursales: true },
       });
 
-      // Tipado seguro con GetPayload (no depende de que se exporte el tipo de modelo)
+      // Tipado seguro con GetPayload
       type DetalleEmpresaRow = Prisma.DetalleEmpresaGetPayload<{}>;
       let detalle: DetalleEmpresaRow | null = null;
 
@@ -431,14 +471,15 @@ export async function createEmpresa(req: Request, res: Response): Promise<void> 
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
       const errorMessage =
-        field === "nombre" ? "El nombre de la empresa ya existe" : "El RUT de la empresa ya existe";
+        field === "nombre"
+          ? "El nombre de la empresa ya existe"
+          : "El RUT de la empresa ya existe";
       res.status(400).json({ success: false, error: errorMessage });
       return;
     }
     res.status(500).json({ success: false, error: "Error al crear empresa" });
   }
 }
-
 
 /* =======================================================
    PUT /api/empresas/:id - SIN nested update
@@ -495,13 +536,18 @@ export async function updateEmpresa(req: Request, res: Response): Promise<void> 
       return { empresaAct, detalle };
     });
 
-    res.json({ success: true, data: { ...result.empresaAct, detalleEmpresa: result.detalle } });
+    res.json({
+      success: true,
+      data: { ...result.empresaAct, detalleEmpresa: result.detalle },
+    });
   } catch (error: any) {
     console.error("Error al actualizar empresa:", error);
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
       const errorMessage =
-        field === "nombre" ? "El nombre de la empresa ya existe" : "El RUT de la empresa ya existe";
+        field === "nombre"
+          ? "El nombre de la empresa ya existe"
+          : "El RUT de la empresa ya existe";
       res.status(400).json({ success: false, error: errorMessage });
       return;
     }
@@ -525,7 +571,7 @@ export async function deleteEmpresa(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Verificaciones de registros relacionados (sin relaciones Prisma)
+    // Verificaciones de registros relacionados
     const [solCount, tkCount, vsCount, trCount] = await Promise.all([
       prisma.solicitante.count({ where: { empresaId: id } }),
       prisma.freshdeskTicket.count({ where: { empresaId: id } }),
@@ -557,7 +603,8 @@ export async function deleteEmpresa(req: Request, res: Response): Promise<void> 
     if (error.code === "P2003") {
       res.status(400).json({
         success: false,
-        error: "No se puede eliminar la empresa porque tiene registros relacionados",
+        error:
+          "No se puede eliminar la empresa porque tiene registros relacionados",
       });
       return;
     }

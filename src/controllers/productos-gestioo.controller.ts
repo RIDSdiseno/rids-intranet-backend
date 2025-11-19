@@ -5,7 +5,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export async function seedProductos(req: Request, res: Response) {
+export async function seedProductos(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/productos_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
@@ -74,11 +74,13 @@ export async function createProducto(req: Request, res: Response) {
         console.error("❌ Error al crear producto:", error);
         res.status(500).json({ error: "Error al crear producto", details: error.message });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al actualizar al crear producto",
+    });
 }
 
-
 // ✅ Obtener todos los productos - CORREGIDO
-export async function getProductos(req: Request, res: Response) {
+export async function getProductos(_req: Request, res: Response) {
     try {
         const productos = await prisma.productoGestioo.findMany({
             orderBy: { id: "asc" }
@@ -89,6 +91,9 @@ export async function getProductos(req: Request, res: Response) {
         console.error("❌ Error al obtener productos:", error);
         res.status(500).json({ error: "Error al obtener productos" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al listar productos",
+    });
 }
 
 // ✅ Obtener producto por ID - CORREGIDO
@@ -111,6 +116,9 @@ export async function getProductoById(req: Request, res: Response) {
         console.error("❌ Error al obtener producto:", error);
         res.status(500).json({ error: "Error al obtener producto" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al listar producto",
+    });
 }
 
 // ✅ Actualizar producto - CORREGIDO
@@ -163,6 +171,9 @@ export async function updateProducto(req: Request, res: Response) {
             details: error.message
         });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al actualizar productos",
+    });
 }
 
 
@@ -190,4 +201,7 @@ export async function deleteProducto(req: Request, res: Response) {
 
         res.status(500).json({ error: "Error al eliminar producto" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al eliminar productos",
+    });
 }

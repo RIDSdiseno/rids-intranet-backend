@@ -52,7 +52,7 @@ export async function createCliente(req, res) {
             include: {
                 empresa: true,
                 historiales: true,
-                equipos: true, // <-- incluye equipo en la respuesta
+                equipos: true,
             },
         });
         return res.status(201).json(nuevoCliente);

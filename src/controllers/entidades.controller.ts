@@ -5,7 +5,7 @@ import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client"
 
 const prisma = new PrismaClient();
 
-export async function seedEntidadesRIDS(req: Request, res: Response) {
+export async function seedEntidadesRIDS(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_rids_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
@@ -38,7 +38,7 @@ export async function seedEntidadesRIDS(req: Request, res: Response) {
     }
 }
 
-export async function seedEntidadesECCONET(req: Request, res: Response) {
+export async function seedEntidadesECCONET(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_ecconet_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
@@ -135,6 +135,9 @@ export async function getEntidadById(req: Request, res: Response) {
         console.error("❌ Error al obtener entidad:", error);
         res.status(500).json({ error: "Error al obtener entidad" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al obtener entidad",
+    });
 }
 
 // ✅ Actualizar entidad

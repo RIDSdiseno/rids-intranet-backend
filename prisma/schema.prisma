@@ -143,7 +143,7 @@ model ServicioGestioo {
   estado        String?                 @default("disponible")
   activo        Boolean                 @default(true)
   fechaCreacion DateTime?               @default(now())
-  entidadId     Int?
+  entidadId     Int? // Si el servicio pertenece a una entidad específica
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
 
@@ -162,9 +162,10 @@ model DetalleTrabajoGestioo {
   entidadId   Int?
   productoId  Int?
   servicioId  Int?
-  entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
+
+  entidad  EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+  producto ProductoGestioo? @relation(fields: [productoId], references: [id])
+  servicio ServicioGestioo? @relation(fields: [servicioId], references: [id])
 
   @@index([entidadId])
   @@index([productoId])
@@ -186,35 +187,6 @@ model ModeloGestioo {
   productos ProductoGestioo[]
 
   @@index([marcaId])
-}
-
-model CotizacionGestioo {
-  id        Int                     @id @default(autoincrement())
-  fecha     DateTime                @default(now())
-  estado    EstadoCotizacionGestioo @default(BORRADOR)
-  tipo      TipoCotizacionGestioo   @default(CLIENTE)
-  entidadId Int?
-  entidad   EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-  total     Float                   @default(0)
-  items     CotizacionItemGestioo[]
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
-
-  @@index([entidadId])
-}
-
-model CotizacionItemGestioo {
-  id           Int               @id @default(autoincrement())
-  cotizacionId Int
-  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-
-  tipo        ItemTipoGestioo
-  descripcion String
-  cantidad    Int             @default(1)
-  precio      Float           @default(0)
-  porcentaje  Float?
-
-  createdAt DateTime @default(now())
 }
 
 model EquipoProducto {
@@ -472,6 +444,35 @@ model TicketRequester {
   tickets       FreshdeskTicket[]
 
   @@index([ticketOrgId])
+}
+
+model CotizacionGestioo {
+  id        Int                     @id @default(autoincrement())
+  fecha     DateTime                @default(now())
+  estado    EstadoCotizacionGestioo @default(BORRADOR)
+  tipo      TipoCotizacionGestioo   @default(CLIENTE)
+  entidadId Int?
+  entidad   EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+  total     Float                   @default(0)
+  items     CotizacionItemGestioo[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([entidadId])
+}
+
+model CotizacionItemGestioo {
+  id           Int               @id @default(autoincrement())
+  cotizacionId Int
+  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+
+  tipo        ItemTipoGestioo
+  descripcion String
+  cantidad    Int             @default(1)
+  precio      Float           @default(0)
+  porcentaje  Float?
+
+  createdAt DateTime @default(now())
 }
 
 enum AccountType {

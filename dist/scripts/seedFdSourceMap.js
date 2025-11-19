@@ -31,7 +31,7 @@ const MAPPINGS = [
     { org: "BERCIA", domains: ["bercia.cl"] },
     { org: "SOFTLAND", domains: ["softland.cl"] },
     { org: "INTCOMEX", domains: ["intcomex.com"] },
-    // { org: "BODEGAL", companyIds: [73000589521] },
+    { org: "CINTAX", domains: ["cintax.cl"], }
 ];
 async function main() {
     let domCount = 0;

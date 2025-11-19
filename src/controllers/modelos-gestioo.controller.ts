@@ -26,7 +26,7 @@ export async function createModelo(req: Request, res: Response) {
 }
 
 // ✅ Obtener todos los modelos
-export async function getModelos(req: Request, res: Response) {
+export async function getModelos(_req: Request, res: Response) {
     try {
         const modelos = await prisma.modeloGestioo.findMany({
             orderBy: { id: "asc" },
@@ -53,6 +53,9 @@ export async function getModeloById(req: Request, res: Response) {
         console.error("❌ Error al obtener modelo:", error);
         res.status(500).json({ error: "Error al obtener modelo" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al obtener modelo",
+    });
 }
 
 // ✅ Actualizar modelo

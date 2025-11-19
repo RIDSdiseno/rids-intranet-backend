@@ -38,7 +38,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 }
 
 // ✅ Obtener todos los trabajos
-export async function getDetallesTrabajo(req: Request, res: Response) {
+export async function getDetallesTrabajo(_req: Request, res: Response) {
     try {
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
             orderBy: { id: "asc" },
@@ -73,6 +73,9 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
         console.error("❌ Error al obtener detalle:", error);
         res.status(500).json({ error: "Error al obtener detalle de trabajo" });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al obtener trabajo cotización",
+    });
 }
 
 // ✅ Actualizar trabajo
@@ -131,6 +134,9 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             details: error instanceof Error ? error.message : "Error desconocido"
         });
     }
+    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+        error: "Error al actualizar trabajo",
+    });
 }
 
 // ✅ Eliminar trabajo
