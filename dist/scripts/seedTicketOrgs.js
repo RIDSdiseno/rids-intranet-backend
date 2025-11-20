@@ -4,6 +4,7 @@ const ORGS = [
     "ALIANZ", "ASUR", "BDK", "BODEGAL", "CLINICA NACE", "GRUPO COLCHAGUA",
     "FIJACIONES PROCET", "INFINITYCONNECT", "INFINET", "JPL", "RWAY",
     "T-SALES", "VPRIME", "PINI", "RIDS", "BDK-SPA", "BERCIA", "SOFTLAND", "INTCOMEX",
+    "CINTAX",
 ];
 async function main() {
     let count = 0;

@@ -35,7 +35,7 @@ export async function createProducto(req, res) {
 // =====================
 // READ ALL
 // =====================
-export async function getProductos(req, res) {
+export async function getProductos(_req, res) {
     try {
         const productos = await prisma.equipoProducto.findMany({
             orderBy: { id: "asc" },

@@ -2,7 +2,7 @@
 import { prisma } from "../lib/prisma.js";
 import type { Request, Response } from "express";
 
-export async function listTecnicos(req: Request, res: Response) {
+export async function listTecnicos(_req: Request, res: Response) {
     try {
         const tecnicos = await prisma.tecnico.findMany({
             select: {

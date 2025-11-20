@@ -130,12 +130,28 @@ export const listVisitas = async (req: Request, res: Response) => {
   const statusQ = req.query.status as string | undefined;
   const q = (req.query.q as string | undefined)?.trim();
 
+  // NUEVO: filtros por mes/año
+  const monthQ = req.query.month as string | undefined;
+  const yearQ = req.query.year as string | undefined;
+
+  let dateFilter: Prisma.DateTimeFilter | undefined;
+  const month = monthQ ? Number(monthQ) : NaN;
+  const year = yearQ ? Number(yearQ) : NaN;
+
+  if (!Number.isNaN(month) && !Number.isNaN(year) && month >= 1 && month <= 12) {
+    // Inicio y fin del mes
+    const from = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const to = new Date(year, month, 1, 0, 0, 0, 0);
+    dateFilter = { gte: from, lt: to };
+  }
+
   const INS: Prisma.QueryMode = "insensitive";
 
   const where: Prisma.VisitaWhereInput = {
     ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
     ...(empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
     ...(statusQ ? { status: statusQ as any } : {}),
+    ...(dateFilter ? { inicio: dateFilter } : {}),
     ...(q
       ? {
           OR: [
@@ -168,6 +184,7 @@ export const listVisitas = async (req: Request, res: Response) => {
     items: rows,
   });
 };
+
 
 /* ------------------------------------ */
 /* Get por ID                            */

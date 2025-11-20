@@ -11,6 +11,14 @@ import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { detalleTrabajoRouter } from "./routes/detalle-trabajo.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
+import entidadesRouter from "./routes/entidades.routes.js";
+import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
+import serviciosGestiooRouter from "./routes/servicios-gestioo.routes.js";
+import marcasGestiooRouter from "./routes/marcas-gestioo.routes.js";
+import modelosGestiooRouter from "./routes/modelos-gestioo.routes.js";
+import detalleTrabajoGestiooRouter from "./routes/detalle-trabajo-gestioo.routes.js";
+import cotizacionesRouter from "./routes/cotizaciones.routes.js";
+import tecnicosRouter from "./routes/tecnicos.routes.js";
 /* ===================== Freshdesk ===================== */
 import { fdRouter } from "./routes/fd.js";
 import { fdWebhookRouter } from "./routes/fd.webhook.js";
@@ -35,13 +43,29 @@ api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/detalle-trabajo", detalleTrabajoRouter);
 api.use("/empresas", empresasRouter);
+api.use("/tecnicos", tecnicosRouter);
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
 api.use("/fd", fdRouter);
 // Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
 api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
+// Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
+api.use("/fd", fdWebhookRouter);
+// API de tickets (/api/tickets/*)
 api.use("/tickets", ticketsApiRouter);
+api.use("/entidades", entidadesRouter);
+api.use("/productos-gestioo", productosGestiooRouter);
+api.use("/servicios-gestioo", serviciosGestiooRouter);
+api.use("/marcas-gestioo", marcasGestiooRouter);
+api.use("/modelos-gestioo", modelosGestiooRouter);
+api.use("/detalle-trabajo-gestioo", detalleTrabajoGestiooRouter);
+api.use("/cotizaciones", cotizacionesRouter);
+/* ===================== Integraciones ===================== */
+// Google Directory sync (ej: POST /api/sync/google/users)
+api.use(syncGoogleRouter);
+// Microsoft Graph sync 
+api.use(msSyncRouter);
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)
 api.use(syncGoogleRouter);
@@ -50,7 +74,11 @@ api.use(msSyncRouter);
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
 /* ===================== Debug ===================== */
+/* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
+/* ===================== Whatchimp ===================== */
+api.use(whatchimpRouter);
+/* ===================== Export ===================== */
 /* ===================== Whatchimp ===================== */
 api.use(whatchimpRouter);
 /* ===================== Export ===================== */

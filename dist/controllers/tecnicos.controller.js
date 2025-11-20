@@ -1,6 +1,6 @@
 // src/controllers/tecnicos.controller.ts
 import { prisma } from "../lib/prisma.js";
-export async function listTecnicos(req, res) {
+export async function listTecnicos(_req, res) {
     try {
         const tecnicos = await prisma.tecnico.findMany({
             select: {

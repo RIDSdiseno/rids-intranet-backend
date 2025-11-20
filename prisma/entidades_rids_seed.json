@@ -1,0 +1,659 @@
+[
+    {
+        "nombre": "AGENCIA DE ADUANAS CRISTIAN HERRERA R. Y COMPANIA LIMITADA",
+        "rut": "77433157-3",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ALDEA SANTIAGO SPA",
+        "rut": "76650890-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "Isidora Goyenechea 3000  1601 STGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ALIANZ CONTADORES Y CONSULTORES LIMITADA",
+        "rut": "77225550-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ALLTO SPA",
+        "rut": "77687328-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "SUECIA 0119 OF 505 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ASESORIAS E INVERSIONES CC LIMITADA",
+        "rut": "76256048-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ASESORIAS SIMPLICITY SPA",
+        "rut": "76240104-5",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ASESORÍAS Y SERVICIOS DE  INSOLVENCIA SPA",
+        "rut": "77175168-7",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ASUR S.A.",
+        "rut": "76047114-3",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "AVIVA SANTIAGO SPA",
+        "rut": "76513896-5",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BAQUEDANO RENTAS SPA",
+        "rut": "76748912-9",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BERCIA S.A.",
+        "rut": "80103900-6",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BETA PRO SPA",
+        "rut": "76855323-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BODEGAJE Y ALMACENAJE LIMITADA",
+        "rut": "79781170-K",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "SAN JUAN  4705   VIRGINIA stgo",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BORLONE Y COMPANIA LTDA",
+        "rut": "77274930-9",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "J PEDRO ALESSANDRI 1859 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "BOTANICAL SOLUTIONS S.P.A.",
+        "rut": "76336365-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "C-HOME SPA",
+        "rut": "76366068-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CAM AUDITORES TRIBUTARIOS SPA-",
+        "rut": "76192087-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CENTRO CLINICO VIDA SPA",
+        "rut": "77552653-K",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CINTAX CONSULTORES Y ABOGADOS LIMITADA",
+        "rut": "77696668-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "LA CONCEPCION 141 OF 708 7P Santiago",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CL�NICA DENTAL GRECIA SPA",
+        "rut": "77387825-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "AV GRECIA 6660 stgo",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CLIMAIDEA SPA",
+        "rut": "76462588-9",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "PEREZ VALENZUELA 1520  302 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "COMERCIALIZADORA FREEMAN SPA",
+        "rut": "76683328-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "COMERCIALIZADORA SYNERGY SPA",
+        "rut": "77794233-6",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "AV A VESPUCIO 2880 OF 1403   1403 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "COMESTIBLES PAVIJO LIMITADA",
+        "rut": "78189760-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CONSULTORIAS MANANTIALES LIMITADA",
+        "rut": "76028423-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CORPORACION EDUCACIONAL ESPERANZA",
+        "rut": "65145527-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "CORPORACION EDUCACIONAL LA CONCEPCION",
+        "rut": "65145466-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "DAVID HERNANDEZ CENTRO ODONTOL�GICO SPA",
+        "rut": "76763304-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "L THAYER OJEDA 166 OF 904 santiago",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "DLF SPA",
+        "rut": "76185078-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "EMPRESA  T-SALES LIMITADA",
+        "rut": "76927895-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ENCARE INGENIERIA Y GESTION EMPRESARIAL LIMITADA",
+        "rut": "77103030-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "ESTUDIO JURIDICO PINI Y CIA LTDA.",
+        "rut": "99547650-9",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "AV LAS CONDES 7700 OF A- 401 PS 4, TORRE A stgo",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "EXATA INTELIGENCIA Y TECNOLOGIA SPA",
+        "rut": "76543263-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "FASTER MERCHANT DESARROLLO INMOBILIARIO S.A",
+        "rut": "76304920-5",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "FIJACIONES PROCRET S.A",
+        "rut": "77553050-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "FRANCISCO JAVIER GONZALEZ IZURIETA",
+        "rut": "7018561-K",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "VALENZUELA PUELMA 7491 STGO.",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "FRIGORIFICO KARMAC SPA",
+        "rut": "76066832-K",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "GESTION TRANSPORTE Y LOGISTICA ASUR LIMITADA",
+        "rut": "76300048-6",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "GRUPO COLCHAGUA EMPRESA DE SERVICIOS TRANSITORIOS SA",
+        "rut": "76216268-7",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "STA MONICA 2316   OF santiago",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "HM SPA",
+        "rut": "76447159-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "PROVIDENCIA 2237 LCP 24 santiago",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INFINET SPA",
+        "rut": "77933795-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "AV.PASEO LOS BRAVOS 6000 CASA 331 STGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INFINITY CONNECT SPA",
+        "rut": "77904001-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "FIDEL OTEIZA 1941 OF 801 STGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INGENIERIA Y CONSTRUCCION BDK SPA",
+        "rut": "76788058-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "AVENIDA VITACURA 4607  31 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INMOBILIARIA E INVERSIONES AGAPI S.P.A.",
+        "rut": "76070569-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INMOBILIARIA MUNAY SPA",
+        "rut": "77719469-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "PDTE ERRAZURIZ 3943 stgo",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INTERNATIONAL COPPER ASSOCIATION LTD",
+        "rut": "59060260-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "INVERSIONES MALAGA SPA",
+        "rut": "96582790-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "JAMA SPA",
+        "rut": "96963670-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "JOLNET SPA",
+        "rut": "76758352-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "JPL SERVICIOS INTEGRALES LIMITADA",
+        "rut": "76015986-7",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "KONECTA CONSULTORES SPA",
+        "rut": "76834142-7",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "ALVARO CASANOVA 1068  D LA REINA",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "LANDSPACE SPA",
+        "rut": "76347859-9",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "LUI Y BRAVO VIAJES SPA",
+        "rut": "77269045-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "LUIS TAMAYO MEDINA Y COMPANIA LIMITADA",
+        "rut": "77910440-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "MARKETING Y TECNOLOGIA AIR LIMITADA",
+        "rut": "76080565-3",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "MATERIALES DE CONSTRUCCION DOMINGO GONZALO SAN MARTIN FIGUEROA EMPRESA",
+        "rut": "76466638-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "NORMEN CONSULTORES SPA",
+        "rut": "76038281-7",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "PENALOZA BALLERO LIMITADA",
+        "rut": "77646150-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "RAMON HERNAN MENESES VALENZUELA",
+        "rut": "5248764-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "R CUMMING 552 SANTIAGO",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "REAL CHILE SPA",
+        "rut": "76551817-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "RIGHT WAY AGENCIA DE FINANZAS LIMITADA",
+        "rut": "76527100-2",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "RIGHT WAY S.A",
+        "rut": "76527510-5",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "SAFETECK SPA",
+        "rut": "76729243-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "E YANEZ 2450 stgo",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "SERVICIOS MEDICOS GENERALES SEBASTIAN NAZAR RODRIGUEZ E.I.R.L.",
+        "rut": "76734285-3",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "SOCIEDAD DE INVERSIONES SPA",
+        "rut": "76281218-5",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "SOLUCIONES  RIDS SPA",
+        "rut": "76570771-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "SONY MUSIC ENTERTAINMENT CHILE S A",
+        "rut": "96639390-4",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "TERMICOM S.A.",
+        "rut": "76775257-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "TRANSPORTES MONEDA LIMITADA",
+        "rut": "79518000-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "TRIACTIVA SOLUCIONES COMUNICACIONALES Y PUBLICITARIAS LIMITADA",
+        "rut": "76045776-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "VENMED MEDICAL CENTER SPA",
+        "rut": "77281222-1",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "VPRIME SPA",
+        "rut": "77861122-8",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "POCURO 2260  507 PROVIDENCIA",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    },
+    {
+        "nombre": "WEBCLASS LEARNING MANAGEMENT SYSTEM LIMITADA",
+        "rut": "76304329-0",
+        "correo": null,
+        "telefono": "S\/A",
+        "direccion": "S\/A",
+        "tipo": "EMPRESA",
+        "origen": "RIDS"
+    }
+]

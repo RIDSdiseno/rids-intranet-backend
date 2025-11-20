@@ -1,5 +1,4 @@
 import { prisma } from "../lib/prisma.js";
-import { AccountType } from "@prisma/client";
 /* Utils */
 const toInt = (v, def = 0) => {
     const n = Number(v);
@@ -14,17 +13,38 @@ const parseOrderBy = (v) => {
         return "id";
     return "empresa"; // default
 };
-const parseOrderDir = (v) => (String(v ?? "").toLowerCase() === "desc" ? "desc" : "asc");
-/** Orden estable por empresa.nombre / nombre / id */
+const parseOrderDir = (v) => {
+    const s = String(v ?? "").toLowerCase();
+    return s === "desc" ? "desc" : "asc";
+};
+/** Construye el orderBy compatible con Prisma para las 3 variantes */
 const buildSolicitanteOrderBy = (orderByKey, orderDir) => {
-    if (orderByKey === "nombre")
+    if (orderByKey === "nombre") {
         return [{ nombre: orderDir }, { id_solicitante: "asc" }];
-    if (orderByKey === "id")
+    }
+    if (orderByKey === "id") {
         return [{ id_solicitante: orderDir }];
-    return [{ empresa: { nombre: orderDir } }, { nombre: "asc" }, { id_solicitante: "asc" }];
+    }
+    // empresa
+    const secondaryForNulls = orderDir === "asc" ? "desc" : "asc"; // asc -> NULLS LAST, desc -> NULLS FIRST
+    return [
+        { empresa: { nombre: orderDir } },
+        { empresaId: secondaryForNulls },
+        { nombre: "asc" },
+        { id_solicitante: "asc" },
+    ];
 };
 /* ============================================================
  * GET /solicitantes
+ *  Filtros:
+ *   - empresaId (opcional)
+ *   - q (busca en nombre, email y empresa)
+ *   - onlyGMS=1 → solo cuentas google/microsoft (opcional)
+ *  Orden:
+ *   - orderBy: empresa|nombre|id (default empresa)
+ *   - orderDir: asc|desc (default asc)
+ *  Opcional:
+ *   - includeMsDetails=1|true → incluye arreglo msLicenses (si no, sólo msLicensesCount)
  * ============================================================ */
 export const listSolicitantes = async (req, res) => {
     try {
@@ -47,11 +67,11 @@ export const listSolicitantes = async (req, res) => {
                     OR: [
                         { nombre: { contains: q, mode: INS } },
                         { email: { contains: q, mode: INS } },
-                        { empresa: { is: { nombre: { contains: q, mode: INS } } } }, // relación
+                        { empresa: { nombre: { contains: q, mode: INS } } },
                     ],
                 }
                 : {}),
-            ...(onlyGMS ? { accountType: { in: [AccountType.google, AccountType.microsoft] } } : {}),
+            ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] } } : {}),
         };
         const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
         const [total, baseSolicitantes] = await Promise.all([
@@ -73,15 +93,17 @@ export const listSolicitantes = async (req, res) => {
             }),
         ]);
         // Enriquecer con empresa, equipos y licencias MS
-        const empresaIds = Array.from(new Set(baseSolicitantes.map((s) => s.empresaId).filter((x) => typeof x === "number")));
-        const solicitanteIds = baseSolicitantes.map((s) => s.id_solicitante);
+        const empresaIdSet = new Set(baseSolicitantes
+            .map((s) => s.empresaId)
+            .filter((x) => typeof x === "number"));
+        const solicitanteIdSet = new Set(baseSolicitantes.map((s) => s.id_solicitante));
         const [empresas, equipos, msLinks] = await Promise.all([
             prisma.empresa.findMany({
-                where: { id_empresa: { in: empresaIds } },
+                where: { id_empresa: { in: Array.from(empresaIdSet) } },
                 select: { id_empresa: true, nombre: true },
             }),
             prisma.equipo.findMany({
-                where: { idSolicitante: { in: solicitanteIds } },
+                where: { idSolicitante: { in: Array.from(solicitanteIdSet) } },
                 select: {
                     id_equipo: true,
                     idSolicitante: true,
@@ -96,7 +118,7 @@ export const listSolicitantes = async (req, res) => {
                 orderBy: { id_equipo: "asc" },
             }),
             prisma.solicitanteMsLicense.findMany({
-                where: { solicitanteId: { in: solicitanteIds } },
+                where: { solicitanteId: { in: Array.from(solicitanteIdSet) } },
                 select: {
                     solicitanteId: true,
                     skuId: true,
@@ -115,11 +137,12 @@ export const listSolicitantes = async (req, res) => {
         const msBySolic = new Map();
         for (const l of msLinks) {
             const list = msBySolic.get(l.solicitanteId) ?? [];
-            list.push({
+            const lic = {
                 skuId: l.skuId,
                 skuPartNumber: l.sku?.skuPartNumber ?? l.skuId,
                 ...(l.sku?.displayName ? { displayName: l.sku.displayName } : {}),
-            });
+            };
+            list.push(lic);
             msBySolic.set(l.solicitanteId, list);
         }
         const items = baseSolicitantes.map((s) => {
@@ -142,17 +165,22 @@ export const listSolicitantes = async (req, res) => {
     }
     catch (err) {
         console.error("[solicitantes.list] error:", err);
-        return res.status(500).json({ error: "No se pudieron listar los solicitantes" });
+        return res
+            .status(500)
+            .json({ error: "No se pudieron listar los solicitantes" });
     }
 };
 /* ============================================================
  * GET /solicitantes/by-empresa
+ * (para selects del modal)
  * ============================================================ */
 export const listSolicitantesByEmpresa = async (req, res) => {
     try {
         const empresaId = toInt(req.query.empresaId);
         if (empresaId <= 0) {
-            return res.status(400).json({ error: "empresaId requerido y debe ser entero > 0" });
+            return res
+                .status(400)
+                .json({ error: "empresaId requerido y debe ser entero > 0" });
         }
         const q = req.query.q?.trim();
         const orderByKey = parseOrderBy(req.query.orderBy);
@@ -166,15 +194,20 @@ export const listSolicitantesByEmpresa = async (req, res) => {
             orderBy: buildSolicitanteOrderBy(orderByKey, orderDir),
             select: { id_solicitante: true, nombre: true },
         });
-        return res.json({ items: rows.map((s) => ({ id: s.id_solicitante, nombre: s.nombre })) });
+        return res.json({
+            items: rows.map((s) => ({ id: s.id_solicitante, nombre: s.nombre })),
+        });
     }
     catch (err) {
         console.error("[solicitantes.byEmpresa] error:", err);
-        return res.status(500).json({ error: "No se pudieron obtener solicitantes por empresa" });
+        return res
+            .status(500)
+            .json({ error: "No se pudieron obtener solicitantes por empresa" });
     }
 };
 /* ============================================================
  * GET /solicitantes/select
+ * (listado para <select>, con orden universal)
  * ============================================================ */
 export const listSolicitantesForSelect = async (req, res) => {
     try {
@@ -192,7 +225,7 @@ export const listSolicitantesForSelect = async (req, res) => {
                     OR: [
                         { nombre: { contains: q, mode: INS } },
                         { email: { contains: q, mode: INS } },
-                        { empresa: { is: { nombre: { contains: q, mode: INS } } } },
+                        { empresa: { nombre: { contains: q, mode: INS } } },
                     ],
                 }
                 : {}),
@@ -209,18 +242,28 @@ export const listSolicitantesForSelect = async (req, res) => {
         });
         const items = rows.map((r) => {
             const empresaNombre = r.empresa?.nombre ?? null;
-            const text = includeEmpresa && empresaNombre ? `${r.nombre} — ${empresaNombre}` : r.nombre;
-            return { value: r.id_solicitante, text, id: r.id_solicitante, nombre: r.nombre, empresaNombre };
+            const text = includeEmpresa && empresaNombre
+                ? `${r.nombre} — ${empresaNombre}`
+                : r.nombre;
+            return {
+                value: r.id_solicitante,
+                text,
+                id: r.id_solicitante,
+                nombre: r.nombre,
+                empresaNombre,
+            };
         });
         return res.json({ items });
     }
     catch (err) {
         console.error("[solicitantes.select] error:", err);
-        return res.status(500).json({ error: "No se pudo obtener el listado para select" });
+        return res
+            .status(500)
+            .json({ error: "No se pudo obtener el listado para select" });
     }
 };
 /* ============================================================
- * GET /solicitantes/metrics  (optimizado)
+ * GET /solicitantes/metrics
  * ============================================================ */
 export const solicitantesMetrics = async (req, res) => {
     try {
@@ -234,17 +277,28 @@ export const solicitantesMetrics = async (req, res) => {
                     OR: [
                         { nombre: { contains: q, mode: INS } },
                         { email: { contains: q, mode: INS } },
-                        { empresa: { is: { nombre: { contains: q, mode: INS } } } },
+                        { empresa: { nombre: { contains: q, mode: INS } } },
                     ],
                 }
                 : {}),
         };
-        const [solicitantes, empresasGroup, equipos] = await Promise.all([
-            prisma.solicitante.count({ where }),
-            prisma.solicitante.groupBy({ by: ["empresaId"], where, _count: { empresaId: true } }),
-            prisma.equipo.count({ where: { solicitante: where } }), // mismo filtro relacional
-        ]);
-        const empresas = empresasGroup.length;
+        const solicitantes = await prisma.solicitante.count({ where });
+        const distinctEmpresas = await prisma.solicitante.findMany({
+            where,
+            select: { empresaId: true },
+            distinct: ["empresaId"],
+        });
+        const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
+        const ids = await prisma.solicitante.findMany({
+            where,
+            select: { id_solicitante: true },
+        });
+        const idList = ids.map((s) => s.id_solicitante);
+        const equipos = idList.length === 0
+            ? 0
+            : await prisma.equipo.count({
+                where: { idSolicitante: { in: idList } },
+            });
         return res.json({ solicitantes, empresas, equipos });
     }
     catch (err) {
@@ -256,18 +310,22 @@ export const solicitantesMetrics = async (req, res) => {
 export const createSolicitante = async (req, res) => {
     try {
         const nombre = String(req.body?.nombre ?? "").trim();
-        const email = typeof req.body?.email === "string" ? req.body.email.trim() : null;
+        const emailRaw = (req.body?.email ?? null);
+        const email = emailRaw ? String(emailRaw).trim() : null;
         const empresaId = toInt(req.body?.empresaId);
-        if (!nombre)
+        if (!nombre) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
-        if (empresaId <= 0)
+        }
+        if (empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
+        }
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: empresaId },
             select: { id_empresa: true },
         });
-        if (!empresa)
+        if (!empresa) {
             return res.status(404).json({ error: "La empresa no existe" });
+        }
         const created = await prisma.solicitante.create({
             data: { nombre, email, empresaId },
             select: {
@@ -284,13 +342,15 @@ export const createSolicitante = async (req, res) => {
     catch (err) {
         const e = err;
         if (e?.code === "P2002") {
-            return res.status(409).json({ error: "Ya existe un solicitante con ese valor único" });
+            return res
+                .status(409)
+                .json({ error: "Ya existe un solicitante con ese valor único" });
         }
         console.error("[solicitantes.create] error:", err);
         return res.status(500).json({ error: "No se pudo crear el solicitante" });
     }
 };
-/* ===================== READ ===================== */
+/* ===================== READ (uno) ===================== */
 export const getSolicitanteById = async (req, res) => {
     try {
         const id = toInt(req.params.id);
@@ -324,7 +384,9 @@ export const getSolicitanteById = async (req, res) => {
             return res.status(404).json({ error: "No encontrado" });
         const links = await prisma.solicitanteMsLicense.findMany({
             where: { solicitanteId: solicitante.id_solicitante },
-            include: { sku: { select: { skuId: true, skuPartNumber: true, displayName: true } } },
+            include: {
+                sku: { select: { skuId: true, skuPartNumber: true, displayName: true } },
+            },
             orderBy: { skuId: "asc" },
         });
         const msLicenses = links.map((l) => ({
@@ -332,7 +394,11 @@ export const getSolicitanteById = async (req, res) => {
             skuPartNumber: l.sku?.skuPartNumber ?? l.skuId,
             ...(l.sku?.displayName ? { displayName: l.sku.displayName } : {}),
         }));
-        return res.json({ ...solicitante, msLicenses });
+        const out = {
+            ...solicitante,
+            msLicenses,
+        };
+        return res.json(out);
     }
     catch (err) {
         console.error("[solicitantes.getOne] error:", err);
@@ -346,8 +412,14 @@ export const updateSolicitante = async (req, res) => {
         if (id <= 0)
             return res.status(400).json({ error: "ID inválido" });
         const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim() : undefined;
-        const email = req.body?.email === null ? null : typeof req.body?.email === "string" ? req.body.email.trim() : undefined;
-        const empresaId = typeof req.body?.empresaId !== "undefined" ? toInt(req.body.empresaId) : undefined;
+        const email = req.body?.email === null
+            ? null
+            : typeof req.body?.email === "string"
+                ? req.body.email.trim()
+                : undefined;
+        const empresaId = typeof req.body?.empresaId !== "undefined"
+            ? toInt(req.body.empresaId)
+            : undefined;
         if (empresaId !== undefined && empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
         }
@@ -386,7 +458,9 @@ export const updateSolicitante = async (req, res) => {
     catch (err) {
         const e = err;
         if (e?.code === "P2002") {
-            return res.status(409).json({ error: "Conflicto de unicidad (email u otro campo único)" });
+            return res
+                .status(409)
+                .json({ error: "Conflicto de unicidad (email u otro campo único)" });
         }
         console.error("[solicitantes.update] error:", err);
         return res.status(500).json({ error: "No se pudo actualizar el solicitante" });
@@ -398,12 +472,16 @@ export const deleteSolicitante = async (req, res) => {
         const id = toInt(req.params.id);
         if (id <= 0)
             return res.status(400).json({ error: "ID inválido" });
-        const transferToId = req.query.transferToId ? toInt(req.query.transferToId) : undefined;
+        const transferToId = req.query.transferToId
+            ? toInt(req.query.transferToId)
+            : undefined;
         if (transferToId !== undefined) {
-            if (transferToId <= 0)
+            if (transferToId <= 0) {
                 return res.status(400).json({ error: "transferToId debe ser entero > 0" });
-            if (transferToId === id)
+            }
+            if (transferToId === id) {
                 return res.status(400).json({ error: "transferToId no puede ser el mismo solicitante" });
+            }
         }
         const fallbackParam = String(req.query.fallback ?? "null").toLowerCase();
         const fallback = fallbackParam === "sa" ? "sa" : "null";
@@ -436,8 +514,14 @@ export const deleteSolicitante = async (req, res) => {
         };
         await prisma.$transaction(async (tx) => {
             if (transferToId) {
-                await tx.equipo.updateMany({ where: { idSolicitante: id }, data: { idSolicitante: transferToId } });
-                await tx.historial.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
+                await tx.equipo.updateMany({
+                    where: { idSolicitante: id },
+                    data: { idSolicitante: transferToId },
+                });
+                await tx.historial.updateMany({
+                    where: { solicitanteId: id },
+                    data: { solicitanteId: transferToId },
+                });
                 await tx.freshdeskRequesterMap.updateMany({
                     where: { solicitanteId: id },
                     data: { solicitanteId: transferToId },
@@ -446,23 +530,44 @@ export const deleteSolicitante = async (req, res) => {
                     where: { solicitanteId: id },
                     data: { solicitanteId: transferToId },
                 });
-                await tx.visita.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
+                await tx.visita.updateMany({
+                    where: { solicitanteId: id },
+                    data: { solicitanteId: transferToId },
+                });
             }
             else {
                 const saId = await ensureSaSolicitante(source.empresaId);
-                await tx.equipo.updateMany({ where: { idSolicitante: id }, data: { idSolicitante: saId } });
-                await tx.historial.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: saId } });
+                await tx.equipo.updateMany({
+                    where: { idSolicitante: id },
+                    data: { idSolicitante: saId },
+                });
+                await tx.historial.updateMany({
+                    where: { solicitanteId: id },
+                    data: { solicitanteId: saId },
+                });
                 await tx.freshdeskRequesterMap.updateMany({
                     where: { solicitanteId: id },
                     data: { solicitanteId: saId },
                 });
                 if (fallback === "sa") {
-                    await tx.freshdeskTicket.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: saId } });
-                    await tx.visita.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: saId } });
+                    await tx.freshdeskTicket.updateMany({
+                        where: { solicitanteId: id },
+                        data: { solicitanteId: saId },
+                    });
+                    await tx.visita.updateMany({
+                        where: { solicitanteId: id },
+                        data: { solicitanteId: saId },
+                    });
                 }
                 else {
-                    await tx.freshdeskTicket.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: null } });
-                    await tx.visita.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: null } });
+                    await tx.freshdeskTicket.updateMany({
+                        where: { solicitanteId: id },
+                        data: { solicitanteId: null },
+                    });
+                    await tx.visita.updateMany({
+                        where: { solicitanteId: id },
+                        data: { solicitanteId: null },
+                    });
                 }
             }
             await tx.solicitante.delete({ where: { id_solicitante: id } });
@@ -470,7 +575,9 @@ export const deleteSolicitante = async (req, res) => {
         return res.json({
             ok: true,
             deletedId: id,
-            strategy: transferToId ? { type: "transfer", transferToId } : { type: "fallback-SA", fallback },
+            strategy: transferToId
+                ? { type: "transfer", transferToId }
+                : { type: "fallback-SA", fallback },
         });
     }
     catch (err) {

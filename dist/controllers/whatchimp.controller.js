@@ -31,7 +31,6 @@ function rid() {
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 // Heurísticas básicas para extraer empresa
 function extractCompanyFromText(text) {
-    // 1) Patrones "mi empresa es XXX", "soy de XXX", "somos de XXX", "trabajo en XXX"
     const patterns = [
         /(?:mi\s+empresa\s+es|la\s+empresa\s+es|somos\s+de|soy\s+de|trabajo\s+en|de\s+la\s+empresa)\s+([a-z0-9áéíóúüñ .&_-]{2,80})/i,
     ];
@@ -40,7 +39,6 @@ function extractCompanyFromText(text) {
         if (m?.[1])
             return m[1].trim().replace(/[.,;]$/, "");
     }
-    // 2) Si hay email y luego una coma, tomar lo que viene después como posible empresa
     const emailMatch = text.match(EMAIL_RE);
     if (emailMatch) {
         const after = text.slice(emailMatch.index + emailMatch[0].length);
@@ -48,12 +46,10 @@ function extractCompanyFromText(text) {
         if (commaIdx >= 0) {
             const tail = after.slice(commaIdx + 1).trim();
             if (tail && tail.length >= 2) {
-                // tope 80 chars
                 return tail.slice(0, 80).replace(/[.,;]$/, "");
             }
         }
     }
-    // 3) Si el mensaje es corto y sin email, a veces dan solo la empresa (no lo aplicamos agresivo)
     return undefined;
 }
 export const wcReceive = async (req, res) => {
@@ -67,7 +63,9 @@ export const wcReceive = async (req, res) => {
             textPreview: inc.text?.slice(0, 120),
         });
         if (!inc.from) {
-            return res.status(400).json({ ok: false, error: "missing 'from'", requestId });
+            return res
+                .status(400)
+                .json({ ok: false, error: "missing 'from'", requestId });
         }
         const now = Date.now();
         const mem = sessionMemory.get(inc.from) || {};
@@ -83,27 +81,32 @@ export const wcReceive = async (req, res) => {
             inputText = inputText.slice(0, MAX_TEXT_LEN);
         // Contador de turnos
         const turns = (mem.turns ?? 0) + 1;
-        // ======== NUEVO: extracción de email/empresa y persistencia ========
-        // Si el mensaje trae un email y no lo teníamos, guardarlo
+        // ======== extracción de email/empresa + transcript ========
         const emailFound = inputText.match(EMAIL_RE)?.[0] ?? undefined;
         let email = mem.email;
         if (!email && emailFound) {
             email = emailFound;
         }
-        // Empresa: heurística suave si aún no hay
         let company = mem.company;
         if (!company) {
             const c = extractCompanyFromText(inputText);
             if (c)
                 company = c;
         }
-        // ===================================================================
+        const prevTranscript = mem.transcript || [];
+        const transcriptForAI = [...prevTranscript];
+        if (inputText) {
+            transcriptForAI.push({ from: "client", text: inputText });
+        }
+        // ==========================================================
         let reply;
         if (inc.type === "image") {
-            reply = "📷 Recibí tu imagen. Cuéntame con texto qué necesitas y te ayudo al tiro.";
+            reply =
+                "📷 Recibí tu imagen. Cuéntame con texto qué necesitas y te ayudo al tiro.";
         }
         else if (!inputText) {
-            reply = "¿Me cuentas en una frase qué necesitas? (equipo, síntoma y urgencia)";
+            reply =
+                "¿Me cuentas en una frase qué necesitas? (equipo, síntoma y urgencia)";
         }
         else {
             const context = {
@@ -111,26 +114,36 @@ export const wcReceive = async (req, res) => {
                 ...(mem.lastUserMsg ? { lastUserMsg: mem.lastUserMsg } : {}),
                 ...(mem.lastAIReply ? { lastAIReply: mem.lastAIReply } : {}),
                 turns,
-                // 👇 Pasamos a la IA lo que tengamos guardado
                 ...(email ? { email } : {}),
                 ...(company ? { company } : {}),
+                phone: inc.from, // usamos el mismo número como teléfono
+                transcript: transcriptForAI,
             };
             try {
                 reply = (await runAI({ userText: inputText, context })) || "";
                 if (!reply.trim()) {
-                    reply = "Tuve un problema procesando tu mensaje 😓. ¿Podemos intentarlo de nuevo?";
+                    reply =
+                        "Tuve un problema procesando tu mensaje 😓. ¿Podemos intentarlo de nuevo?";
                 }
             }
             catch (e) {
                 console.error(`[AI ERROR][${requestId}]`, e);
-                reply = "Tuve un problema procesando tu mensaje 😓. ¿Podemos intentarlo de nuevo?";
+                reply =
+                    "Tuve un problema procesando tu mensaje 😓. ¿Podemos intentarlo de nuevo?";
             }
         }
-        // Actualizamos memoria sin escribir `undefined`
+        // Actualizamos transcript agregando la respuesta del bot
+        const newTranscript = [...(mem.transcript || [])];
+        if (inputText) {
+            newTranscript.push({ from: "client", text: inputText });
+        }
+        newTranscript.push({ from: "bot", text: reply });
+        // Actualizamos memoria
         const next = {
             lastAIReply: reply,
             lastAt: now,
             turns,
+            transcript: newTranscript,
             ...(email ? { email } : {}),
             ...(company ? { company } : {}),
         };
