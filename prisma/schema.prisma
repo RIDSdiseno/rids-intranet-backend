@@ -103,6 +103,7 @@ model EntidadGestioo {
   productos        ProductoGestioo[]
   trabajos         DetalleTrabajoGestioo[]
   servicioGestioos ServicioGestioo[]
+  cotizaciones     CotizacionGestioo[]
 }
 
 model ProductoGestioo {
@@ -118,6 +119,10 @@ model ProductoGestioo {
   fechaIngreso  DateTime?               @default(now())
   garantiaMeses Int?
   activo        Boolean                 @default(true)
+
+  porcGanancia  Float?
+  precioTotal   Float?
+
   marcaId       Int?
   modeloId      Int?
   entidadId     Int?
@@ -142,7 +147,7 @@ model ServicioGestioo {
   estado        String?                 @default("disponible")
   activo        Boolean                 @default(true)
   fechaCreacion DateTime?               @default(now())
-  entidadId     Int? // Si el servicio pertenece a una entidad específica
+  entidadId     Int?
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
 
@@ -161,10 +166,9 @@ model DetalleTrabajoGestioo {
   entidadId   Int?
   productoId  Int?
   servicioId  Int?
-
-  entidad  EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio ServicioGestioo? @relation(fields: [servicioId], references: [id])
+  entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+  producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
+  servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
 
   @@index([entidadId])
   @@index([productoId])

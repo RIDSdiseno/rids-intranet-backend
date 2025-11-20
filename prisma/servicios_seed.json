@@ -1,0 +1,308 @@
+[
+    {
+        "nombre": "Formateo y reparacion",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 65450.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Mano de obra 2UF+IVA",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 86047.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Respaldo de informacion",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 53550.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Cambio de piezas",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 47600.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Instalacion de cámaras (incluye materiales)",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 95200.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Reparacion impresora brother",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 49980.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Visitas 3UF + Iva",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 128788.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "CAMBIO DE PIEZAS+INSTALACION DE SISTEMA+RESPALDO",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 107100.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "FORMATEO + RESPALDO",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 85680.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "SOLICITUDES EXTERNAS REAL",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 64260.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "SOLICITUDES EXTERNAS",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 42840.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "traslado terreno instalacion rack",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 83300.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "habilitacion y armado de rack",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 535500.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Retiro Equipos Emergencia",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 10000.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Entrega Equipos Emergencia",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 10000.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Reparacion pantalla",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 71400.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "TRASLADO",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 6000.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "REPARACIÓN MacBook Air M1 2020 SN:C02FV188Q6L7",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 174202.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Baño Químico",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Conector de carga",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Cambio tecla Fn",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Mano de Obra y Mantención",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Reparacion de Placa",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Cambio de Modulo Wi-Fi",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "3 UND Cámara de seguridad IP Wi-Fi Solar",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 92344.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Instalación",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 0.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Mantención impresoras",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 42000.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "MANO DE OBRA | CAMBIO DE REPUESTOS RICOH BAJO VOLUMEN DE COPIADO",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 57120.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "servico de mano de obra 4.5 uf + iva",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 203369.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Reparación Eléctrica 2UF + iva",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 91302.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Configurar dos sistemas para su intercomunicación.",
+        "descripcion": null,
+        "categoria": "Configuración de sistemas",
+        "precio": 53550.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "MANO DE OBRA 2,5 UF",
+        "descripcion": null,
+        "categoria": "Ventas",
+        "precio": 98802.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "HABILITACION COMPLETA DE TODO LO PRESENTADO (10UF)",
+        "descripcion": null,
+        "categoria": "Configuración de sistemas",
+        "precio": 470302.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    },
+    {
+        "nombre": "Visita y Mantencion de todos los equipos",
+        "descripcion": null,
+        "categoria": "Configuración de sistemas",
+        "precio": 178500.0,
+        "duracionHoras": null,
+        "estado": "disponible",
+        "activo": true
+    }
+]

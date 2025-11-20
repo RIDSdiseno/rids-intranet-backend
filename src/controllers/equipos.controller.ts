@@ -17,7 +17,7 @@ const listQuerySchema = z.object({
   empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
   sortBy: z.enum([
-    "id_equipo","serial","marca","modelo","procesador","ram","disco","propiedad"
+    "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad"
   ]).default("id_equipo").optional(), // ⚠️ quitamos empresa/solicitante porque ya no hay relaciones
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
@@ -67,7 +67,7 @@ function mapOrderBy(
   sortDir: Prisma.SortOrder
 ): Prisma.EquipoOrderByWithRelationInput {
   const allowed: Array<keyof Prisma.EquipoOrderByWithRelationInput> = [
-    "id_equipo","serial","marca","modelo","procesador","ram","disco","propiedad"
+    "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad"
   ];
   const key = (allowed.includes(sortBy as any)
     ? (sortBy as keyof Prisma.EquipoOrderByWithRelationInput)

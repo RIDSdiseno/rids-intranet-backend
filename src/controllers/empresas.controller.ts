@@ -52,9 +52,9 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
       const solicitanteIds = solicitantes.map((s) => s.id_solicitante);
       const equipos = solicitanteIds.length
         ? await prisma.equipo.findMany({
-            where: { idSolicitante: { in: solicitanteIds } },
-            select: { id_equipo: true, idSolicitante: true },
-          })
+          where: { idSolicitante: { in: solicitanteIds } },
+          select: { id_equipo: true, idSolicitante: true },
+        })
         : [];
 
       const equiposPorSolic = new Map<number, number[]>();
@@ -230,10 +230,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     const solicIds = solicitantesDeEmp.map((s) => s.id_solicitante);
     const equiposCountPorSolic = solicIds.length
       ? await prisma.equipo.groupBy({
-          by: ["idSolicitante"],
-          where: { idSolicitante: { in: solicIds } },
-          _count: { _all: true },
-        })
+        by: ["idSolicitante"],
+        where: { idSolicitante: { in: solicIds } },
+        _count: { _all: true },
+      })
       : [];
 
     const empresaPorSolic = new Map(

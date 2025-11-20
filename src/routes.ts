@@ -3,7 +3,6 @@ import { Router } from "express";
 
 
 /* ===================== Core de la app ===================== */
-/* ===================== Core de la app ===================== */
 import { authRouter } from "./routes/auth.routes.js";
 import { solicitantesRouter } from "./routes/solicitantes.routes.js";
 import { visitasRouter } from "./routes/visitas.routes.js";
@@ -15,7 +14,15 @@ import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { detalleTrabajoRouter } from "./routes/detalle-trabajo.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 
-import  tecnicosRouter from "./routes/tecnicos.routes.js";
+import entidadesRouter from "./routes/entidades.routes.js";
+import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
+import serviciosGestiooRouter from "./routes/servicios-gestioo.routes.js";
+import marcasGestiooRouter from "./routes/marcas-gestioo.routes.js";
+import modelosGestiooRouter from "./routes/modelos-gestioo.routes.js";
+import detalleTrabajoGestiooRouter from "./routes/detalle-trabajo-gestioo.routes.js";
+import cotizacionesRouter from "./routes/cotizaciones.routes.js";
+
+import tecnicosRouter from "./routes/tecnicos.routes.js";
 
 /* ===================== Freshdesk ===================== */
 import { fdRouter } from "./routes/fd.js";
@@ -61,6 +68,14 @@ api.use("/fd", fdWebhookRouter);
 api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
 api.use("/tickets", ticketsApiRouter);
+
+api.use("/entidades", entidadesRouter);
+api.use("/productos-gestioo", productosGestiooRouter);
+api.use("/servicios-gestioo", serviciosGestiooRouter);
+api.use("/marcas-gestioo", marcasGestiooRouter);
+api.use("/modelos-gestioo", modelosGestiooRouter);
+api.use("/detalle-trabajo-gestioo", detalleTrabajoGestiooRouter);
+api.use("/cotizaciones", cotizacionesRouter);
 
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)

@@ -25,13 +25,11 @@ const detalleTrabajoUpdateSchema = detalleTrabajoSchema.partial();
 export async function createDetalleTrabajo(req, res) {
     try {
         const data = detalleTrabajoSchema.parse(req.body);
-        const nuevo = await prisma.detalle_trabajo.create({
+        const nuevo = await prisma.detalleTrabajo.create({
             data: {
                 fecha_ingreso: new Date(data.fecha_ingreso),
                 fecha_egreso: data.fecha_egreso ? new Date(data.fecha_egreso) : null,
-                fecha_prometida: data.fecha_prometida
-                    ? new Date(data.fecha_prometida)
-                    : null,
+                fecha_prometida: data.fecha_prometida ? new Date(data.fecha_prometida) : null,
                 trabajo: data.trabajo,
                 accesorios: data.accesorios ?? null,
                 diagnostico: data.diagnostico ?? false,
@@ -65,17 +63,16 @@ export async function createDetalleTrabajo(req, res) {
     }
     catch (err) {
         console.error("Error al crear detalle trabajo:", err);
-        if (err.code === "P2003")
-            return res
-                .status(400)
-                .json({ error: "Empresa, equipo o técnico no existen" });
+        if (err.code === "P2003") {
+            return res.status(400).json({ error: "Empresa, equipo o técnico no existen" });
+        }
         return res.status(500).json({ error: "Error al crear detalle trabajo" });
     }
 }
 /* ================== READ ALL ================== */
-export async function getDetallesTrabajo(req, res) {
+export async function getDetallesTrabajo(_req, res) {
     try {
-        const detalles = await prisma.detalle_trabajo.findMany({
+        const detalles = await prisma.detalleTrabajo.findMany({
             include: {
                 empresa: {
                     select: {
@@ -104,7 +101,7 @@ export async function getDetalleTrabajoById(req, res) {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        const detalle = await prisma.detalle_trabajo.findUnique({
+        const detalle = await prisma.detalleTrabajo.findUnique({
             where: { id },
             include: {
                 empresa: {
@@ -120,8 +117,9 @@ export async function getDetalleTrabajoById(req, res) {
                 tecnico: { select: { id_tecnico: true, nombre: true } },
             },
         });
-        if (!detalle)
+        if (!detalle) {
             return res.status(404).json({ error: "Detalle trabajo no encontrado" });
+        }
         return res.status(200).json(detalle);
     }
     catch (err) {
@@ -140,9 +138,7 @@ export async function updateDetalleTrabajo(req, res) {
         if (parsed.fecha_ingreso !== undefined)
             data.fecha_ingreso = new Date(parsed.fecha_ingreso);
         if (parsed.fecha_egreso !== undefined)
-            data.fecha_egreso = parsed.fecha_egreso
-                ? new Date(parsed.fecha_egreso)
-                : null;
+            data.fecha_egreso = parsed.fecha_egreso ? new Date(parsed.fecha_egreso) : null;
         if (parsed.fecha_prometida !== undefined)
             data.fecha_prometida = parsed.fecha_prometida
                 ? new Date(parsed.fecha_prometida)
@@ -175,7 +171,7 @@ export async function updateDetalleTrabajo(req, res) {
             data.equipo_id = parsed.equipo_id;
         if (parsed.tecnico_id !== undefined)
             data.tecnico_id = parsed.tecnico_id;
-        const actualizado = await prisma.detalle_trabajo.update({
+        const actualizado = await prisma.detalleTrabajo.update({
             where: { id },
             data,
             include: {
@@ -196,10 +192,9 @@ export async function updateDetalleTrabajo(req, res) {
     }
     catch (err) {
         console.error("Error al actualizar detalle trabajo:", err);
-        if (err.code === "P2025")
-            return res
-                .status(404)
-                .json({ error: "Detalle trabajo no encontrado" });
+        if (err.code === "P2025") {
+            return res.status(404).json({ error: "Detalle trabajo no encontrado" });
+        }
         return res.status(500).json({ error: "Error al actualizar detalle trabajo" });
     }
 }
@@ -209,15 +204,14 @@ export async function deleteDetalleTrabajo(req, res) {
         const id = Number(req.params.id);
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
-        await prisma.detalle_trabajo.delete({ where: { id } });
+        await prisma.detalleTrabajo.delete({ where: { id } });
         return res.status(204).send();
     }
     catch (err) {
         console.error("Error al eliminar detalle trabajo:", err);
-        if (err.code === "P2025")
-            return res
-                .status(404)
-                .json({ error: "Detalle trabajo no encontrado" });
+        if (err.code === "P2025") {
+            return res.status(404).json({ error: "Detalle trabajo no encontrado" });
+        }
         return res.status(500).json({ error: "Error al eliminar detalle trabajo" });
     }
 }
