@@ -45,19 +45,46 @@ const baseFlags = z.object({
     mantenimientoReloj: z.boolean().optional().default(false),
     rendimientoEquipo: z.boolean().optional().default(false),
 });
+/* ========== Create/Update Schemas ========== */
+/**
+ * Compatible con modo actual (uno solo):
+ *  - solicitanteId? / solicitante?
+ *
+ * Modo lote (N visitas en una llamada):
+ *  - solicitantesIds?: number[]
+ *  - solicitantesNombres?: string[]
+ *
+ * Regla: o envías (solicitanteId | solicitante) || (solicitantesIds | solicitantesNombres)
+ */
 const CreateVisitaSchema = z
     .object({
     empresaId: z.number().int().positive(),
     tecnicoId: z.number().int().positive(),
+    // MODO "UNO"
     solicitanteId: z.number().int().positive().optional(),
     solicitante: z.string().trim().optional(),
-    inicio: z.coerce.date(), // ISO string -> Date
+    // MODO "LOTE"
+    solicitantesIds: z.array(z.number().int().positive()).optional(),
+    solicitantesNombres: z.array(z.string().trim().min(1)).optional(),
+    inicio: z.coerce.date(), // ISO -> Date
     fin: z.coerce.date().optional().nullable(),
     status: StatusEnum.optional().default("PENDIENTE"),
-    ...baseFlags.shape,
 })
-    .refine((d) => !!d.solicitanteId || (d.solicitante?.length ?? 0) > 0, { message: "Debes enviar solicitanteId o solicitante", path: ["solicitante"] });
-const UpdateVisitaSchema = z.object({
+    .extend(baseFlags.shape)
+    .superRefine((d, ctx) => {
+    const hasBatch = (d.solicitantesIds && d.solicitantesIds.length > 0) ||
+        (d.solicitantesNombres && d.solicitantesNombres.length > 0);
+    const hasSingle = !!d.solicitanteId || (d.solicitante && d.solicitante.trim().length > 0);
+    if (!hasBatch && !hasSingle) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Debes enviar: (solicitanteId o solicitante) o (solicitantesIds/solicitantesNombres).",
+            path: ["solicitante"],
+        });
+    }
+});
+const UpdateVisitaSchema = z
+    .object({
     empresaId: z.number().int().positive().optional(),
     tecnicoId: z.number().int().positive().optional(),
     solicitanteId: z.number().int().positive().optional(),
@@ -65,8 +92,8 @@ const UpdateVisitaSchema = z.object({
     inicio: z.coerce.date().optional(),
     fin: z.coerce.date().optional().nullable(),
     status: StatusEnum.optional(),
-    ...baseFlags.partial().shape,
-});
+})
+    .extend(baseFlags.partial().shape);
 const parseId = (raw) => {
     const n = Number(raw);
     return Number.isInteger(n) && n > 0 ? n : null;
@@ -129,55 +156,107 @@ export const getVisitaById = async (req, res) => {
     return res.json(row);
 };
 /* ------------------------------------ */
-/* Crear                                 */
+/* Crear (single o lote)                 */
 /* ------------------------------------ */
 export const createVisita = async (req, res) => {
     try {
         const payload = CreateVisitaSchema.parse(req.body);
-        // Si no viene 'solicitante' pero sí 'solicitanteId', lo resolvemos desde la tabla
-        let solicitante = payload.solicitante?.trim();
-        if (!solicitante && payload.solicitanteId) {
-            const s = await prisma.solicitante.findUnique({
-                where: { id_solicitante: payload.solicitanteId },
-                select: { nombre: true },
+        // ¿Lote?
+        const isBatch = (payload.solicitantesIds && payload.solicitantesIds.length > 0) ||
+            (payload.solicitantesNombres && payload.solicitantesNombres.length > 0);
+        // Datos comunes para todas las visitas
+        const commonData = {
+            empresaId: payload.empresaId,
+            tecnicoId: payload.tecnicoId,
+            inicio: payload.inicio,
+            fin: payload.fin ?? null,
+            status: payload.status ?? "PENDIENTE",
+            confImpresoras: !!payload.confImpresoras,
+            confTelefonos: !!payload.confTelefonos,
+            confPiePagina: !!payload.confPiePagina,
+            otros: !!payload.otros,
+            otrosDetalle: payload.otros ? (payload.otrosDetalle ?? null) : null,
+            actualizaciones: !!payload.actualizaciones,
+            antivirus: !!payload.antivirus,
+            ccleaner: !!payload.ccleaner,
+            estadoDisco: !!payload.estadoDisco,
+            licenciaOffice: !!payload.licenciaOffice,
+            licenciaWindows: !!payload.licenciaWindows,
+            mantenimientoReloj: !!payload.mantenimientoReloj,
+            rendimientoEquipo: !!payload.rendimientoEquipo,
+        };
+        if (!isBatch) {
+            // ===== MODO "UNO" (compatibilidad)
+            let solicitante = payload.solicitante?.trim();
+            let solicitanteId = payload.solicitanteId ?? null;
+            if (!solicitante && solicitanteId) {
+                const s = await prisma.solicitante.findUnique({
+                    where: { id_solicitante: solicitanteId },
+                    select: { nombre: true },
+                });
+                if (!s)
+                    return res.status(400).json({ error: "solicitanteId no existe" });
+                solicitante = s.nombre;
+            }
+            if (!solicitante) {
+                return res.status(400).json({ error: "Debe indicar 'solicitante' o 'solicitanteId' válido" });
+            }
+            const created = await prisma.visita.create({
+                data: { ...commonData, solicitanteId, solicitante },
+                select: visitaSelect,
             });
-            if (!s)
-                return res.status(400).json({ error: "solicitanteId no existe" });
-            solicitante = s.nombre;
+            return res.status(201).json(created);
         }
-        const created = await prisma.visita.create({
+        // ===== MODO "LOTE"
+        // 1) Resolver los que llegan por ID
+        let resolvedFromIds = [];
+        if (payload.solicitantesIds?.length) {
+            const rows = await prisma.solicitante.findMany({
+                where: { id_solicitante: { in: payload.solicitantesIds } },
+                select: { id_solicitante: true, nombre: true },
+            });
+            const foundIds = new Set(rows.map(r => r.id_solicitante));
+            const missing = payload.solicitantesIds.filter(id => !foundIds.has(id));
+            if (missing.length) {
+                return res.status(400).json({ error: "Algunos solicitantesId no existen", missing });
+            }
+            resolvedFromIds = rows.map(r => ({ solicitanteId: r.id_solicitante, solicitante: r.nombre }));
+        }
+        // 2) Resolver los que llegan por nombre
+        const fromNames = (payload.solicitantesNombres ?? [])
+            .map(n => n.trim())
+            .filter(n => n.length > 0)
+            .map(n => ({ solicitanteId: null, solicitante: n }));
+        // 3) Mezclar y deduplicar (por id+nombre)
+        const allTargets = [];
+        const seen = new Set();
+        for (const r of [...resolvedFromIds, ...fromNames]) {
+            const key = `${r.solicitanteId ?? "null"}|${r.solicitante.toLowerCase()}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                allTargets.push(r);
+            }
+        }
+        if (allTargets.length === 0) {
+            return res.status(400).json({ error: "No hay solicitantes válidos para crear visitas" });
+        }
+        // 4) Crear todas en transacción
+        const createdList = await prisma.$transaction(allTargets.map(t => prisma.visita.create({
             data: {
-                empresaId: payload.empresaId,
-                tecnicoId: payload.tecnicoId,
-                solicitanteId: payload.solicitanteId ?? null,
-                solicitante: solicitante, // requerido
-                inicio: payload.inicio,
-                fin: payload.fin ?? null,
-                status: payload.status ?? "PENDIENTE",
-                confImpresoras: !!payload.confImpresoras,
-                confTelefonos: !!payload.confTelefonos,
-                confPiePagina: !!payload.confPiePagina,
-                otros: !!payload.otros,
-                otrosDetalle: payload.otros ? (payload.otrosDetalle ?? null) : null,
-                actualizaciones: !!payload.actualizaciones,
-                antivirus: !!payload.antivirus,
-                ccleaner: !!payload.ccleaner,
-                estadoDisco: !!payload.estadoDisco,
-                licenciaOffice: !!payload.licenciaOffice,
-                licenciaWindows: !!payload.licenciaWindows,
-                mantenimientoReloj: !!payload.mantenimientoReloj,
-                rendimientoEquipo: !!payload.rendimientoEquipo,
+                ...commonData,
+                solicitanteId: t.solicitanteId,
+                solicitante: t.solicitante,
             },
             select: visitaSelect,
-        });
-        return res.status(201).json(created);
+        })));
+        return res.status(201).json({ createdCount: createdList.length, visitas: createdList });
     }
     catch (err) {
         if (err instanceof z.ZodError) {
             return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
         }
         console.error("[visitas.create] error:", err);
-        return res.status(500).json({ error: "No se pudo crear la visita" });
+        return res.status(500).json({ error: "No se pudo crear la(s) visita(s)" });
     }
 };
 /* ------------------------------------ */

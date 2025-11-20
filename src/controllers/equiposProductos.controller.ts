@@ -26,6 +26,8 @@ export async function createProducto(req: Request, res: Response) {
     const dataWithDescripcion = {
       ...data,
       descripcion: data.descripcion ?? null,
+      // 👇 requerido por el schema
+      actualizadoEn: new Date(),
     };
 
     const nuevo = await prisma.equipoProducto.create({ data: dataWithDescripcion });
@@ -40,7 +42,7 @@ export async function createProducto(req: Request, res: Response) {
 // =====================
 // READ ALL
 // =====================
-export async function getProductos(req: Request, res: Response) {
+export async function getProductos(_req: Request, res: Response) {
   try {
     const productos = await prisma.equipoProducto.findMany({
       orderBy: { id: "asc" },
@@ -51,6 +53,7 @@ export async function getProductos(req: Request, res: Response) {
     return res.status(500).json({ error: "Error al obtener productos" });
   }
 }
+
 
 // =====================
 //  READ ONE
@@ -92,6 +95,9 @@ export async function updateProducto(req: Request, res: Response) {
     if (data.marca !== undefined) dataWithOperators.marca = { set: data.marca };
     if (data.modelo !== undefined) dataWithOperators.modelo = { set: data.modelo };
     if (data.estado !== undefined) dataWithOperators.estado = { set: data.estado };
+
+    // 👇 actualiza timestamp cada modificación
+    dataWithOperators.actualizadoEn = { set: new Date() };
 
     const actualizado = await prisma.equipoProducto.update({
       where: { id },

@@ -9,72 +9,64 @@ datasource db {
   relationMode      = "prisma"
 }
 
+model DetalleEquipo {
+  id_detalle_equipo Int     @id @default(autoincrement())
+  idEquipo          Int
+  macWifi           String?
+  so                String?
+  tipoDd            String?
+  estadoAlm         String?
+  office            String?
+  teamViewer        String?
+  claveTv           String?
+  revisado          String?
+
+  @@index([idEquipo])
+}
+
+model DetalleTrabajoGestioo {
+  id          Int              @id @default(autoincrement())
+  fecha       DateTime         @default(now())
+  tipoTrabajo String
+  descripcion String?
+  estado      String?          @default("pendiente")
+  notas       String?
+  area        AreaGestioo      @default(ENTRADA)
+  prioridad   PrioridadGestioo @default(NORMAL)
+  entidadId   Int?
+  productoId  Int?
+
+  @@index([entidadId])
+  @@index([productoId])
+}
+
 model Empresa {
-  id_empresa      Int                   @id @default(autoincrement())
-  nombre          String                @unique
-  solicitantes    Solicitante[]
-  visitas         Visita[]              @relation("Empresa_Visita")
-  tickets         FreshdeskTicket[]
-  companyMaps     FreshdeskCompanyMap[]
-  detalleEmpresa  DetalleEmpresa?
-  detalleTrabajos DetalleTrabajo[]
+  id_empresa      Int     @id @default(autoincrement())
+  nombre          String  @unique
+  tieneSucursales Boolean @default(false)
 }
 
-model DetalleEmpresa {
-  id         Int     @id @default(autoincrement())
-  rut        String  @unique
-  direccion  String
-  telefono   String
-  email      String
-  empresa_id Int     @unique
-  empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
-
-  @@map("detalle_empresas")
-}
-
-model Solicitante {
-  id_solicitante  Int                     @id @default(autoincrement())
-  nombre          String
-  email           String?
-  telefono        String?
-  empresaId       Int
-  clienteId       Int?                    @unique
-  googleUserId    String?                 @unique
-  isActive        Boolean                 @default(true)
-  microsoftUserId String?                 @unique
-  empresa         Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos         Equipo[]
-  visitas         Visita[]                @relation("Solicitante_Visita")
-  historiales     Historial[]             @relation("Solicitante_Historial")
-  tickets         FreshdeskTicket[]
-  requesterMaps   FreshdeskRequesterMap[]
-  cliente         Cliente?                @relation("ClienteSolicitante", fields: [clienteId], references: [id])
-
-  @@index([empresaId])
-  @@index([isActive])
-}
-
-model Cliente {
-  id          Int          @id @default(autoincrement())
-  nombre      String
-  telefono    String
-  email       String       @unique
-  solicitante Solicitante? @relation("ClienteSolicitante")
+model EntidadGestioo {
+  id        Int                @id @default(autoincrement())
+  nombre    String
+  rut       String?            @unique
+  correo    String?
+  telefono  String?
+  direccion String?
+  tipo      TipoEntidadGestioo @default(EMPRESA)
+  origen    OrigenGestioo      @default(RIDS)
 }
 
 model Equipo {
-  id_equipo       Int              @id @default(autoincrement())
-  idSolicitante   Int
-  serial          String
-  marca           String
-  modelo          String
-  procesador      String
-  ram             String
-  disco           String
-  propiedad       String
-  solicitante     Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
-  equipo          DetalleEquipo[]
-  detalleTrabajos DetalleTrabajo[]
+  id_equipo     Int     @id @default(autoincrement())
+  idSolicitante Int
+  serial        String? @unique
+  marca         String
+  modelo        String
+  procesador    String?
+  ram           String?
+  disco         String?
+  propiedad     String  @default("ASUR")
 
   @@index([idSolicitante])
 }
@@ -89,42 +81,58 @@ model EquipoProducto {
   modelo        String
   estado        String
   creadoEn      DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
+  actualizadoEn DateTime
 }
 
-model DetalleEquipo {
-  id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo   Int
-  macWifi    String?
-  so         String?
-  tipoDd     String?
-  estadoAlm  String?
-  office     String?
-  teamViewer String?
-  claveTv    String?
-  revisado   String?
-  equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
+model FdSourceMap {
+  id          Int     @id @default(autoincrement())
+  companyId   BigInt? @unique
+  domain      String? @unique
+  ticketOrgId Int
 
-  @@index([idEquipo])
+  @@index([ticketOrgId])
 }
 
-model DetalleTrabajo {
-  id            Int       @id @default(autoincrement())
-  fecha_ingreso DateTime
-  fecha_egreso  DateTime?
-  trabajo       String
-  accesorios    String?
-  prioridad     Prioridad
-  estado        String
-  notas         String?
-  empresa_id    Int?
-  equipo_id     Int?
-  tecnico_id    Int?
-  empresa       Empresa?  @relation(fields: [empresa_id], references: [id_empresa])
-  equipo        Equipo?   @relation(fields: [equipo_id], references: [id_equipo])
-  tecnico       Tecnico?  @relation(fields: [tecnico_id], references: [id_tecnico])
+model FreshdeskCompanyMap {
+  companyId BigInt  @id
+  empresaId Int
+  domain    String?
 
-  @@map("detalle_trabajos")
+  @@index([domain])
+  @@index([empresaId])
+}
+
+model FreshdeskRequesterMap {
+  requesterId   BigInt @id
+  solicitanteId Int
+  empresaId     Int
+
+  @@index([empresaId])
+  @@index([solicitanteId])
+}
+
+model FreshdeskTicket {
+  id                BigInt    @id
+  subject           String
+  status            Int
+  priority          Int
+  type              String?
+  requesterEmail    String?
+  createdAt         DateTime
+  updatedAt         DateTime
+  source            String?
+  capturedAt        DateTime?
+  empresaId         Int?
+  solicitanteId     Int?
+  ticketOrgId       Int?
+  ticketRequesterId Int?
+
+  @@index([createdAt])
+  @@index([empresaId])
+  @@index([requesterEmail])
+  @@index([solicitanteId])
+  @@index([ticketOrgId])
+  @@index([ticketRequesterId])
 }
 
 model Historial {
@@ -134,21 +142,63 @@ model Historial {
   fin                DateTime
   realizado          String?
   solicitanteId      Int
-  actualizaciones    Boolean     @default(false)
-  antivirus          Boolean     @default(false)
-  ccleaner           Boolean     @default(false)
-  estadoDisco        Boolean     @default(false)
-  licenciaOffice     Boolean     @default(false)
-  licenciaWindows    Boolean     @default(false)
-  mantenimientoReloj Boolean     @default(false)
-  rendimientoEquipo  Boolean     @default(false)
+  actualizaciones    Boolean  @default(false)
+  antivirus          Boolean  @default(false)
+  ccleaner           Boolean  @default(false)
+  estadoDisco        Boolean  @default(false)
+  licenciaOffice     Boolean  @default(false)
+  licenciaWindows    Boolean  @default(false)
+  mantenimientoReloj Boolean  @default(false)
+  rendimientoEquipo  Boolean  @default(false)
+  id_historial       Int      @id @default(autoincrement())
   direccion_visita   String?
-  id_historial       Int         @id @default(autoincrement())
-  tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
+  ecografo           Boolean  @default(false)
+  sucursalId         Int?
 
-  @@index([tecnicoId])
   @@index([solicitanteId])
+  @@index([sucursalId])
+  @@index([tecnicoId, fin(sort: Desc)])
+}
+
+model MarcaGestioo {
+  id     Int    @id @default(autoincrement())
+  nombre String
+}
+
+model ModeloGestioo {
+  id      Int    @id @default(autoincrement())
+  nombre  String
+  marcaId Int
+
+  @@index([marcaId])
+}
+
+model MsSku {
+  skuId         String  @id
+  skuPartNumber String
+  displayName   String?
+}
+
+model ProductoGestioo {
+  id            Int       @id @default(autoincrement())
+  nombre        String
+  descripcion   String?
+  tipo          String    @default("producto")
+  categoria     String?
+  serie         String?   @unique
+  estado        String?   @default("disponible")
+  precio        Float?
+  stock         Int?      @default(0)
+  fechaIngreso  DateTime? @default(now())
+  garantiaMeses Int?
+  activo        Boolean   @default(true)
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+
+  @@index([entidadId])
+  @@index([marcaId])
+  @@index([modeloId])
 }
 
 model RefreshToken {
@@ -161,22 +211,76 @@ model RefreshToken {
   replacedByTokenId Int?
   userAgent         String?
   ip                String?
-  user              Tecnico   @relation(fields: [userId], references: [id_tecnico])
 
   @@index([rtHash])
   @@index([userId])
 }
 
-model Tecnico {
-  id_tecnico      Int              @id @default(autoincrement())
+model Solicitante {
+  id_solicitante  Int          @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
   nombre          String
-  email           String           @unique
-  passwordHash    String
-  status          Boolean          @default(true)
-  tokens          RefreshToken[]
-  historiales     Historial[]
-  visitas         Visita[]
-  detalleTrabajos DetalleTrabajo[]
+  email           String?
+  telefono        String?
+  empresaId       Int
+  clienteId       Int?         @unique
+  googleUserId    String?      @unique
+  isActive        Boolean      @default(true)
+  microsoftUserId String?      @unique
+  accountType     AccountType?
+
+  @@index([accountType])
+  @@index([empresaId])
+  @@index([isActive])
+}
+
+model SolicitanteMsLicense {
+  id            Int       @id @default(autoincrement())
+  solicitanteId Int
+  skuId         String
+  assignedAt    DateTime? @default(now())
+
+  @@unique([solicitanteId, skuId])
+  @@index([skuId])
+  @@index([solicitanteId])
+}
+
+model Sucursal {
+  id_sucursal Int     @id @default(autoincrement())
+  nombre      String
+  direccion   String?
+  telefono    String?
+  empresaId   Int
+
+  @@index([empresaId])
+}
+
+model Tecnico {
+  id_tecnico   Int     @id @default(autoincrement())
+  nombre       String
+  email        String  @unique
+  passwordHash String
+  status       Boolean @default(true)
+}
+
+model TicketOrg {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model TicketRequester {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String?  @unique
+  phone         String?
+  fdRequesterId BigInt?  @unique
+  ticketOrgId   Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@index([ticketOrgId])
 }
 
 model Visita {
@@ -202,120 +306,85 @@ model Visita {
   mantenimientoReloj Boolean      @default(false)
   rendimientoEquipo  Boolean      @default(false)
   direccion_visita   String?
-  empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
-  tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
+  ecografo           Boolean      @default(false)
+  sucursalId         Int?
 
   @@index([empresaId])
+  @@index([solicitanteId])
+  @@index([sucursalId])
   @@index([tecnicoId])
-  @@index([solicitanteId])
 }
 
-/// * LEGADO: ya no lo usa el flujo nuevo de tickets
-model FreshdeskCompanyMap {
-  companyId BigInt  @id
-  empresaId Int
-  domain    String?
-  empresa   Empresa @relation(fields: [empresaId], references: [id_empresa])
-
-  @@index([empresaId])
-  @@index([domain])
+model detalle_empresas {
+  id         Int    @id @default(autoincrement())
+  rut        String @unique
+  direccion  String
+  telefono   String
+  email      String
+  empresa_id Int    @unique
 }
 
-/// * LEGADO: ya no lo usa el flujo nuevo de tickets
-model FreshdeskRequesterMap {
-  requesterId   BigInt      @id
-  solicitanteId Int
-  empresaId     Int
-  solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+model detalle_trabajos {
+  id              Int       @id @default(autoincrement())
+  fecha_ingreso   DateTime
+  fecha_egreso    DateTime?
+  trabajo         String
+  accesorios      String?
+  prioridad       Prioridad
+  estado          String
+  notas           String?
+  empresa_id      Int?
+  equipo_id       Int?
+  tecnico_id      Int?
+  adelanto        Float?
+  contrasena      String?
+  diagnostico     Boolean?  @default(false)
+  fecha_prometida DateTime?
+  garantia        Boolean?  @default(false)
+  presupuesto     Float?
+  area            Area      @default(entrada)
 
-  @@index([empresaId])
-  @@index([solicitanteId])
+  @@index([empresa_id])
+  @@index([equipo_id])
+  @@index([tecnico_id])
 }
 
-/// * CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester)
-model FreshdeskTicket {
-  id                BigInt           @id
-  subject           String
-  status            Int
-  priority          Int
-  type              String?
-  requesterEmail    String?
-  createdAt         DateTime
-  updatedAt         DateTime
-  source            String?
-  capturedAt        DateTime?
-  empresaId         Int?
-  solicitanteId     Int?
-  ticketOrgId       Int?
-  ticketRequesterId Int?
-  empresa           Empresa?         @relation(fields: [empresaId], references: [id_empresa])
-  solicitante       Solicitante?     @relation(fields: [solicitanteId], references: [id_solicitante])
-  ticketOrg         TicketOrg?       @relation(fields: [ticketOrgId], references: [id])
-  ticketRequester   TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
-
-  @@index([empresaId])
-  @@index([solicitanteId])
-  @@index([ticketOrgId])
-  @@index([ticketRequesterId])
-  @@index([requesterEmail])
-  @@index([createdAt])
+enum AccountType {
+  google
+  microsoft
 }
 
-/// * Agrupación lógica de tickets (no toca tu Empresa)
-model TicketOrg {
-  id         Int               @id @default(autoincrement())
-  name       String            @unique
-  notes      String?
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
-  maps       FdSourceMap[]
-  tickets    FreshdeskTicket[]
-  requesters TicketRequester[]
+enum Area {
+  entrada
+  domicilio
+  reparacion
+  salida
 }
 
-/// * Mapa domain/companyId → TicketOrg
-model FdSourceMap {
-  id          Int       @id @default(autoincrement())
-  companyId   BigInt?   @unique
-  domain      String?   @unique
-  ticketOrgId Int
-  ticketOrg   TicketOrg @relation(fields: [ticketOrgId], references: [id])
-
-  @@index([ticketOrgId])
+enum AreaGestioo {
+  ENTRADA
+  DOMICILIO
+  REPARACION
+  SALIDA
 }
 
-/// * NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId)
-model TicketRequester {
-  id            Int               @id @default(autoincrement())
-  name          String
-  email         String?           @unique
-  phone         String?
-  fdRequesterId BigInt?           @unique
-  ticketOrgId   Int?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  ticketOrg     TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
-  tickets       FreshdeskTicket[]
-
-  @@index([ticketOrgId])
+enum EstadoTrabajoGestioo {
+  PENDIENTE
+  EN_PROCESO
+  FINALIZADO
+  CANCELADO
 }
 
-model MsSku {
-  skuId         String  @id
-  skuPartNumber String
-  displayName   String?
+enum EstadoVisita {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
 }
 
-model SolicitanteMsLicense {
-  id            Int       @id @default(autoincrement())
-  solicitanteId Int
-  skuId         String
-  assignedAt    DateTime? @default(now())
-
-  @@unique([solicitanteId, skuId])
-  @@index([skuId])
-  @@index([solicitanteId])
+enum OrigenGestioo {
+  RIDS
+  ECCONET
+  OTRO
 }
 
 enum Prioridad {
@@ -324,8 +393,13 @@ enum Prioridad {
   alta
 }
 
-enum EstadoVisita {
-  PENDIENTE
-  COMPLETADA
-  CANCELADA
+enum PrioridadGestioo {
+  BAJA
+  NORMAL
+  ALTA
+}
+
+enum TipoEntidadGestioo {
+  PERSONA
+  EMPRESA
 }
