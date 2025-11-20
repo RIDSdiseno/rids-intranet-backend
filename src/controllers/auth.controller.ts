@@ -13,10 +13,10 @@ const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
 
 const ARGON_REFRESH_TOKEN_OPTIONS = {
   type: argon2.argon2id,
-  memoryCost: 512,     // Aún más optimizado para tokens
+  memoryCost: 512, // optimizado para tokens
   timeCost: 1,
   parallelism: 1,
-  hashLength: 32
+  hashLength: 32,
 };
 
 // Pre-calcular valores que no cambian
@@ -50,14 +50,14 @@ function getRefreshSecret(): string {
 
 /* ================ SCHEMAS CACHEADOS ================ */
 const registerSchema = z.object({
-  nombre: z.string().min(2, "nombre demasiado corto"),
-  email: z.string().email("email inválido"),
-  password: z.string().min(6, "password mínimo 6 caracteres"),
+  nombre: z.string().min(2, "Nombre demasiado corto"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
 });
 
 const loginSchema = z.object({
-  email: z.string().email("email inválido"),
-  password: z.string().min(1, "password requerido"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(1, "Password requerido"),
 });
 
 /* ================ UTILS OPTIMIZADOS ================ */
@@ -77,7 +77,10 @@ function ttlToMs(ttl: string): number {
   const n = Number(m[1]);
   const u = (m[2] ?? "d").toLowerCase();
   const map: Record<string, number> = {
-    s: 1000, m: 60000, h: 3600000, d: 86400000
+    s: 1000,
+    m: 60000,
+    h: 3600000,
+    d: 86400000,
   };
 
   return n * (map[u] ?? 86400000);
@@ -90,9 +93,9 @@ function signAccessToken(userId: number, email: string): string {
     getJwtSecret(),
     {
       subject: String(userId),
-      expiresIn: ACCESS_TTL, // Ahora funciona sin error
-      algorithm: 'HS256'
-    } as jwt.SignOptions // CORRECCIÓN: Cast del objeto completo
+      expiresIn: ACCESS_TTL,
+      algorithm: "HS256",
+    } as jwt.SignOptions
   );
 }
 
@@ -103,9 +106,9 @@ function signRefreshToken(userId: number, tokenId?: number): string {
     getRefreshSecret(),
     {
       subject: String(userId),
-      expiresIn: REFRESH_TTL, // Ahora funciona sin error
-      algorithm: 'HS256'
-    } as jwt.SignOptions // CORRECCIÓN: Cast del objeto completo
+      expiresIn: REFRESH_TTL,
+      algorithm: "HS256",
+    } as jwt.SignOptions
   );
 }
 
@@ -149,7 +152,10 @@ export const register = async (req: Request, res: Response) => {
   try {
     const parsed = registerSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.flatten() });
+      const firstIssue = parsed.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Datos inválidos",
+      });
     }
 
     const { nombre, email, password } = parsed.data;
@@ -164,7 +170,7 @@ export const register = async (req: Request, res: Response) => {
     // Consulta optimizada - solo necesitamos saber si existe
     const exists = await prisma.tecnico.findUnique({
       where: { email: emailNorm },
-      select: { id_tecnico: true }
+      select: { id_tecnico: true },
     });
 
     if (exists) {
@@ -179,7 +185,7 @@ export const register = async (req: Request, res: Response) => {
       type: argon2.argon2id,
       memoryCost: 4096,
       timeCost: 2,
-      parallelism: 1
+      parallelism: 1,
     });
 
     const tecnico = await prisma.tecnico.create({
@@ -187,13 +193,13 @@ export const register = async (req: Request, res: Response) => {
         nombre: nombre.trim(),
         email: emailNorm,
         passwordHash,
-        status: true
+        status: true,
       },
       select: {
         id_tecnico: true,
         nombre: true,
         email: true,
-        status: true
+        status: true,
       },
     });
 
@@ -208,12 +214,15 @@ export const register = async (req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
-  const start = Date.now();  // Medir el tiempo de inicio
+  const start = Date.now();
 
   try {
     const parsed = loginSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.flatten() });
+      const firstIssue = parsed.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Datos inválidos",
+      });
     }
 
     const emailNorm = parsed.data.email.trim().toLowerCase();
@@ -226,15 +235,21 @@ export const login = async (req: Request, res: Response) => {
         id_tecnico: true,
         nombre: true,
         email: true,
-        passwordHash: true
-      }
+        passwordHash: true,
+        status: true,
+      },
     });
 
     if (!tecnico) {
       // Pequeño delay para prevenir timing attacks
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
+
+    // (opcional) si quieres bloquear usuarios inactivos:
+    // if (!tecnico.status) {
+    //   return res.status(401).json({ error: "Usuario inactivo" });
+    // }
 
     // Verificación de password optimizada
     const hash = tecnico.passwordHash ?? "";
@@ -254,39 +269,40 @@ export const login = async (req: Request, res: Response) => {
     const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
     const refreshRaw = signRefreshToken(tecnico.id_tecnico);
 
-    // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
+    const hashStart = Date.now();
     const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+    const hashEnd = Date.now();
 
     const { userAgent, ip } = getClientInfo(req);
     const expiresAt = new Date(Date.now() + REFRESH_MS);
 
-    // Insertar token sin esperar respuesta (fire and forget para mejor performance)
-    prisma.refreshToken.create({
-      data: {
-        userId: tecnico.id_tecnico,
-        rtHash,
-        expiresAt,
-        userAgent,
-        ip
-      },
-      select: { id: true },
-    }).catch(console.error);
+    // Insertar token sin bloquear la respuesta
+    prisma.refreshToken
+      .create({
+        data: {
+          userId: tecnico.id_tecnico,
+          rtHash,
+          expiresAt,
+          userAgent,
+          ip,
+        },
+        select: { id: true },
+      })
+      .catch(console.error);
 
     setRefreshCookie(res, refreshRaw);
 
-    const end = Date.now();  // Medir el tiempo final
-    // En la función login, después del hash:
-    const hashStart = Date.now();
-    const hashEnd = Date.now();
-    console.log(`⏱️  Tiempo hash Argon2: ${hashEnd - hashStart}ms`);
-    console.log(`Tiempo de respuesta del login: ${end - start} ms`);
+    const end = Date.now();
+    console.log(`⏱️ Tiempo hash Argon2 refresh: ${hashEnd - hashStart}ms`);
+    console.log(`⏱️ Tiempo de respuesta del login: ${end - start}ms`);
+
     return res.json({
       accessToken,
       refreshToken: refreshRaw,
       tecnico: {
         id_tecnico: tecnico.id_tecnico,
         nombre: tecnico.nombre,
-        email: tecnico.email
+        email: tecnico.email,
       },
     });
   } catch (error) {
@@ -315,7 +331,7 @@ export const refresh = async (req: Request, res: Response) => {
       where: {
         userId,
         revokedAt: null,
-        expiresAt: { gt: new Date() }
+        expiresAt: { gt: new Date() },
       },
       select: { id: true, rtHash: true },
       orderBy: { id: "desc" },
@@ -334,14 +350,16 @@ export const refresh = async (req: Request, res: Response) => {
 
     if (!matchedToken) {
       // Revocar tokens en segundo plano sin bloquear respuesta
-      prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }).catch(console.error);
+      prisma.refreshToken
+        .updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        })
+        .catch(console.error);
 
-      return res.status(401).json({
-        error: "Refresh no reconocido (revocados los activos)"
-      });
+      return res
+        .status(401)
+        .json({ error: "Refresh no reconocido (revocados los activos)" });
     }
 
     // Obtener datos del usuario
@@ -350,8 +368,8 @@ export const refresh = async (req: Request, res: Response) => {
       select: {
         id_tecnico: true,
         nombre: true,
-        email: true
-      }
+        email: true,
+      },
     });
 
     if (!tecnico) {
@@ -362,41 +380,47 @@ export const refresh = async (req: Request, res: Response) => {
     const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email);
     const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
 
-    // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
-    const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+    const newHash = await argon2.hash(
+      newRefreshRaw,
+      ARGON_REFRESH_TOKEN_OPTIONS
+    );
 
     const { userAgent, ip } = getClientInfo(req);
     const expiresAt2 = new Date(Date.now() + REFRESH_MS);
 
     // Transacción optimizada
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.refreshToken.update({
-        where: { id: matchedToken!.id },
-        data: { revokedAt: new Date() },
-      });
+    await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        await tx.refreshToken.update({
+          where: { id: matchedToken!.id },
+          data: { revokedAt: new Date() },
+        });
 
-      await tx.refreshToken.create({
-        data: {
-          userId: tecnico.id_tecnico,
-          rtHash: newHash,
-          expiresAt: expiresAt2,
-          userAgent,
-          ip
-        },
-      });
-    }, {
-      timeout: 10000
-    });
+        await tx.refreshToken.create({
+          data: {
+            userId: tecnico.id_tecnico,
+            rtHash: newHash,
+            expiresAt: expiresAt2,
+            userAgent,
+            ip,
+          },
+        });
+      },
+      {
+        timeout: 10000,
+      }
+    );
 
     setRefreshCookie(res, newRefreshRaw);
     return res.json({
       accessToken: newAccess,
-      refreshToken: newRefreshRaw
+      refreshToken: newRefreshRaw,
     });
-
   } catch (error) {
     console.error("Error en refresh:", error);
-    return res.status(401).json({ error: "Refresh inválido o expirado" });
+    return res
+      .status(401)
+      .json({ error: "Refresh inválido o expirado" });
   }
 };
 
@@ -417,7 +441,7 @@ export const me = async (req: Request, res: Response) => {
       id_tecnico: true,
       nombre: true,
       email: true,
-      status: true
+      status: true,
     },
   });
 
