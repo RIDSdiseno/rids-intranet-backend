@@ -7,34 +7,20 @@ import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
 
 /* ========= Helpers ========= */
-function normalizeOrigin(origin: string): string {
-  return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
-}
-
 function normalizeOriginList(raw?: string): string[] {
-  if (!raw || raw.trim() === "") {
-    return ["http://localhost:5173"];
-  }
+  if (!raw || raw.trim() === "") return ["http://localhost:5173"];
   return raw
     .split(",")
-    .map(normalizeOrigin)
-    .filter(Boolean);
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => (s.startsWith("http://") || s.startsWith("https://") ? s : `https://${s}`));
 }
 
 function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] {
-  const allowedNormalized = allowed.map(normalizeOrigin);
-  console.log("[CORS] allowedOrigins =", allowedNormalized);
-
   return (origin, cb) => {
     // Permite herramientas/healthchecks sin header Origin
     if (!origin) return cb(null, true);
-
-    const norm = normalizeOrigin(origin);
-    if (allowedNormalized.includes(norm)) {
-      return cb(null, true);
-    }
-
-    console.warn("[CORS] Not allowed:", origin, "->", norm);
+    if (allowed.includes(origin)) return cb(null, true);
     cb(new Error(`Not allowed by CORS: ${origin}`));
   };
 }
@@ -78,7 +64,7 @@ const corsOptions: cors.CorsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-
+app.use(cors(corsOptions));
 
 // Preflight global con respuesta 204 (más limpio que el 200 con body)
 // Delega el preflight al mismo corsOptions (no hagas headers a mano)
