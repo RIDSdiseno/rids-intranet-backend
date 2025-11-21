@@ -8,10 +8,10 @@ const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
 const ARGON_REFRESH_TOKEN_OPTIONS = {
     type: argon2.argon2id,
-    memoryCost: 512, // Aún más optimizado para tokens
+    memoryCost: 512, // optimizado para tokens
     timeCost: 1,
     parallelism: 1,
-    hashLength: 32
+    hashLength: 32,
 };
 // Pre-calcular valores que no cambian
 const REFRESH_MS = ttlToMs(REFRESH_TTL);
@@ -39,13 +39,13 @@ function getRefreshSecret() {
 }
 /* ================ SCHEMAS CACHEADOS ================ */
 const registerSchema = z.object({
-    nombre: z.string().min(2, "nombre demasiado corto"),
-    email: z.string().email("email inválido"),
-    password: z.string().min(6, "password mínimo 6 caracteres"),
+    nombre: z.string().min(2, "Nombre demasiado corto"),
+    email: z.string().email("Email inválido"),
+    password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
 });
 const loginSchema = z.object({
-    email: z.string().email("email inválido"),
-    password: z.string().min(1, "password requerido"),
+    email: z.string().email("Email inválido"),
+    password: z.string().min(1, "Password requerido"),
 });
 /* ================ UTILS OPTIMIZADOS ================ */
 function ttlToMs(ttl) {
@@ -65,7 +65,10 @@ function ttlToMs(ttl) {
     const n = Number(m[1]);
     const u = (m[2] ?? "d").toLowerCase();
     const map = {
-        s: 1000, m: 60000, h: 3600000, d: 86400000
+        s: 1000,
+        m: 60000,
+        h: 3600000,
+        d: 86400000,
     };
     return n * (map[u] ?? 86400000);
 }
@@ -73,19 +76,17 @@ function ttlToMs(ttl) {
 function signAccessToken(userId, email) {
     return jwt.sign({ email }, getJwtSecret(), {
         subject: String(userId),
-        expiresIn: ACCESS_TTL, // Ahora funciona sin error
-        algorithm: 'HS256'
-    } // CORRECCIÓN: Cast del objeto completo
-    );
+        expiresIn: ACCESS_TTL,
+        algorithm: "HS256",
+    });
 }
 function signRefreshToken(userId, tokenId) {
     const payload = tokenId ? { tid: tokenId } : {};
     return jwt.sign(payload, getRefreshSecret(), {
         subject: String(userId),
-        expiresIn: REFRESH_TTL, // Ahora funciona sin error
-        algorithm: 'HS256'
-    } // CORRECCIÓN: Cast del objeto completo
-    );
+        expiresIn: REFRESH_TTL,
+        algorithm: "HS256",
+    });
 }
 function getClientInfo(req) {
     const userAgent = req.get("user-agent") || "unknown";
@@ -119,7 +120,10 @@ export const register = async (req, res) => {
     try {
         const parsed = registerSchema.safeParse(req.body ?? {});
         if (!parsed.success) {
-            return res.status(400).json({ error: parsed.error.flatten() });
+            const firstIssue = parsed.error.issues[0];
+            return res.status(400).json({
+                error: firstIssue?.message ?? "Datos inválidos",
+            });
         }
         const { nombre, email, password } = parsed.data;
         const emailNorm = email.trim().toLowerCase();
@@ -131,7 +135,7 @@ export const register = async (req, res) => {
         // Consulta optimizada - solo necesitamos saber si existe
         const exists = await prisma.tecnico.findUnique({
             where: { email: emailNorm },
-            select: { id_tecnico: true }
+            select: { id_tecnico: true },
         });
         if (exists) {
             // Actualizar cache
@@ -143,20 +147,20 @@ export const register = async (req, res) => {
             type: argon2.argon2id,
             memoryCost: 4096,
             timeCost: 2,
-            parallelism: 1
+            parallelism: 1,
         });
         const tecnico = await prisma.tecnico.create({
             data: {
                 nombre: nombre.trim(),
                 email: emailNorm,
                 passwordHash,
-                status: true
+                status: true,
             },
             select: {
                 id_tecnico: true,
                 nombre: true,
                 email: true,
-                status: true
+                status: true,
             },
         });
         // Limpiar cache de verificación de email
@@ -169,11 +173,14 @@ export const register = async (req, res) => {
     }
 };
 export const login = async (req, res) => {
-    const start = Date.now(); // Medir el tiempo de inicio
+    const start = Date.now();
     try {
         const parsed = loginSchema.safeParse(req.body ?? {});
         if (!parsed.success) {
-            return res.status(400).json({ error: parsed.error.flatten() });
+            const firstIssue = parsed.error.issues[0];
+            return res.status(400).json({
+                error: firstIssue?.message ?? "Datos inválidos",
+            });
         }
         const emailNorm = parsed.data.email.trim().toLowerCase();
         const password = parsed.data.password;
@@ -184,14 +191,19 @@ export const login = async (req, res) => {
                 id_tecnico: true,
                 nombre: true,
                 email: true,
-                passwordHash: true
-            }
+                passwordHash: true,
+                status: true,
+            },
         });
         if (!tecnico) {
             // Pequeño delay para prevenir timing attacks
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
             return res.status(401).json({ error: "Credenciales inválidas" });
         }
+        // (opcional) si quieres bloquear usuarios inactivos:
+        // if (!tecnico.status) {
+        //   return res.status(401).json({ error: "Usuario inactivo" });
+        // }
         // Verificación de password optimizada
         const hash = tecnico.passwordHash ?? "";
         let isValid = false;
@@ -207,35 +219,35 @@ export const login = async (req, res) => {
         // Generar tokens
         const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
         const refreshRaw = signRefreshToken(tecnico.id_tecnico);
-        // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
+        const hashStart = Date.now();
         const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+        const hashEnd = Date.now();
         const { userAgent, ip } = getClientInfo(req);
         const expiresAt = new Date(Date.now() + REFRESH_MS);
-        // Insertar token sin esperar respuesta (fire and forget para mejor performance)
-        prisma.refreshToken.create({
+        // Insertar token sin bloquear la respuesta
+        prisma.refreshToken
+            .create({
             data: {
                 userId: tecnico.id_tecnico,
                 rtHash,
                 expiresAt,
                 userAgent,
-                ip
+                ip,
             },
             select: { id: true },
-        }).catch(console.error);
+        })
+            .catch(console.error);
         setRefreshCookie(res, refreshRaw);
-        const end = Date.now(); // Medir el tiempo final
-        // En la función login, después del hash:
-        const hashStart = Date.now();
-        const hashEnd = Date.now();
-        console.log(`⏱️  Tiempo hash Argon2: ${hashEnd - hashStart}ms`);
-        console.log(`Tiempo de respuesta del login: ${end - start} ms`);
+        const end = Date.now();
+        console.log(`⏱️ Tiempo hash Argon2 refresh: ${hashEnd - hashStart}ms`);
+        console.log(`⏱️ Tiempo de respuesta del login: ${end - start}ms`);
         return res.json({
             accessToken,
             refreshToken: refreshRaw,
             tecnico: {
                 id_tecnico: tecnico.id_tecnico,
                 nombre: tecnico.nombre,
-                email: tecnico.email
+                email: tecnico.email,
             },
         });
     }
@@ -261,7 +273,7 @@ export const refresh = async (req, res) => {
             where: {
                 userId,
                 revokedAt: null,
-                expiresAt: { gt: new Date() }
+                expiresAt: { gt: new Date() },
             },
             select: { id: true, rtHash: true },
             orderBy: { id: "desc" },
@@ -277,13 +289,15 @@ export const refresh = async (req, res) => {
         }
         if (!matchedToken) {
             // Revocar tokens en segundo plano sin bloquear respuesta
-            prisma.refreshToken.updateMany({
+            prisma.refreshToken
+                .updateMany({
                 where: { userId, revokedAt: null },
                 data: { revokedAt: new Date() },
-            }).catch(console.error);
-            return res.status(401).json({
-                error: "Refresh no reconocido (revocados los activos)"
-            });
+            })
+                .catch(console.error);
+            return res
+                .status(401)
+                .json({ error: "Refresh no reconocido (revocados los activos)" });
         }
         // Obtener datos del usuario
         const tecnico = await prisma.tecnico.findUnique({
@@ -291,8 +305,8 @@ export const refresh = async (req, res) => {
             select: {
                 id_tecnico: true,
                 nombre: true,
-                email: true
-            }
+                email: true,
+            },
         });
         if (!tecnico) {
             return res.status(401).json({ error: "Usuario no encontrado" });
@@ -300,7 +314,6 @@ export const refresh = async (req, res) => {
         // Generar nuevos tokens
         const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email);
         const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
-        // ✅ OPTIMIZADO: Usar configuración optimizada para refresh tokens
         const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const { userAgent, ip } = getClientInfo(req);
         const expiresAt2 = new Date(Date.now() + REFRESH_MS);
@@ -316,21 +329,23 @@ export const refresh = async (req, res) => {
                     rtHash: newHash,
                     expiresAt: expiresAt2,
                     userAgent,
-                    ip
+                    ip,
                 },
             });
         }, {
-            timeout: 10000
+            timeout: 10000,
         });
         setRefreshCookie(res, newRefreshRaw);
         return res.json({
             accessToken: newAccess,
-            refreshToken: newRefreshRaw
+            refreshToken: newRefreshRaw,
         });
     }
     catch (error) {
         console.error("Error en refresh:", error);
-        return res.status(401).json({ error: "Refresh inválido o expirado" });
+        return res
+            .status(401)
+            .json({ error: "Refresh inválido o expirado" });
     }
 };
 export const logout = async (_req, res) => {
@@ -348,7 +363,7 @@ export const me = async (req, res) => {
             id_tecnico: true,
             nombre: true,
             email: true,
-            status: true
+            status: true,
         },
     });
     if (!tecnico) {

@@ -368,6 +368,8 @@ model FreshdeskCompanyMap {
   @@index([domain])
 }
 
+
+
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskRequesterMap {
   requesterId   BigInt      @id
@@ -462,10 +464,9 @@ model CotizacionGestioo {
   descuentos Float @default(0)
 
   total     Float                   @default(0)
+  items     CotizacionItemGestioo[]
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
-  entidad   EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-  items     CotizacionItemGestioo[]
 
   @@index([entidadId])
 }
@@ -563,5 +564,5 @@ enum TipoCotizacionGestioo {
 enum ItemTipoGestioo {
   PRODUCTO
   SERVICIO
-  ADICIONAL
+  ADICIONAL
 }

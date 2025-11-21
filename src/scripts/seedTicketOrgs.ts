@@ -14,7 +14,7 @@ async function main() {
     await prisma.ticketOrg.upsert({
       where: { name },
       update: { updatedAt: new Date() },            // <— importante
-      create: { name, updatedAt: new Date() },      // <— importante
+      create: { name, updatedAt: new Date() },      // <— important
     });
     count++;
   }
