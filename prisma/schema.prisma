@@ -119,13 +119,11 @@ model ProductoGestioo {
   fechaIngreso  DateTime?               @default(now())
   garantiaMeses Int?
   activo        Boolean                 @default(true)
-
-  porcGanancia  Float?
-  precioTotal   Float?
-
   marcaId       Int?
   modeloId      Int?
   entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
   marca         MarcaGestioo?           @relation(fields: [marcaId], references: [id])
   modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
@@ -455,6 +453,14 @@ model CotizacionGestioo {
   estado    EstadoCotizacionGestioo @default(BORRADOR)
   tipo      TipoCotizacionGestioo   @default(CLIENTE)
   entidadId Int?
+
+  moneda     MonedaGestioo          @default(CLP) // CLP o USD
+  subtotal   Float                  @default(0) // sin IVA
+  iva        Float                  @default(0) // monto de IVA
+  tasaCambio Float?
+
+  descuentos Float @default(0)
+
   total     Float                   @default(0)
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
@@ -472,8 +478,17 @@ model CotizacionItemGestioo {
   cantidad     Int               @default(1)
   precio       Float             @default(0)
   porcentaje   Float?
+
+  tieneIVA     Boolean  @default(false)
+  sku          String?
+
   createdAt    DateTime          @default(now())
   cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+}
+
+enum MonedaGestioo {
+  CLP
+  USD
 }
 
 enum AccountType {

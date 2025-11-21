@@ -9,19 +9,26 @@ function normalizeCotizacionData(body) {
         out.tipo = body.tipo;
     if (body.estado)
         out.estado = body.estado;
-    // entidadId siempre number o null
     out.entidadId =
         body.entidadId === "" || body.entidadId === null || body.entidadId === undefined
             ? null
             : Number(body.entidadId);
-    // total siempre número
-    if (body.total !== undefined) {
+    // nuevos campos
+    if (body.subtotal !== undefined)
+        out.subtotal = Number(body.subtotal);
+    if (body.descuentos !== undefined)
+        out.descuentos = Number(body.descuentos);
+    if (body.iva !== undefined)
+        out.iva = Number(body.iva);
+    if (body.total !== undefined)
         out.total = Number(body.total);
-    }
-    // fecha segura
-    if (body.fecha) {
+    if (body.moneda)
+        out.moneda = body.moneda;
+    // <--- CORRECCIÓN FINAL
+    if (body.tasaCambio !== undefined)
+        out.tasaCambio = Number(body.tasaCambio);
+    if (body.fecha)
         out.fecha = new Date(body.fecha);
-    }
     return out;
 }
 /* =====================================================
@@ -100,6 +107,8 @@ export async function createCotizacion(req, res) {
                         cantidad: Number(i.cantidad ?? 1),
                         precio: Number(i.precio ?? 0),
                         porcentaje: i.porcentaje !== undefined ? Number(i.porcentaje) : null,
+                        tieneIVA: i.tieneIVA ?? false,
+                        sku: i.sku || null
                     })),
                 },
             },
@@ -108,90 +117,45 @@ export async function createCotizacion(req, res) {
                 items: true,
             },
         });
-        return res.status(201).json({ data: nueva }); // ← RETURN OBLIGATORIO
+        return res.status(201).json({ data: nueva });
     }
     catch (error) {
         console.error("❌ Error createCotizacion:", error);
-        return res.status(500).json({ error: "Error al crear cotización" }); // ← RETURN OBLIGATORIO
+        return res.status(500).json({ error: "Error al crear cotización" });
     }
 }
 /* =====================================================
       UPDATE
 ===================================================== */
-/* =====================================================
-      UPDATE - MEJORADO CON VALIDACIÓN
-===================================================== */
 export async function updateCotizacion(req, res) {
     try {
         const id = Number(req.params.id);
-        // Validar ID
-        if (isNaN(id) || id <= 0) {
+        if (isNaN(id) || id <= 0)
             return res.status(400).json({ error: "ID de cotización inválido" });
-        }
-        const existe = await prisma.cotizacionGestioo.findUnique({
-            where: { id }
-        });
-        if (!existe) {
+        const existe = await prisma.cotizacionGestioo.findUnique({ where: { id } });
+        if (!existe)
             return res.status(404).json({ error: "Cotización no encontrada" });
-        }
         const { items, ...rest } = req.body;
-        // Validar items de forma más específica
-        if (!items || !Array.isArray(items)) {
-            return res.status(400).json({
-                error: "Los items son requeridos y deben ser un array"
-            });
-        }
-        if (items.length === 0) {
-            return res.status(400).json({
-                error: "La cotización debe tener al menos un item"
-            });
-        }
-        // Validar cada item
-        for (const [index, item] of items.entries()) {
-            if (!item.descripcion || item.descripcion.trim() === '') {
-                return res.status(400).json({
-                    error: `El item ${index + 1} debe tener una descripción`
-                });
-            }
-            if (!item.cantidad || item.cantidad <= 0) {
-                return res.status(400).json({
-                    error: `El item ${index + 1} debe tener una cantidad válida`
-                });
-            }
-            if (item.precio === undefined || item.precio < 0) {
-                return res.status(400).json({
-                    error: `El item ${index + 1} debe tener un precio válido`
-                });
-            }
-        }
+        if (!items || !Array.isArray(items) || items.length === 0)
+            return res.status(400).json({ error: "Debe incluir items" });
         const data = normalizeCotizacionData(rest);
-        // Validar datos normalizados
-        if (data.entidadId !== null && (isNaN(data.entidadId) || data.entidadId <= 0)) {
-            return res.status(400).json({ error: "EntidadId inválido" });
-        }
-        if (data.total !== undefined && (isNaN(data.total) || data.total < 0)) {
-            return res.status(400).json({ error: "Total inválido" });
-        }
-        // Usar transacción para mayor seguridad
         const updated = await prisma.$transaction(async (tx) => {
-            // Borrar items antiguos
-            await tx.cotizacionItemGestioo.deleteMany({
-                where: { cotizacionId: id },
-            });
-            // Actualizar cotización
+            await tx.cotizacionItemGestioo.deleteMany({ where: { cotizacionId: id } });
             return await tx.cotizacionGestioo.update({
                 where: { id },
                 data: {
                     ...data,
                     items: {
                         create: items.map((i) => ({
-                            tipo: i.tipo || "PRODUCTO",
+                            tipo: i.tipo,
                             descripcion: i.descripcion.trim(),
                             cantidad: Number(i.cantidad ?? 1),
                             precio: Number(i.precio ?? 0),
                             porcentaje: i.porcentaje !== undefined ? Number(i.porcentaje) : null,
-                        })),
-                    },
+                            tieneIVA: i.tieneIVA ?? false,
+                            sku: i.sku || null
+                        }))
+                    }
                 },
                 include: {
                     entidad: true,
@@ -199,20 +163,11 @@ export async function updateCotizacion(req, res) {
                 },
             });
         });
-        return res.json({ data: updated }); // ✅ RETURN OBLIGATORIO
+        return res.json({ data: updated });
     }
     catch (error) {
         console.error("❌ Error updateCotizacion:", error);
-        if (error.code === 'P2025') {
-            return res.status(404).json({ error: "Cotización no encontrada" });
-        }
-        if (error.code === 'P2003') {
-            return res.status(400).json({ error: "Entidad no válida" });
-        }
-        return res.status(500).json({
-            error: "Error al actualizar cotización",
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        return res.status(500).json({ error: "Error al actualizar cotización" });
     }
 }
 /* =====================================================
