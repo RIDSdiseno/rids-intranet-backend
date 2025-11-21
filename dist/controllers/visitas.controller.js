@@ -108,11 +108,24 @@ export const listVisitas = async (req, res) => {
     const empresaIdQ = req.query.empresaId;
     const statusQ = req.query.status;
     const q = req.query.q?.trim();
+    // NUEVO: filtros por mes/año
+    const monthQ = req.query.month;
+    const yearQ = req.query.year;
+    let dateFilter;
+    const month = monthQ ? Number(monthQ) : NaN;
+    const year = yearQ ? Number(yearQ) : NaN;
+    if (!Number.isNaN(month) && !Number.isNaN(year) && month >= 1 && month <= 12) {
+        // Inicio y fin del mes
+        const from = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        const to = new Date(year, month, 1, 0, 0, 0, 0);
+        dateFilter = { gte: from, lt: to };
+    }
     const INS = "insensitive";
     const where = {
         ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
         ...(empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
         ...(statusQ ? { status: statusQ } : {}),
+        ...(dateFilter ? { inicio: dateFilter } : {}),
         ...(q
             ? {
                 OR: [

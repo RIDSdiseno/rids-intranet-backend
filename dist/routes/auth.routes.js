@@ -7,5 +7,5 @@ authRouter.post("/login", login);
 authRouter.post("/refresh", refresh);
 authRouter.post("/logout", logout);
 // protegidas
-authRouter.get("/me", auth(), me); // <- llama a la factory
+authRouter.get("/me", auth(), me); // <- llama a la factor
 //# sourceMappingURL=auth.routes.js.map

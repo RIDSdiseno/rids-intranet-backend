@@ -6,22 +6,30 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
 /* ========= Helpers ========= */
+function normalizeOrigin(origin) {
+    return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
+}
 function normalizeOriginList(raw) {
-    if (!raw || raw.trim() === "")
+    if (!raw || raw.trim() === "") {
         return ["http://localhost:5173"];
+    }
     return raw
         .split(",")
-        .map(s => s.trim())
-        .filter(Boolean)
-        .map(s => (s.startsWith("http://") || s.startsWith("https://") ? s : `https://${s}`));
+        .map(normalizeOrigin)
+        .filter(Boolean);
 }
 function makeCorsOriginValidator(allowed) {
+    const allowedNormalized = allowed.map(normalizeOrigin);
+    console.log("[CORS] allowedOrigins =", allowedNormalized);
     return (origin, cb) => {
         // Permite herramientas/healthchecks sin header Origin
         if (!origin)
             return cb(null, true);
-        if (allowed.includes(origin))
+        const norm = normalizeOrigin(origin);
+        if (allowedNormalized.includes(norm)) {
             return cb(null, true);
+        }
+        console.warn("[CORS] Not allowed:", origin, "->", norm);
         cb(new Error(`Not allowed by CORS: ${origin}`));
     };
 }
