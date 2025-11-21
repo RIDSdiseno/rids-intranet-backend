@@ -468,6 +468,8 @@ model CotizacionGestioo {
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 
+  entidad   EntidadGestioo? @relation(fields: [entidadId], references: [id])
+
   @@index([entidadId])
 }
 
