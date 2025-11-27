@@ -38,20 +38,20 @@ export async function seedEntidadesRIDS(_req: Request, res: Response) {
     }
 }
 
-export async function seedEntidadesECCONET(_req: Request, res: Response) {
+export async function seedEntidadesECONNET(_req: Request, res: Response) {
     try {
-        const filePath = path.resolve("prisma/entidades_ecconet_seed.json");
+        const filePath = path.resolve("prisma/entidades_econnet_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
-        const entidadesECCONET = JSON.parse(fileContent);
+        const entidadesECONNET = JSON.parse(fileContent);
 
-        const data = entidadesECCONET.map((e: any) => ({
+        const data = entidadesECONNET.map((e: any) => ({
             nombre: e.nombre,
             rut: e.rut,
             correo: e.correo,
             telefono: e.telefono,
             direccion: e.direccion,
             tipo: TipoEntidadGestioo.EMPRESA,
-            origen: OrigenGestioo.ECCONET,
+            origen: OrigenGestioo.ECONNET,
         }));
 
         const result = await prisma.entidadGestioo.createMany({
@@ -60,12 +60,12 @@ export async function seedEntidadesECCONET(_req: Request, res: Response) {
         });
 
         res.status(201).json({
-            message: `✅ Se insertaron ${result.count} entidades ECCONET correctamente.`,
+            message: `✅ Se insertaron ${result.count} entidades ECONNET correctamente.`,
         });
     } catch (error) {
-        console.error("❌ Error al poblar entidades ECCONET:", error);
+        console.error("❌ Error al poblar entidades ECONNET:", error);
         res.status(500).json({
-            error: "Error al poblar entidades ECCONET",
+            error: "Error al poblar entidades ECONNET",
             detalles: (error as Error).message,
         });
     }
@@ -100,8 +100,8 @@ export async function getEntidades(req: Request, res: Response) {
             where.tipo = tipo;
         }
 
-        // Filtro por origen (RIDS / ECCONET / OTRO)
-        if (origen === "RIDS" || origen === "ECCONET" || origen === "OTRO") {
+        // Filtro por origen (RIDS / ECONNET / OTRO)
+        if (origen === "RIDS" || origen === "ECONNET" || origen === "OTRO") {
             where.origen = origen;
         }
 

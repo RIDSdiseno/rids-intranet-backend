@@ -1,14 +1,14 @@
 // src/routes/entidades.routes.ts
 import { Router } from "express";
-import { seedEntidadesRIDS, seedEntidadesECCONET, createEntidad, getEntidades, getEntidadById, updateEntidad, deleteEntidad, } from "../controllers/entidades.controller.js";
+import { seedEntidadesRIDS, seedEntidadesECONNET, createEntidad, getEntidades, getEntidadById, updateEntidad, deleteEntidad, } from "../controllers/entidades.controller.js";
 const entidadesRouter = Router();
 /* ============================
    RUTAS DE POBLADO DE ENTIDADES
    ============================ */
 // Poblar entidades RIDS
 entidadesRouter.post("/seed-rids", seedEntidadesRIDS);
-// Poblar entidades ECCONET
-entidadesRouter.post("/seed-ecconet", seedEntidadesECCONET);
+// Poblar entidades ECONNET
+entidadesRouter.post("/seed-ECONNET", seedEntidadesECONNET);
 /* ============================
    CRUD ROUTES
 ============================ */

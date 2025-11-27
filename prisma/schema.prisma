@@ -368,8 +368,6 @@ model FreshdeskCompanyMap {
   @@index([domain])
 }
 
-
-
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskRequesterMap {
   requesterId   BigInt      @id
@@ -450,25 +448,21 @@ model TicketRequester {
 }
 
 model CotizacionGestioo {
-  id        Int                     @id @default(autoincrement())
-  fecha     DateTime                @default(now())
-  estado    EstadoCotizacionGestioo @default(BORRADOR)
-  tipo      TipoCotizacionGestioo   @default(CLIENTE)
-  entidadId Int?
-
-  moneda     MonedaGestioo          @default(CLP) // CLP o USD
-  subtotal   Float                  @default(0) // sin IVA
-  iva        Float                  @default(0) // monto de IVA
+  id         Int                     @id @default(autoincrement())
+  fecha      DateTime                @default(now())
+  estado     EstadoCotizacionGestioo @default(BORRADOR)
+  tipo       TipoCotizacionGestioo   @default(CLIENTE)
+  entidadId  Int?
+  total      Float                   @default(0)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  iva        Float                   @default(0)
+  moneda     MonedaGestioo           @default(CLP)
+  subtotal   Float                   @default(0)
+  descuentos Float                   @default(0)
   tasaCambio Float?
-
-  descuentos Float @default(0)
-
-  total     Float                   @default(0)
-  items     CotizacionItemGestioo[]
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
-
-  entidad   EntidadGestioo? @relation(fields: [entidadId], references: [id])
+  items      CotizacionItemGestioo[]
+  entidad    EntidadGestioo?         @relation(fields: [entidadId], references: [id])
 
   @@index([entidadId])
 }
@@ -481,11 +475,9 @@ model CotizacionItemGestioo {
   cantidad     Int               @default(1)
   precio       Float             @default(0)
   porcentaje   Float?
-
-  tieneIVA     Boolean  @default(false)
-  sku          String?
-
   createdAt    DateTime          @default(now())
+  sku          String?
+  tieneIVA     Boolean           @default(false)
   cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }
 
@@ -545,7 +537,7 @@ enum PrioridadGestioo {
 
 enum OrigenGestioo {
   RIDS
-  ECCONET
+  ECONNET
   OTRO
 }
 
@@ -566,5 +558,5 @@ enum TipoCotizacionGestioo {
 enum ItemTipoGestioo {
   PRODUCTO
   SERVICIO
-  ADICIONAL
+  ADICIONAL
 }

@@ -32,32 +32,32 @@ export async function seedEntidadesRIDS(_req, res) {
         });
     }
 }
-export async function seedEntidadesECCONET(_req, res) {
+export async function seedEntidadesECONNET(_req, res) {
     try {
-        const filePath = path.resolve("prisma/entidades_ecconet_seed.json");
+        const filePath = path.resolve("prisma/entidades_ECONNET_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
-        const entidadesECCONET = JSON.parse(fileContent);
-        const data = entidadesECCONET.map((e) => ({
+        const entidadesECONNET = JSON.parse(fileContent);
+        const data = entidadesECONNET.map((e) => ({
             nombre: e.nombre,
             rut: e.rut,
             correo: e.correo,
             telefono: e.telefono,
             direccion: e.direccion,
             tipo: TipoEntidadGestioo.EMPRESA,
-            origen: OrigenGestioo.ECCONET,
+            origen: OrigenGestioo.ECONNET,
         }));
         const result = await prisma.entidadGestioo.createMany({
             data,
             skipDuplicates: true,
         });
         res.status(201).json({
-            message: `✅ Se insertaron ${result.count} entidades ECCONET correctamente.`,
+            message: `✅ Se insertaron ${result.count} entidades ECONNET correctamente.`,
         });
     }
     catch (error) {
-        console.error("❌ Error al poblar entidades ECCONET:", error);
+        console.error("❌ Error al poblar entidades ECONNET:", error);
         res.status(500).json({
-            error: "Error al poblar entidades ECCONET",
+            error: "Error al poblar entidades ECONNET",
             detalles: error.message,
         });
     }
@@ -87,8 +87,8 @@ export async function getEntidades(req, res) {
         if (tipo === "EMPRESA" || tipo === "PERSONA") {
             where.tipo = tipo;
         }
-        // Filtro por origen (RIDS / ECCONET / OTRO)
-        if (origen === "RIDS" || origen === "ECCONET" || origen === "OTRO") {
+        // Filtro por origen (RIDS / ECONNET / OTRO)
+        if (origen === "RIDS" || origen === "ECONNET" || origen === "OTRO") {
             where.origen = origen;
         }
         const entidades = await prisma.entidadGestioo.findMany({

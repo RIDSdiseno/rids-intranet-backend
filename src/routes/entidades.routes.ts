@@ -2,7 +2,7 @@
 import { Router } from "express";
 import {
     seedEntidadesRIDS,
-    seedEntidadesECCONET,
+    seedEntidadesECONNET,
     createEntidad,
     getEntidades,
     getEntidadById,
@@ -19,8 +19,8 @@ const entidadesRouter = Router();
 // Poblar entidades RIDS
 entidadesRouter.post("/seed-rids", seedEntidadesRIDS);
 
-// Poblar entidades ECCONET
-entidadesRouter.post("/seed-ecconet", seedEntidadesECCONET);
+// Poblar entidades ECONNET
+entidadesRouter.post("/seed-econnet", seedEntidadesECONNET);
 
 /* ============================
    CRUD ROUTES
