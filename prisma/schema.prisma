@@ -464,6 +464,8 @@ model CotizacionGestioo {
   items      CotizacionItemGestioo[]
   entidad    EntidadGestioo?         @relation(fields: [entidadId], references: [id])
 
+  comentariosCotizacion String?
+
   @@index([entidadId])
 }
 

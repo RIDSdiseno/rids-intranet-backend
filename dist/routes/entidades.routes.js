@@ -8,7 +8,7 @@ const entidadesRouter = Router();
 // Poblar entidades RIDS
 entidadesRouter.post("/seed-rids", seedEntidadesRIDS);
 // Poblar entidades ECONNET
-entidadesRouter.post("/seed-ECONNET", seedEntidadesECONNET);
+entidadesRouter.post("/seed-econnet", seedEntidadesECONNET);
 /* ============================
    CRUD ROUTES
 ============================ */

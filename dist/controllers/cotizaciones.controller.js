@@ -29,6 +29,8 @@ function normalizeCotizacionData(body) {
         out.tasaCambio = Number(body.tasaCambio);
     if (body.fecha)
         out.fecha = new Date(body.fecha);
+    if (body.comentariosCotizacion !== undefined)
+        out.comentariosCotizacion = body.comentariosCotizacion;
     return out;
 }
 /* =====================================================
@@ -100,6 +102,7 @@ export async function createCotizacion(req, res) {
         const nueva = await prisma.cotizacionGestioo.create({
             data: {
                 ...data,
+                comentariosCotizacion: req.body.comentariosCotizacion ?? null,
                 items: {
                     create: items.map((i) => ({
                         tipo: i.tipo,
@@ -145,6 +148,7 @@ export async function updateCotizacion(req, res) {
                 where: { id },
                 data: {
                     ...data,
+                    comentariosCotizacion: req.body.comentariosCotizacion ?? null,
                     items: {
                         create: items.map((i) => ({
                             tipo: i.tipo,

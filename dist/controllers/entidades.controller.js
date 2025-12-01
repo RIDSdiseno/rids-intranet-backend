@@ -34,7 +34,7 @@ export async function seedEntidadesRIDS(_req, res) {
 }
 export async function seedEntidadesECONNET(_req, res) {
     try {
-        const filePath = path.resolve("prisma/entidades_ECONNET_seed.json");
+        const filePath = path.resolve("prisma/entidades_econnet_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
         const entidadesECONNET = JSON.parse(fileContent);
         const data = entidadesECONNET.map((e) => ({
