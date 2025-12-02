@@ -466,6 +466,10 @@ model CotizacionGestioo {
 
   comentariosCotizacion String?
 
+  personaResponsable String?
+
+  imagen String?
+
   @@index([entidadId])
 }
 

@@ -31,6 +31,8 @@ import { msSyncRouter } from "./routes/msSync.js";
 import { debugRouter } from "./routes/debug.js";
 /* ===================== Whatchimp ===================== */
 import whatchimpRouter from "./routes/whatchimp.routes.js";
+/* ===================== CLOUDINARY ===================== */
+import uploadRoutes from "./routes/upload-imagenes.routes.js";
 /* ========================================================= */
 export const api = Router();
 /* ===================== App Core ===================== */
@@ -81,6 +83,8 @@ api.use(whatchimpRouter);
 /* ===================== Export ===================== */
 /* ===================== Whatchimp ===================== */
 api.use(whatchimpRouter);
+/* ===================== CLOUDINARY ===================== */
+api.use("/upload-imagenes", uploadRoutes);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

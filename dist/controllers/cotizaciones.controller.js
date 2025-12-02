@@ -107,6 +107,7 @@ export async function createCotizacion(req, res) {
             data: {
                 ...data,
                 comentariosCotizacion: req.body.comentariosCotizacion ?? null,
+                imagen: req.body.imagen ?? null,
                 items: {
                     create: items.map((i) => ({
                         tipo: i.tipo,
