@@ -64,7 +64,9 @@ export async function createProducto(req: Request, res: Response) {
             precio,
             categoria,
             stock,
-            porcGanancia
+            porcGanancia,
+            imagen,
+            serie
         } = req.body;
 
         if (!nombre?.trim()) {
@@ -76,7 +78,7 @@ export async function createProducto(req: Request, res: Response) {
 
         const precioTotal = calcularPrecioTotal(precioNumero, porcNumero);
 
-        // 1️⃣ Crear producto sin serie
+        // 1️⃣ Crear producto
         const nuevo = await prisma.productoGestioo.create({
             data: {
                 nombre: nombre.trim(),
@@ -88,21 +90,23 @@ export async function createProducto(req: Request, res: Response) {
                 estado: "disponible",
                 activo: true,
                 porcGanancia: porcNumero,
-                precioTotal
+                precioTotal,
+                imagen: imagen ?? null,  // <-- GUARDAR LA URL DE CLOUDINARY
+                serie: serie || null
             }
         });
 
-        // 2️⃣ Generar serie única usando el ID ya creado
-        const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
+        // 2️⃣ Si no vino serie, generar una
+        if (!serie) {
+            const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
+            const actualizado = await prisma.productoGestioo.update({
+                where: { id: nuevo.id },
+                data: { serie: serieGenerada }
+            });
+            return res.status(201).json({ data: actualizado });
+        }
 
-        // 3️⃣ Actualizar solo la serie
-        const actualizado = await prisma.productoGestioo.update({
-            where: { id: nuevo.id },
-            data: { serie: serieGenerada }
-        });
-
-        // 4️⃣ Retornar el producto final
-        return res.status(201).json({ data: actualizado });
+        return res.status(201).json({ data: nuevo });
 
     } catch (error: any) {
         console.error("❌ Error al crear producto:", error);
@@ -112,7 +116,6 @@ export async function createProducto(req: Request, res: Response) {
         });
     }
 }
-
 
 /* ======================================
    GET ALL
@@ -179,7 +182,8 @@ export async function updateProducto(req: Request, res: Response) {
             categoria,
             stock,
             serie,
-            porcGanancia
+            porcGanancia,
+            imagen
         } = req.body;
 
         if (!nombre?.trim()) {
@@ -197,9 +201,14 @@ export async function updateProducto(req: Request, res: Response) {
             precio: precioNumero,
             categoria: categoria || null,
             stock: stock !== undefined ? Number(stock) : existe.stock,
-            serie: serie || null,
+            serie: serie || existe.serie,
             porcGanancia: porcNumero,
-            precioTotal
+            precioTotal,
+            imagen:
+                imagen === undefined || imagen === ""
+                    ? existe.imagen        // NO BORRAR
+                    : imagen,              // ACTUALIZAR
+
         };
 
         const actualizado = await prisma.productoGestioo.update({

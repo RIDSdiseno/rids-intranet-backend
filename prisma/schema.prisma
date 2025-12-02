@@ -129,6 +129,8 @@ model ProductoGestioo {
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
 
+  imagen        String?   // URL de Cloudinary
+
   @@index([marcaId])
   @@index([modeloId])
   @@index([entidadId])
@@ -485,6 +487,9 @@ model CotizacionItemGestioo {
   sku          String?
   tieneDescuento Boolean           @default(false)
   tieneIVA     Boolean           @default(false)
+
+  imagen String?
+
   cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }
 

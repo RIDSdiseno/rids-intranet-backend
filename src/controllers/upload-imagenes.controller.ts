@@ -8,9 +8,16 @@ export async function uploadImagen(req: Request, res: Response) {
             return res.status(400).json({ error: "No se envió imagen" });
         }
 
+        console.log("✅ Imagen subida a Cloudinary:", file.path);
+
+        // Cloudinary devuelve un objeto con varias propiedades
+        // file.path es la URL segura (secure_url)
         return res.json({
-            url: file.path,
-            public_id: file.filename,
+            url: file.path,           // URL pública
+            secure_url: file.path,    // URL segura (HTTPS)
+            public_id: file.filename, // ID en Cloudinary
+            format: file.mimetype,
+            bytes: file.size
         });
 
     } catch (error) {

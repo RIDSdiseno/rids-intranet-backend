@@ -60,6 +60,7 @@ export async function getCotizaciones(_req: Request, res: Response) {
         // Verificar que cada cotización tenga items array
         const rowsConItems = rows.map(cotizacion => ({
             ...cotizacion,
+            imagen: cotizacion.imagen ?? null,
             items: cotizacion.items || [] // Asegurar array vacío si es null/undefined
         }));
 
@@ -94,6 +95,7 @@ export async function getCotizacionById(req: Request, res: Response) {
         // Asegurar que items sea un array
         const cotConItems = {
             ...cot,
+            imagen: cot.imagen ?? null,
             items: cot.items || []
         };
 
@@ -132,6 +134,7 @@ export async function createCotizacion(req: Request, res: Response) {
                         tieneDescuento: Boolean(i.tieneDescuento),
                         tieneIVA: i.tieneIVA ?? false,
                         sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
+                        imagen: i.imagen ?? null,  // <-- AGREGAR ESTO
                     })),
                 },
             },
@@ -187,6 +190,7 @@ export async function updateCotizacion(req: Request, res: Response) {
                             tieneDescuento: Boolean(i.tieneDescuento),
                             tieneIVA: i.tieneIVA ?? false,
                             sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
+                            imagen: i.imagen ?? null,  // <-- AGREGAR ESTO
                         }))
                     }
                 },
