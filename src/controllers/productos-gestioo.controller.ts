@@ -64,7 +64,6 @@ export async function createProducto(req: Request, res: Response) {
             precio,
             categoria,
             stock,
-            serie,
             porcGanancia
         } = req.body;
 
@@ -77,23 +76,33 @@ export async function createProducto(req: Request, res: Response) {
 
         const precioTotal = calcularPrecioTotal(precioNumero, porcNumero);
 
-        const data = {
-            nombre: nombre.trim(),
-            descripcion: descripcion?.trim() || null,
-            precio: precioNumero,
-            categoria: categoria || null,
-            stock: stock !== undefined ? Number(stock) : 0,
-            serie: serie || null,
-            tipo: "producto",
-            estado: "disponible",
-            activo: true,
-            porcGanancia: porcNumero,
-            precioTotal
-        };
+        // 1️⃣ Crear producto sin serie
+        const nuevo = await prisma.productoGestioo.create({
+            data: {
+                nombre: nombre.trim(),
+                descripcion: descripcion?.trim() || null,
+                precio: precioNumero,
+                categoria: categoria || null,
+                stock: stock !== undefined ? Number(stock) : 0,
+                tipo: "producto",
+                estado: "disponible",
+                activo: true,
+                porcGanancia: porcNumero,
+                precioTotal
+            }
+        });
 
-        const nuevo = await prisma.productoGestioo.create({ data });
+        // 2️⃣ Generar serie única usando el ID ya creado
+        const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
 
-        return res.status(201).json({ data: nuevo });
+        // 3️⃣ Actualizar solo la serie
+        const actualizado = await prisma.productoGestioo.update({
+            where: { id: nuevo.id },
+            data: { serie: serieGenerada }
+        });
+
+        // 4️⃣ Retornar el producto final
+        return res.status(201).json({ data: actualizado });
 
     } catch (error: any) {
         console.error("❌ Error al crear producto:", error);
@@ -103,6 +112,7 @@ export async function createProducto(req: Request, res: Response) {
         });
     }
 }
+
 
 /* ======================================
    GET ALL

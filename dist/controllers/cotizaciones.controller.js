@@ -1,5 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
+function generarSKU() {
+    const random = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
+    return `SKU-${random}`;
+}
 /* =====================================================
       UTILIDAD: Normalizar fields
 ===================================================== */
@@ -109,9 +113,10 @@ export async function createCotizacion(req, res) {
                         descripcion: i.descripcion,
                         cantidad: Number(i.cantidad ?? 1),
                         precio: Number(i.precio ?? 0),
-                        porcentaje: i.porcentaje !== undefined ? Number(i.porcentaje) : null,
+                        porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                        tieneDescuento: Boolean(i.tieneDescuento),
                         tieneIVA: i.tieneIVA ?? false,
-                        sku: i.sku || null
+                        sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
                     })),
                 },
             },
@@ -155,9 +160,10 @@ export async function updateCotizacion(req, res) {
                             descripcion: i.descripcion.trim(),
                             cantidad: Number(i.cantidad ?? 1),
                             precio: Number(i.precio ?? 0),
-                            porcentaje: i.porcentaje !== undefined ? Number(i.porcentaje) : null,
+                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                            tieneDescuento: Boolean(i.tieneDescuento),
                             tieneIVA: i.tieneIVA ?? false,
-                            sku: i.sku || null
+                            sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
                         }))
                     }
                 },

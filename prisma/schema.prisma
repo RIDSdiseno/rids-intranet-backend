@@ -479,6 +479,7 @@ model CotizacionItemGestioo {
   porcentaje   Float?
   createdAt    DateTime          @default(now())
   sku          String?
+  tieneDescuento Boolean           @default(false)
   tieneIVA     Boolean           @default(false)
   cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }

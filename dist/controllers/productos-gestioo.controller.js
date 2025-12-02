@@ -52,28 +52,37 @@ export async function seedProductos(_req, res) {
 ====================================== */
 export async function createProducto(req, res) {
     try {
-        const { nombre, descripcion, precio, categoria, stock, serie, porcGanancia } = req.body;
+        const { nombre, descripcion, precio, categoria, stock, porcGanancia } = req.body;
         if (!nombre?.trim()) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
         const precioNumero = precio !== undefined ? Number(precio) : null;
         const porcNumero = porcGanancia !== undefined ? Number(porcGanancia) : null;
         const precioTotal = calcularPrecioTotal(precioNumero, porcNumero);
-        const data = {
-            nombre: nombre.trim(),
-            descripcion: descripcion?.trim() || null,
-            precio: precioNumero,
-            categoria: categoria || null,
-            stock: stock !== undefined ? Number(stock) : 0,
-            serie: serie || null,
-            tipo: "producto",
-            estado: "disponible",
-            activo: true,
-            porcGanancia: porcNumero,
-            precioTotal
-        };
-        const nuevo = await prisma.productoGestioo.create({ data });
-        return res.status(201).json({ data: nuevo });
+        // 1️⃣ Crear producto sin serie
+        const nuevo = await prisma.productoGestioo.create({
+            data: {
+                nombre: nombre.trim(),
+                descripcion: descripcion?.trim() || null,
+                precio: precioNumero,
+                categoria: categoria || null,
+                stock: stock !== undefined ? Number(stock) : 0,
+                tipo: "producto",
+                estado: "disponible",
+                activo: true,
+                porcGanancia: porcNumero,
+                precioTotal
+            }
+        });
+        // 2️⃣ Generar serie única usando el ID ya creado
+        const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
+        // 3️⃣ Actualizar solo la serie
+        const actualizado = await prisma.productoGestioo.update({
+            where: { id: nuevo.id },
+            data: { serie: serieGenerada }
+        });
+        // 4️⃣ Retornar el producto final
+        return res.status(201).json({ data: actualizado });
     }
     catch (error) {
         console.error("❌ Error al crear producto:", error);

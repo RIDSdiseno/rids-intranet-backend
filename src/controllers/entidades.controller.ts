@@ -5,6 +5,9 @@ import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client"
 
 const prisma = new PrismaClient();
 
+/* =====================================================
+   SEED RIDS
+===================================================== */
 export async function seedEntidadesRIDS(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_rids_seed.json");
@@ -26,18 +29,25 @@ export async function seedEntidadesRIDS(_req: Request, res: Response) {
             skipDuplicates: true,
         });
 
-        res.status(201).json({
-            message: `✅ Se insertaron ${result.count} entidades RIDS correctamente.`,
+        return res.status(201).json({
+            data: {
+                inserted: result.count,
+                message: `Se insertaron ${result.count} entidades RIDS.`,
+            },
         });
-    } catch (error) {
-        console.error("❌ Error al poblar entidades RIDS:", error);
-        res.status(500).json({
+
+    } catch (error: any) {
+        console.error("❌ Error seed RIDS:", error);
+        return res.status(500).json({
             error: "Error al poblar entidades RIDS",
-            detalles: (error as Error).message,
+            detalles: error.message,
         });
     }
 }
 
+/* =====================================================
+   SEED ECONNET
+===================================================== */
 export async function seedEntidadesECONNET(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_econnet_seed.json");
@@ -59,111 +69,117 @@ export async function seedEntidadesECONNET(_req: Request, res: Response) {
             skipDuplicates: true,
         });
 
-        res.status(201).json({
-            message: `✅ Se insertaron ${result.count} entidades ECONNET correctamente.`,
+        return res.status(201).json({
+            data: {
+                inserted: result.count,
+                message: `Se insertaron ${result.count} entidades ECONNET.`,
+            },
         });
-    } catch (error) {
-        console.error("❌ Error al poblar entidades ECONNET:", error);
-        res.status(500).json({
+
+    } catch (error: any) {
+        console.error("❌ Error seed ECONNET:", error);
+        return res.status(500).json({
             error: "Error al poblar entidades ECONNET",
-            detalles: (error as Error).message,
+            detalles: error.message,
         });
     }
 }
 
 /* =====================================================
-   CRUD: ENTIDADGESTIOO
+   CRUD ENTIDADES
 ===================================================== */
 
-// ✅ Crear entidad
+// Crear entidad
 export async function createEntidad(req: Request, res: Response) {
     try {
         const data = req.body;
         const nuevaEntidad = await prisma.entidadGestioo.create({ data });
-        res.status(201).json(nuevaEntidad);
-    } catch (error) {
+
+        return res.status(201).json({ data: nuevaEntidad });
+
+    } catch (error: any) {
         console.error("❌ Error al crear entidad:", error);
-        res.status(500).json({ error: "Error al crear entidad" });
+        return res.status(500).json({ error: "Error al crear entidad" });
     }
 }
 
-// ✅ Obtener todas las entidades
-// ✅ Obtener entidades filtradas por tipo y origen
+// Obtener todas
 export async function getEntidades(req: Request, res: Response) {
     try {
         const { tipo, origen } = req.query;
 
         const where: any = {};
 
-        // Filtro por tipo (EMPRESA / PERSONA)
-        if (tipo === "EMPRESA" || tipo === "PERSONA") {
-            where.tipo = tipo;
-        }
-
-        // Filtro por origen (RIDS / ECONNET / OTRO)
-        if (origen === "RIDS" || origen === "ECONNET" || origen === "OTRO") {
-            where.origen = origen;
-        }
+        if (tipo === "EMPRESA" || tipo === "PERSONA") where.tipo = tipo;
+        if (origen === "RIDS" || origen === "ECONNET" || origen === "OTRO") where.origen = origen;
 
         const entidades = await prisma.entidadGestioo.findMany({
             where,
             orderBy: { id: "asc" },
-            include: {
-                productos: true,
-            },
+            include: { productos: true },
         });
 
-        res.json(entidades);
+        return res.json({ data: entidades });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("❌ Error al obtener entidades:", error);
-        res.status(500).json({ error: "Error al obtener entidades" });
+        return res.status(500).json({ error: "Error al obtener entidades" });
     }
 }
 
-// ✅ Obtener una entidad por ID
+// Obtener por ID
 export async function getEntidadById(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
+
         const entidad = await prisma.entidadGestioo.findUnique({
             where: { id },
             include: { productos: true },
         });
-        if (!entidad) return res.status(404).json({ error: "Entidad no encontrada" });
-        res.json(entidad);
-    } catch (error) {
+
+        if (!entidad) {
+            return res.status(404).json({ error: "Entidad no encontrada" });
+        }
+
+        return res.json({ data: entidad });
+
+    } catch (error: any) {
         console.error("❌ Error al obtener entidad:", error);
-        res.status(500).json({ error: "Error al obtener entidad" });
+        return res.status(500).json({ error: "Error al obtener entidad" });
     }
-    return res.status(500).json({        // ✅ RETURN OBLIGATORIO
-        error: "Error al obtener entidad",
-    });
 }
 
-// ✅ Actualizar entidad
+// Actualizar
 export async function updateEntidad(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
         const data = req.body;
+
         const entidadActualizada = await prisma.entidadGestioo.update({
             where: { id },
             data,
         });
-        res.json(entidadActualizada);
-    } catch (error) {
+
+        return res.json({ data: entidadActualizada });
+
+    } catch (error: any) {
         console.error("❌ Error al actualizar entidad:", error);
-        res.status(500).json({ error: "Error al actualizar entidad" });
+        return res.status(500).json({ error: "Error al actualizar entidad" });
     }
 }
 
-// ✅ Eliminar entidad
+// Eliminar
 export async function deleteEntidad(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
+
         await prisma.entidadGestioo.delete({ where: { id } });
-        res.json({ message: "✅ Entidad eliminada correctamente" });
-    } catch (error) {
+
+        return res.json({ message: "Entidad eliminada correctamente" });
+
+    } catch (error: any) {
         console.error("❌ Error al eliminar entidad:", error);
-        res.status(500).json({ error: "Error al eliminar entidad" });
+        return res.status(500).json({ error: "Error al eliminar entidad" });
     }
 }
+
