@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import type { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
+import cloudinary from "../config/cloudinary.js";
 
 const prisma = new PrismaClient();
 
@@ -183,7 +184,8 @@ export async function updateProducto(req: Request, res: Response) {
             stock,
             serie,
             porcGanancia,
-            imagen
+            imagen,
+            publicId
         } = req.body;
 
         if (!nombre?.trim()) {
@@ -208,6 +210,10 @@ export async function updateProducto(req: Request, res: Response) {
                 imagen === undefined || imagen === ""
                     ? existe.imagen        // NO BORRAR
                     : imagen,              // ACTUALIZAR
+            publicId:
+                publicId === undefined || publicId === ""
+                    ? existe.publicId
+                    : publicId,
 
         };
 
@@ -228,7 +234,7 @@ export async function updateProducto(req: Request, res: Response) {
 }
 
 /* ======================================
-   DELETE
+   DELETE PRODUCTO + eliminar imagen Cloudinary
 ====================================== */
 export async function deleteProducto(req: Request, res: Response) {
     try {
@@ -238,15 +244,40 @@ export async function deleteProducto(req: Request, res: Response) {
             return res.status(400).json({ error: "ID inválido" });
         }
 
+        // 1️⃣ Buscar producto en BD
+        const producto = await prisma.productoGestioo.findUnique({ where: { id } });
+
+        if (!producto) {
+            return res.status(404).json({ error: "Producto no encontrado" });
+        }
+
+        // 2️⃣ Si tiene imagen en Cloudinary → eliminarla
+        if (producto.publicId) {
+            try {
+                console.log("🗑 Eliminando imagen Cloudinary:", producto.publicId);
+
+                const result = await cloudinary.uploader.destroy(producto.publicId);
+
+                console.log("Cloudinary →", result);
+            } catch (error) {
+                console.warn("⚠ No se pudo eliminar imagen en Cloudinary:", error);
+            }
+        }
+
+        // 3️⃣ Eliminar producto de la BD
         await prisma.productoGestioo.delete({ where: { id } });
 
         return res.json({
             message: "Producto eliminado correctamente",
-            data: { id }
+            deletedId: id
         });
 
     } catch (error) {
-        console.error("❌ Error:", error);
-        return res.status(500).json({ error: "Error al eliminar producto" });
+        console.error("❌ Error al eliminar producto:", error);
+        return res.status(500).json({
+            error: "Error al eliminar producto",
+            details: (error as any).message
+        });
     }
 }
+

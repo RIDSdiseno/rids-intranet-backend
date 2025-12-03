@@ -130,6 +130,7 @@ model ProductoGestioo {
   trabajos      DetalleTrabajoGestioo[]
 
   imagen        String?   // URL de Cloudinary
+  publicId      String?
 
   @@index([marcaId])
   @@index([modeloId])

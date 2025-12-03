@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
+import { prisma } from "../lib/prisma.js";
 
 export async function uploadImagen(req: Request, res: Response) {
     try {
         const file = req.file;
+        const { productoId } = req.body;
 
         if (!file) {
             return res.status(400).json({ error: "No se envió imagen" });
@@ -10,14 +12,31 @@ export async function uploadImagen(req: Request, res: Response) {
 
         console.log("✅ Imagen subida a Cloudinary:", file.path);
 
-        // Cloudinary devuelve un objeto con varias propiedades
-        // file.path es la URL segura (secure_url)
+        // ----------------------------
+        // CASO 1 → Crear producto (sin productoId)
+        // ----------------------------
+        if (!productoId) {
+            return res.json({
+                message: "Imagen subida correctamente",
+                imagen: file.path,        // URL segura
+                publicId: file.filename,  // ID en Cloudinary
+            });
+        }
+
+        // ----------------------------
+        // CASO 2 → Editar producto (con productoId)
+        // ----------------------------
+        const producto = await prisma.productoGestioo.update({
+            where: { id: Number(productoId) },
+            data: {
+                imagen: file.path,
+                publicId: file.filename,
+            },
+        });
+
         return res.json({
-            url: file.path,           // URL pública
-            secure_url: file.path,    // URL segura (HTTPS)
-            public_id: file.filename, // ID en Cloudinary
-            format: file.mimetype,
-            bytes: file.size
+            message: "Imagen actualizada correctamente",
+            producto,
         });
 
     } catch (error) {
