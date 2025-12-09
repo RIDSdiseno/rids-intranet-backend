@@ -9,6 +9,53 @@ function generarSKU(): string {
 }
 
 /* =====================================================
+      GET PAGINADO - /cotizaciones/paginacion
+===================================================== */
+export async function getCotizacionesPaginadas(req: Request, res: Response) {
+    try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+
+        const skip = (page - 1) * limit;
+
+        // 1. Obtener cotizaciones paginadas
+        const [rows, total] = await Promise.all([
+            prisma.cotizacionGestioo.findMany({
+                skip,
+                take: limit,
+                orderBy: { id: "desc" },
+                include: {
+                    entidad: true,
+                    items: {
+                        orderBy: { id: "asc" },
+                    },
+                },
+            }),
+
+            prisma.cotizacionGestioo.count()
+        ]);
+
+        // 2. Asegurar que todas tengan items y formato consistente
+        const rowsConItems = rows.map(cot => ({
+            ...cot,
+            imagen: cot.imagen ?? null,
+            items: cot.items || []
+        }));
+
+        return res.json({
+            data: rowsConItems,
+            total,
+            page,
+            pages: Math.ceil(total / limit)
+        });
+
+    } catch (error) {
+        console.error("❌ Error getCotizacionesPaginadas:", error);
+        return res.status(500).json({ error: "Error al obtener cotizaciones paginadas" });
+    }
+}
+
+/* =====================================================
       UTILIDAD: Normalizar fields
 ===================================================== */
 function normalizeCotizacionData(body: any) {
@@ -129,14 +176,25 @@ export async function createCotizacion(req: Request, res: Response) {
                         tipo: i.tipo,
                         descripcion: i.descripcion,
                         cantidad: Number(i.cantidad ?? 1),
+
+                        // precios
                         precio: Number(i.precio ?? 0),
-                        porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                        precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
+                        porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
+
+                        // descuentos
                         tieneDescuento: Boolean(i.tieneDescuento),
-                        tieneIVA: i.tieneIVA ?? false,
+                        porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+
+                        // impuestos
+                        tieneIVA: Boolean(i.tieneIVA),
+
+                        // otros
                         sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
-                        imagen: i.imagen ?? null,  // <-- AGREGAR ESTO
+                        imagen: i.imagen ?? null,
                     })),
                 },
+
             },
             include: {
                 entidad: true,
@@ -185,14 +243,25 @@ export async function updateCotizacion(req: Request, res: Response) {
                             tipo: i.tipo,
                             descripcion: i.descripcion.trim(),
                             cantidad: Number(i.cantidad ?? 1),
+
+                            // precios
                             precio: Number(i.precio ?? 0),
-                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                            precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
+                            porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
+
+                            // descuentos
                             tieneDescuento: Boolean(i.tieneDescuento),
-                            tieneIVA: i.tieneIVA ?? false,
+                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+
+                            // IVA
+                            tieneIVA: Boolean(i.tieneIVA),
+
+                            // otros
                             sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
-                            imagen: i.imagen ?? null,  // <-- AGREGAR ESTO
+                            imagen: i.imagen ?? null,
                         }))
                     }
+
                 },
                 include: {
                     entidad: true,

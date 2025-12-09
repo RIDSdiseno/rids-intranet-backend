@@ -129,8 +129,8 @@ model ProductoGestioo {
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
 
-  imagen        String?   // URL de Cloudinary
-  publicId      String?
+  imagen   String? // URL de Cloudinary
+  publicId String?
 
   @@index([marcaId])
   @@index([modeloId])
@@ -477,21 +477,24 @@ model CotizacionGestioo {
 }
 
 model CotizacionItemGestioo {
-  id           Int               @id @default(autoincrement())
-  cotizacionId Int
-  tipo         ItemTipoGestioo
-  descripcion  String
-  cantidad     Int               @default(1)
-  precio       Float             @default(0)
-  porcentaje   Float?
-  createdAt    DateTime          @default(now())
-  sku          String?
-  tieneDescuento Boolean           @default(false)
-  tieneIVA     Boolean           @default(false)
+  id             Int             @id @default(autoincrement())
+  cotizacionId   Int
+  tipo           ItemTipoGestioo
+  descripcion    String
+  cantidad       Int             @default(1)
+  precio         Float           @default(0)
+  porcentaje     Float?
+  createdAt      DateTime        @default(now())
+  sku            String?
+  tieneDescuento Boolean         @default(false)
+  tieneIVA       Boolean         @default(false)
 
   imagen String?
 
-  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  precioCosto  Float?
+  porcGanancia Float?
+
+  cotizacion CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }
 
 enum MonedaGestioo {
