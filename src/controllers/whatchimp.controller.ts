@@ -162,7 +162,7 @@ export const wcReceive = async (req: Request, res: Response) => {
         "¿Me cuentas en una frase qué necesitas? (equipo, síntoma y urgencia)";
     } else {
       const context = {
-        runAIfrom: inc.from,
+        from: inc.from,
         ...(mem.lastUserMsg ? { lastUserMsg: mem.lastUserMsg } : {}),
         ...(mem.lastAIReply ? { lastAIReply: mem.lastAIReply } : {}),
         turns,
