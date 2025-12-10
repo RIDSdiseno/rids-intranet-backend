@@ -303,7 +303,7 @@ async function sendTicketToPowerAutomate(payload: {
 // -----------------------------------------------------------------------------
 // Orquestación
 // -----------------------------------------------------------------------------
-export async function runAI(input: RunAIInput, context: any): Promise<string> {
+export async function runAI(input: RunAIInput, context?: any): Promise<string> {
   if (PROVIDER !== "openai") {
     throw new Error(`Proveedor IA no soportado: ${PROVIDER}`);
   }
