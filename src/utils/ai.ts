@@ -308,14 +308,6 @@ export async function runAI(input: RunAIInput): Promise<string> {
     throw new Error(`Proveedor IA no soportado: ${PROVIDER}`);
   }
 
-  const transcriptA = input.context?.transcript || [];
-
-  console.log("Texto transcrito input para AI:");
-  transcriptA.forEach((t:any) =>
-    console.log(` - [${t.from}]: ${t.text}`)
-  );    
-  console.log("FIN Texto transcrito input para AI:");
-
   const user = input.userText?.trim() || "";
   const turns = input.context?.turns ?? 1;
   const email = input.context?.email;
@@ -377,7 +369,7 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
               args.subject ||
               `Soporte WhatsApp - ${args.company || company || "Cliente"}`,
             transcript:
-              (args.transcript || transcript) as Array<{
+              transcript as Array<{
                 from: "client" | "bot";
                 text: string;
               }>,
