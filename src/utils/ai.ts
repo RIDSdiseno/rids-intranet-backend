@@ -313,6 +313,8 @@ export async function runAI(input: RunAIInput): Promise<string> {
     throw new Error(`Proveedor IA no soportado: ${PROVIDER}`);
   }
 
+   console.log("Se invoca runAI con input:", input);
+
   const user = input.userText?.trim() || "";
   const turns = input.context?.turns ?? 1;
   const email = input.context?.email;
