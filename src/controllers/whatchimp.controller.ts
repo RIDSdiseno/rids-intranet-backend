@@ -151,11 +151,6 @@ export const wcReceive = async (req: Request, res: Response) => {
       transcriptForAI.push({ from: "client", text: inputText });
     }
 
-    console.log("Transcript para IA largo:", transcriptForAI.length);
-    transcriptForAI.forEach((item, idx) => {
-      console.log(` Transcript[${idx}] from=${item.from} text="${item.text}"`);
-    });
-    
     // ==========================================================
 
     let reply: string;
@@ -179,7 +174,7 @@ export const wcReceive = async (req: Request, res: Response) => {
       } as const;
 
       try {
-        console.log("Texto del input para AI:", inputText);
+        console.log("Texto transcrito input para AI:", context.transcript);
         reply = (await runAI({ userText: inputText, context })) || "";
         if (!reply.trim()) {
           reply =
