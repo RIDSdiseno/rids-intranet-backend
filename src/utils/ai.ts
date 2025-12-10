@@ -216,6 +216,11 @@ async function callOpenAI(messages: ChatMessage[]) {
 function buildSummaryFromTranscript(
   transcript: Array<{ from: "client" | "bot"; text: string }>
 ): string {
+
+  const MAX_CLIENT_MSGS = 6;
+  const MAX_CLIENT_MSGS_LENGHT = 200;
+  const MAX_CHAT_LENGHT = MAX_CLIENT_MSGS * MAX_CLIENT_MSGS_LENGHT;
+
   if (!transcript || !transcript.length) return "";
 
   const clientMsgs = transcript
@@ -225,11 +230,12 @@ function buildSummaryFromTranscript(
 
   if (!clientMsgs.length) return "";
 
-  // Tomamos los últimos 2 mensajes del cliente
-  const lastMsgs = clientMsgs.slice(-2).join(" | ");
+  const lastMsgs = clientMsgs.length > MAX_CLIENT_MSGS
+    ? clientMsgs.slice(MAX_CLIENT_MSGS * -1).join(" | ")
+    : clientMsgs.join(" | ");
 
-  // Recortamos a 200 caracteres para que no sea eterno
-  return lastMsgs.length > 200 ? lastMsgs.slice(0, 197) + "..." : lastMsgs;
+  // Recortamos caracteres para que no sea eterno
+  return lastMsgs.length > MAX_CHAT_LENGHT ? lastMsgs.slice(0, MAX_CHAT_LENGHT - 3) + "..." : lastMsgs;
 }
 
 // -----------------------------------------------------------------------------
