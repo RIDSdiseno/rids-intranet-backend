@@ -279,14 +279,8 @@ async function buildSummaryFromTranscript(
     ? clientMsgs.slice(MAX_CLIENT_MSGS * -1).join(" | ")
     : clientMsgs.join(" | ");
 
-    const summary = await callOpenAIForSummary(lastMsgs);
-    console.log("Resumen generado por IA:", summary);
-
-  // Recortamos caracteres para que no sea eterno
-  console.log("Largo inicial:", transcript.length);
-  console.log("Mensajes cliente:", clientMsgs.length);
-  console.log("Resumen transcript (raw):", lastMsgs); 
-  return lastMsgs.length > MAX_CHAT_LENGHT ? lastMsgs.slice(0, MAX_CHAT_LENGHT - 3) + "..." : lastMsgs;
+  const summary = await callOpenAIForSummary(lastMsgs);
+  return summary
 }
 
 // -----------------------------------------------------------------------------
