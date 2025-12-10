@@ -146,14 +146,15 @@ export const wcReceive = async (req: Request, res: Response) => {
     }
 
     const prevTranscript: TranscriptItem[] = mem.transcript || [];
-    console.log("Transcript previo largo:", prevTranscript.length);
-    prevTranscript.forEach((item, idx) => {
-      console.log(` Transcript[${idx}] from=${item.from} text="${item.text}"`);
-    });
     const transcriptForAI: TranscriptItem[] = [...prevTranscript];
     if (inputText) {
       transcriptForAI.push({ from: "client", text: inputText });
     }
+
+    console.log("Transcript para IA largo:", transcriptForAI.length);
+    transcriptForAI.forEach((item, idx) => {
+      console.log(` Transcript[${idx}] from=${item.from} text="${item.text}"`);
+    });
     
     // ==========================================================
 
