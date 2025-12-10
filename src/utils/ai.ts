@@ -306,15 +306,20 @@ async function sendTicketToPowerAutomate(payload: {
   const resumen = await buildSummaryFromTranscript(payload.transcript);
 
   // Texto completo de la conversación (resumen + detalle)
-  const conversationText =
+
+  const transcript = payload.transcript?.map(
+    (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
+  ) || [];
+
+  const transcriptCut = transcript.length > 12
+    ? transcript?.slice(transcript.length - 12).join("\n")
+    : transcript?.join("\n");
+
+  const conversationText = 
     (resumen
       ? `Resumen automático:\n${resumen}\n\n--------------------------\n`
       : "") +
-    (payload.transcript
-      ?.map(
-        (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
-      ).slice(-12)
-      .join("\n") || "");
+    (transcriptCut || "");
 
   const bodyForPA = {
     name: payload.name,
