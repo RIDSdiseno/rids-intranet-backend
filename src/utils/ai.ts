@@ -313,7 +313,7 @@ async function sendTicketToPowerAutomate(payload: {
     (payload.transcript
       ?.map(
         (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
-      )
+      ).slice(-12)
       .join("\n") || "");
 
   const bodyForPA = {
