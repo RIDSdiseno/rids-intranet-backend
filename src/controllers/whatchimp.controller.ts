@@ -150,9 +150,9 @@ export const wcReceive = async (req: Request, res: Response) => {
     if (inputText) {
       transcriptForAI.push({ from: "client", text: inputText });
     }
-    transcriptForAI.forEach((item => {
+    transcriptForAI.forEach(item => {
       console.log("Ítem transcript:", item.from, " - ", item.text);
-    }
+    })
     // ==========================================================
 
     let reply: string;
