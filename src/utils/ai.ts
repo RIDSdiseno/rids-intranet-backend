@@ -218,6 +218,46 @@ async function callOpenAI(messages: ChatMessage[]) {
 // -----------------------------------------------------------------------------
 // Helper: construir resumen a partir del transcript (solo mensajes del cliente)
 // -----------------------------------------------------------------------------
+async function callOpenAIForSummary(messageText: String) {
+  if (!OPENAI_API_KEY) {
+    return {
+      text:
+        "Error con el resumen de la conversación.",
+      toolCalls: [] as OpenAIToolCall[]
+    };
+  }
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      temperature: AI_TEMPERATURE,
+      max_tokens: 320,
+      frequency_penalty: 0.2,
+      presence_penalty: 0.0,
+      messages: [
+        { role: "system", content: "Eres un asistente que crea resúmenes breves y claros de conversaciones de clientes en español. Extrae y condensa los puntos clave mencionados por el cliente." },
+        { role: "user", content: `Genera un resumen conciso del siguiente texto:\n\n${messageText}` }
+      ]
+    })
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    console.error("OpenAI error:", resp.status, t);
+    return { text: null as string | null, toolCalls: [] as OpenAIToolCall[] };
+  }
+
+  const data = (await resp.json()) as OpenAIChatResponse;
+  const first = data?.choices?.[0];
+  const content = (first?.message?.content ?? "") || null;
+  return content?.trim() || "";;
+}
+
 function buildSummaryFromTranscript(
   transcript: Array<{ from: "client" | "bot"; text: string }>
 ): string {
