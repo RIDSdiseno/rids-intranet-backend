@@ -377,6 +377,7 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
             priority: (args.priority as 1 | 2 | 3 | 4) || 2,
             status: (args.status as 2 | 3 | 4 | 5) || 2
           };
+          console.log("Largo del payload transcript:", payload.transcript.length);
 
           // Validar mínimos
           if (!payload.email || !payload.company) {
