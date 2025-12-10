@@ -174,7 +174,11 @@ export const wcReceive = async (req: Request, res: Response) => {
       } as const;
 
       try {
-        console.log("Texto transcrito input para AI:", context.transcript);
+        console.log("Texto transcrito input para AI:");
+        context.transcript.forEach((t) =>
+          console.log(` - [${t.from}]: ${t.text}`)
+        );    
+        console.log("FIN Texto transcrito input para AI:");
         reply = (await runAI({ userText: inputText, context })) || "";
         if (!reply.trim()) {
           reply =
