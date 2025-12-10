@@ -258,9 +258,9 @@ async function callOpenAIForSummary(messageText: String) {
   return content?.trim() || "";;
 }
 
-function buildSummaryFromTranscript(
+async function buildSummaryFromTranscript(
   transcript: Array<{ from: "client" | "bot"; text: string }>
-): string {
+) {
 
   const MAX_CLIENT_MSGS = 6;
   const MAX_CLIENT_MSGS_LENGHT = 200;
@@ -278,6 +278,9 @@ function buildSummaryFromTranscript(
   const lastMsgs = clientMsgs.length > MAX_CLIENT_MSGS
     ? clientMsgs.slice(MAX_CLIENT_MSGS * -1).join(" | ")
     : clientMsgs.join(" | ");
+
+    const summary = await callOpenAIForSummary(lastMsgs);
+    console.log("Resumen generado por IA:", summary);
 
   // Recortamos caracteres para que no sea eterno
   console.log("Largo inicial:", transcript.length);
@@ -306,7 +309,7 @@ async function sendTicketToPowerAutomate(payload: {
   }
 
   // Resumen automático a partir del transcript
-  const resumen = buildSummaryFromTranscript(payload.transcript);
+  const resumen = await buildSummaryFromTranscript(payload.transcript);
 
   // Texto completo de la conversación (resumen + detalle)
   const conversationText =
