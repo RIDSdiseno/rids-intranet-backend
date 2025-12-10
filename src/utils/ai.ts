@@ -303,13 +303,15 @@ async function sendTicketToPowerAutomate(payload: {
 // -----------------------------------------------------------------------------
 // Orquestación
 // -----------------------------------------------------------------------------
-export async function runAI(input: RunAIInput, context?: any): Promise<string> {
+export async function runAI(input: RunAIInput): Promise<string> {
   if (PROVIDER !== "openai") {
     throw new Error(`Proveedor IA no soportado: ${PROVIDER}`);
   }
 
+  const transcriptA = input.context?.transcript || [];
+
   console.log("Texto transcrito input para AI:");
-  context.transcript.forEach((t:any) =>
+  transcriptA.forEach((t:any) =>
     console.log(` - [${t.from}]: ${t.text}`)
   );    
   console.log("FIN Texto transcrito input para AI:");
