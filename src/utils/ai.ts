@@ -240,7 +240,9 @@ async function callOpenAIForSummary(messageText: String) {
       frequency_penalty: 0.2,
       presence_penalty: 0.0,
       messages: [
-        { role: "system", content: "Eres un asistente que crea resúmenes breves y claros de conversaciones de clientes en español. Extrae y condensa los puntos clave mencionados por el cliente." },
+        { role: "system", content: `Eres un asistente que crea resúmenes breves y claros de conversaciones de clientes en español. 
+          Extrae y condensa los puntos clave mencionados por el cliente. Únicamente ten en cuenta el problema del último ticket, si la conversación menciona que ya se ha generado un ticket para un problema anterior
+          ignora dicho problema y solo enfocate en el problema actual` },
         { role: "user", content: `Genera un resumen conciso del siguiente texto:\n\n${messageText}` }
       ]
     })
@@ -261,10 +263,7 @@ async function callOpenAIForSummary(messageText: String) {
 async function buildSummaryFromTranscript(
   transcript: Array<{ from: "client" | "bot"; text: string }>
 ) {
-
   const MAX_CLIENT_MSGS = 6;
-  const MAX_CLIENT_MSGS_LENGHT = 200;
-  const MAX_CHAT_LENGHT = MAX_CLIENT_MSGS * MAX_CLIENT_MSGS_LENGHT;
 
   if (!transcript || !transcript.length) return "";
 
@@ -307,12 +306,14 @@ async function sendTicketToPowerAutomate(payload: {
 
   // Texto completo de la conversación (resumen + detalle)
 
+  const MAX_NUMBER_OF_MESSAGES = 12;
+
   const transcript = payload.transcript?.map(
     (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
   ) || [];
 
-  const transcriptCut = transcript.length > 12
-    ? transcript?.slice(transcript.length - 12).join("\n")
+  const transcriptCut = transcript.length > MAX_NUMBER_OF_MESSAGES
+    ? transcript?.slice(transcript.length - MAX_NUMBER_OF_MESSAGES).join("\n")
     : transcript?.join("\n");
 
   const conversationText = 
