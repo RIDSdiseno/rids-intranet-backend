@@ -4,4 +4,5 @@ export declare function getDetallesTrabajo(_req: Request, res: Response): Promis
 export declare function getDetalleTrabajoById(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function updateDetalleTrabajo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function deleteDetalleTrabajo(req: Request, res: Response): Promise<void>;
+export declare function getDetallesTrabajoByEquipo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=detalle-trabajo-gestioo.controller.d.ts.map

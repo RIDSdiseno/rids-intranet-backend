@@ -3,7 +3,6 @@ const prisma = new PrismaClient();
 /* =====================================================
    CRUD: DETALLETRABAJOGESTIOO
 ===================================================== */
-// ✅ Crear un nuevo trabajo
 export async function createDetalleTrabajo(req, res) {
     try {
         const data = req.body;
@@ -19,11 +18,14 @@ export async function createDetalleTrabajo(req, res) {
                 entidadId: data.entidadId ?? null,
                 productoId: data.productoId ?? null,
                 servicioId: data.servicioId ?? null,
+                // 👇 **NUEVO**
+                equipoId: data.equipoId ?? null,
             },
             include: {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true, // 👈 PARA DEVOLVERLO DIRECTO
             },
         });
         res.status(201).json(nuevoTrabajo);
@@ -42,6 +44,7 @@ export async function getDetallesTrabajo(_req, res) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
         res.json(detalles);
@@ -61,6 +64,7 @@ export async function getDetalleTrabajoById(req, res) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
         if (!detalle)
@@ -104,6 +108,9 @@ export async function updateDetalleTrabajo(req, res) {
         if (data.servicioId !== undefined) {
             updateData.servicioId = data.servicioId ? Number(data.servicioId) : null;
         }
+        if (data.equipoId !== undefined) {
+            updateData.equipoId = data.equipoId ? Number(data.equipoId) : null;
+        }
         console.log("📤 Datos para actualizar:", updateData);
         const detalleActualizado = await prisma.detalleTrabajoGestioo.update({
             where: { id },
@@ -112,6 +119,7 @@ export async function updateDetalleTrabajo(req, res) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
         console.log("✅ Actualización exitosa:", detalleActualizado.id);
@@ -138,6 +146,26 @@ export async function deleteDetalleTrabajo(req, res) {
     catch (error) {
         console.error("❌ Error al eliminar detalle:", error);
         res.status(500).json({ error: "Error al eliminar detalle de trabajo" });
+    }
+}
+export async function getDetallesTrabajoByEquipo(req, res) {
+    try {
+        const equipoId = Number(req.params.equipoId);
+        const trabajos = await prisma.detalleTrabajoGestioo.findMany({
+            where: { equipoId },
+            orderBy: { fecha: "desc" },
+            include: {
+                entidad: true,
+                producto: true,
+                servicio: true,
+                equipo: true,
+            },
+        });
+        return res.json(trabajos);
+    }
+    catch (error) {
+        console.error("❌ Error al obtener trabajos por equipo:", error);
+        return res.status(500).json({ error: "Error al obtener trabajos por equipo" });
     }
 }
 //# sourceMappingURL=detalle-trabajo-gestioo.controller.js.map

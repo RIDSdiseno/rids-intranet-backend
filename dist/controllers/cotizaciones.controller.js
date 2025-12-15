@@ -152,23 +152,34 @@ export async function createCotizacion(req, res) {
                 comentariosCotizacion: req.body.comentariosCotizacion ?? null,
                 imagen: req.body.imagen ?? null,
                 items: {
-                    create: items.map((i) => ({
-                        tipo: i.tipo,
-                        descripcion: i.descripcion,
-                        cantidad: Number(i.cantidad ?? 1),
-                        // precios
-                        precio: Number(i.precio ?? 0),
-                        precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
-                        porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
-                        // descuentos
-                        tieneDescuento: Boolean(i.tieneDescuento),
-                        porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
-                        // impuestos
-                        tieneIVA: Boolean(i.tieneIVA),
-                        // otros
-                        sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
-                        imagen: i.imagen ?? null,
-                    })),
+                    create: items.map((i) => {
+                        const precioCLP = Number(i.precioOriginalCLP ?? i.precio ?? 0);
+                        return {
+                            tipo: i.tipo,
+                            // 🔤 TEXTO
+                            nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
+                            descripcion: i.descripcion?.trim() ?? "",
+                            cantidad: Number(i.cantidad ?? 1),
+                            // 🔥 PRECIO REAL (CLP)
+                            precio: precioCLP,
+                            precioOriginalCLP: precioCLP,
+                            // COSTOS
+                            precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
+                            porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
+                            // DESCUENTOS
+                            tieneDescuento: Boolean(i.tieneDescuento),
+                            porcentaje: i.tieneDescuento
+                                ? Number(i.porcentaje ?? 0)
+                                : 0,
+                            // IVA
+                            tieneIVA: Boolean(i.tieneIVA),
+                            // OTROS
+                            sku: i.sku && i.sku.trim() !== ""
+                                ? i.sku
+                                : generarSKU(),
+                            imagen: i.imagen ?? null,
+                        };
+                    }),
                 },
             },
             include: {
@@ -189,41 +200,66 @@ export async function createCotizacion(req, res) {
 export async function updateCotizacion(req, res) {
     try {
         const id = Number(req.params.id);
-        if (isNaN(id) || id <= 0)
+        if (isNaN(id) || id <= 0) {
             return res.status(400).json({ error: "ID de cotización inválido" });
-        const existe = await prisma.cotizacionGestioo.findUnique({ where: { id } });
-        if (!existe)
+        }
+        const existe = await prisma.cotizacionGestioo.findUnique({
+            where: { id },
+        });
+        if (!existe) {
             return res.status(404).json({ error: "Cotización no encontrada" });
+        }
         const { items, ...rest } = req.body;
-        if (!items || !Array.isArray(items) || items.length === 0)
+        if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: "Debe incluir items" });
+        }
         const data = normalizeCotizacionData(rest);
         const updated = await prisma.$transaction(async (tx) => {
-            await tx.cotizacionItemGestioo.deleteMany({ where: { cotizacionId: id } });
+            // 🔥 Borrar items antiguos
+            await tx.cotizacionItemGestioo.deleteMany({
+                where: { cotizacionId: id },
+            });
+            // 🔥 Crear cotización con items nuevos
             return await tx.cotizacionGestioo.update({
                 where: { id },
                 data: {
                     ...data,
                     comentariosCotizacion: req.body.comentariosCotizacion ?? null,
+                    imagen: req.body.imagen ?? null,
                     items: {
-                        create: items.map((i) => ({
-                            tipo: i.tipo,
-                            descripcion: i.descripcion.trim(),
-                            cantidad: Number(i.cantidad ?? 1),
-                            // precios
-                            precio: Number(i.precio ?? 0),
-                            precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
-                            porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
-                            // descuentos
-                            tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
-                            // IVA
-                            tieneIVA: Boolean(i.tieneIVA),
-                            // otros
-                            sku: i.sku && i.sku.trim() !== "" ? i.sku : generarSKU(),
-                            imagen: i.imagen ?? null,
-                        }))
-                    }
+                        create: items.map((i) => {
+                            const precioCLP = Number(i.precioOriginalCLP ?? i.precio ?? 0);
+                            return {
+                                tipo: i.tipo,
+                                // 🔤 TEXTO
+                                nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
+                                descripcion: i.descripcion?.trim() ?? "",
+                                cantidad: Number(i.cantidad ?? 1),
+                                // 🔥 PRECIO REAL (CLP)
+                                precio: precioCLP,
+                                precioOriginalCLP: precioCLP,
+                                // COSTOS
+                                precioCosto: i.precioCosto != null
+                                    ? Number(i.precioCosto)
+                                    : null,
+                                porcGanancia: i.porcGanancia != null
+                                    ? Number(i.porcGanancia)
+                                    : null,
+                                // DESCUENTOS
+                                tieneDescuento: Boolean(i.tieneDescuento),
+                                porcentaje: i.tieneDescuento
+                                    ? Number(i.porcentaje ?? 0)
+                                    : 0,
+                                // IVA
+                                tieneIVA: Boolean(i.tieneIVA),
+                                // OTROS
+                                sku: i.sku && i.sku.trim() !== ""
+                                    ? i.sku
+                                    : generarSKU(),
+                                imagen: i.imagen ?? null,
+                            };
+                        }),
+                    },
                 },
                 include: {
                     entidad: true,
@@ -235,7 +271,9 @@ export async function updateCotizacion(req, res) {
     }
     catch (error) {
         console.error("❌ Error updateCotizacion:", error);
-        return res.status(500).json({ error: "Error al actualizar cotización" });
+        return res
+            .status(500)
+            .json({ error: "Error al actualizar cotización" });
     }
 }
 /* =====================================================

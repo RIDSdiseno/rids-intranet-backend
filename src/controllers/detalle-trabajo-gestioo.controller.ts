@@ -7,10 +7,10 @@ const prisma = new PrismaClient();
    CRUD: DETALLETRABAJOGESTIOO
 ===================================================== */
 
-// ✅ Crear un nuevo trabajo
 export async function createDetalleTrabajo(req: Request, res: Response) {
     try {
         const data = req.body;
+
         const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
             data: {
                 fecha: data.fecha ? new Date(data.fecha) : new Date(),
@@ -20,16 +20,22 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 notas: data.notas ?? null,
                 area: data.area ?? "ENTRADA",
                 prioridad: data.prioridad ?? "NORMAL",
+
                 entidadId: data.entidadId ?? null,
                 productoId: data.productoId ?? null,
                 servicioId: data.servicioId ?? null,
+
+                // 👇 **NUEVO**
+                equipoId: data.equipoId ?? null,
             },
             include: {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true, // 👈 PARA DEVOLVERLO DIRECTO
             },
         });
+
         res.status(201).json(nuevoTrabajo);
     } catch (error) {
         console.error("❌ Error al crear detalle de trabajo:", error);
@@ -46,6 +52,7 @@ export async function getDetallesTrabajo(_req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
         res.json(detalles);
@@ -65,6 +72,7 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
         if (!detalle) return res.status(404).json({ error: "Detalle no encontrado" });
@@ -112,6 +120,10 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             updateData.servicioId = data.servicioId ? Number(data.servicioId) : null;
         }
 
+        if (data.equipoId !== undefined) {
+            updateData.equipoId = data.equipoId ? Number(data.equipoId) : null;
+        }
+
         console.log("📤 Datos para actualizar:", updateData);
 
         const detalleActualizado = await prisma.detalleTrabajoGestioo.update({
@@ -121,6 +133,7 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
+                equipo: true,
             },
         });
 
@@ -148,5 +161,27 @@ export async function deleteDetalleTrabajo(req: Request, res: Response) {
     } catch (error) {
         console.error("❌ Error al eliminar detalle:", error);
         res.status(500).json({ error: "Error al eliminar detalle de trabajo" });
+    }
+}
+
+export async function getDetallesTrabajoByEquipo(req: Request, res: Response) {
+    try {
+        const equipoId = Number(req.params.equipoId);
+
+        const trabajos = await prisma.detalleTrabajoGestioo.findMany({
+            where: { equipoId },
+            orderBy: { fecha: "desc" },
+            include: {
+                entidad: true,
+                producto: true,
+                servicio: true,
+                equipo: true,
+            },
+        });
+
+        return res.json(trabajos);
+    } catch (error) {
+        console.error("❌ Error al obtener trabajos por equipo:", error);
+        return res.status(500).json({ error: "Error al obtener trabajos por equipo" });
     }
 }

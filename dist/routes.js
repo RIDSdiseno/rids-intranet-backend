@@ -11,6 +11,7 @@ import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { detalleTrabajoRouter } from "./routes/detalle-trabajo.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
+/* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
 import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
 import serviciosGestiooRouter from "./routes/servicios-gestioo.routes.js";
@@ -56,6 +57,7 @@ api.use("/fd", fdWebhookRouter);
 api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
 api.use("/tickets", ticketsApiRouter);
+/* ===================== GESTIOO ===================== */
 api.use("/entidades", entidadesRouter);
 api.use("/productos-gestioo", productosGestiooRouter);
 api.use("/servicios-gestioo", serviciosGestiooRouter);
@@ -75,7 +77,6 @@ api.use(syncGoogleRouter);
 api.use(msSyncRouter);
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
-/* ===================== Debug ===================== */
 /* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
 /* ===================== Whatchimp ===================== */

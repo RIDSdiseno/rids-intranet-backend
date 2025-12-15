@@ -170,10 +170,12 @@ model DetalleTrabajoGestioo {
   entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
   producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
   servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
+  equipoId    Int?
+  equipo      Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
 
-  @@index([entidadId])
   @@index([productoId])
   @@index([servicioId])
+  @@index([entidadId])
 }
 
 model MarcaGestioo {
@@ -193,19 +195,6 @@ model ModeloGestioo {
   @@index([marcaId])
 }
 
-model EquipoProducto {
-  id            Int      @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  precio        Decimal
-  stock         Int      @default(0)
-  marca         String
-  modelo        String
-  estado        String
-  creadoEn      DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
-}
-
 model Equipo {
   id_equipo       Int              @id @default(autoincrement())
   idSolicitante   Int
@@ -219,6 +208,8 @@ model Equipo {
   solicitante     Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
   equipo          DetalleEquipo[]
   detalleTrabajos DetalleTrabajo[]
+
+  detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
 }
@@ -477,22 +468,30 @@ model CotizacionGestioo {
 }
 
 model CotizacionItemGestioo {
-  id             Int             @id @default(autoincrement())
-  cotizacionId   Int
-  tipo           ItemTipoGestioo
-  descripcion    String
-  cantidad       Int             @default(1)
-  precio         Float           @default(0)
-  porcentaje     Float?
-  createdAt      DateTime        @default(now())
-  sku            String?
-  tieneDescuento Boolean         @default(false)
-  tieneIVA       Boolean         @default(false)
+  id           Int             @id @default(autoincrement())
+  cotizacionId Int
+  tipo         ItemTipoGestioo
 
-  imagen String?
+  // 👇 TEMPORALMENTE opcionales
+  nombre      String?
+  descripcion String
+
+  precioOriginalCLP Float? // 👈 TEMPORAL
+
+  cantidad Int   @default(1)
+  precio   Float @default(0)
+
+  porcentaje     Float?
+  tieneDescuento Boolean @default(false)
+  tieneIVA       Boolean @default(false)
 
   precioCosto  Float?
   porcGanancia Float?
+
+  sku    String?
+  imagen String?
+
+  createdAt DateTime @default(now())
 
   cotizacion CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }

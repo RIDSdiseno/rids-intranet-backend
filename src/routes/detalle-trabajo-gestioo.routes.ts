@@ -5,6 +5,7 @@ import {
   getDetalleTrabajoById,
   updateDetalleTrabajo,
   deleteDetalleTrabajo,
+  getDetallesTrabajoByEquipo
 } from "../controllers/detalle-trabajo-gestioo.controller.js";
 
 const detalleTrabajoGestiooRouter = Router();
@@ -17,5 +18,7 @@ detalleTrabajoGestiooRouter.get("/", getDetallesTrabajo);
 detalleTrabajoGestiooRouter.get("/:id", getDetalleTrabajoById);
 detalleTrabajoGestiooRouter.put("/:id", updateDetalleTrabajo);
 detalleTrabajoGestiooRouter.delete("/:id", deleteDetalleTrabajo);
+detalleTrabajoGestiooRouter.get("/equipo/:equipoId", getDetallesTrabajoByEquipo);
+
 
 export default detalleTrabajoGestiooRouter;

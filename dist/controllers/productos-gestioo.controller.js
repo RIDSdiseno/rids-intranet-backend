@@ -6,13 +6,13 @@ const prisma = new PrismaClient();
 /* ======================================
    HELPERS
 ====================================== */
-function calcularPrecioTotal(precio, porcGanancia) {
-    if (precio === null || precio === undefined)
+function calcularPrecioTotal(precioCosto, porcGanancia) {
+    if (precioCosto === null || precioCosto === undefined)
         return null;
     if (porcGanancia === null || porcGanancia === undefined)
-        return precio;
-    const ganancia = precio * (porcGanancia / 100);
-    return Math.round(precio + ganancia);
+        return precioCosto;
+    const ganancia = precioCosto * (porcGanancia / 100);
+    return Math.round(precioCosto + ganancia);
 }
 /* ======================================
    SEED
@@ -22,19 +22,28 @@ export async function seedProductos(_req, res) {
         const filePath = path.resolve("prisma/productos_seed.json");
         const fileContent = await fs.readFile(filePath, "utf8");
         const productos = JSON.parse(fileContent);
-        const data = productos.map((p) => ({
-            nombre: p.nombre,
-            descripcion: p.descripcion ?? null,
-            categoria: p.categoria,
-            serie: p.serie ?? null,
-            precio: Number(p.precio) || 0,
-            stock: Number(p.stock) || 0,
-            tipo: "producto",
-            estado: p.estado ?? "disponible",
-            activo: Boolean(p.activo),
-            porcGanancia: null,
-            precioTotal: Number(p.precio) || 0
-        }));
+        const data = productos.map((p) => {
+            const precioCosto = Number(p.precio) || 0;
+            const porcGanancia = p.porcGanancia != null ? Number(p.porcGanancia) : null;
+            const precioTotal = calcularPrecioTotal(precioCosto, porcGanancia);
+            return {
+                nombre: p.nombre,
+                descripcion: p.descripcion ?? null,
+                categoria: p.categoria,
+                serie: p.serie ?? null,
+                // 👉 precio = COSTO REAL
+                precio: precioCosto,
+                stock: Number(p.stock) || 0,
+                tipo: "producto",
+                estado: p.estado ?? "disponible",
+                activo: Boolean(p.activo),
+                porcGanancia: porcGanancia,
+                // 👉 precioTotal = VENTA FINAL
+                precioTotal: precioTotal ?? precioCosto,
+                imagen: p.imagen ?? null,
+                publicId: p.publicId ?? null,
+            };
+        });
         const result = await prisma.productoGestioo.createMany({
             data,
             skipDuplicates: true,
@@ -53,36 +62,47 @@ export async function seedProductos(_req, res) {
 ====================================== */
 export async function createProducto(req, res) {
     try {
-        const { nombre, descripcion, precio, categoria, stock, porcGanancia, imagen, serie } = req.body;
+        const { nombre, descripcion, precio, // puede venir viejo (costo)
+        precioCosto, // nuevo campo recomendado
+        categoria, stock, porcGanancia, imagen, serie, } = req.body;
         if (!nombre?.trim()) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
-        const precioNumero = precio !== undefined ? Number(precio) : null;
-        const porcNumero = porcGanancia !== undefined ? Number(porcGanancia) : null;
-        const precioTotal = calcularPrecioTotal(precioNumero, porcNumero);
+        // ✅ COSTO REAL: priorizamos precioCosto, si no viene usamos precio
+        const costoReal = precioCosto !== undefined && precioCosto !== null
+            ? Number(precioCosto)
+            : precio !== undefined && precio !== null
+                ? Number(precio)
+                : null;
+        const porcNumero = porcGanancia !== undefined && porcGanancia !== null
+            ? Number(porcGanancia)
+            : null;
+        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
         // 1️⃣ Crear producto
         const nuevo = await prisma.productoGestioo.create({
             data: {
                 nombre: nombre.trim(),
                 descripcion: descripcion?.trim() || null,
-                precio: precioNumero,
+                // 👉 Guardamos siempre el COSTO en "precio"
+                precio: costoReal,
                 categoria: categoria || null,
                 stock: stock !== undefined ? Number(stock) : 0,
                 tipo: "producto",
                 estado: "disponible",
                 activo: true,
                 porcGanancia: porcNumero,
-                precioTotal,
-                imagen: imagen ?? null, // <-- GUARDAR LA URL DE CLOUDINARY
-                serie: serie || null
-            }
+                // 👉 Guardamos la venta final en "precioTotal"
+                precioTotal: precioTotal,
+                imagen: imagen ?? null,
+                serie: serie || null,
+            },
         });
         // 2️⃣ Si no vino serie, generar una
         if (!serie) {
             const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
             const actualizado = await prisma.productoGestioo.update({
                 where: { id: nuevo.id },
-                data: { serie: serieGenerada }
+                data: { serie: serieGenerada },
             });
             return res.status(201).json({ data: actualizado });
         }
@@ -92,7 +112,7 @@ export async function createProducto(req, res) {
         console.error("❌ Error al crear producto:", error);
         return res.status(500).json({
             error: "Error al crear producto",
-            details: error.message
+            details: error.message,
         });
     }
 }
@@ -102,7 +122,7 @@ export async function createProducto(req, res) {
 export async function getProductos(_req, res) {
     try {
         const productos = await prisma.productoGestioo.findMany({
-            orderBy: { id: "asc" }
+            orderBy: { id: "asc" },
         });
         return res.json({ data: productos });
     }
@@ -144,32 +164,45 @@ export async function updateProducto(req, res) {
         if (!existe) {
             return res.status(404).json({ error: "Producto no encontrado" });
         }
-        const { nombre, descripcion, precio, categoria, stock, serie, porcGanancia, imagen, publicId } = req.body;
+        const { nombre, descripcion, precio, // puede venir como antes
+        precioCosto, // nuevo campo desde front
+        categoria, stock, serie, porcGanancia, imagen, publicId, } = req.body;
         if (!nombre?.trim()) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
-        const precioNumero = precio !== undefined ? Number(precio) : existe.precio;
-        const porcNumero = porcGanancia !== undefined ? Number(porcGanancia) : existe.porcGanancia;
-        const precioTotal = calcularPrecioTotal(precioNumero, porcNumero);
+        // ✅ COSTO REAL: priorizamos precioCosto, luego precio, luego lo que ya está en BD
+        const costoReal = precioCosto !== undefined && precioCosto !== null
+            ? Number(precioCosto)
+            : precio !== undefined && precio !== null
+                ? Number(precio)
+                : (existe.precio ?? 0);
+        const porcNumero = porcGanancia !== undefined && porcGanancia !== null
+            ? Number(porcGanancia)
+            : existe.porcGanancia;
+        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
         const data = {
             nombre: nombre.trim(),
             descripcion: descripcion?.trim() || null,
-            precio: precioNumero,
+            // 👉 Guardamos costo real en "precio"
+            precio: costoReal,
             categoria: categoria || null,
-            stock: stock !== undefined ? Number(stock) : existe.stock,
+            stock: stock !== undefined && stock !== null
+                ? Number(stock)
+                : existe.stock,
             serie: serie || existe.serie,
             porcGanancia: porcNumero,
-            precioTotal,
+            // 👉 Guardamos venta final en "precioTotal"
+            precioTotal: precioTotal,
             imagen: imagen === undefined || imagen === ""
-                ? existe.imagen // NO BORRAR
-                : imagen, // ACTUALIZAR
+                ? existe.imagen // NO BORRAR si no viene nada
+                : imagen,
             publicId: publicId === undefined || publicId === ""
                 ? existe.publicId
                 : publicId,
         };
         const actualizado = await prisma.productoGestioo.update({
             where: { id },
-            data
+            data,
         });
         return res.json({ data: actualizado });
     }
@@ -177,7 +210,7 @@ export async function updateProducto(req, res) {
         console.error("❌ Error al actualizar producto:", error);
         return res.status(500).json({
             error: "Error al actualizar producto",
-            details: error.message
+            details: error.message,
         });
     }
 }
@@ -210,14 +243,14 @@ export async function deleteProducto(req, res) {
         await prisma.productoGestioo.delete({ where: { id } });
         return res.json({
             message: "Producto eliminado correctamente",
-            deletedId: id
+            deletedId: id,
         });
     }
     catch (error) {
         console.error("❌ Error al eliminar producto:", error);
         return res.status(500).json({
             error: "Error al eliminar producto",
-            details: error.message
+            details: error.message,
         });
     }
 }
