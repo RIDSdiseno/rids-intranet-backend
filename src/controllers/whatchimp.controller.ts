@@ -150,6 +150,7 @@ export const wcReceive = async (req: Request, res: Response) => {
     if (inputText) {
       transcriptForAI.push({ from: "client", text: inputText });
     }
+
     // ==========================================================
 
     let reply: string;

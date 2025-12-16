@@ -75,6 +75,10 @@ Eres RIDSI, un asistente por WhatsApp para una empresa de TI en Chile.
 Tu objetivo:
 — Ayudar de forma cercana, clara y amable en temas de SOPORTE TÉCNICO y VENTAS.
 — Acompañar al cliente, hacerle sentir escuchado y guiado, sin sonar robótico.
+- PRIORIDAD PRINCIPAL: Cuando el cliente reporta un problema que requiere intervención, soporte o simplemente quiere hablar con un humano, tu objetivo es generar UN TICKET, idealmente que contenga suficiente contexto para que un técnico realice el diagnóstico. IMPORTANTE: No intentes resolver el problema por completo desde el chat.
+- Si el usuario confirma que quiere crear el ticket y tienes correo y empresa en contexto, DEBES llamar a la función create_freshdesk_ticket con el transcript completo. No envíes texto adicional antes de llamar a la función salvo una breve confirmación si corresponde.
+- NUNCA trates de "diagnosticar profundamente" ni ofrezcas largos pasos técnicos que reemplacen la intervención de un técnico. Si la reparación requiere más de un paso deriva y crea ticket.
+
 
 Política interna (NO la menciones a menos que el usuario pida algo fuera de ventas o soporte):
 — Solo puedes ayudar en: (1) soporte técnico y (2) ventas.
@@ -103,7 +107,7 @@ Flujo con el problema del cliente:
 — Después de que el cliente cuente su problema, pregúntale si quiere que le generes un ticket para que un técnico se contacte con él.
 — Antes de generar el ticket DEBES tener correo y empresa:
    • Si falta alguno, pídeselo de forma amable.
-   • Cuando tengas los datos y el cliente confirme que quiere ticket, debes llamar a la función create_freshdesk_ticket.
+   • Cuando tengas los datos, debes llamar a la función create_freshdesk_ticket.
 — Una vez generado el ticket, debes terminar con:
   "Se ha generado tu ticket, gracias por contactarte con RIDSI, tu bot de confianza. Un técnico se comunicará contigo a la brevedad."
 — Si después de eso el cliente responde algo como "gracias", "ok", "está bien", debes contestar:
@@ -116,12 +120,13 @@ Estilo y tono:
 — Máximo UNA pregunta de clarificación por mensaje.
 — No repitas lo ya dicho ni pidas datos que ya entregó el usuario.
 — Quédate SIEMPRE en ventas o soporte (salvo para decir que debes derivar).
+- Si el usuario menciona que quiere un ticket, genéralo, no le pidas confirmación varias veces.
 
 Aprendizaje de la conversación:
 — Ten en cuenta el historial reciente (transcript) para no repetir preguntas y mejorar tus respuestas dentro de esta sesión.
 — Si el usuario ya te mencionó correo, empresa, nombre o teléfono, asúmelos como conocidos en esta sesión.
 
-Recuerda: sé empático, directo y útil. Tu prioridad es resolver o encaminar el problema del cliente de forma rápida y amable, siempre dentro de ventas o soporte técnico.
+Recuerda: sé empático, directo y útil. Tu prioridad es crear un ticket para resolver el problema del cliente de forma rápida y amable, siempre dentro de ventas o soporte técnico. 
 `;
 
 // -----------------------------------------------------------------------------
@@ -213,9 +218,53 @@ async function callOpenAI(messages: ChatMessage[]) {
 // -----------------------------------------------------------------------------
 // Helper: construir resumen a partir del transcript (solo mensajes del cliente)
 // -----------------------------------------------------------------------------
-function buildSummaryFromTranscript(
+async function callOpenAIForSummary(messageText: String) {
+  if (!OPENAI_API_KEY) {
+    return {
+      text:
+        "Error con el resumen de la conversación.",
+      toolCalls: [] as OpenAIToolCall[]
+    };
+  }
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      temperature: AI_TEMPERATURE,
+      max_tokens: 320,
+      frequency_penalty: 0.2,
+      presence_penalty: 0.0,
+      messages: [
+        { role: "system", content: `Eres un asistente que crea resúmenes breves y claros de conversaciones de clientes en español. 
+          Extrae y condensa los puntos clave mencionados por el cliente. Únicamente ten en cuenta el problema del último ticket, si la conversación menciona que ya se ha generado un ticket para un problema anterior
+          ignora dicho problema y solo enfocate en el problema actual` },
+        { role: "user", content: `Genera un resumen conciso del siguiente texto:\n\n${messageText}` }
+      ]
+    })
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    console.error("OpenAI error:", resp.status, t);
+    return { text: null as string | null, toolCalls: [] as OpenAIToolCall[] };
+  }
+
+  const data = (await resp.json()) as OpenAIChatResponse;
+  const first = data?.choices?.[0];
+  const content = (first?.message?.content ?? "") || null;
+  return content?.trim() || "";;
+}
+
+async function buildSummaryFromTranscript(
   transcript: Array<{ from: "client" | "bot"; text: string }>
-): string {
+) {
+  const MAX_CLIENT_MSGS = 6;
+
   if (!transcript || !transcript.length) return "";
 
   const clientMsgs = transcript
@@ -225,11 +274,12 @@ function buildSummaryFromTranscript(
 
   if (!clientMsgs.length) return "";
 
-  // Tomamos los últimos 2 mensajes del cliente
-  const lastMsgs = clientMsgs.slice(-2).join(" | ");
+  const lastMsgs = clientMsgs.length > MAX_CLIENT_MSGS
+    ? clientMsgs.slice(MAX_CLIENT_MSGS * -1).join(" | ")
+    : clientMsgs.join(" | ");
 
-  // Recortamos a 200 caracteres para que no sea eterno
-  return lastMsgs.length > 200 ? lastMsgs.slice(0, 197) + "..." : lastMsgs;
+  const summary = await callOpenAIForSummary(lastMsgs);
+  return summary
 }
 
 // -----------------------------------------------------------------------------
@@ -252,18 +302,25 @@ async function sendTicketToPowerAutomate(payload: {
   }
 
   // Resumen automático a partir del transcript
-  const resumen = buildSummaryFromTranscript(payload.transcript);
+  const resumen = await buildSummaryFromTranscript(payload.transcript);
 
   // Texto completo de la conversación (resumen + detalle)
-  const conversationText =
+
+  const MAX_NUMBER_OF_MESSAGES = 12;
+
+  const transcript = payload.transcript?.map(
+    (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
+  ) || [];
+
+  const transcriptCut = transcript.length > MAX_NUMBER_OF_MESSAGES
+    ? transcript?.slice(transcript.length - MAX_NUMBER_OF_MESSAGES).join("\n")
+    : transcript?.join("\n");
+
+  const conversationText = 
     (resumen
       ? `Resumen automático:\n${resumen}\n\n--------------------------\n`
       : "") +
-    (payload.transcript
-      ?.map(
-        (t) => `${t.from === "client" ? "Cliente" : "Bot"}: ${t.text}`
-      )
-      .join("\n") || "");
+    (transcriptCut || "");
 
   const bodyForPA = {
     name: payload.name,
@@ -298,6 +355,8 @@ export async function runAI(input: RunAIInput): Promise<string> {
   if (PROVIDER !== "openai") {
     throw new Error(`Proveedor IA no soportado: ${PROVIDER}`);
   }
+
+   console.log("Se invoca runAI con input:", input);
 
   const user = input.userText?.trim() || "";
   const turns = input.context?.turns ?? 1;
@@ -360,7 +419,7 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
               args.subject ||
               `Soporte WhatsApp - ${args.company || company || "Cliente"}`,
             transcript:
-              (args.transcript || transcript) as Array<{
+              transcript as Array<{
                 from: "client" | "bot";
                 text: string;
               }>,
@@ -368,6 +427,7 @@ Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama 
             priority: (args.priority as 1 | 2 | 3 | 4) || 2,
             status: (args.status as 2 | 3 | 4 | 5) || 2
           };
+          console.log("Largo del payload transcript:", payload.transcript.length);
 
           // Validar mínimos
           if (!payload.email || !payload.company) {
