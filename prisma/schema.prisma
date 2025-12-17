@@ -124,13 +124,12 @@ model ProductoGestioo {
   entidadId     Int?
   porcGanancia  Float?
   precioTotal   Float?
+  imagen        String?
+  publicId      String?
   marca         MarcaGestioo?           @relation(fields: [marcaId], references: [id])
   modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
-
-  imagen   String? // URL de Cloudinary
-  publicId String?
 
   @@index([marcaId])
   @@index([modeloId])
@@ -167,10 +166,10 @@ model DetalleTrabajoGestioo {
   entidadId   Int?
   productoId  Int?
   servicioId  Int?
+  equipoId    Int?
   entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
   producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
   servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
-  equipoId    Int?
   equipo      Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
 
   @@index([productoId])
@@ -196,19 +195,21 @@ model ModeloGestioo {
 }
 
 model Equipo {
-  id_equipo       Int              @id @default(autoincrement())
-  idSolicitante   Int
-  serial          String?          @unique
-  marca           String
-  modelo          String
-  procesador      String?
-  ram             String?
-  disco           String?
-  propiedad       String           @default("ASUR")
-  solicitante     Solicitante      @relation(fields: [idSolicitante], references: [id_solicitante])
-  equipo          DetalleEquipo[]
-  detalleTrabajos DetalleTrabajo[]
+  id_equipo              Int                     @id @default(autoincrement())
+  idSolicitante          Int?
+  serial                 String?                 @unique
+  marca                  String
+  modelo                 String
 
+  tipo                   TipoEquipo              @default(GENERICO)
+
+  procesador             String?
+  ram                    String?
+  disco                  String?
+  propiedad              String                  @default("ASUR")
+  solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
+  equipo                 DetalleEquipo[]
+  detalleTrabajos        DetalleTrabajo[]
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
@@ -442,58 +443,67 @@ model TicketRequester {
 }
 
 model CotizacionGestioo {
-  id         Int                     @id @default(autoincrement())
-  fecha      DateTime                @default(now())
-  estado     EstadoCotizacionGestioo @default(BORRADOR)
-  tipo       TipoCotizacionGestioo   @default(CLIENTE)
-  entidadId  Int?
-  total      Float                   @default(0)
-  createdAt  DateTime                @default(now())
-  updatedAt  DateTime                @updatedAt
-  iva        Float                   @default(0)
-  moneda     MonedaGestioo           @default(CLP)
-  subtotal   Float                   @default(0)
-  descuentos Float                   @default(0)
-  tasaCambio Float?
-  items      CotizacionItemGestioo[]
-  entidad    EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-
+  id                    Int                     @id @default(autoincrement())
+  fecha                 DateTime                @default(now())
+  estado                EstadoCotizacionGestioo @default(BORRADOR)
+  tipo                  TipoCotizacionGestioo   @default(CLIENTE)
+  entidadId             Int?
+  total                 Float                   @default(0)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  iva                   Float                   @default(0)
+  moneda                MonedaGestioo           @default(CLP)
+  subtotal              Float                   @default(0)
+  descuentos            Float                   @default(0)
+  tasaCambio            Float?
   comentariosCotizacion String?
-
-  personaResponsable String?
-
-  imagen String?
+  personaResponsable    String?
+  imagen                String?
+  items                 CotizacionItemGestioo[]
+  entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
 
   @@index([entidadId])
 }
 
 model CotizacionItemGestioo {
-  id           Int             @id @default(autoincrement())
-  cotizacionId Int
-  tipo         ItemTipoGestioo
+  id                Int               @id @default(autoincrement())
+  cotizacionId      Int
+  tipo              ItemTipoGestioo
+  descripcion       String
+  cantidad          Int               @default(1)
+  precio            Float             @default(0)
+  porcentaje        Float?
+  createdAt         DateTime          @default(now())
+  sku               String?
+  tieneIVA          Boolean           @default(false)
+  tieneDescuento    Boolean           @default(false)
+  imagen            String?
+  porcGanancia      Float?
+  precioCosto       Float?
+  nombre            String?
+  precioOriginalCLP Float?
+  cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+}
 
-  // 👇 TEMPORALMENTE opcionales
-  nombre      String?
-  descripcion String
+model Entrega {
+  id_entrega     Int      @id @default(autoincrement())
+  empresaNombre  String
+  receptorNombre String
+  fecha          DateTime @default(now())
+}
 
-  precioOriginalCLP Float? // 👈 TEMPORAL
+model EvidenciaEntrega {
+  id        Int                  @id @default(autoincrement())
+  entregaId Int
+  tipo      TipoEvidenciaEntrega
+  url       String
+  publicId  String               @unique
+  formato   String
+  bytes     Int
+  creadoEn  DateTime             @default(now())
 
-  cantidad Int   @default(1)
-  precio   Float @default(0)
-
-  porcentaje     Float?
-  tieneDescuento Boolean @default(false)
-  tieneIVA       Boolean @default(false)
-
-  precioCosto  Float?
-  porcGanancia Float?
-
-  sku    String?
-  imagen String?
-
-  createdAt DateTime @default(now())
-
-  cotizacion CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  @@index([entregaId])
+  @@index([tipo])
 }
 
 enum MonedaGestioo {
@@ -574,4 +584,36 @@ enum ItemTipoGestioo {
   PRODUCTO
   SERVICIO
   ADICIONAL
+}
+
+enum TipoEvidenciaEntrega {
+  FOTO
+  FIRMA
+}
+
+// TIPOS EQUIPOS
+enum TipoEquipo {
+  GENERICO
+  NOTEBOOK
+  ALL_IN_ONE
+  DESKTOP
+  CPU
+  EQUIPO_ARMADO
+
+  IMPRESORA
+  SCANNER
+  LASER
+  LED
+
+  MONITOR
+  NAS
+  ROUTER
+
+  DISCO_DURO_EXTERNO
+  CARGADOR
+  INSUMOS_COMPUTACIONALES
+
+  RELOJ_CONTROL
+
+  OTRO
 }

@@ -130,6 +130,8 @@ export const listSolicitantes = async (req, res) => {
         const empresaMap = new Map(empresas.map((e) => [e.id_empresa, e]));
         const equiposBySolic = new Map();
         for (const eq of equipos) {
+            if (eq.idSolicitante == null)
+                continue;
             const list = equiposBySolic.get(eq.idSolicitante) ?? [];
             list.push(eq);
             equiposBySolic.set(eq.idSolicitante, list);

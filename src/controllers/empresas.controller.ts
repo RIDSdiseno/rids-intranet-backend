@@ -58,7 +58,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         : [];
 
       const equiposPorSolic = new Map<number, number[]>();
+
       for (const eq of equipos) {
+        if (eq.idSolicitante == null) continue;
+
         const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
         arr.push(eq.id_equipo);
         equiposPorSolic.set(eq.idSolicitante, arr);
@@ -241,10 +244,14 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     );
     const equiposPorEmpresa = new Map<number, number>();
     for (const row of equiposCountPorSolic) {
-      const empId = empresaPorSolic.get(row.idSolicitante!)!;
+      if (row.idSolicitante == null) continue;
+
+      const empId = empresaPorSolic.get(row.idSolicitante);
+      if (empId == null) continue;
+
       equiposPorEmpresa.set(
         empId,
-        (equiposPorEmpresa.get(empId) ?? 0) + (row._count as any)._all
+        (equiposPorEmpresa.get(empId) ?? 0) + row._count._all
       );
     }
 
@@ -378,19 +385,22 @@ export async function getEmpresaById(
     const solicIds = solicitantes.map((s) => s.id_solicitante);
     const equipos = solicIds.length
       ? await prisma.equipo.findMany({
-          where: { idSolicitante: { in: solicIds } },
-          select: {
-            id_equipo: true,
-            idSolicitante: true,
-            serial: true,
-            marca: true,
-            modelo: true,
-          },
-        })
+        where: { idSolicitante: { in: solicIds } },
+        select: {
+          id_equipo: true,
+          idSolicitante: true,
+          serial: true,
+          marca: true,
+          modelo: true,
+        },
+      })
       : [];
 
     const equiposPorSolic = new Map<number, any[]>();
+
     for (const eq of equipos) {
+      if (eq.idSolicitante == null) continue;
+
       const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
       arr.push(eq);
       equiposPorSolic.set(eq.idSolicitante, arr);

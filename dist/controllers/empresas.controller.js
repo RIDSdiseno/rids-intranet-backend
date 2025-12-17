@@ -47,6 +47,8 @@ export async function getEmpresas(req, res) {
                 : [];
             const equiposPorSolic = new Map();
             for (const eq of equipos) {
+                if (eq.idSolicitante == null)
+                    continue;
                 const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
                 arr.push(eq.id_equipo);
                 equiposPorSolic.set(eq.idSolicitante, arr);
@@ -191,7 +193,11 @@ export async function getEmpresas(req, res) {
         const empresaPorSolic = new Map(solicitantesDeEmp.map((s) => [s.id_solicitante, s.empresaId]));
         const equiposPorEmpresa = new Map();
         for (const row of equiposCountPorSolic) {
+            if (row.idSolicitante == null)
+                continue;
             const empId = empresaPorSolic.get(row.idSolicitante);
+            if (empId == null)
+                continue;
             equiposPorEmpresa.set(empId, (equiposPorEmpresa.get(empId) ?? 0) + row._count._all);
         }
         const solMap = new Map(solCount.map((r) => [r.empresaId, r._count.empresaId]));
@@ -316,6 +322,8 @@ export async function getEmpresaById(req, res) {
             : [];
         const equiposPorSolic = new Map();
         for (const eq of equipos) {
+            if (eq.idSolicitante == null)
+                continue;
             const arr = equiposPorSolic.get(eq.idSolicitante) ?? [];
             arr.push(eq);
             equiposPorSolic.set(eq.idSolicitante, arr);

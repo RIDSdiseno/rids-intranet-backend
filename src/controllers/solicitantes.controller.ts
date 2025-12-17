@@ -83,12 +83,12 @@ export const listSolicitantes = async (req: Request, res: Response) => {
       ...(empresaId > 0 ? { empresaId } : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
       ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] as any } } : {}),
     };
@@ -158,7 +158,10 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const empresaMap = new Map(empresas.map((e) => [e.id_empresa, e]));
 
     const equiposBySolic = new Map<number, typeof equipos>();
+
     for (const eq of equipos) {
+      if (eq.idSolicitante == null) continue;
+
       const list = equiposBySolic.get(eq.idSolicitante) ?? [];
       list.push(eq);
       equiposBySolic.set(eq.idSolicitante, list);
@@ -261,12 +264,12 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
       ...(empresaId > 0 ? { empresaId } : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
     };
 
@@ -318,12 +321,12 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
       ...(empresaId > 0 ? { empresaId } : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
     };
 
@@ -347,8 +350,8 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
       idList.length === 0
         ? 0
         : await prisma.equipo.count({
-            where: { idSolicitante: { in: idList } },
-          });
+          where: { idSolicitante: { in: idList } },
+        });
 
     return res.json({ solicitantes, empresas, equipos });
   } catch (err: unknown) {
@@ -477,8 +480,8 @@ export const updateSolicitante = async (req: Request, res: Response) => {
       req.body?.email === null
         ? null
         : typeof req.body?.email === "string"
-        ? req.body.email.trim()
-        : undefined;
+          ? req.body.email.trim()
+          : undefined;
     const empresaId =
       typeof req.body?.empresaId !== "undefined"
         ? toInt(req.body.empresaId)

@@ -1,25 +1,33 @@
+import { TipoEquipo } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 /* ================== Schemas ================== */
 const listQuerySchema = z.object({
     page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().positive().max(200).default(20),
-    // filtros
-    search: z.string().trim().optional(), // serial/marca/modelo/procesador/solicitante/empresa
+    pageSize: z.coerce.number().int().positive().max(500).default(20),
+    search: z.string().trim().optional(),
     marca: z.string().trim().optional(),
+    tipo: z.nativeEnum(TipoEquipo).optional(),
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
     sortBy: z.enum([
-        "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad"
-    ]).default("id_equipo").optional(), // ⚠️ quitamos empresa/solicitante porque ya no hay relaciones
+        "id_equipo",
+        "serial",
+        "tipo",
+        "marca",
+        "modelo",
+        "procesador",
+        "ram",
+        "disco",
+        "propiedad",
+    ]).default("id_equipo").optional(),
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
-// ⚠️ OJO: el schema de BD NO cambia. Solo el payload de creación.
-// Requerimos empresaId SIEMPRE y permitimos idSolicitante null.
 const createEquipoSchema = z.object({
-    empresaId: z.coerce.number().int().positive(),
+    empresaId: z.coerce.number().int().positive().optional(),
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
+    tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
     serial: z.string().trim().min(1),
     marca: z.string().trim().min(1),
     modelo: z.string().trim().min(1),
@@ -28,10 +36,9 @@ const createEquipoSchema = z.object({
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
 });
-// Para PATCH permitimos cambiar cualquier campo y
-// idSolicitante puede venir null para “desasignar” (irá a placeholder).
 const equipoUpdateSchema = z.object({
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
+    tipo: z.nativeEnum(TipoEquipo).optional(),
     serial: z.string().trim().min(1).optional(),
     marca: z.string().trim().min(1).optional(),
     modelo: z.string().trim().min(1).optional(),
@@ -39,8 +46,6 @@ const equipoUpdateSchema = z.object({
     ram: z.string().trim().min(1).optional(),
     disco: z.string().trim().min(1).optional(),
     propiedad: z.string().trim().min(1).optional(),
-    // empresaId es opcional en PATCH y solo se usa si idSolicitante=null
-    // para escoger el placeholder de ESA empresa (si quieres permitir ese caso).
     empresaId: z.coerce.number().int().positive().optional(),
 });
 /* ================== CACHE SIMPLE ================== */
@@ -51,17 +56,26 @@ function clearCache() {
 /* ================== Helpers ================== */
 function mapOrderBy(sortBy, sortDir) {
     const allowed = [
-        "id_equipo", "serial", "marca", "modelo", "procesador", "ram", "disco", "propiedad"
+        "id_equipo",
+        "serial",
+        "tipo",
+        "marca",
+        "modelo",
+        "procesador",
+        "ram",
+        "disco",
+        "propiedad",
     ];
-    const key = (allowed.includes(sortBy)
+    const key = allowed.includes(sortBy)
         ? sortBy
-        : "id_equipo");
+        : "id_equipo";
     return { [key]: sortDir };
 }
 function flattenRow(e) {
     return {
         id_equipo: e.id_equipo,
         serial: e.serial,
+        tipo: e.tipo,
         marca: e.marca,
         modelo: e.modelo,
         procesador: e.procesador,
@@ -74,7 +88,6 @@ function flattenRow(e) {
         idSolicitante: e.idSolicitante,
     };
 }
-// Crea/obtiene el solicitante placeholder para una empresa
 async function ensurePlaceholderSolicitante(empresaId) {
     const PLACEHOLDER_NAME = "[SIN SOLICITANTE]";
     const found = await prisma.solicitante.findFirst({
@@ -84,24 +97,32 @@ async function ensurePlaceholderSolicitante(empresaId) {
     if (found)
         return found.id_solicitante;
     const created = await prisma.solicitante.create({
-        data: {
-            empresaId,
-            nombre: PLACEHOLDER_NAME,
-            // email y teléfono opcionales; email es unique en Cliente, no en Solicitante, así que OK
-        },
+        data: { empresaId, nombre: PLACEHOLDER_NAME },
         select: { id_solicitante: true },
     });
     return created.id_solicitante;
 }
-/* ================== Controller: LIST ================== */
+/* ================== LIST ================== */
 export async function listEquipos(req, res) {
     try {
         const q = listQuerySchema.parse(req.query);
         const INS = "insensitive";
         const where = {
-            ...(q.empresaId ? { solicitante: { is: { empresaId: q.empresaId } } } : {}),
+            ...(q.tipo ? { tipo: q.tipo } : {}),
+            ...(q.empresaId
+                ? {
+                    OR: [
+                        { solicitante: { is: { empresaId: q.empresaId } } },
+                        { idSolicitante: null },
+                    ],
+                }
+                : {}),
             ...(q.empresaName
-                ? { solicitante: { is: { empresa: { is: { nombre: { contains: q.empresaName, mode: INS } } } } } }
+                ? {
+                    solicitante: {
+                        is: { empresa: { is: { nombre: { contains: q.empresaName, mode: INS } } } },
+                    },
+                }
                 : {}),
             ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
             ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
@@ -113,7 +134,13 @@ export async function listEquipos(req, res) {
                         { modelo: { contains: q.search, mode: INS } },
                         { procesador: { contains: q.search, mode: INS } },
                         { solicitante: { is: { nombre: { contains: q.search, mode: INS } } } },
-                        { solicitante: { is: { empresa: { is: { nombre: { contains: q.search, mode: INS } } } } } },
+                        {
+                            solicitante: {
+                                is: {
+                                    empresa: { is: { nombre: { contains: q.search, mode: INS } } },
+                                },
+                            },
+                        },
                     ],
                 }
                 : {}),
@@ -123,37 +150,24 @@ export async function listEquipos(req, res) {
             prisma.equipo.count({ where }),
             prisma.equipo.findMany({
                 where,
-                select: {
-                    id_equipo: true,
-                    serial: true,
-                    marca: true,
-                    modelo: true,
-                    procesador: true,
-                    ram: true,
-                    disco: true,
-                    propiedad: true,
-                    idSolicitante: true,
-                },
+                include: { solicitante: { include: { empresa: true } } },
                 orderBy,
                 skip: (q.page - 1) * q.pageSize,
                 take: q.pageSize,
             }),
         ]);
-        const items = rows.map(flattenRow);
         return res.json({
             page: q.page,
             pageSize: q.pageSize,
             total,
             totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
-            items,
+            items: rows.map(flattenRow),
         });
     }
     catch (err) {
         console.error("listEquipos error:", err);
         if (err instanceof z.ZodError) {
-            return res
-                .status(400)
-                .json({ error: "Parámetros inválidos", details: err.flatten() });
+            return res.status(400).json({ error: "Parámetros inválidos", details: err.flatten() });
         }
         return res.status(500).json({ error: "Error al listar equipos" });
     }
@@ -162,55 +176,49 @@ export async function listEquipos(req, res) {
 export async function createEquipo(req, res) {
     try {
         const data = createEquipoSchema.parse(req.body);
-        const { empresaId, idSolicitante: idSolFromBody, serial, marca, modelo, procesador, ram, disco, propiedad, } = data;
-        // validar empresa
-        const empresa = await prisma.empresa.findUnique({
-            where: { id_empresa: empresaId },
-            select: { id_empresa: true },
-        });
-        if (!empresa) {
-            return res.status(400).json({ error: "Empresa no encontrada" });
+        if (data.serial) {
+            const existe = await prisma.equipo.findUnique({ where: { serial: data.serial } });
+            if (existe) {
+                return res.status(400).json({ error: "Ya existe un equipo con ese serial" });
+            }
         }
-        let idSolicitanteFinal;
-        if (idSolFromBody == null) {
-            // sin solicitante → conectamos al placeholder de ESA empresa
-            idSolicitanteFinal = await ensurePlaceholderSolicitante(empresaId);
-        }
-        else {
-            // con solicitante → validamos que pertenece a esa empresa
+        let idSolicitanteFinal = null;
+        if (data.idSolicitante) {
             const sol = await prisma.solicitante.findUnique({
-                where: { id_solicitante: idSolFromBody },
-                select: { id_solicitante: true, empresaId: true },
+                where: { id_solicitante: data.idSolicitante },
             });
             if (!sol)
                 return res.status(400).json({ error: "Solicitante no encontrado" });
-            if (sol.empresaId !== empresaId) {
-                return res.status(400).json({ error: "El solicitante no pertenece a la empresa seleccionada" });
-            }
             idSolicitanteFinal = sol.id_solicitante;
         }
-        const nuevo = await prisma.equipo.create({
+        else if (data.empresaId) {
+            const empresa = await prisma.empresa.findUnique({
+                where: { id_empresa: data.empresaId },
+            });
+            if (!empresa)
+                return res.status(400).json({ error: "Empresa no encontrada" });
+            idSolicitanteFinal = await ensurePlaceholderSolicitante(empresa.id_empresa);
+        }
+        const equipo = await prisma.equipo.create({
             data: {
-                serial,
-                marca,
-                modelo,
-                procesador,
-                ram,
-                disco,
-                propiedad,
-                solicitante: { connect: { id_solicitante: idSolicitanteFinal } },
+                tipo: data.tipo,
+                marca: data.marca,
+                modelo: data.modelo,
+                serial: data.serial,
+                procesador: data.procesador,
+                ram: data.ram,
+                disco: data.disco,
+                propiedad: data.propiedad,
+                idSolicitante: idSolicitanteFinal,
             },
-            include: { solicitante: { include: { empresa: true } } },
         });
         clearCache();
-        return res.status(201).json(nuevo);
+        return res.status(201).json(equipo);
     }
     catch (err) {
-        console.error("Error al crear equipo:", err);
+        console.error("createEquipo error:", err);
         if (err instanceof z.ZodError) {
-            return res
-                .status(400)
-                .json({ error: "Datos inválidos", detalles: err.flatten() });
+            return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
         }
         return res.status(500).json({ error: "Error al crear equipo" });
     }
@@ -227,29 +235,10 @@ export async function getEquipoById(req, res) {
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
-        // enriquecer con nombres
-        let solicitante = null;
-        let empresa = null;
-        let empresaId = null;
-        if (equipo.idSolicitante != null) {
-            const sol = await prisma.solicitante.findUnique({
-                where: { id_solicitante: equipo.idSolicitante },
-                select: { nombre: true, empresaId: true },
-            });
-            solicitante = sol?.nombre ?? null;
-            empresaId = sol?.empresaId ?? null;
-            if (empresaId != null) {
-                const emp = await prisma.empresa.findUnique({
-                    where: { id_empresa: empresaId },
-                    select: { nombre: true },
-                });
-                empresa = emp?.nombre ?? null;
-            }
-        }
-        return res.status(200).json({ ...equipo, solicitante, empresaId, empresa });
+        return res.status(200).json(equipo);
     }
     catch (err) {
-        console.error("Error al obtener equipo:", err);
+        console.error("getEquipoById error:", err);
         return res.status(500).json({ error: "Error al obtener equipo" });
     }
 }
@@ -260,10 +249,9 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        // Traemos el equipo actual (para conocer la empresa del solicitante actual si hace falta)
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
-            include: { solicitante: { select: { id_solicitante: true, empresaId: true } } },
+            include: { solicitante: { select: { empresaId: true } } },
         });
         if (!equipoActual) {
             return res.status(404).json({ error: "Equipo no encontrado" });
@@ -271,62 +259,44 @@ export async function updateEquipo(req, res) {
         let solicitanteUpdate;
         if (data.idSolicitante !== undefined) {
             if (data.idSolicitante === null) {
-                // reconectar a placeholder. ¿De qué empresa?
-                const empresaId = data.empresaId ??
-                    equipoActual.solicitante?.empresaId; // usamos la empresa del solicitante actual si no mandan empresaId
+                const empresaId = data.empresaId ?? equipoActual.solicitante?.empresaId;
                 if (!empresaId) {
                     return res.status(400).json({
-                        error: "Para desasignar el solicitante, especifica empresaId o el equipo debe tener uno actual",
+                        error: "Para desasignar solicitante debes indicar empresaId",
                     });
                 }
                 const placeholderId = await ensurePlaceholderSolicitante(empresaId);
                 solicitanteUpdate = { connect: { id_solicitante: placeholderId } };
             }
             else {
-                // validar solicitante existente
-                const sol = await prisma.solicitante.findUnique({
-                    where: { id_solicitante: data.idSolicitante },
-                    select: { id_solicitante: true, empresaId: true },
-                });
-                if (!sol)
-                    return res.status(400).json({ error: "Solicitante no encontrado" });
-                // si mandan empresaId en PATCH, exigimos coherencia
-                if (data.empresaId && sol.empresaId !== data.empresaId) {
-                    return res.status(400).json({ error: "El solicitante no pertenece a la empresa indicada" });
-                }
-                solicitanteUpdate = { connect: { id_solicitante: sol.id_solicitante } };
+                solicitanteUpdate = { connect: { id_solicitante: data.idSolicitante } };
             }
         }
-        const dataToUpdate = {
-            ...(data.serial ? { serial: data.serial } : {}),
-            ...(data.marca ? { marca: data.marca } : {}),
-            ...(data.modelo ? { modelo: data.modelo } : {}),
-            ...(data.procesador ? { procesador: data.procesador } : {}),
-            ...(data.ram ? { ram: data.ram } : {}),
-            ...(data.disco ? { disco: data.disco } : {}),
-            ...(data.propiedad ? { propiedad: data.propiedad } : {}),
-            ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
-        };
         const actualizado = await prisma.equipo.update({
             where: { id_equipo: id },
-            data: dataToUpdate,
+            data: {
+                ...(data.tipo ? { tipo: data.tipo } : {}),
+                ...(data.serial ? { serial: data.serial } : {}),
+                ...(data.marca ? { marca: data.marca } : {}),
+                ...(data.modelo ? { modelo: data.modelo } : {}),
+                ...(data.procesador ? { procesador: data.procesador } : {}),
+                ...(data.ram ? { ram: data.ram } : {}),
+                ...(data.disco ? { disco: data.disco } : {}),
+                ...(data.propiedad ? { propiedad: data.propiedad } : {}),
+                ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
+            },
             include: { solicitante: { include: { empresa: true } } },
         });
         clearCache();
         return res.status(200).json(actualizado);
     }
     catch (err) {
-        console.error("Error al actualizar equipo:", err);
-        if (err?.code === "P2025") {
-            return res.status(404).json({ error: "Equipo no encontrado" });
-        }
+        console.error("updateEquipo error:", err);
         if (err?.code === "P2025") {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
         if (err instanceof z.ZodError) {
-            return res
-                .status(400)
-                .json({ error: "Datos inválidos", detalles: err.flatten() });
+            return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
         }
         return res.status(500).json({ error: "Error al actualizar equipo" });
     }
@@ -342,10 +312,7 @@ export async function deleteEquipo(req, res) {
         return res.status(204).send();
     }
     catch (err) {
-        console.error("Error al eliminar equipo:", err);
-        if (err?.code === "P2025") {
-            return res.status(404).json({ error: "Equipo no encontrado" });
-        }
+        console.error("deleteEquipo error:", err);
         if (err?.code === "P2025") {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
