@@ -8,7 +8,6 @@ import { equiposRouter } from "./routes/equipos.routes.js";
 import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
-import { detalleTrabajoRouter } from "./routes/detalle-trabajo.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 /* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
@@ -42,7 +41,6 @@ api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
-api.use("/detalle-trabajo", detalleTrabajoRouter);
 api.use("/empresas", empresasRouter);
 api.use("/tecnicos", tecnicosRouter);
 /* ===================== Freshdesk ===================== */

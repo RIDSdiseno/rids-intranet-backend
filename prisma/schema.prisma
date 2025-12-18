@@ -18,7 +18,6 @@ model Empresa {
   tickets         FreshdeskTicket[]
   companyMaps     FreshdeskCompanyMap[]
   detalleEmpresa  DetalleEmpresa?
-  detalleTrabajos DetalleTrabajo[]
   sucursales      Sucursal[]
 }
 
@@ -167,14 +166,18 @@ model DetalleTrabajoGestioo {
   productoId  Int?
   servicioId  Int?
   equipoId    Int?
-  entidad     EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto    ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio    ServicioGestioo? @relation(fields: [servicioId], references: [id])
-  equipo      Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+
+  tecnicoId Int?
+  tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
+  entidad   EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+  producto  ProductoGestioo? @relation(fields: [productoId], references: [id])
+  servicio  ServicioGestioo? @relation(fields: [servicioId], references: [id])
+  equipo    Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
 
   @@index([productoId])
   @@index([servicioId])
   @@index([entidadId])
+  @@index([tecnicoId])
 }
 
 model MarcaGestioo {
@@ -195,13 +198,13 @@ model ModeloGestioo {
 }
 
 model Equipo {
-  id_equipo              Int                     @id @default(autoincrement())
-  idSolicitante          Int?
-  serial                 String?                 @unique
-  marca                  String
-  modelo                 String
+  id_equipo     Int     @id @default(autoincrement())
+  idSolicitante Int?
+  serial        String? @unique
+  marca         String
+  modelo        String
 
-  tipo                   TipoEquipo              @default(GENERICO)
+  tipo TipoEquipo @default(GENERICO)
 
   procesador             String?
   ram                    String?
@@ -209,7 +212,6 @@ model Equipo {
   propiedad              String                  @default("ASUR")
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   equipo                 DetalleEquipo[]
-  detalleTrabajos        DetalleTrabajo[]
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
@@ -229,35 +231,6 @@ model DetalleEquipo {
   equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
 
   @@index([idEquipo])
-}
-
-model DetalleTrabajo {
-  id              Int       @id @default(autoincrement())
-  fecha_ingreso   DateTime
-  fecha_egreso    DateTime?
-  trabajo         String
-  accesorios      String?
-  prioridad       Prioridad
-  estado          String
-  notas           String?
-  empresa_id      Int?
-  equipo_id       Int?
-  tecnico_id      Int?
-  adelanto        Float?
-  contrasena      String?
-  diagnostico     Boolean?  @default(false)
-  fecha_prometida DateTime?
-  garantia        Boolean?  @default(false)
-  presupuesto     Float?
-  area            Area      @default(entrada)
-  empresa         Empresa?  @relation(fields: [empresa_id], references: [id_empresa])
-  equipo          Equipo?   @relation(fields: [equipo_id], references: [id_equipo])
-  tecnico         Tecnico?  @relation(fields: [tecnico_id], references: [id_tecnico])
-
-  @@index([empresa_id])
-  @@index([equipo_id])
-  @@index([tecnico_id])
-  @@map("detalle_trabajos")
 }
 
 model Historial {
@@ -305,15 +278,15 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico      Int              @id @default(autoincrement())
+  id_tecnico      Int                     @id @default(autoincrement())
   nombre          String
-  email           String           @unique
+  email           String                  @unique
   passwordHash    String
-  status          Boolean          @default(true)
+  status          Boolean                 @default(true)
   tokens          RefreshToken[]
   historiales     Historial[]
   visitas         Visita[]
-  detalleTrabajos DetalleTrabajo[]
+  detalleTrabajos DetalleTrabajoGestioo[]
 }
 
 model Visita {

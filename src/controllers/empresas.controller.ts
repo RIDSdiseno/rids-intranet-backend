@@ -79,12 +79,6 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         select: { id_visita: true, status: true, empresaId: true },
       });
 
-      // Trabajos (DetalleTrabajo)
-      const trabajos = await prisma.detalleTrabajo.findMany({
-        where: { empresa_id: { in: empresaIds } },
-        select: { id: true, estado: true, empresa_id: true },
-      });
-
       // Agrupar solicitantes por empresa
       const solPorEmpresa = new Map<
         number,
@@ -126,19 +120,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         visitasPorEmpresa.set(empId, arr);
       }
 
-      const trabajosPorEmpresa = new Map<number, { id: number; estado: string }[]>();
-      for (const t of trabajos) {
-        const empId = t.empresa_id!;
-        const arr = trabajosPorEmpresa.get(empId) ?? [];
-        arr.push({ id: t.id, estado: t.estado });
-        trabajosPorEmpresa.set(empId, arr);
-      }
-
       const data = empresasBase.map((e) => {
         const solicitantesEmp = solPorEmpresa.get(e.id_empresa) ?? [];
         const ticketsEmp = ticketsPorEmpresa.get(e.id_empresa) ?? [];
         const visitasEmp = visitasPorEmpresa.get(e.id_empresa) ?? [];
-        const trabajosEmp = trabajosPorEmpresa.get(e.id_empresa) ?? [];
 
         const totalSolicitantes = solicitantesEmp.length;
         const totalEquipos = solicitantesEmp.reduce(
@@ -147,14 +132,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         );
         const totalTickets = ticketsEmp.length;
         const totalVisitas = visitasEmp.length;
-        const totalTrabajos = trabajosEmp.length;
 
         const ticketsAbiertos = ticketsEmp.filter((t) => t.status !== 5).length;
         const visitasPendientes = visitasEmp.filter(
           (v) => v.status === EstadoVisita.PENDIENTE
-        ).length;
-        const trabajosPendientes = trabajosEmp.filter(
-          (t) => (t.estado ?? "").toUpperCase() === "PENDIENTE"
         ).length;
 
         return {
@@ -167,10 +148,8 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
             totalEquipos,
             totalTickets,
             totalVisitas,
-            totalTrabajos,
             ticketsAbiertos,
             visitasPendientes,
-            trabajosPendientes,
           },
         };
       });
@@ -215,16 +194,6 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
       _count: { empresaId: true },
     });
 
-    // 4) Trabajos pendientes por empresa
-    const trabajosPend = await prisma.detalleTrabajo.groupBy({
-      by: ["empresa_id"],
-      where: {
-        empresa_id: { in: empresaIds },
-        estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode },
-      },
-      _count: { empresa_id: true },
-    });
-
     // 5) Equipos por empresa (vía solicitantes)
     const solicitantesDeEmp = await prisma.solicitante.findMany({
       where: { empresaId: { in: empresaIds } },
@@ -262,9 +231,6 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     const visitaPendMap = new Map(
       visitasPend.map((r) => [r.empresaId!, r._count.empresaId])
     );
-    const trabajoPendMap = new Map(
-      trabajosPend.map((r) => [r.empresa_id!, r._count.empresa_id])
-    );
 
     const data = empresasBase.map((e) => ({
       id_empresa: e.id_empresa,
@@ -277,7 +243,6 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         totalTrabajos: undefined,
         ticketsAbiertos: ticketOpenMap.get(e.id_empresa) ?? 0,
         visitasPendientes: visitaPendMap.get(e.id_empresa) ?? 0,
-        trabajosPendientes: trabajoPendMap.get(e.id_empresa) ?? 0,
       },
     }));
 
@@ -296,14 +261,13 @@ export async function getEmpresasStats(
   res: Response
 ): Promise<void> {
   try {
-    const [empresas, solicitantes, equipos, tickets, visitas, trabajos] =
+    const [empresas, solicitantes, equipos, tickets, visitas] =
       await Promise.all([
         prisma.empresa.count(),
         prisma.solicitante.count(),
         prisma.equipo.count(),
         prisma.freshdeskTicket.count(),
         prisma.visita.count(),
-        prisma.detalleTrabajo.count(),
       ]);
 
     const ticketsAbiertos = await prisma.freshdeskTicket.count({
@@ -311,11 +275,6 @@ export async function getEmpresasStats(
     });
     const visitasPendientes = await prisma.visita.count({
       where: { status: EstadoVisita.PENDIENTE },
-    });
-    const trabajosPendientes = await prisma.detalleTrabajo.count({
-      where: {
-        estado: { equals: "PENDIENTE", mode: "insensitive" as Prisma.QueryMode },
-      },
     });
 
     res.json({
@@ -326,10 +285,8 @@ export async function getEmpresasStats(
         totalEquipos: equipos,
         totalTickets: tickets,
         totalVisitas: visitas,
-        totalTrabajos: trabajos,
         ticketsAbiertos,
         visitasPendientes,
-        trabajosPendientes,
       },
     });
   } catch (error) {
@@ -358,7 +315,7 @@ export async function getEmpresaById(
     }
 
     // Traer anexos por separado
-    const [detalle, solicitantes, tickets, visitas, trabajos] = await Promise.all([
+    const [detalle, solicitantes, tickets, visitas] = await Promise.all([
       prisma.detalleEmpresa.findUnique({ where: { empresa_id: id } }),
       prisma.solicitante.findMany({
         where: { empresaId: id },
@@ -373,11 +330,6 @@ export async function getEmpresaById(
         where: { empresaId: id },
         select: { id_visita: true, status: true, inicio: true, fin: true },
         orderBy: { inicio: "desc" },
-      }),
-      prisma.detalleTrabajo.findMany({
-        where: { empresa_id: id },
-        select: { id: true, estado: true, fecha_ingreso: true, fecha_egreso: true },
-        orderBy: { id: "desc" },
       }),
     ]);
 
@@ -424,7 +376,6 @@ export async function getEmpresaById(
         solicitantes: solicitantesConEquipos,
         tickets,
         visitas,
-        detalleTrabajos: trabajos,
       },
     });
   } catch (error) {
@@ -582,14 +533,13 @@ export async function deleteEmpresa(req: Request, res: Response): Promise<void> 
     }
 
     // Verificaciones de registros relacionados
-    const [solCount, tkCount, vsCount, trCount] = await Promise.all([
+    const [solCount, tkCount, vsCount] = await Promise.all([
       prisma.solicitante.count({ where: { empresaId: id } }),
       prisma.freshdeskTicket.count({ where: { empresaId: id } }),
       prisma.visita.count({ where: { empresaId: id } }),
-      prisma.detalleTrabajo.count({ where: { empresa_id: id } }),
     ]);
 
-    if (solCount > 0 || tkCount > 0 || vsCount > 0 || trCount > 0) {
+    if (solCount > 0 || tkCount > 0 || vsCount > 0) {
       res.status(400).json({
         success: false,
         error:
