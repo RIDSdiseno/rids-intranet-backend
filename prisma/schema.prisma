@@ -292,7 +292,7 @@ model Tecnico {
 model Visita {
   id_visita          Int          @id @default(autoincrement())
   empresaId          Int
-  tecnicoId          Int?
+  tecnicoId          Int
   solicitante        String
   inicio             DateTime
   fin                DateTime?
@@ -315,7 +315,7 @@ model Visita {
   ecografo           Boolean      @default(false)
   sucursalId         Int?
   empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
-  tecnico            Tecnico?      @relation(fields: [tecnicoId], references: [id_tecnico])
+  tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
   sucursal           Sucursal?    @relation(fields: [sucursalId], references: [id_sucursal])
 
