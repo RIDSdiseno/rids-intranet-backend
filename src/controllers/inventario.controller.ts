@@ -178,29 +178,40 @@ export async function exportInventarioForSharepoint(
     res: Response
 ): Promise<Response> {
     try {
-        const mesRaw = req.body?.mes;
+        const mes = req.body?.mes;
 
-        // valida mes (YYYY-MM)
-        const mes =
-            typeof mesRaw === "string" && /^\d{4}-\d{2}$/.test(mesRaw) ? mesRaw : null;
-
-        if (!mes) {
+        if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
             return res.status(400).json({ ok: false, error: "Mes requerido (YYYY-MM)" });
         }
 
         const equipos = await getInventarioByEmpresa({});
-        const buffer = buildInventarioExcel(equipos, mes);
 
-        // nombre seguro para SharePoint (sin caracteres raros)
-        const fileName = `Inventario_${mes}.xlsx`;
+        // 🔹 agrupar por empresa
+        const porEmpresa: Record<string, typeof equipos> = {};
+
+        for (const e of equipos) {
+            const empresa = e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA";
+            porEmpresa[empresa] ??= [];
+            porEmpresa[empresa].push(e);
+        }
+
+        // 🔹 generar un archivo por empresa
+        const archivos = Object.entries(porEmpresa).map(([empresa, items]) => {
+            const buffer = buildInventarioExcel(items, mes);
+
+            return {
+                empresa,
+                fileName: `Inventario_${empresa}_${mes}.xlsx`,
+                contentBase64: buffer.toString("base64"),
+            };
+        });
 
         return res.json({
             ok: true,
-            fileName,
-            contentBase64: buffer.toString("base64"),
+            archivos,
         });
     } catch (err) {
-        console.error("❌ ERROR EXPORT INVENTARIO SHAREPOINT:", err);
+        console.error(err);
         return res.status(500).json({ ok: false, error: "Error interno" });
     }
 }
