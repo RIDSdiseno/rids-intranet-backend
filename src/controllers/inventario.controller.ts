@@ -178,22 +178,29 @@ export async function exportInventarioForSharepoint(
     res: Response
 ): Promise<Response> {
     try {
-        const { mes } = req.body;
+        const mesRaw = req.body?.mes;
+
+        // valida mes (YYYY-MM)
+        const mes =
+            typeof mesRaw === "string" && /^\d{4}-\d{2}$/.test(mesRaw) ? mesRaw : null;
 
         if (!mes) {
-            return res.status(400).json({ ok: false, error: "Mes requerido" });
+            return res.status(400).json({ ok: false, error: "Mes requerido (YYYY-MM)" });
         }
 
-        if (false /* ejemplo */) {
-            return res.status(404).json({ ok: false, error: "No encontrado" });
-        }
+        const equipos = await getInventarioByEmpresa({});
+        const buffer = buildInventarioExcel(equipos, mes);
 
-        return res.json({ ok: true });
-    } catch (err) {
-        return res.status(500).json({
-            ok: false,
-            error: "Error interno",
+        // nombre seguro para SharePoint (sin caracteres raros)
+        const fileName = `Inventario_${mes}.xlsx`;
+
+        return res.json({
+            ok: true,
+            fileName,
+            contentBase64: buffer.toString("base64"),
         });
+    } catch (err) {
+        console.error("❌ ERROR EXPORT INVENTARIO SHAREPOINT:", err);
+        return res.status(500).json({ ok: false, error: "Error interno" });
     }
 }
-
