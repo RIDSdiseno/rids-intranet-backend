@@ -154,18 +154,19 @@ model ServicioGestioo {
 }
 
 model DetalleTrabajoGestioo {
-  id          Int              @id @default(autoincrement())
-  fecha       DateTime         @default(now())
-  tipoTrabajo String
-  descripcion String?
-  estado      String?          @default("pendiente")
-  notas       String?
-  area        AreaGestioo      @default(ENTRADA)
-  prioridad   PrioridadGestioo @default(NORMAL)
-  entidadId   Int?
-  productoId  Int?
-  servicioId  Int?
-  equipoId    Int?
+  id              Int              @id @default(autoincrement())
+  fecha           DateTime         @default(now())
+  tipoTrabajo     String
+  descripcion     String?
+  estado          String?          @default("pendiente")
+  notas           String?
+  area            AreaGestioo      @default(ENTRADA)
+  prioridad       PrioridadGestioo @default(NORMAL)
+  incluyeCargador Boolean          @default(false)
+  entidadId       Int?
+  productoId      Int?
+  servicioId      Int?
+  equipoId        Int?
 
   tecnicoId Int?
   tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
@@ -315,7 +316,7 @@ model Visita {
   ecografo           Boolean      @default(false)
   sucursalId         Int?
   empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
-  tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
+  tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
   sucursal           Sucursal?    @relation(fields: [sucursalId], references: [id_sucursal])
 

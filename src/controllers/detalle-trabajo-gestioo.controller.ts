@@ -38,6 +38,8 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 servicioId: data.servicioId ? Number(data.servicioId) : null,
                 equipoId: data.equipoId ? Number(data.equipoId) : null,
                 tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
+                incluyeCargador: data.incluyeCargador ?? false,
+
             },
             include: {
                 entidad: true,
@@ -162,6 +164,10 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
 
         if (data.tecnicoId !== undefined) {
             updateData.tecnicoId = data.tecnicoId ? Number(data.tecnicoId) : null;
+        }
+
+        if (data.incluyeCargador !== undefined) {
+            updateData.incluyeCargador = Boolean(data.incluyeCargador);
         }
 
         const detalleActualizado = await prisma.detalleTrabajoGestioo.update({

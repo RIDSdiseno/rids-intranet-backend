@@ -183,7 +183,7 @@ export async function createCotizacion(req: Request, res: Response) {
 
                             // 🔤 TEXTO
                             nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                            descripcion: i.descripcion?.trim() ?? "",
+                            descripcion: i.descripcion?.trim() || null,
 
                             cantidad: Number(i.cantidad ?? 1),
 
@@ -281,7 +281,7 @@ export async function updateCotizacion(req: Request, res: Response) {
 
                                 // 🔤 TEXTO
                                 nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                                descripcion: i.descripcion?.trim() ?? "",
+                                descripcion: i.descripcion?.trim() || null,
 
                                 cantidad: Number(i.cantidad ?? 1),
 

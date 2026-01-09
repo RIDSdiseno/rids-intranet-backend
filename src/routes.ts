@@ -12,6 +12,8 @@ import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 
+import inventarioRoutes from "./routes/inventario.routes.js";
+
 /* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
 import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
@@ -57,6 +59,8 @@ api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
 
 api.use("/tecnicos", tecnicosRouter);
+
+api.use("/inventario", inventarioRoutes);
 
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
