@@ -1,6 +1,8 @@
 import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
-/* ===== estilos por empresa ===== */
+/* ======================================================
+   🎨 Estilos por empresa
+====================================================== */
 function getEmpresaStyle(nombre) {
     const n = nombre.toLowerCase();
     if (n.includes("alianz"))
@@ -11,7 +13,8 @@ function getEmpresaStyle(nombre) {
         return { header: "FF059669", body: "FFD1FAE5" };
     return { header: "FF334155", body: "FFF1F5F9" };
 }
-function styleSheet(XLSX, ws, rows, cols, colors) {
+function styleSheet(ws, rows, cols, colors) {
+    // Header
     for (let c = 0; c < cols; c++) {
         const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
         if (!cell)
@@ -19,9 +22,10 @@ function styleSheet(XLSX, ws, rows, cols, colors) {
         cell.s = {
             fill: { fgColor: { rgb: colors.header } },
             font: { bold: true, color: { rgb: "FFFFFFFF" } },
-            alignment: { horizontal: "center" },
+            alignment: { horizontal: "center", vertical: "center", wrapText: true },
         };
     }
+    // Body
     for (let r = 1; r <= rows; r++) {
         for (let c = 0; c < cols; c++) {
             const cell = ws[XLSX.utils.encode_cell({ r, c })];
@@ -32,59 +36,126 @@ function styleSheet(XLSX, ws, rows, cols, colors) {
             };
         }
     }
+    // Autofiltro
     ws["!autofilter"] = {
         ref: XLSX.utils.encode_range({
             s: { r: 0, c: 0 },
             e: { r: rows, c: cols - 1 },
         }),
     };
+    // Anchos automáticos
+    ws["!cols"] = Array.from({ length: cols }).map(() => ({ wch: 18 }));
 }
-/* ===== controller ===== */
+/* ======================================================
+   🧠 Construcción del Excel (reutilizable)
+====================================================== */
+function buildInventarioExcel(equipos, mes) {
+    const porEmpresa = {};
+    for (const e of equipos) {
+        const empresa = e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA";
+        porEmpresa[empresa] ??= [];
+        porEmpresa[empresa].push(e);
+    }
+    const wb = XLSX.utils.book_new();
+    for (const [empresa, items] of Object.entries(porEmpresa)) {
+        const rows = items.map((e, i) => ({
+            "N°": i + 1,
+            "USUARIO": e.solicitante?.nombre ?? "",
+            "CORREO": e.solicitante?.email ?? "",
+            "SERIAL": e.serial ?? "",
+            "MARCA": e.marca ?? "",
+            "MODELO": e.modelo ?? "",
+            "CPU": e.procesador ?? "",
+            "RAM": e.ram ?? "",
+            "DISCO": e.disco ?? "",
+            "SO": e.equipo?.[0]?.so ?? "",
+            "OFFICE": e.equipo?.[0]?.office ?? "",
+            "TEAMVIEWER": e.equipo?.[0]?.teamViewer ?? "",
+            "MAC WIFI": e.equipo?.[0]?.macWifi ?? "",
+            "PROPIEDAD": e.propiedad ?? "",
+        }));
+        if (rows.length === 0)
+            continue;
+        const headers = [
+            "N°",
+            "USUARIO",
+            "CORREO",
+            "SERIAL",
+            "MARCA",
+            "MODELO",
+            "CPU",
+            "RAM",
+            "DISCO",
+            "SO",
+            "OFFICE",
+            "TEAMVIEWER",
+            "MAC WIFI",
+            "PROPIEDAD",
+        ];
+        const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+        styleSheet(ws, rows.length, headers.length, getEmpresaStyle(empresa));
+        XLSX.utils.book_append_sheet(wb, ws, empresa.substring(0, 31) // límite Excel
+        );
+    }
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+}
+/* ======================================================
+   📥 Export MANUAL (Front / Navegador)
+   GET /api/inventario/export
+====================================================== */
 export async function exportInventario(req, res) {
     try {
         const params = {};
-        if (req.query.empresaId)
-            params.empresaId = Number(req.query.empresaId);
-        const mes = typeof req.query.mes === "string" ? req.query.mes : "SIN_MES";
+        if (req.query.empresaId) {
+            const id = Number(req.query.empresaId);
+            if (Number.isNaN(id)) {
+                return res.status(400).json({ error: "empresaId inválido" });
+            }
+            params.empresaId = id;
+        }
+        const mes = typeof req.query.mes === "string" && /^\d{4}-\d{2}$/.test(req.query.mes)
+            ? req.query.mes
+            : "SIN_MES";
         const equipos = await getInventarioByEmpresa(params);
-        // Agrupar por empresa
-        const porEmpresa = {};
-        for (const e of equipos) {
-            const nombre = e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA";
-            porEmpresa[nombre] ??= [];
-            porEmpresa[nombre].push(e);
-        }
-        const wb = XLSX.utils.book_new();
-        for (const [empresa, items] of Object.entries(porEmpresa)) {
-            const rows = items.map((e, i) => ({
-                "N°": i + 1,
-                "USUARIO": e.solicitante?.nombre ?? "",
-                "CORREO": e.solicitante?.email ?? "",
-                "SERIAL": e.serial ?? "",
-                "MARCA": e.marca ?? "",
-                "MODELO": e.modelo ?? "",
-                "CPU": e.procesador ?? "",
-                "RAM": e.ram ?? "",
-                "DISCO": e.disco ?? "",
-                "SO": e.equipo?.[0]?.so ?? "",
-                "OFFICE": e.equipo?.[0]?.office ?? "",
-                "TEAMVIEWER": e.equipo?.[0]?.teamViewer ?? "",
-                "MAC WIFI": e.equipo?.[0]?.macWifi ?? "",
-                "PROPIEDAD": e.propiedad ?? "",
-            }));
-            const headers = Object.keys(rows[0] ?? {});
-            const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
-            styleSheet(XLSX, ws, rows.length, headers.length, getEmpresaStyle(empresa));
-            XLSX.utils.book_append_sheet(wb, ws, empresa.substring(0, 31));
-        }
-        const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+        const buffer = buildInventarioExcel(equipos, mes);
         res.setHeader("Content-Disposition", `attachment; filename=Inventario_${mes}.xlsx`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.send(buffer);
     }
     catch (err) {
-        console.error(err);
+        console.error("❌ ERROR EXPORT INVENTARIO:", err);
         res.status(500).json({ error: "Error exportando inventario" });
+    }
+}
+/* ======================================================
+   🤖 Export AUTOMÁTICO (Power Automate / SharePoint)
+   POST /api/inventario/export/sharepoint
+====================================================== */
+export async function exportInventarioForSharepoint(req, res) {
+    try {
+        const { mes, empresaId } = req.body;
+        if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
+            return res.status(400).json({ error: "Mes inválido (YYYY-MM)" });
+        }
+        const params = {};
+        if (typeof empresaId === "number") {
+            params.empresaId = empresaId;
+        }
+        const equipos = await getInventarioByEmpresa(params);
+        console.log("📦 MES:", mes);
+        console.log("🏢 empresaId:", empresaId);
+        console.log("📊 equipos.length:", equipos.length);
+        const buffer = buildInventarioExcel(equipos, mes);
+        res.json({
+            fileName: empresaId
+                ? `Inventario_empresa_${empresaId}_${mes}.xlsx`
+                : `Inventario_${mes}.xlsx`,
+            contentBase64: buffer.toString("base64"),
+        });
+    }
+    catch (err) {
+        console.error("❌ ERROR EXPORT SHAREPOINT:", err);
+        res.status(500).json({ error: "Error exportando a SharePoint" });
     }
 }
 //# sourceMappingURL=inventario.controller.js.map
