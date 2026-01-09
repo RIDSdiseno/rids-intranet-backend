@@ -158,7 +158,7 @@ export async function createCotizacion(req, res) {
                             tipo: i.tipo,
                             // 🔤 TEXTO
                             nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                            descripcion: i.descripcion?.trim() ?? "",
+                            descripcion: i.descripcion?.trim() || null,
                             cantidad: Number(i.cantidad ?? 1),
                             // 🔥 PRECIO REAL (CLP)
                             precio: precioCLP,
@@ -233,7 +233,7 @@ export async function updateCotizacion(req, res) {
                                 tipo: i.tipo,
                                 // 🔤 TEXTO
                                 nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                                descripcion: i.descripcion?.trim() ?? "",
+                                descripcion: i.descripcion?.trim() || null,
                                 cantidad: Number(i.cantidad ?? 1),
                                 // 🔥 PRECIO REAL (CLP)
                                 precio: precioCLP,

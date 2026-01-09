@@ -1,8 +1,10 @@
 import { Router } from "express";
-import { exportInventario } from "../controllers/inventario.controller.js";
+import { exportInventario, exportInventarioForSharepoint } from "../controllers/inventario.controller.js";
 
 const router = Router();
 
 router.get("/export", exportInventario);
+
+router.post("/export/sharepoint", exportInventarioForSharepoint);
 
 export default router;
