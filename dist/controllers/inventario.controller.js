@@ -120,11 +120,11 @@ export async function exportInventario(req, res) {
         const buffer = buildInventarioExcel(equipos, mes);
         res.setHeader("Content-Disposition", `attachment; filename=Inventario_${mes}.xlsx`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        res.send(buffer);
+        return res.send(buffer);
     }
     catch (err) {
         console.error("❌ ERROR EXPORT INVENTARIO:", err);
-        res.status(500).json({ error: "Error exportando inventario" });
+        return res.status(500).json({ error: "Error exportando inventario" });
     }
 }
 /* ======================================================
@@ -133,29 +133,20 @@ export async function exportInventario(req, res) {
 ====================================================== */
 export async function exportInventarioForSharepoint(req, res) {
     try {
-        const { mes, empresaId } = req.body;
-        if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
-            return res.status(400).json({ error: "Mes inválido (YYYY-MM)" });
+        const { mes } = req.body;
+        if (!mes) {
+            return res.status(400).json({ ok: false, error: "Mes requerido" });
         }
-        const params = {};
-        if (typeof empresaId === "number") {
-            params.empresaId = empresaId;
+        if (false /* ejemplo */) {
+            return res.status(404).json({ ok: false, error: "No encontrado" });
         }
-        const equipos = await getInventarioByEmpresa(params);
-        console.log("📦 MES:", mes);
-        console.log("🏢 empresaId:", empresaId);
-        console.log("📊 equipos.length:", equipos.length);
-        const buffer = buildInventarioExcel(equipos, mes);
-        res.json({
-            fileName: empresaId
-                ? `Inventario_empresa_${empresaId}_${mes}.xlsx`
-                : `Inventario_${mes}.xlsx`,
-            contentBase64: buffer.toString("base64"),
-        });
+        return res.json({ ok: true });
     }
     catch (err) {
-        console.error("❌ ERROR EXPORT SHAREPOINT:", err);
-        res.status(500).json({ error: "Error exportando a SharePoint" });
+        return res.status(500).json({
+            ok: false,
+            error: "Error interno",
+        });
     }
 }
 //# sourceMappingURL=inventario.controller.js.map
