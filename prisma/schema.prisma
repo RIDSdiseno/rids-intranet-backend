@@ -1,593 +1,603 @@
 generator client {
-  provider = "prisma-client-js"
+    provider = "prisma-client-js"
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
-  relationMode      = "prisma"
+    provider          = "postgresql"
+    url               = env("DATABASE_URL")
+    shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+    relationMode      = "prisma"
 }
 
 model Empresa {
-  id_empresa      Int                   @id @default(autoincrement())
-  nombre          String                @unique
-  tieneSucursales Boolean               @default(false)
-  solicitantes    Solicitante[]
-  visitas         Visita[]              @relation("Empresa_Visita")
-  tickets         FreshdeskTicket[]
-  companyMaps     FreshdeskCompanyMap[]
-  detalleEmpresa  DetalleEmpresa?
-  sucursales      Sucursal[]
+    id_empresa      Int                   @id @default(autoincrement())
+    nombre          String                @unique
+    tieneSucursales Boolean               @default(false)
+    solicitantes    Solicitante[]
+    visitas         Visita[]              @relation("Empresa_Visita")
+    tickets         FreshdeskTicket[]
+    companyMaps     FreshdeskCompanyMap[]
+    detalleEmpresa  DetalleEmpresa?
+    sucursales      Sucursal[]
 }
 
 model Sucursal {
-  id_sucursal Int         @id @default(autoincrement())
-  nombre      String
-  direccion   String?
-  telefono    String?
-  empresaId   Int
-  empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-  historiales Historial[]
-  visitas     Visita[]
+    id_sucursal Int         @id @default(autoincrement())
+    nombre      String
+    direccion   String?
+    telefono    String?
+    empresaId   Int
+    empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+    historiales Historial[]
+    visitas     Visita[]
 
-  @@index([empresaId])
+    @@index([empresaId])
 }
 
 model DetalleEmpresa {
-  id         Int     @id @default(autoincrement())
-  rut        String  @unique
-  direccion  String
-  telefono   String
-  email      String
-  empresa_id Int     @unique
-  empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
+    id         Int     @id @default(autoincrement())
+    rut        String  @unique
+    direccion  String
+    telefono   String
+    email      String
+    empresa_id Int     @unique
+    empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
 
-  @@map("detalle_empresas")
+    @@map("detalle_empresas")
 }
 
 model Solicitante {
-  id_solicitante  Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre          String
-  email           String?
-  telefono        String?
-  empresaId       Int
-  clienteId       Int?                    @unique
-  googleUserId    String?                 @unique
-  isActive        Boolean                 @default(true)
-  microsoftUserId String?                 @unique
-  accountType     AccountType?
-  empresa         Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos         Equipo[]
-  visitas         Visita[]                @relation("Solicitante_Visita")
-  historiales     Historial[]             @relation("Solicitante_Historial")
-  tickets         FreshdeskTicket[]
-  requesterMaps   FreshdeskRequesterMap[]
-  msLicenses      SolicitanteMsLicense[]
+    id_solicitante  Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+    nombre          String
+    email           String?
+    telefono        String?
+    empresaId       Int
+    clienteId       Int?                    @unique
+    googleUserId    String?                 @unique
+    isActive        Boolean                 @default(true)
+    microsoftUserId String?                 @unique
+    accountType     AccountType?
+    empresa         Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+    equipos         Equipo[]
+    visitas         Visita[]                @relation("Solicitante_Visita")
+    historiales     Historial[]             @relation("Solicitante_Historial")
+    tickets         FreshdeskTicket[]
+    requesterMaps   FreshdeskRequesterMap[]
+    msLicenses      SolicitanteMsLicense[]
 
-  @@index([empresaId])
-  @@index([isActive])
-  @@index([accountType])
+    @@index([empresaId])
+    @@index([isActive])
+    @@index([accountType])
 }
 
 model MsSku {
-  skuId         String                 @id
-  skuPartNumber String
-  displayName   String?
-  assignments   SolicitanteMsLicense[]
+    skuId         String                 @id
+    skuPartNumber String
+    displayName   String?
+    assignments   SolicitanteMsLicense[]
 }
 
 model SolicitanteMsLicense {
-  id            Int         @id @default(autoincrement())
-  solicitanteId Int
-  skuId         String
-  assignedAt    DateTime?   @default(now())
-  solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: Cascade)
-  sku           MsSku       @relation(fields: [skuId], references: [skuId], onDelete: Cascade)
+    id            Int         @id @default(autoincrement())
+    solicitanteId Int
+    skuId         String
+    assignedAt    DateTime?   @default(now())
+    solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: Cascade)
+    sku           MsSku       @relation(fields: [skuId], references: [skuId], onDelete: Cascade)
 
-  @@unique([solicitanteId, skuId])
-  @@index([skuId])
-  @@index([solicitanteId])
+    @@unique([solicitanteId, skuId])
+    @@index([skuId])
+    @@index([solicitanteId])
 }
 
 model EntidadGestioo {
-  id               Int                     @id @default(autoincrement())
-  nombre           String
-  rut              String?                 @unique
-  correo           String?
-  telefono         String?
-  direccion        String?
-  tipo             TipoEntidadGestioo      @default(EMPRESA)
-  origen           OrigenGestioo           @default(RIDS)
-  productos        ProductoGestioo[]
-  trabajos         DetalleTrabajoGestioo[]
-  servicioGestioos ServicioGestioo[]
-  cotizaciones     CotizacionGestioo[]
+    id               Int                     @id @default(autoincrement())
+    nombre           String
+    rut              String?                 @unique
+    correo           String?
+    telefono         String?
+    direccion        String?
+    tipo             TipoEntidadGestioo      @default(EMPRESA)
+    origen           OrigenGestioo           @default(RIDS)
+    productos        ProductoGestioo[]
+    trabajos         DetalleTrabajoGestioo[]
+    servicioGestioos ServicioGestioo[]
+    cotizaciones     CotizacionGestioo[]
 }
 
 model ProductoGestioo {
-  id            Int                     @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  tipo          String                  @default("producto")
-  categoria     String?
-  serie         String?                 @unique
-  estado        String?                 @default("disponible")
-  precio        Float?
-  stock         Int?                    @default(0)
-  fechaIngreso  DateTime?               @default(now())
-  garantiaMeses Int?
-  activo        Boolean                 @default(true)
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
-  marca         MarcaGestioo?           @relation(fields: [marcaId], references: [id])
-  modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
-  entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-  trabajos      DetalleTrabajoGestioo[]
+    id            Int                     @id @default(autoincrement())
+    nombre        String
+    descripcion   String?
+    tipo          String                  @default("producto")
+    categoria     String?
+    serie         String?                 @unique
+    estado        String?                 @default("disponible")
+    precio        Float?
+    stock         Int?                    @default(0)
+    fechaIngreso  DateTime?               @default(now())
+    garantiaMeses Int?
+    activo        Boolean                 @default(true)
+    marcaId       Int?
+    modeloId      Int?
+    entidadId     Int?
+    porcGanancia  Float?
+    precioTotal   Float?
+    imagen        String?
+    publicId      String?
+    marca         MarcaGestioo?           @relation(fields: [marcaId], references: [id])
+    modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
+    entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+    trabajos      DetalleTrabajoGestioo[]
 
-  @@index([marcaId])
-  @@index([modeloId])
-  @@index([entidadId])
+    @@index([marcaId])
+    @@index([modeloId])
+    @@index([entidadId])
 }
 
 model ServicioGestioo {
-  id            Int                     @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  tipo          String                  @default("servicio")
-  categoria     String?
-  precio        Float?
-  duracionHoras Float?
-  estado        String?                 @default("disponible")
-  activo        Boolean                 @default(true)
-  fechaCreacion DateTime?               @default(now())
-  entidadId     Int?
-  entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-  trabajos      DetalleTrabajoGestioo[]
+    id            Int                     @id @default(autoincrement())
+    nombre        String
+    descripcion   String?
+    tipo          String                  @default("servicio")
+    categoria     String?
+    precio        Float?
+    duracionHoras Float?
+    estado        String?                 @default("disponible")
+    activo        Boolean                 @default(true)
+    fechaCreacion DateTime?               @default(now())
+    entidadId     Int?
+    entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+    trabajos      DetalleTrabajoGestioo[]
 
-  @@index([entidadId])
+    @@index([entidadId])
 }
 
 model DetalleTrabajoGestioo {
-  id              Int              @id @default(autoincrement())
-  fecha           DateTime         @default(now())
-  tipoTrabajo     String
-  descripcion     String?
-  estado          String?          @default("pendiente")
-  notas           String?
-  area            AreaGestioo      @default(ENTRADA)
-  prioridad       PrioridadGestioo @default(NORMAL)
-  incluyeCargador Boolean          @default(false)
-  entidadId       Int?
-  productoId      Int?
-  servicioId      Int?
-  equipoId        Int?
+    id              Int              @id @default(autoincrement())
+    fecha           DateTime         @default(now())
+    tipoTrabajo     String
+    descripcion     String?
+    estado          String?          @default("pendiente")
+    notas           String?
+    area            AreaGestioo      @default(ENTRADA)
+    prioridad       PrioridadGestioo @default(NORMAL)
+    incluyeCargador Boolean          @default(false)
+    entidadId       Int?
+    productoId      Int?
+    servicioId      Int?
+    equipoId        Int?
 
-  tecnicoId Int?
-  tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
-  entidad   EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto  ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio  ServicioGestioo? @relation(fields: [servicioId], references: [id])
-  equipo    Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+    tecnicoId Int?
+    tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
+    entidad   EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+    producto  ProductoGestioo? @relation(fields: [productoId], references: [id])
+    servicio  ServicioGestioo? @relation(fields: [servicioId], references: [id])
+    equipo    Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
 
-  @@index([productoId])
-  @@index([servicioId])
-  @@index([entidadId])
-  @@index([tecnicoId])
+    @@index([productoId])
+    @@index([servicioId])
+    @@index([entidadId])
+    @@index([tecnicoId])
 }
 
 model MarcaGestioo {
-  id        Int               @id @default(autoincrement())
-  nombre    String
-  modelos   ModeloGestioo[]
-  productos ProductoGestioo[]
+    id        Int               @id @default(autoincrement())
+    nombre    String
+    modelos   ModeloGestioo[]
+    productos ProductoGestioo[]
 }
 
 model ModeloGestioo {
-  id        Int               @id @default(autoincrement())
-  nombre    String
-  marcaId   Int
-  marca     MarcaGestioo      @relation(fields: [marcaId], references: [id])
-  productos ProductoGestioo[]
+    id        Int               @id @default(autoincrement())
+    nombre    String
+    marcaId   Int
+    marca     MarcaGestioo      @relation(fields: [marcaId], references: [id])
+    productos ProductoGestioo[]
 
-  @@index([marcaId])
+    @@index([marcaId])
 }
 
 model Equipo {
-  id_equipo     Int     @id @default(autoincrement())
-  idSolicitante Int?
-  serial        String? @unique
-  marca         String
-  modelo        String
+    id_equipo     Int     @id @default(autoincrement())
+    idSolicitante Int?
+    serial        String? @unique
+    marca         String
+    modelo        String
 
-  tipo TipoEquipo @default(GENERICO)
+    tipo TipoEquipo @default(GENERICO)
 
-  procesador             String?
-  ram                    String?
-  disco                  String?
-  propiedad              String                  @default("ASUR")
-  solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
-  equipo                 DetalleEquipo[]
-  detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
+    procesador             String?
+    ram                    String?
+    disco                  String?
+    propiedad              String                  @default("ASUR")
+    solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
+    equipo                 DetalleEquipo[]
+    detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
-  @@index([idSolicitante])
+    @@index([idSolicitante])
 }
 
 model DetalleEquipo {
-  id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo   Int
-  macWifi    String?
-  so         String?
-  tipoDd     String?
-  estadoAlm  String?
-  office     String?
-  teamViewer String?
-  claveTv    String?
-  revisado   String?
-  equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
+    id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
+    idEquipo   Int
+    macWifi    String?
+    so         String?
+    tipoDd     String?
+    estadoAlm  String?
+    office     String?
+    teamViewer String?
+    claveTv    String?
+    revisado   String?
+    equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
 
-  @@index([idEquipo])
+    @@index([idEquipo])
 }
 
 model Historial {
-  tecnicoId          Int
-  solicitante        String
-  inicio             DateTime
-  fin                DateTime
-  realizado          String?
-  solicitanteId      Int
-  actualizaciones    Boolean     @default(false)
-  antivirus          Boolean     @default(false)
-  ccleaner           Boolean     @default(false)
-  estadoDisco        Boolean     @default(false)
-  licenciaOffice     Boolean     @default(false)
-  licenciaWindows    Boolean     @default(false)
-  mantenimientoReloj Boolean     @default(false)
-  rendimientoEquipo  Boolean     @default(false)
-  id                 Int         @id @default(autoincrement()) @map("id_historial")
-  direccion_visita   String?
-  ecografo           Boolean     @default(false)
-  sucursalId         Int?
-  tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
-  sucursal           Sucursal?   @relation(fields: [sucursalId], references: [id_sucursal])
+    tecnicoId          Int
+    solicitante        String
+    inicio             DateTime
+    fin                DateTime
+    realizado          String?
+    solicitanteId      Int
+    actualizaciones    Boolean     @default(false)
+    antivirus          Boolean     @default(false)
+    ccleaner           Boolean     @default(false)
+    estadoDisco        Boolean     @default(false)
+    licenciaOffice     Boolean     @default(false)
+    licenciaWindows    Boolean     @default(false)
+    mantenimientoReloj Boolean     @default(false)
+    rendimientoEquipo  Boolean     @default(false)
+    id                 Int         @id @default(autoincrement()) @map("id_historial")
+    direccion_visita   String?
+    ecografo           Boolean     @default(false)
+    sucursalId         Int?
+    tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
+    solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
+    sucursal           Sucursal?   @relation(fields: [sucursalId], references: [id_sucursal])
 
-  @@index([tecnicoId, fin(sort: Desc)])
-  @@index([solicitanteId])
-  @@index([sucursalId])
+    @@index([tecnicoId, fin(sort: Desc)])
+    @@index([solicitanteId])
+    @@index([sucursalId])
 }
 
 model RefreshToken {
-  id                Int       @id @default(autoincrement())
-  userId            Int
-  rtHash            String
-  createdAt         DateTime  @default(now())
-  expiresAt         DateTime
-  revokedAt         DateTime?
-  replacedByTokenId Int?
-  userAgent         String?
-  ip                String?
-  user              Tecnico   @relation(fields: [userId], references: [id_tecnico])
+    id                Int       @id @default(autoincrement())
+    userId            Int
+    rtHash            String
+    createdAt         DateTime  @default(now())
+    expiresAt         DateTime
+    revokedAt         DateTime?
+    replacedByTokenId Int?
+    userAgent         String?
+    ip                String?
+    user              Tecnico   @relation(fields: [userId], references: [id_tecnico])
 
-  @@index([rtHash])
-  @@index([userId])
+    @@index([rtHash])
+    @@index([userId])
 }
 
 model Tecnico {
-  id_tecnico      Int                     @id @default(autoincrement())
-  nombre          String
-  email           String                  @unique
-  passwordHash    String
-  status          Boolean                 @default(true)
-  tokens          RefreshToken[]
-  historiales     Historial[]
-  visitas         Visita[]
-  detalleTrabajos DetalleTrabajoGestioo[]
+    id_tecnico      Int                     @id @default(autoincrement())
+    nombre          String
+    email           String                  @unique
+    passwordHash    String
+    status          Boolean                 @default(true)
+    tokens          RefreshToken[]
+    historiales     Historial[]
+    visitas         Visita[]
+    detalleTrabajos DetalleTrabajoGestioo[]
+    entregas        Entrega[]
 }
 
 model Visita {
-  id_visita          Int          @id @default(autoincrement())
-  empresaId          Int
-  tecnicoId          Int
-  solicitante        String
-  inicio             DateTime
-  fin                DateTime?
-  confImpresoras     Boolean      @default(false)
-  confTelefonos      Boolean      @default(false)
-  confPiePagina      Boolean      @default(false)
-  otros              Boolean      @default(false)
-  otrosDetalle       String?
-  status             EstadoVisita @default(PENDIENTE)
-  solicitanteId      Int?
-  actualizaciones    Boolean      @default(false)
-  antivirus          Boolean      @default(false)
-  ccleaner           Boolean      @default(false)
-  estadoDisco        Boolean      @default(false)
-  licenciaOffice     Boolean      @default(false)
-  licenciaWindows    Boolean      @default(false)
-  mantenimientoReloj Boolean      @default(false)
-  rendimientoEquipo  Boolean      @default(false)
-  direccion_visita   String?
-  ecografo           Boolean      @default(false)
-  sucursalId         Int?
-  empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
-  tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
-  sucursal           Sucursal?    @relation(fields: [sucursalId], references: [id_sucursal])
+    id_visita          Int          @id @default(autoincrement())
+    empresaId          Int
+    tecnicoId          Int
+    solicitante        String
+    inicio             DateTime
+    fin                DateTime?
+    confImpresoras     Boolean      @default(false)
+    confTelefonos      Boolean      @default(false)
+    confPiePagina      Boolean      @default(false)
+    otros              Boolean      @default(false)
+    otrosDetalle       String?
+    status             EstadoVisita @default(PENDIENTE)
+    solicitanteId      Int?
+    actualizaciones    Boolean      @default(false)
+    antivirus          Boolean      @default(false)
+    ccleaner           Boolean      @default(false)
+    estadoDisco        Boolean      @default(false)
+    licenciaOffice     Boolean      @default(false)
+    licenciaWindows    Boolean      @default(false)
+    mantenimientoReloj Boolean      @default(false)
+    rendimientoEquipo  Boolean      @default(false)
+    direccion_visita   String?
+    ecografo           Boolean      @default(false)
+    sucursalId         Int?
+    empresa            Empresa      @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
+    tecnico            Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
+    solicitanteRef     Solicitante? @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
+    sucursal           Sucursal?    @relation(fields: [sucursalId], references: [id_sucursal])
 
-  @@index([empresaId])
-  @@index([tecnicoId])
-  @@index([solicitanteId])
-  @@index([sucursalId])
+    @@index([empresaId])
+    @@index([tecnicoId])
+    @@index([solicitanteId])
+    @@index([sucursalId])
 }
 
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskCompanyMap {
-  companyId BigInt  @id
-  empresaId Int
-  domain    String?
-  empresa   Empresa @relation(fields: [empresaId], references: [id_empresa])
+    companyId BigInt  @id
+    empresaId Int
+    domain    String?
+    empresa   Empresa @relation(fields: [empresaId], references: [id_empresa])
 
-  @@index([empresaId])
-  @@index([domain])
+    @@index([empresaId])
+    @@index([domain])
 }
 
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskRequesterMap {
-  requesterId   BigInt      @id
-  solicitanteId Int
-  empresaId     Int
-  solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
+    requesterId   BigInt      @id
+    solicitanteId Int
+    empresaId     Int
+    solicitante   Solicitante @relation(fields: [solicitanteId], references: [id_solicitante])
 
-  @@index([empresaId])
-  @@index([solicitanteId])
+    @@index([empresaId])
+    @@index([solicitanteId])
 }
 
 /// * CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester)
 model FreshdeskTicket {
-  id                BigInt           @id
-  subject           String
-  status            Int
-  priority          Int
-  type              String?
-  requesterEmail    String?
-  createdAt         DateTime
-  updatedAt         DateTime
-  source            String?
-  capturedAt        DateTime?
-  empresaId         Int?
-  solicitanteId     Int?
-  ticketOrgId       Int?
-  ticketRequesterId Int?
-  empresa           Empresa?         @relation(fields: [empresaId], references: [id_empresa])
-  solicitante       Solicitante?     @relation(fields: [solicitanteId], references: [id_solicitante])
-  ticketOrg         TicketOrg?       @relation(fields: [ticketOrgId], references: [id])
-  ticketRequester   TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
+    id                BigInt           @id
+    subject           String
+    status            Int
+    priority          Int
+    type              String?
+    requesterEmail    String?
+    createdAt         DateTime
+    updatedAt         DateTime
+    source            String?
+    capturedAt        DateTime?
+    empresaId         Int?
+    solicitanteId     Int?
+    ticketOrgId       Int?
+    ticketRequesterId Int?
+    empresa           Empresa?         @relation(fields: [empresaId], references: [id_empresa])
+    solicitante       Solicitante?     @relation(fields: [solicitanteId], references: [id_solicitante])
+    ticketOrg         TicketOrg?       @relation(fields: [ticketOrgId], references: [id])
+    ticketRequester   TicketRequester? @relation(fields: [ticketRequesterId], references: [id])
 
-  @@index([empresaId])
-  @@index([solicitanteId])
-  @@index([ticketOrgId])
-  @@index([ticketRequesterId])
-  @@index([requesterEmail])
-  @@index([createdAt])
+    @@index([empresaId])
+    @@index([solicitanteId])
+    @@index([ticketOrgId])
+    @@index([ticketRequesterId])
+    @@index([requesterEmail])
+    @@index([createdAt])
 }
 
 /// * Agrupación lógica de tickets (no toca tu Empresa)
 model TicketOrg {
-  id         Int               @id @default(autoincrement())
-  name       String            @unique
-  notes      String?
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
-  maps       FdSourceMap[]
-  tickets    FreshdeskTicket[]
-  requesters TicketRequester[]
+    id         Int               @id @default(autoincrement())
+    name       String            @unique
+    notes      String?
+    createdAt  DateTime          @default(now())
+    updatedAt  DateTime          @updatedAt
+    maps       FdSourceMap[]
+    tickets    FreshdeskTicket[]
+    requesters TicketRequester[]
 }
 
 /// * Mapa domain/companyId → TicketOrg
 model FdSourceMap {
-  id          Int       @id @default(autoincrement())
-  companyId   BigInt?   @unique
-  domain      String?   @unique
-  ticketOrgId Int
-  ticketOrg   TicketOrg @relation(fields: [ticketOrgId], references: [id])
+    id          Int       @id @default(autoincrement())
+    companyId   BigInt?   @unique
+    domain      String?   @unique
+    ticketOrgId Int
+    ticketOrg   TicketOrg @relation(fields: [ticketOrgId], references: [id])
 
-  @@index([ticketOrgId])
+    @@index([ticketOrgId])
 }
 
 /// * NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId)
 model TicketRequester {
-  id            Int               @id @default(autoincrement())
-  name          String
-  email         String?           @unique
-  phone         String?
-  fdRequesterId BigInt?           @unique
-  ticketOrgId   Int?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  ticketOrg     TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
-  tickets       FreshdeskTicket[]
+    id            Int               @id @default(autoincrement())
+    name          String
+    email         String?           @unique
+    phone         String?
+    fdRequesterId BigInt?           @unique
+    ticketOrgId   Int?
+    createdAt     DateTime          @default(now())
+    updatedAt     DateTime          @updatedAt
+    ticketOrg     TicketOrg?        @relation(fields: [ticketOrgId], references: [id])
+    tickets       FreshdeskTicket[]
 
-  @@index([ticketOrgId])
+    @@index([ticketOrgId])
 }
 
 model CotizacionGestioo {
-  id                    Int                     @id @default(autoincrement())
-  fecha                 DateTime                @default(now())
-  estado                EstadoCotizacionGestioo @default(BORRADOR)
-  tipo                  TipoCotizacionGestioo   @default(CLIENTE)
-  entidadId             Int?
-  total                 Float                   @default(0)
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
-  iva                   Float                   @default(0)
-  moneda                MonedaGestioo           @default(CLP)
-  subtotal              Float                   @default(0)
-  descuentos            Float                   @default(0)
-  tasaCambio            Float?
-  comentariosCotizacion String?
-  personaResponsable    String?
-  imagen                String?
-  items                 CotizacionItemGestioo[]
-  entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+    id                    Int                     @id @default(autoincrement())
+    fecha                 DateTime                @default(now())
+    estado                EstadoCotizacionGestioo @default(BORRADOR)
+    tipo                  TipoCotizacionGestioo   @default(CLIENTE)
+    entidadId             Int?
+    total                 Float                   @default(0)
+    createdAt             DateTime                @default(now())
+    updatedAt             DateTime                @updatedAt
+    iva                   Float                   @default(0)
+    moneda                MonedaGestioo           @default(CLP)
+    subtotal              Float                   @default(0)
+    descuentos            Float                   @default(0)
+    tasaCambio            Float?
+    comentariosCotizacion String?
+    personaResponsable    String?
+    imagen                String?
+    items                 CotizacionItemGestioo[]
+    entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
 
-  @@index([entidadId])
+    @@index([entidadId])
 }
 
 model CotizacionItemGestioo {
-  id                Int               @id @default(autoincrement())
-  cotizacionId      Int
-  tipo              ItemTipoGestioo
-  descripcion       String
-  cantidad          Int               @default(1)
-  precio            Float             @default(0)
-  porcentaje        Float?
-  createdAt         DateTime          @default(now())
-  sku               String?
-  tieneIVA          Boolean           @default(false)
-  tieneDescuento    Boolean           @default(false)
-  imagen            String?
-  porcGanancia      Float?
-  precioCosto       Float?
-  nombre            String?
-  precioOriginalCLP Float?
-  cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+    id                Int               @id @default(autoincrement())
+    cotizacionId      Int
+    tipo              ItemTipoGestioo
+    descripcion       String
+    cantidad          Int               @default(1)
+    precio            Float             @default(0)
+    porcentaje        Float?
+    createdAt         DateTime          @default(now())
+    sku               String?
+    tieneIVA          Boolean           @default(false)
+    tieneDescuento    Boolean           @default(false)
+    imagen            String?
+    porcGanancia      Float?
+    precioCosto       Float?
+    nombre            String?
+    precioOriginalCLP Float?
+    cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
 }
 
 model Entrega {
-  id_entrega     Int      @id @default(autoincrement())
-  empresaNombre  String
-  receptorNombre String
-  fecha          DateTime @default(now())
+    id_entrega     Int      @id @default(autoincrement())
+    empresaNombre  String
+    receptorNombre String
+    fecha          DateTime @default(now())
+
+    tecnicoId Int?
+    tecnico   Tecnico? @relation(fields: [tecnicoId], references: [id_tecnico])
+
+    evidencias EvidenciaEntrega[]
+
+    @@index([tecnicoId])
 }
 
 model EvidenciaEntrega {
-  id        Int                  @id @default(autoincrement())
-  entregaId Int
-  tipo      TipoEvidenciaEntrega
-  url       String
-  publicId  String               @unique
-  formato   String
-  bytes     Int
-  creadoEn  DateTime             @default(now())
+    id        Int                  @id @default(autoincrement())
+    entregaId Int
+    tipo      TipoEvidenciaEntrega
+    url       String
+    publicId  String               @unique
+    formato   String
+    bytes     Int
+    creadoEn  DateTime             @default(now())
 
-  @@index([entregaId])
-  @@index([tipo])
+    entrega Entrega @relation(fields: [entregaId], references: [id_entrega], onDelete: Cascade)
+
+    @@index([entregaId])
+    @@index([tipo])
 }
 
 enum MonedaGestioo {
-  CLP
-  USD
+    CLP
+    USD
 }
 
 enum AccountType {
-  google
-  microsoft
+    google
+    microsoft
 }
 
 enum Prioridad {
-  baja
-  normal
-  alta
+    baja
+    normal
+    alta
 }
 
 enum EstadoVisita {
-  PENDIENTE
-  COMPLETADA
-  CANCELADA
+    PENDIENTE
+    COMPLETADA
+    CANCELADA
 }
 
 enum Area {
-  entrada
-  domicilio
-  reparacion
-  salida
+    entrada
+    domicilio
+    reparacion
+    salida
 }
 
 enum TipoEntidadGestioo {
-  PERSONA
-  EMPRESA
+    PERSONA
+    EMPRESA
 }
 
 enum EstadoTrabajoGestioo {
-  PENDIENTE
-  EN_PROCESO
-  FINALIZADO
-  CANCELADO
+    PENDIENTE
+    EN_PROCESO
+    FINALIZADO
+    CANCELADO
 }
 
 enum AreaGestioo {
-  ENTRADA
-  DOMICILIO
-  REPARACION
-  SALIDA
+    ENTRADA
+    DOMICILIO
+    REPARACION
+    SALIDA
 }
 
 enum PrioridadGestioo {
-  BAJA
-  NORMAL
-  ALTA
+    BAJA
+    NORMAL
+    ALTA
 }
 
 enum OrigenGestioo {
-  RIDS
-  ECONNET
-  OTRO
+    RIDS
+    ECONNET
+    OTRO
 }
 
 enum EstadoCotizacionGestioo {
-  BORRADOR
-  GENERADA
-  ENVIADA
-  APROBADA
-  RECHAZADA
+    BORRADOR
+    GENERADA
+    ENVIADA
+    APROBADA
+    RECHAZADA
 }
 
 enum TipoCotizacionGestioo {
-  CLIENTE
-  INTERNA
-  PROVEEDOR
+    CLIENTE
+    INTERNA
+    PROVEEDOR
 }
 
 enum ItemTipoGestioo {
-  PRODUCTO
-  SERVICIO
-  ADICIONAL
+    PRODUCTO
+    SERVICIO
+    ADICIONAL
 }
 
 enum TipoEvidenciaEntrega {
-  FOTO
-  FIRMA
+    FOTO
+    FIRMA
 }
 
 // TIPOS EQUIPOS
 enum TipoEquipo {
-  GENERICO
-  NOTEBOOK
-  ALL_IN_ONE
-  DESKTOP
-  CPU
-  EQUIPO_ARMADO
+    GENERICO
+    NOTEBOOK
+    ALL_IN_ONE
+    DESKTOP
+    CPU
+    EQUIPO_ARMADO
 
-  IMPRESORA
-  SCANNER
-  LASER
-  LED
+    IMPRESORA
+    SCANNER
+    LASER
+    LED
 
-  MONITOR
-  NAS
-  ROUTER
+    MONITOR
+    NAS
+    ROUTER
 
-  DISCO_DURO_EXTERNO
-  CARGADOR
-  INSUMOS_COMPUTACIONALES
+    DISCO_DURO_EXTERNO
+    CARGADOR
+    INSUMOS_COMPUTACIONALES
 
-  RELOJ_CONTROL
+    RELOJ_CONTROL
 
-  OTRO
+    OTRO
 }
