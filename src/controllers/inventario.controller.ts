@@ -186,6 +186,14 @@ export async function exportInventarioForSharepoint(
 
         const equipos = await getInventarioByEmpresa({});
 
+        // 🔹 validar que haya inventario
+        if (!equipos || equipos.length === 0) {
+            return res.status(404).json({
+                ok: false,
+                error: "No hay inventario para exportar"
+            });
+        }
+
         // 🔹 agrupar por empresa
         const porEmpresa: Record<string, typeof equipos> = {};
 
@@ -195,23 +203,95 @@ export async function exportInventarioForSharepoint(
             porEmpresa[empresa].push(e);
         }
 
+        // 🔹 validar que haya empresas con inventario
+        if (Object.keys(porEmpresa).length === 0) {
+            return res.status(404).json({
+                ok: false,
+                error: "No se encontraron empresas con inventario"
+            });
+        }
+
         // 🔹 generar un archivo por empresa
-        const archivos = Object.entries(porEmpresa).map(([empresa, items]) => {
-            const buffer = buildInventarioExcel(items, mes);
+        const archivos = Object.entries(porEmpresa)
+            .filter(([_, items]) => items.length > 0)
+            .map(([empresa, items]) => {
+                const buffer = buildInventarioExcel(items, mes);
 
-            return {
-                empresa,
-                fileName: `Inventario_${empresa}_${mes}.xlsx`,
-                contentBase64: buffer.toString("base64"),
-            };
-        });
+                return {
+                    empresa,
+                    fileName: `Inventario_${empresa}_${mes}.xlsx`,
+                    contentBase64: buffer.toString("base64"),
+                };
+            });
 
+        // 🔹 validar que se hayan generado archivos
+        if (archivos.length === 0) {
+            return res.status(404).json({
+                ok: false,
+                error: "No se generaron archivos de inventario"
+            });
+        }
+
+        // 🔹 responder con los archivos generados
         return res.json({
             ok: true,
-            archivos,
+            totalArchivos: archivos.length,
+            empresas: archivos.map(a => a.empresa),
+            archivos
         });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ ok: false, error: "Error interno" });
     }
 }
+
+// ======================================================
+/* 📋 Obtener Inventario
+   GET /api/inventario
+====================================================== */
+export async function getInventario(
+    req: Request,
+    res: Response
+): Promise<Response> {
+    try {
+        const params: { empresaId?: number } = {};
+
+        if (req.query.empresaId) {
+            const id = Number(req.query.empresaId);
+            if (Number.isNaN(id)) {
+                return res.status(400).json({ error: "empresaId inválido" });
+            }
+            params.empresaId = id;
+        }
+
+        const equipos = await getInventarioByEmpresa(params);
+
+        const data = equipos.map(e => ({
+            id_equipo: e.id_equipo,
+            empresa: e.solicitante?.empresa?.nombre ?? null,
+            usuario: e.solicitante?.nombre ?? null,
+            correo: e.solicitante?.email ?? null,
+            serial: e.serial,
+            marca: e.marca,
+            modelo: e.modelo,
+            procesador: e.procesador,
+            ram: e.ram,
+            disco: e.disco,
+            so: e.equipo?.[0]?.so ?? null,
+            office: e.equipo?.[0]?.office ?? null,
+            teamViewer: e.equipo?.[0]?.teamViewer ?? null,
+            macWifi: e.equipo?.[0]?.macWifi ?? null,
+            propiedad: e.propiedad
+        }));
+
+        return res.json({
+            ok: true,
+            total: data.length,
+            data
+        });
+    } catch (err) {
+        console.error("❌ ERROR GET INVENTARIO:", err);
+        return res.status(500).json({ ok: false, error: "Error obteniendo inventario" });
+    }
+}
+
