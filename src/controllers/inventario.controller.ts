@@ -64,7 +64,8 @@ function normalizeEmpresa(nombre: string): string {
         .trim()
         .toUpperCase()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ");;
 }
 
 /* ======================================================
@@ -93,6 +94,9 @@ function resolveSharepointPath(empresa: string): string | null {
         "CINTAX":
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CINTAX/Inventario",
 
+        "GRUPO COLCHAGUA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO COLCHAGUA/Inventario",
+
         "FIJACIONES PROCRET":
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/PROCRET/Inventario",
 
@@ -109,6 +113,10 @@ function resolveSharepointPath(empresa: string): string | null {
         // GRUPO JPL
         "JPL":
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO JPL/JPL/Inventario",
+
+        // GRUPO PINI
+        "PINI":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO PINI/PINI Y CIA/Inventario",
 
         // CLÍNICA NACE
         "CLN ALAMEDA":
