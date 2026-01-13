@@ -3,7 +3,7 @@ import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
 
 /* ======================================================
-   🎨 Estilos por empresa
+   🎨 Estilos por empresa (Excel)
 ====================================================== */
 function getEmpresaStyle(nombre: string) {
     const n = nombre.toLowerCase();
@@ -13,6 +13,9 @@ function getEmpresaStyle(nombre: string) {
     return { header: "FF334155", body: "FFF1F5F9" };
 }
 
+/* ======================================================
+   🎨 Estilos de hoja Excel
+====================================================== */
 function styleSheet(
     ws: XLSX.WorkSheet,
     rows: number,
@@ -49,12 +52,57 @@ function styleSheet(
         }),
     };
 
-    // Anchos automáticos
+    // Columnas
     ws["!cols"] = Array.from({ length: cols }).map(() => ({ wch: 18 }));
 }
 
 /* ======================================================
-   🧠 Construcción del Excel (reutilizable)
+   📂 Resolución de rutas SharePoint (CLAVE)
+====================================================== */
+function resolveSharepointPath(empresa: string): string | null {
+    const map: Record<string, string> = {
+        // CLIENTES DIRECTOS
+        "ALIANZ":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ALIANZ/Inventario",
+        "ASUR":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ASUR/Inventario",
+        "BERCIA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/BERCIA/Inventario",
+
+        // GRUPO T-SALES
+        "T-SALES":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/T-SALES/Inventario",
+        "INFINET":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/INFINET/Inventario",
+        "VPRIME":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/VPRIME/Inventario",
+
+        // GRUPO JPL
+        "GRUPO JPL":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO JPL/JPL/Inventario",
+
+        // CLÍNICA NACE
+        "CLINICA NACE - ALAMEDA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/1-ALAMEDA/Inventario",
+        "CLINICA NACE - PROVIDENCIA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/2-PROVIDENCIA/Inventario",
+    };
+
+    return map[normalizeEmpresa(empresa)] ?? null;
+}
+
+// ======================================================
+/* 🧹 Normalización de nombres de empresa
+====================================================== */
+function normalizeEmpresa(nombre: string): string {
+    return nombre
+        .toUpperCase()
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+/* ======================================================
+   🧠 Construcción del Excel
 ====================================================== */
 function buildInventarioExcel(
     equipos: Awaited<ReturnType<typeof getInventarioByEmpresa>>,
@@ -63,7 +111,9 @@ function buildInventarioExcel(
     const porEmpresa: Record<string, typeof equipos> = {};
 
     for (const e of equipos) {
-        const empresa = e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA";
+        const empresa = normalizeEmpresa(
+            e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA"
+        );
         porEmpresa[empresa] ??= [];
         porEmpresa[empresa].push(e);
     }
@@ -71,6 +121,8 @@ function buildInventarioExcel(
     const wb = XLSX.utils.book_new();
 
     for (const [empresa, items] of Object.entries(porEmpresa)) {
+        if (items.length === 0) continue;
+
         const rows = items.map((e, i) => ({
             "N°": i + 1,
             "USUARIO": e.solicitante?.nombre ?? "",
@@ -88,8 +140,6 @@ function buildInventarioExcel(
             "PROPIEDAD": e.propiedad ?? "",
         }));
 
-        if (rows.length === 0) continue;
-
         const headers = [
             "N°",
             "USUARIO",
@@ -106,7 +156,6 @@ function buildInventarioExcel(
             "MAC WIFI",
             "PROPIEDAD",
         ];
-
         const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
 
         styleSheet(
@@ -116,41 +165,24 @@ function buildInventarioExcel(
             getEmpresaStyle(empresa)
         );
 
-        XLSX.utils.book_append_sheet(
-            wb,
-            ws,
-            empresa.substring(0, 31) // límite Excel
-        );
+        XLSX.utils.book_append_sheet(wb, ws, empresa.substring(0, 31));
     }
 
     return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 
 /* ======================================================
-   📥 Export MANUAL (Front / Navegador)
+   📥 Export MANUAL (Web)
    GET /api/inventario/export
 ====================================================== */
-export async function exportInventario(
-    req: Request,
-    res: Response
-): Promise<Response> {
+export async function exportInventario(req: Request, res: Response) {
     try {
-        const params: { empresaId?: number } = {};
-
-        if (req.query.empresaId) {
-            const id = Number(req.query.empresaId);
-            if (Number.isNaN(id)) {
-                return res.status(400).json({ error: "empresaId inválido" });
-            }
-            params.empresaId = id;
-        }
-
         const mes =
             typeof req.query.mes === "string" && /^\d{4}-\d{2}$/.test(req.query.mes)
                 ? req.query.mes
                 : "SIN_MES";
 
-        const equipos = await getInventarioByEmpresa(params);
+        const equipos = await getInventarioByEmpresa({});
         const buffer = buildInventarioExcel(equipos, mes);
 
         res.setHeader(
@@ -164,83 +196,75 @@ export async function exportInventario(
 
         return res.send(buffer);
     } catch (err) {
-        console.error("❌ ERROR EXPORT INVENTARIO:", err);
+        console.error("❌ EXPORT INVENTARIO:", err);
         return res.status(500).json({ error: "Error exportando inventario" });
     }
 }
 
 /* ======================================================
-   🤖 Export AUTOMÁTICO (Power Automate / SharePoint)
+   🤖 Export AUTOMÁTICO (Power Automate)
    POST /api/inventario/export/sharepoint
 ====================================================== */
 export async function exportInventarioForSharepoint(
     req: Request,
     res: Response
-): Promise<Response> {
+) {
     try {
         const mes = req.body?.mes;
-
         if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
-            return res.status(400).json({ ok: false, error: "Mes requerido (YYYY-MM)" });
+            return res.status(400).json({ ok: false, error: "Mes inválido (YYYY-MM)" });
         }
 
         const equipos = await getInventarioByEmpresa({});
-
-        // 🔹 validar que haya inventario
-        if (!equipos || equipos.length === 0) {
-            return res.status(404).json({
-                ok: false,
-                error: "No hay inventario para exportar"
-            });
+        if (!equipos.length) {
+            return res.status(404).json({ ok: false, error: "Sin inventario" });
         }
 
-        // 🔹 agrupar por empresa
         const porEmpresa: Record<string, typeof equipos> = {};
-
         for (const e of equipos) {
-            const empresa = e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA";
+            const empresa = normalizeEmpresa(
+                e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA"
+            );
             porEmpresa[empresa] ??= [];
             porEmpresa[empresa].push(e);
         }
 
-        // 🔹 validar que haya empresas con inventario
-        if (Object.keys(porEmpresa).length === 0) {
-            return res.status(404).json({
-                ok: false,
-                error: "No se encontraron empresas con inventario"
-            });
-        }
-
-        // 🔹 generar un archivo por empresa
+        // Construir archivos por empresa
         const archivos = Object.entries(porEmpresa)
-            .filter(([_, items]) => items.length > 0)
             .map(([empresa, items]) => {
+                const sharepointPath = resolveSharepointPath(empresa);
+                if (!sharepointPath) {
+                    console.warn(`⚠️ Empresa sin ruta SharePoint: ${empresa}`);
+                    return null;
+                }
+
                 const buffer = buildInventarioExcel(items, mes);
 
                 return {
                     empresa,
+                    sharepointPath,
                     fileName: `Inventario_${empresa}_${mes}.xlsx`,
                     contentBase64: buffer.toString("base64"),
                 };
-            });
+            })
+            .filter(Boolean);
 
-        // 🔹 validar que se hayan generado archivos
-        if (archivos.length === 0) {
+        if (!archivos.length) {
             return res.status(404).json({
                 ok: false,
-                error: "No se generaron archivos de inventario"
+                error: "Ninguna empresa tiene ruta SharePoint definida",
             });
         }
-
-        // 🔹 responder con los archivos generados
+        
+        // Responder con los archivos listos para subir a SharePoint
         return res.json({
             ok: true,
+            mes,
             totalArchivos: archivos.length,
-            empresas: archivos.map(a => a.empresa),
-            archivos
+            archivos,
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ EXPORT SP:", err);
         return res.status(500).json({ ok: false, error: "Error interno" });
     }
 }
