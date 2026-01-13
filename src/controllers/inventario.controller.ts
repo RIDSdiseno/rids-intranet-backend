@@ -56,49 +56,69 @@ function styleSheet(
     ws["!cols"] = Array.from({ length: cols }).map(() => ({ wch: 18 }));
 }
 
-/* ======================================================
-   📂 Resolución de rutas SharePoint (CLAVE)
-====================================================== */
-function resolveSharepointPath(empresa: string): string | null {
-    const map: Record<string, string> = {
-        // CLIENTES DIRECTOS
-        "ALIANZ":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ALIANZ/Inventario",
-        "ASUR":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ASUR/Inventario",
-        "BERCIA":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/BERCIA/Inventario",
-
-        // GRUPO T-SALES
-        "T-SALES":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/T-SALES/Inventario",
-        "INFINET":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/INFINET/Inventario",
-        "VPRIME":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/VPRIME/Inventario",
-
-        // GRUPO JPL
-        "GRUPO JPL":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO JPL/JPL/Inventario",
-
-        // CLÍNICA NACE
-        "CLINICA NACE - ALAMEDA":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/1-ALAMEDA/Inventario",
-        "CLINICA NACE - PROVIDENCIA":
-            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/2-PROVIDENCIA/Inventario",
-    };
-
-    return map[normalizeEmpresa(empresa)] ?? null;
-}
-
 // ======================================================
 /* 🧹 Normalización de nombres de empresa
 ====================================================== */
 function normalizeEmpresa(nombre: string): string {
     return nombre
-        .toUpperCase()
         .trim()
-        .replace(/\s+/g, " ");
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+}
+
+/* ======================================================
+   📂 Resolución de rutas SharePoint (CLAVE)
+====================================================== */
+function resolveSharepointPath(empresa: string): string | null {
+    const key = normalizeEmpresa(empresa);
+
+    const map: Record<string, string> = {
+        // CLIENTES DIRECTOS
+        "ALIANZ":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ALIANZ/Inventario",
+
+        "ASUR":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/ASUR/Inventario",
+
+        "BERCIA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/BERCIA/Inventario",
+
+        "BDK":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/BDK/Inventario",
+
+        "RWAY":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/RWAY/Inventario",
+
+        "CINTAX":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CINTAX/Inventario",
+
+        "FIJACIONES PROCRET":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/PROCRET/Inventario",
+
+        // GRUPO T-SALES
+        "T-SALES":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/T-SALES/Inventario",
+
+        "INFINET":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/INFINET/Inventario",
+
+        "VPRIME":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/VPRIME/Inventario",
+
+        // GRUPO JPL
+        "JPL":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO JPL/JPL/Inventario",
+
+        // CLÍNICA NACE
+        "CLN ALAMEDA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/1-ALAMEDA/Inventario",
+
+        "CLN PROVIDENCIA":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/CLINICA NACE/1-NACE/2-PROVIDENCIA/Inventario",
+    };
+
+    return map[key] ?? null;
 }
 
 /* ======================================================
@@ -255,7 +275,7 @@ export async function exportInventarioForSharepoint(
                 error: "Ninguna empresa tiene ruta SharePoint definida",
             });
         }
-        
+
         // Responder con los archivos listos para subir a SharePoint
         return res.json({
             ok: true,
