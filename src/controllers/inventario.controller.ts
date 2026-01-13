@@ -238,10 +238,11 @@ export async function exportInventarioForSharepoint(
     res: Response
 ) {
     try {
-        const mes = req.body?.mes;
-        if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
-            return res.status(400).json({ ok: false, error: "Mes inválido (YYYY-MM)" });
-        }
+        // Mes actual
+        const now = new Date();
+        const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+        const timestamp = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
         const equipos = await getInventarioByEmpresa({});
         if (!equipos.length) {
@@ -271,7 +272,7 @@ export async function exportInventarioForSharepoint(
                 return {
                     empresa,
                     sharepointPath,
-                    fileName: `Inventario_${empresa}_${mes}.xlsx`,
+                    fileName: `Inventario_${empresa}_${mes}_${timestamp}.xlsx`,
                     contentBase64: buffer.toString("base64"),
                 };
             })
