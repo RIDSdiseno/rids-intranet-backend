@@ -277,7 +277,8 @@ export async function exportInventarioForSharepoint(
                 };
             })
             .filter(Boolean);
-
+        
+        // Verificar si hay archivos para subir
         if (!archivos.length) {
             return res.status(404).json({
                 ok: false,

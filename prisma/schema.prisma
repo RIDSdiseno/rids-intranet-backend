@@ -155,7 +155,9 @@ model ServicioGestioo {
 
 model DetalleTrabajoGestioo {
     id              Int              @id @default(autoincrement())
+    ordenGrupoId  Int?
     fecha           DateTime         @default(now())
+    fechaIngreso    DateTime?
     tipoTrabajo     String
     descripcion     String?
     estado          String?          @default("pendiente")
