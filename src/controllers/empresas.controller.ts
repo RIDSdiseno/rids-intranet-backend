@@ -194,6 +194,28 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
       _count: { empresaId: true },
     });
 
+    // 4) TOTAL visitas por empresa
+    const visitasTotal = await prisma.visita.groupBy({
+      by: ["empresaId"],
+      where: { empresaId: { in: empresaIds } },
+      _count: { _all: true },
+    });
+
+    // 4.1) TOTAL tickets por empresa
+    const ticketsTotal = await prisma.freshdeskTicket.groupBy({
+      by: ["empresaId"],
+      where: { empresaId: { in: empresaIds } },
+      _count: { _all: true },
+    });
+
+    const visitasTotalMap = new Map(
+      visitasTotal.map(r => [r.empresaId!, r._count._all])
+    );
+
+    const ticketsTotalMap = new Map(
+      ticketsTotal.map(r => [r.empresaId!, r._count._all])
+    );
+
     // 5) Equipos por empresa (vía solicitantes)
     const solicitantesDeEmp = await prisma.solicitante.findMany({
       where: { empresaId: { in: empresaIds } },
@@ -232,15 +254,25 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
       visitasPend.map((r) => [r.empresaId!, r._count.empresaId])
     );
 
+    // DetalleEmpresa (opcional)
+    const detalles = await prisma.detalleEmpresa.findMany({
+      where: { empresa_id: { in: empresaIds } },
+    });
+
+    const detallePorEmpresa = new Map(
+      detalles.map((d) => [d.empresa_id, d])
+    );
+
     const data = empresasBase.map((e) => ({
       id_empresa: e.id_empresa,
       nombre: e.nombre,
+      detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null, // 👈 clave
       estadisticas: {
         totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
         totalEquipos: equiposPorEmpresa.get(e.id_empresa) ?? 0,
-        totalTickets: undefined,
-        totalVisitas: undefined,
-        totalTrabajos: undefined,
+        totalTickets: ticketsTotalMap.get(e.id_empresa) ?? 0,
+        totalVisitas: visitasTotalMap.get(e.id_empresa) ?? 0,
+        totalTrabajos: 0,
         ticketsAbiertos: ticketOpenMap.get(e.id_empresa) ?? 0,
         visitasPendientes: visitaPendMap.get(e.id_empresa) ?? 0,
       },

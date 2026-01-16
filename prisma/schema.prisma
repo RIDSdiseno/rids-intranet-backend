@@ -9,27 +9,35 @@ datasource db {
     relationMode      = "prisma"
 }
 
+// APARTADO EMPRESAS
 model Empresa {
-    id_empresa      Int                   @id @default(autoincrement())
-    nombre          String                @unique
-    tieneSucursales Boolean               @default(false)
-    solicitantes    Solicitante[]
-    visitas         Visita[]              @relation("Empresa_Visita")
-    tickets         FreshdeskTicket[]
-    companyMaps     FreshdeskCompanyMap[]
-    detalleEmpresa  DetalleEmpresa?
-    sucursales      Sucursal[]
+    id_empresa          Int                   @id @default(autoincrement())
+    nombre              String                @unique
+    razonSocial         String?
+    tieneSucursales     Boolean               @default(false)
+    solicitantes        Solicitante[]
+    visitas             Visita[]              @relation("Empresa_Visita")
+    tickets             FreshdeskTicket[]
+    companyMaps         FreshdeskCompanyMap[]
+    detalleEmpresa      DetalleEmpresa?
+    sucursales          Sucursal[]
+    contactoEmpresas    ContactoEmpresa[]
+    fichaEmpresa        FichaEmpresa?
+    fichaTecnicaEmpresa FichaTecnicaEmpresa?
 }
 
 model Sucursal {
-    id_sucursal Int         @id @default(autoincrement())
-    nombre      String
-    direccion   String?
-    telefono    String?
-    empresaId   Int
-    empresa     Empresa     @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-    historiales Historial[]
-    visitas     Visita[]
+    id_sucursal           Int                    @id @default(autoincrement())
+    nombre                String
+    direccion             String?
+    telefono              String?
+    empresaId             Int
+    empresa               Empresa                @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+    historiales           Historial[]
+    visitas               Visita[]
+    responsableSucursals  ResponsableSucursal[]
+    redSucursal           RedSucursal?
+    accesoRouterSucursals AccesoRouterSucursal[]
 
     @@index([empresaId])
 }
@@ -37,13 +45,168 @@ model Sucursal {
 model DetalleEmpresa {
     id         Int     @id @default(autoincrement())
     rut        String  @unique
-    direccion  String
-    telefono   String
-    email      String
+    direccion  String?
+    telefono   String?
+    email      String?
     empresa_id Int     @unique
     empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
 
     @@map("detalle_empresas")
+}
+
+model ContactoEmpresa {
+    id        Int @id @default(autoincrement())
+    empresaId Int
+
+    nombre    String
+    cargo     String
+    email     String?
+    telefono  String?
+    principal Boolean @default(false)
+
+    empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
+
+    @@index([empresaId])
+}
+
+model FichaEmpresa {
+    id        Int @id @default(autoincrement())
+    empresaId Int @unique
+
+    creadaEn               DateTime @default(now())
+    actualizadaEn          DateTime @updatedAt
+    condicionesComerciales String?
+
+    empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
+
+    checklist ChecklistGestionEmpresa?
+}
+
+model FichaTecnicaEmpresa {
+    id        Int     @id @default(autoincrement())
+    empresaId Int     @unique
+    empresa   Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+    /**
+     * ===================== Técnicos / Visitas =====================
+     */
+    tecnicoPrincipal        String?
+    tecnicosRespaldo        String?
+    fechaUltimaVisita       DateTime?
+    proximaVisitaProgramada DateTime?
+    observacionesVisita     String?
+
+    /**
+     * ===================== Equipos y hardware =====================
+     */
+    pcsNotebooks          String?
+    servidores            String?
+    impresorasPerifericos String?
+    otrosEquipos          String?
+
+    /**
+     * ===================== Software y sistemas =====================
+     */
+    sistemasOperativos   String?
+    aplicacionesCriticas String?
+    licenciasVigentes    String?
+    antivirusSeguridad   String?
+
+    /**
+     * ===================== Redes y conectividad =====================
+     */
+    proveedorInternet   String?
+    velocidadContratada String?
+    routersSwitches     String?
+    configuracionIP     String?
+
+    /**
+     * ===================== Servicios digitales =====================
+     */
+    dominioWeb          String?
+    hostingProveedor    String?
+    certificadoSSL      String?
+    correosCorporativos String?
+    redesSociales       String?
+
+    /**
+     * ===================== Respaldo y seguridad =====================
+     */
+    metodoRespaldo      String?
+    frecuenciaRespaldo  String?
+    responsableRespaldo String?
+    ultimaRestauracion  DateTime?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model ChecklistGestionEmpresa {
+    id             Int @id @default(autoincrement())
+    fichaEmpresaId Int @unique
+
+    levantamientoEquipos Boolean @default(false)
+    inventarioSoftware   Boolean @default(false)
+
+    soporteComputacional Boolean @default(false)
+    sitiosWeb            Boolean @default(false)
+    visitasPresenciales  Boolean @default(false)
+
+    contratoFirmado    Boolean @default(false)
+    facturasArchivadas Boolean @default(false)
+
+    historialIncidencias Boolean @default(false)
+    reunionesRevision    Boolean @default(false)
+
+    registroAccesos Boolean @default(false)
+
+    metasDigitales Boolean @default(false)
+    planAccion     Boolean @default(false)
+
+    fichaEmpresa FichaEmpresa @relation(fields: [fichaEmpresaId], references: [id])
+
+    @@index([fichaEmpresaId])
+}
+
+model ResponsableSucursal {
+    id         Int @id @default(autoincrement())
+    sucursalId Int
+
+    nombre   String
+    cargo    String
+    email    String?
+    telefono String?
+
+    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
+
+    @@index([sucursalId])
+}
+
+model RedSucursal {
+    id         Int @id @default(autoincrement())
+    sucursalId Int @unique
+
+    wifiNombre    String?
+    claveWifi     String? // ⚠️ NO password plano (ideal: encriptado o referencia)
+    ipRed         String?
+    gateway       String?
+    observaciones String?
+
+    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
+}
+
+model AccesoRouterSucursal {
+    id         Int @id @default(autoincrement())
+    sucursalId Int
+
+    url        String?
+    usuario    String?
+    secretoRef String? // referencia segura
+    notas      String?
+
+    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
+
+    @@index([sucursalId])
 }
 
 model Solicitante {
@@ -155,7 +318,7 @@ model ServicioGestioo {
 
 model DetalleTrabajoGestioo {
     id              Int              @id @default(autoincrement())
-    ordenGrupoId  Int?
+    ordenGrupoId    Int?
     fecha           DateTime         @default(now())
     fechaIngreso    DateTime?
     tipoTrabajo     String

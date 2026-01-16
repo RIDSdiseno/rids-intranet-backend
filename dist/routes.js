@@ -9,6 +9,7 @@ import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
+import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 import inventarioRoutes from "./routes/inventario.routes.js";
 /* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
@@ -43,13 +44,12 @@ api.use("/equipos", equiposRouter);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
+api.use("/ficha-empresa", fichaEmpresasRouter);
 api.use("/tecnicos", tecnicosRouter);
 api.use("/inventario", inventarioRoutes);
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
 api.use("/fd", fdRouter);
-// Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
-api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
 // Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
 api.use("/fd", fdWebhookRouter);
@@ -68,18 +68,10 @@ api.use("/cotizaciones", cotizacionesRouter);
 api.use(syncGoogleRouter);
 // Microsoft Graph sync 
 api.use(msSyncRouter);
-/* ===================== Integraciones ===================== */
-// Google Directory sync (ej: POST /api/sync/google/users)
-api.use(syncGoogleRouter);
-// Microsoft Graph sync 
-api.use(msSyncRouter);
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
 /* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
-/* ===================== Whatchimp ===================== */
-api.use(whatchimpRouter);
-/* ===================== Export ===================== */
 /* ===================== Whatchimp ===================== */
 api.use(whatchimpRouter);
 /* ===================== CLOUDINARY ===================== */

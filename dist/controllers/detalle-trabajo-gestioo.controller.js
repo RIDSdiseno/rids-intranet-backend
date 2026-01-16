@@ -16,14 +16,37 @@ export async function createDetalleTrabajo(req, res) {
                 return res.status(400).json({ error: "Técnico no válido" });
             }
         }
+        const fechaTrabajo = data.fecha ? new Date(data.fecha) : new Date();
+        // SI ES SALIDA → cerrar órdenes de entrada del mismo equipo
+        if (data.area === "SALIDA" && data.equipoId) {
+            await prisma.detalleTrabajoGestioo.updateMany({
+                where: {
+                    equipoId: Number(data.equipoId),
+                    area: "ENTRADA",
+                    estado: { not: "COMPLETADA" },
+                },
+                data: {
+                    estado: "COMPLETADA",
+                },
+            });
+        }
+        // 👉 Crear trabajo
         const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
             data: {
-                fecha: data.fecha ? new Date(data.fecha) : new Date(),
+                fecha: fechaTrabajo,
+                ordenGrupoId: data.ordenGrupoId ?? null,
+                fechaIngreso: data.area === "ENTRADA"
+                    ? fechaTrabajo
+                    : data.fechaIngreso
+                        ? new Date(data.fechaIngreso)
+                        : null,
                 tipoTrabajo: data.tipoTrabajo || "General",
                 descripcion: data.descripcion ?? null,
-                estado: data.estado ?? "PENDIENTE",
                 notas: data.notas ?? null,
                 area: data.area ?? "ENTRADA",
+                estado: data.area === "SALIDA"
+                    ? "COMPLETADA"
+                    : data.estado ?? "PENDIENTE",
                 prioridad: data.prioridad ?? "NORMAL",
                 entidadId: data.entidadId ? Number(data.entidadId) : null,
                 productoId: data.productoId ? Number(data.productoId) : null,
@@ -32,6 +55,17 @@ export async function createDetalleTrabajo(req, res) {
                 tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
                 incluyeCargador: data.incluyeCargador ?? false,
             },
+        });
+        // ✅ SI ES ENTRADA → usar su ID como grupo
+        if (nuevoTrabajo.area === "ENTRADA") {
+            await prisma.detalleTrabajoGestioo.update({
+                where: { id: nuevoTrabajo.id },
+                data: { ordenGrupoId: nuevoTrabajo.id },
+            });
+        }
+        // 🔁 Recargar con relaciones
+        const trabajoFinal = await prisma.detalleTrabajoGestioo.findUnique({
+            where: { id: nuevoTrabajo.id },
             include: {
                 entidad: true,
                 producto: true,
@@ -46,7 +80,7 @@ export async function createDetalleTrabajo(req, res) {
                 },
             },
         });
-        return res.status(201).json(nuevoTrabajo);
+        return res.status(201).json(trabajoFinal);
     }
     catch (error) {
         console.error("❌ Error al crear detalle de trabajo:", error);
@@ -117,14 +151,30 @@ export async function updateDetalleTrabajo(req, res) {
                 return res.status(400).json({ error: "Técnico no válido" });
             }
         }
+        // 🔥 Si se está cambiando a SALIDA → cerrar entradas previas
+        if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
+            await prisma.detalleTrabajoGestioo.updateMany({
+                where: {
+                    equipoId: existing.equipoId,
+                    area: "ENTRADA",
+                    estado: { not: "COMPLETADA" },
+                },
+                data: {
+                    estado: "COMPLETADA",
+                },
+            });
+        }
         const updateData = {
             tipoTrabajo: data.tipoTrabajo,
             descripcion: data.descripcion ?? null,
-            estado: data.estado,
+            estado: data.area === "SALIDA"
+                ? "COMPLETADA"
+                : data.estado ?? existing.estado,
             prioridad: data.prioridad,
             notas: data.notas ?? null,
             area: data.area,
             fecha: data.fecha ? new Date(data.fecha) : existing.fecha,
+            ordenGrupoId: existing.ordenGrupoId,
         };
         if (data.entidadId !== undefined) {
             updateData.entidadId = data.entidadId ? Number(data.entidadId) : null;

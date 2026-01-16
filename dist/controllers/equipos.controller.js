@@ -82,7 +82,7 @@ function flattenRow(e) {
         ram: e.ram,
         disco: e.disco,
         propiedad: e.propiedad,
-        solicitante: e.solicitante?.nombre ?? null,
+        solicitante: e.solicitante ? e.solicitante.nombre : "[Sin solicitante]",
         empresa: e.solicitante?.empresa?.nombre ?? null,
         empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
@@ -111,10 +111,9 @@ export async function listEquipos(req, res) {
             ...(q.tipo ? { tipo: q.tipo } : {}),
             ...(q.empresaId
                 ? {
-                    OR: [
-                        { solicitante: { is: { empresaId: q.empresaId } } },
-                        { idSolicitante: null },
-                    ],
+                    solicitante: {
+                        is: { empresaId: q.empresaId },
+                    },
                 }
                 : {}),
             ...(q.empresaName
@@ -317,6 +316,42 @@ export async function deleteEquipo(req, res) {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
         return res.status(500).json({ error: "Error al eliminar equipo" });
+    }
+}
+// ================== EQUIPOS POR EMPRESA (MODAL) ==================
+// GET /api/empresas/:empresaId/equipos
+export async function getEquiposByEmpresa(req, res) {
+    try {
+        const empresaId = Number(req.params.empresaId);
+        if (!Number.isInteger(empresaId) || empresaId <= 0) {
+            return res.status(400).json({ error: "empresaId inválido" });
+        }
+        const equipos = await prisma.equipo.findMany({
+            where: {
+                solicitante: {
+                    empresaId,
+                },
+            },
+            include: {
+                solicitante: {
+                    select: {
+                        id_solicitante: true,
+                        nombre: true,
+                    },
+                },
+            },
+            orderBy: { id_equipo: "asc" },
+        });
+        return res.json({
+            total: equipos.length,
+            items: equipos,
+        });
+    }
+    catch (err) {
+        console.error("getEquiposByEmpresa error:", err);
+        return res.status(500).json({
+            error: "Error al obtener equipos por empresa",
+        });
     }
 }
 //# sourceMappingURL=equipos.controller.js.map

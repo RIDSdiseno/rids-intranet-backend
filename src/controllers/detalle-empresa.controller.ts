@@ -7,9 +7,9 @@ import { z } from "zod";
 
 const detalleEmpresaSchema = z.object({
   rut: z.string(),
-  direccion: z.string(),
-  telefono: z.string(),
-  email: z.string().email(),
+  direccion: z.string().optional(),
+  telefono: z.string().optional(),
+  email: z.string().email().nullable().optional(),
   empresa_id: z.number(),
 });
 
@@ -20,16 +20,19 @@ const detalleEmpresaUpdateSchema = detalleEmpresaSchema.partial();
 // CREATE
 export async function createDetalleEmpresa(req: Request, res: Response) {
   try {
-    const data = detalleEmpresaSchema.parse(req.body);
+    const parsed = detalleEmpresaSchema.parse(req.body);
 
     const nuevo = await prisma.detalleEmpresa.create({
-      data,
+      data: {
+        rut: parsed.rut,
+        empresa_id: parsed.empresa_id,
+        direccion: parsed.direccion ?? null,
+        telefono: parsed.telefono ?? null,
+        email: parsed.email ?? null,
+      },
       include: {
         empresa: {
-          select: {
-            id_empresa: true,
-            nombre: true,
-          },
+          select: { id_empresa: true, nombre: true },
         },
       },
     });
@@ -128,10 +131,11 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
     const { empresa_id, rut, direccion, telefono, email } = parsed;
 
     const data: any = {};
-    if (rut !== undefined) data.rut = { set: rut };
-    if (direccion !== undefined) data.direccion = { set: direccion };
-    if (telefono !== undefined) data.telefono = { set: telefono };
-    if (email !== undefined) data.email = { set: email };
+
+    if (rut !== undefined) data.rut = rut;
+    if (direccion !== undefined) data.direccion = direccion ?? null;
+    if (telefono !== undefined) data.telefono = telefono ?? null;
+    if (email !== undefined) data.email = email ?? null;
 
     if (empresa_id !== undefined) {
       data.empresa = { connect: { id_empresa: empresa_id } };
