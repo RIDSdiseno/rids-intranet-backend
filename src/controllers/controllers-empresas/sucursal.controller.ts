@@ -71,42 +71,57 @@ export async function obtenerFichaSucursal(req: Request, res: Response) {
 /* =====================================================
    ACTUALIZAR SUCURSAL + RESPONSABLES
 ===================================================== */
-export async function actualizarFichaSucursal(req: Request, res: Response) {
-    const sucursalId = Number(req.params.sucursalId);
+export async function actualizarFichaSucursal(
+    req: Request,
+    res: Response
+): Promise<Response> {
+    try {
+        const sucursalId = Number(req.params.sucursalId);
 
-    const {
-        nombre,
-        direccion,
-        telefono,
-        responsableSucursals,
-    } = req.body;
+        if (!sucursalId || Number.isNaN(sucursalId)) {
+            return res.status(400).json({
+                message: "sucursalId inválido",
+            });
+        }
 
-    const sucursal = await prisma.sucursal.update({
-        where: { id_sucursal: sucursalId },
-        data: {
+        const {
             nombre,
             direccion,
             telefono,
+            responsableSucursals,
+        } = req.body;
 
-            responsableSucursals: {
-                deleteMany: {},
-                create: Array.isArray(responsableSucursals)
-                    ? responsableSucursals.map((r: any) => ({
-                        nombre: r.nombre,
-                        cargo: r.cargo,
-                        email: r.email,
-                        telefono: r.telefono,
-                    }))
-                    : [],
+        const sucursal = await prisma.sucursal.update({
+            where: { id_sucursal: sucursalId },
+            data: {
+                nombre,
+                direccion,
+                telefono,
+                responsableSucursals: {
+                    deleteMany: {},
+                    create: Array.isArray(responsableSucursals)
+                        ? responsableSucursals.map((r: any) => ({
+                            nombre: r.nombre,
+                            cargo: r.cargo,
+                            email: r.email,
+                            telefono: r.telefono,
+                        }))
+                        : [],
+                },
             },
-        },
-        include: {
-            responsableSucursals: true,
-            redSucursal: true,
-        },
-    });
+            include: {
+                responsableSucursals: true,
+            },
+        });
 
-    res.json({ ok: true, sucursal });
+        return res.json({ ok: true, sucursal });
+
+    } catch (error) {
+        console.error("Error actualizando sucursal:", error);
+        return res.status(500).json({
+            message: "Error interno al actualizar sucursal",
+        });
+    }
 }
 
 /* =====================================================
