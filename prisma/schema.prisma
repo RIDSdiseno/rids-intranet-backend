@@ -42,6 +42,20 @@ model Sucursal {
     @@index([empresaId])
 }
 
+model ResponsableSucursal {
+    id         Int @id @default(autoincrement())
+    sucursalId Int
+
+    nombre   String
+    cargo    String
+    email    String?
+    telefono String?
+
+    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
+
+    @@index([sucursalId])
+}
+
 model DetalleEmpresa {
     id         Int     @id @default(autoincrement())
     rut        String  @unique
@@ -166,20 +180,6 @@ model ChecklistGestionEmpresa {
     fichaEmpresa FichaEmpresa @relation(fields: [fichaEmpresaId], references: [id])
 
     @@index([fichaEmpresaId])
-}
-
-model ResponsableSucursal {
-    id         Int @id @default(autoincrement())
-    sucursalId Int
-
-    nombre   String
-    cargo    String
-    email    String?
-    telefono String?
-
-    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
-
-    @@index([sucursalId])
 }
 
 model RedSucursal {
