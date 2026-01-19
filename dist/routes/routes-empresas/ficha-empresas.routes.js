@@ -1,6 +1,7 @@
 import { Router } from "express";
 // Ficha
 import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
+import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal } from "../../controllers/controllers-empresas/sucursal.controller.js";
 // Red sucursal
 import { obtenerRedSucursal, upsertRedSucursal } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
 export const fichaEmpresasRouter = Router();
@@ -13,5 +14,10 @@ fichaEmpresasRouter.put("/:empresaId/ficha-tecnica", upsertFichaTecnicaEmpresa);
 /* ===================== RED SUCURSAL ===================== */
 fichaEmpresasRouter.get("/sucursales/:sucursalId/red", obtenerRedSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId/red", upsertRedSucursal);
+// Sucursales
+fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
+fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);
+fichaEmpresasRouter.get("/:empresaId/sucursales", listarSucursalesEmpresa);
+fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
 export default fichaEmpresasRouter;
 //# sourceMappingURL=ficha-empresas.routes.js.map

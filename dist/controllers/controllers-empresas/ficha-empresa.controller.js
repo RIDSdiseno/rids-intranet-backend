@@ -40,8 +40,15 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
             include: { checklist: true },
         });
     }
+    const fichaTecnica = await prisma.fichaTecnicaEmpresa.findUnique({
+        where: { empresaId },
+    });
     const contactos = await prisma.contactoEmpresa.findMany({
         where: { empresaId },
+        orderBy: [
+            { principal: "desc" },
+            { nombre: "asc" },
+        ],
     });
     const sucursales = await prisma.sucursal.findMany({
         where: { empresaId },
@@ -50,17 +57,15 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
             redSucursal: true,
             accesoRouterSucursals: true,
         },
-    });
-    const fichaTecnica = await prisma.fichaTecnicaEmpresa.findUnique({
-        where: { empresaId },
+        orderBy: { nombre: "asc" },
     });
     return res.json({
         empresa,
         ficha,
         checklist: ficha.checklist ?? null,
         detalleEmpresa: empresa.detalleEmpresa ?? null,
-        fichaTecnica, // 👈 NUEVO
-        contactos,
+        fichaTecnica,
+        contactos, // 👈 JEFES DE LA EMPRESA
         sucursales,
     });
 }
@@ -69,41 +74,41 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
 ===================================================== */
 export async function actualizarFichaEmpresa(req, res) {
     const empresaId = Number(req.params.empresaId);
-    const { razonSocial, rut, direccion, condicionesComerciales, } = req.body;
-    /* =========================
-       1️⃣ EMPRESA
-       ========================= */
+    const { razonSocial, rut, direccion, condicionesComerciales, contactos, } = req.body;
+    /* 1️⃣ EMPRESA */
     await prisma.empresa.update({
         where: { id_empresa: empresaId },
         data: { razonSocial },
     });
-    /* =========================
-       2️⃣ DETALLE EMPRESA
-       ========================= */
+    /* 2️⃣ DETALLE EMPRESA */
     await prisma.detalleEmpresa.upsert({
         where: { empresa_id: empresaId },
         update: { rut, direccion },
-        create: {
-            empresa_id: empresaId,
-            rut,
-            direccion,
-        },
+        create: { empresa_id: empresaId, rut, direccion },
     });
-    /* =========================
-       3️⃣ FICHA EMPRESA
-       ========================= */
-    const ficha = await prisma.fichaEmpresa.upsert({
+    /* 3️⃣ FICHA */
+    await prisma.fichaEmpresa.upsert({
         where: { empresaId },
         update: { condicionesComerciales },
-        create: {
-            empresaId,
-            condicionesComerciales,
-        },
+        create: { empresaId, condicionesComerciales },
     });
-    return res.json({
-        ok: true,
-        ficha,
-    });
+    /* 🔥 4️⃣ CONTACTOS / JEFES */
+    if (Array.isArray(contactos)) {
+        await prisma.contactoEmpresa.deleteMany({
+            where: { empresaId },
+        });
+        await prisma.contactoEmpresa.createMany({
+            data: contactos.map((c) => ({
+                empresaId,
+                nombre: c.nombre,
+                cargo: c.cargo,
+                email: c.email,
+                telefono: c.telefono,
+                principal: !!c.principal,
+            })),
+        });
+    }
+    return res.json({ ok: true });
 }
 /* =====================================================
    FICHA TÉCNICA EMPRESA (NUEVO)
