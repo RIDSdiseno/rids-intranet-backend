@@ -3,7 +3,7 @@ import { Router } from "express";
 // Ficha
 import {
     obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa,
-    upsertFichaTecnicaEmpresa,
+    upsertFichaTecnicaEmpresa, upsertChecklistEmpresa
 } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
 
 import {
@@ -39,6 +39,6 @@ fichaEmpresasRouter.put("/sucursales/:sucursalId",actualizarFichaSucursal);
 fichaEmpresasRouter.get( "/:empresaId/sucursales",listarSucursalesEmpresa);
 fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
 
-
+fichaEmpresasRouter.put("/:empresaId/checklist",upsertChecklistEmpresa);
 
 export default fichaEmpresasRouter;
