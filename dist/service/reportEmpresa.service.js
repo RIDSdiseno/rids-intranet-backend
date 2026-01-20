@@ -1,33 +1,67 @@
 import { prisma } from "../lib/prisma.js";
-/** YYYY-MM -> [start, end) en UTC */
+/* ======================================================
+   📅 YYYY-MM -> rango [start, end) en UTC
+====================================================== */
 export function monthRange(ym) {
     const [y, m] = ym.split("-").map(Number);
-    if (!y || !m)
+    if (!y || !m) {
         throw new Error("month inválido (usa YYYY-MM)");
+    }
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
     const end = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 0, 0, 0));
     return { start, end };
 }
-/** Traduce Empresa.nombre -> TicketOrg.id */
-const ALIASES = {};
+/* ======================================================
+   🔄 Empresa -> TicketOrg
+====================================================== */
 function normalizeOrgName(nombre) {
     const key = (nombre ?? "").trim();
-    if (!key)
-        return null;
-    return (ALIASES[key] ?? key).trim().toUpperCase();
+    return key ? key.toUpperCase() : null;
 }
+/* ======================================================
+   🧠 Clasificación del tipo de visita (DERIVADO)
+====================================================== */
+function clasificarTipoVisita(v) {
+    if (v.actualizaciones ||
+        v.antivirus ||
+        v.ccleaner ||
+        v.estadoDisco ||
+        v.mantenimientoReloj ||
+        v.rendimientoEquipo) {
+        return "PROGRAMADA";
+    }
+    if ((v.otrosDetalle ?? "").toLowerCase().includes("program")) {
+        return "PROGRAMADA";
+    }
+    return "ADICIONAL";
+}
+/* ======================================================
+   📊 Servicio principal de reportes
+====================================================== */
 export async function buildReporteEmpresaData(empresaId, ym) {
+    /* =====================
+       Empresa
+    ===================== */
     const empresa = await prisma.empresa.findUnique({
         where: { id_empresa: empresaId },
         select: { id_empresa: true, nombre: true },
     });
-    if (!empresa)
+    if (!empresa) {
         throw new Error("Empresa no encontrada");
+    }
     const { start, end } = monthRange(ym);
-    // Visitas
+    /* =====================
+       Visitas (KPIs)
+    ===================== */
     const visitas = await prisma.visita.findMany({
-        where: { empresaId, inicio: { gte: start, lt: end } },
-        select: { inicio: true, fin: true },
+        where: {
+            empresaId,
+            inicio: { gte: start, lt: end },
+        },
+        select: {
+            inicio: true,
+            fin: true,
+        },
     });
     const visitasCount = visitas.length;
     const duracionesMs = visitas
@@ -35,34 +69,88 @@ export async function buildReporteEmpresaData(empresaId, ym) {
         .map(v => new Date(v.fin).getTime() - new Date(v.inicio).getTime())
         .filter(ms => ms > 0);
     const totalMs = duracionesMs.reduce((a, b) => a + b, 0);
-    const avgMs = duracionesMs.length ? Math.round(totalMs / duracionesMs.length) : 0;
-    // Equipos
-    const equiposCount = await prisma.equipo.count({
-        where: { solicitante: { empresaId } },
+    const avgMs = duracionesMs.length
+        ? Math.round(totalMs / duracionesMs.length)
+        : 0;
+    /* =====================
+       Visitas por tipo (derivado)
+    ===================== */
+    const visitasClasificables = await prisma.visita.findMany({
+        where: {
+            empresaId,
+            inicio: { gte: start, lt: end },
+        },
+        select: {
+            actualizaciones: true,
+            antivirus: true,
+            ccleaner: true,
+            estadoDisco: true,
+            mantenimientoReloj: true,
+            rendimientoEquipo: true,
+            otros: true,
+            otrosDetalle: true,
+        },
     });
-    // Tickets
+    const visitasPorTipoMap = {
+        PROGRAMADA: 0,
+        ADICIONAL: 0,
+    };
+    for (const v of visitasClasificables) {
+        const tipo = clasificarTipoVisita(v);
+        visitasPorTipoMap[tipo]++;
+    }
+    const visitasPorTipo = Object.entries(visitasPorTipoMap).map(([tipo, cantidad]) => ({
+        tipo,
+        cantidad,
+    }));
+    /* =====================
+       Equipos
+    ===================== */
+    const equiposCount = await prisma.equipo.count({
+        where: {
+            solicitante: {
+                empresaId,
+            },
+        },
+    });
+    /* =====================
+       Tickets
+    ===================== */
     const orgName = normalizeOrgName(empresa.nombre);
     let ticketsTotal = 0;
     if (orgName) {
-        const org = await prisma.ticketOrg.findUnique({ where: { name: orgName } });
+        const org = await prisma.ticketOrg.findUnique({
+            where: { name: orgName },
+        });
         if (org) {
-            const grouped = await prisma.freshdeskTicket.groupBy({
-                by: ["type"],
-                _count: { _all: true },
+            ticketsTotal = await prisma.freshdeskTicket.count({
                 where: {
                     ticketOrgId: org.id,
                     createdAt: { gte: start, lt: end },
                 },
             });
-            ticketsTotal = grouped.reduce((a, b) => a + b._count._all, 0);
         }
     }
+    /* =====================
+       RETURN FINAL
+    ===================== */
     return {
         empresa,
         month: ym,
-        visitas: { count: visitasCount, totalMs, avgMs },
-        equipos: { count: equiposCount },
-        tickets: { total: ticketsTotal },
+        kpis: {
+            visitas: {
+                count: visitasCount,
+                totalMs,
+                avgMs,
+            },
+            equipos: {
+                count: equiposCount,
+            },
+            tickets: {
+                total: ticketsTotal,
+            },
+        },
+        visitasPorTipo,
     };
 }
 //# sourceMappingURL=reportEmpresa.service.js.map

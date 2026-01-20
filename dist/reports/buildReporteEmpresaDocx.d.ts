@@ -1,11 +1,7 @@
-export declare function monthRange(ym: string): {
-    start: Date;
-    end: Date;
-};
-export declare function buildReporteEmpresaData(empresaId: number, ym: string): Promise<{
+export declare function buildReporteEmpresaDocx(data: {
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
     };
     month: string;
     kpis: {
@@ -25,5 +21,5 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         tipo: string;
         cantidad: number;
     }[];
-}>;
-//# sourceMappingURL=reportEmpresa.service.d.ts.map
+}): Promise<Buffer>;
+//# sourceMappingURL=buildReporteEmpresaDocx.d.ts.map

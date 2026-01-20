@@ -14,6 +14,13 @@ function normalizeEmpresa(nombre: string): string {
         .replace(/\s+/g, " ");
 }
 
+type SharepointArchivo = {
+    empresa: string;
+    sharepointPath: string;
+    fileName: string;
+    contentBase64: string;
+};
+
 /* ======================================================
    📂 Rutas SharePoint por empresa (CLAVE)
 ====================================================== */
@@ -118,7 +125,7 @@ export async function exportReportesForSharepoint(
         /* =====================
            Construcción archivos
         ===================== */
-        const archivos = [];
+        const archivos: SharepointArchivo[] = [];
 
         for (const empresa of empresas) {
             const sharepointPath = resolveSharepointPathReporte(

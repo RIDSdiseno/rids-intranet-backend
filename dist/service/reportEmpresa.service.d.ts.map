@@ -1,1 +1,1 @@
-{"version":3,"file":"reportEmpresa.service.d.ts","sourceRoot":"","sources":["../../src/service/reportEmpresa.service.ts"],"names":[],"mappings":"AAEA,qCAAqC;AACrC,wBAAgB,UAAU,CAAC,EAAE,EAAE,MAAM;;;EAMpC;AAUD,wBAAsB,uBAAuB,CACzC,SAAS,EAAE,MAAM,EACjB,EAAE,EAAE,MAAM;;;;;;;;;;;;;;;;;GAwDb"}
+{"version":3,"file":"reportEmpresa.service.d.ts","sourceRoot":"","sources":["../../src/service/reportEmpresa.service.ts"],"names":[],"mappings":"AAKA,wBAAgB,UAAU,CAAC,EAAE,EAAE,MAAM;;;EAapC;AA4CD,wBAAsB,uBAAuB,CACzC,SAAS,EAAE,MAAM,EACjB,EAAE,EAAE,MAAM;;;;;;;;;;;;;;;;;;;;;;;GAsIb"}

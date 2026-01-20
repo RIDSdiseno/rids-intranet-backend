@@ -113,12 +113,26 @@ export async function actualizarFichaEmpresa(req, res) {
 /* =====================================================
    FICHA TÉCNICA EMPRESA (NUEVO)
 ===================================================== */
+/* =====================================================
+   FICHA TÉCNICA EMPRESA (FIX DEFINITIVO)
+===================================================== */
 export async function obtenerFichaTecnicaEmpresa(req, res) {
     const empresaId = Number(req.params.empresaId);
-    const ficha = await prisma.fichaTecnicaEmpresa.findUnique({
+    if (!empresaId || Number.isNaN(empresaId)) {
+        return res.status(400).json({ message: "empresaId inválido" });
+    }
+    let ficha = await prisma.fichaTecnicaEmpresa.findUnique({
         where: { empresaId },
     });
-    res.json(ficha);
+    // 🔥 SI NO EXISTE, SE CREA AUTOMÁTICAMENTE
+    if (!ficha) {
+        ficha = await prisma.fichaTecnicaEmpresa.create({
+            data: {
+                empresaId,
+            },
+        });
+    }
+    return res.status(200).json(ficha);
 }
 /* ===================== FICHA TÉCNICA EMPRESA ===================== */
 export async function upsertFichaTecnicaEmpresa(req, res) {
@@ -127,17 +141,80 @@ export async function upsertFichaTecnicaEmpresa(req, res) {
         if (!empresaId || Number.isNaN(empresaId)) {
             return res.status(400).json({ message: "empresaId inválido" });
         }
+        const body = req.body;
         const ficha = await prisma.fichaTecnicaEmpresa.upsert({
             where: { empresaId },
             update: {
-                ...req.body,
+                tecnicoPrincipal: body.tecnicoPrincipal ?? null,
+                tecnicosRespaldo: body.tecnicosRespaldo ?? null,
+                fechaUltimaVisita: body.fechaUltimaVisita
+                    ? new Date(body.fechaUltimaVisita)
+                    : null,
+                proximaVisitaProgramada: body.proximaVisitaProgramada
+                    ? new Date(body.proximaVisitaProgramada)
+                    : null,
+                observacionesVisita: body.observacionesVisita ?? null,
+                pcsNotebooks: body.pcsNotebooks ?? null,
+                servidores: body.servidores ?? null,
+                impresorasPerifericos: body.impresorasPerifericos ?? null,
+                otrosEquipos: body.otrosEquipos ?? null,
+                sistemasOperativos: body.sistemasOperativos ?? null,
+                aplicacionesCriticas: body.aplicacionesCriticas ?? null,
+                licenciasVigentes: body.licenciasVigentes ?? null,
+                antivirusSeguridad: body.antivirusSeguridad ?? null,
+                proveedorInternet: body.proveedorInternet ?? null,
+                velocidadContratada: body.velocidadContratada ?? null,
+                routersSwitches: body.routersSwitches ?? null,
+                configuracionIP: body.configuracionIP ?? null,
+                dominioWeb: body.dominioWeb ?? null,
+                hostingProveedor: body.hostingProveedor ?? null,
+                certificadoSSL: body.certificadoSSL ?? null,
+                correosCorporativos: body.correosCorporativos ?? null,
+                redesSociales: body.redesSociales ?? null,
+                metodoRespaldo: body.metodoRespaldo ?? null,
+                frecuenciaRespaldo: body.frecuenciaRespaldo ?? null,
+                responsableRespaldo: body.responsableRespaldo ?? null,
+                ultimaRestauracion: body.ultimaRestauracion
+                    ? new Date(body.ultimaRestauracion)
+                    : null,
             },
             create: {
                 empresaId,
-                ...req.body,
+                tecnicoPrincipal: body.tecnicoPrincipal ?? null,
+                tecnicosRespaldo: body.tecnicosRespaldo ?? null,
+                fechaUltimaVisita: body.fechaUltimaVisita
+                    ? new Date(body.fechaUltimaVisita)
+                    : null,
+                proximaVisitaProgramada: body.proximaVisitaProgramada
+                    ? new Date(body.proximaVisitaProgramada)
+                    : null,
+                observacionesVisita: body.observacionesVisita ?? null,
+                pcsNotebooks: body.pcsNotebooks ?? null,
+                servidores: body.servidores ?? null,
+                impresorasPerifericos: body.impresorasPerifericos ?? null,
+                otrosEquipos: body.otrosEquipos ?? null,
+                sistemasOperativos: body.sistemasOperativos ?? null,
+                aplicacionesCriticas: body.aplicacionesCriticas ?? null,
+                licenciasVigentes: body.licenciasVigentes ?? null,
+                antivirusSeguridad: body.antivirusSeguridad ?? null,
+                proveedorInternet: body.proveedorInternet ?? null,
+                velocidadContratada: body.velocidadContratada ?? null,
+                routersSwitches: body.routersSwitches ?? null,
+                configuracionIP: body.configuracionIP ?? null,
+                dominioWeb: body.dominioWeb ?? null,
+                hostingProveedor: body.hostingProveedor ?? null,
+                certificadoSSL: body.certificadoSSL ?? null,
+                correosCorporativos: body.correosCorporativos ?? null,
+                redesSociales: body.redesSociales ?? null,
+                metodoRespaldo: body.metodoRespaldo ?? null,
+                frecuenciaRespaldo: body.frecuenciaRespaldo ?? null,
+                responsableRespaldo: body.responsableRespaldo ?? null,
+                ultimaRestauracion: body.ultimaRestauracion
+                    ? new Date(body.ultimaRestauracion)
+                    : null,
             },
         });
-        return res.json({
+        return res.status(200).json({
             ok: true,
             ficha,
         });
@@ -147,6 +224,48 @@ export async function upsertFichaTecnicaEmpresa(req, res) {
         return res.status(500).json({
             ok: false,
             message: "No se pudo guardar la ficha técnica",
+        });
+    }
+}
+/* =====================================================
+   CHECKLIST DE GESTIÓN EMPRESA
+===================================================== */
+export async function upsertChecklistEmpresa(req, res) {
+    const empresaId = Number(req.params.empresaId);
+    if (!empresaId || Number.isNaN(empresaId)) {
+        return res.status(400).json({ message: "empresaId inválido" });
+    }
+    try {
+        // 1️⃣ asegurar fichaEmpresa
+        let fichaEmpresa = await prisma.fichaEmpresa.findUnique({
+            where: { empresaId },
+        });
+        if (!fichaEmpresa) {
+            fichaEmpresa = await prisma.fichaEmpresa.create({
+                data: { empresaId },
+            });
+        }
+        // 2️⃣ upsert checklist
+        const checklist = await prisma.checklistGestionEmpresa.upsert({
+            where: { fichaEmpresaId: fichaEmpresa.id },
+            update: {
+                ...req.body,
+            },
+            create: {
+                fichaEmpresaId: fichaEmpresa.id,
+                ...req.body,
+            },
+        });
+        return res.status(200).json({
+            ok: true,
+            checklist,
+        });
+    }
+    catch (error) {
+        console.error("Error al guardar checklist:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "No se pudo guardar el checklist",
         });
     }
 }
