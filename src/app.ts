@@ -5,6 +5,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
+import { prisma } from "./lib/prisma.js";
 
 /* ========= Helpers ========= */
 function normalizeOrigin(origin: string): string {
@@ -44,6 +45,8 @@ const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
 
 const app = express();
 
+app.set("prisma", prisma);
+
 /* ========= Base ========= */
 // si hay proxy (Railway/Render/etc.)
 app.set("trust proxy", 1);
@@ -71,7 +74,7 @@ app.use(cookieParser());
 const corsOptions: cors.CorsOptions = {
   origin: makeCorsOriginValidator(allowedOrigins),
   credentials: true,
-  methods: ["GET","HEAD","PUT","PATCH","POST","DELETE","OPTIONS"],
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   // sin allowedHeaders
   maxAge: 600,
 };

@@ -5,6 +5,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
+import { prisma } from "./lib/prisma.js";
 /* ========= Helpers ========= */
 function normalizeOrigin(origin) {
     return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
@@ -35,6 +36,7 @@ function makeCorsOriginValidator(allowed) {
 }
 const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
 const app = express();
+app.set("prisma", prisma);
 /* ========= Base ========= */
 // si hay proxy (Railway/Render/etc.)
 app.set("trust proxy", 1);
