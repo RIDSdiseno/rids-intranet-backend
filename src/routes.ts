@@ -65,7 +65,7 @@ api.use("/tecnicos", tecnicosRouter);
 
 api.use("/inventario", inventarioRoutes);
 
-api.use("/reportes", reportesExportRouter);
+api.use("/reportes-export", reportesExportRouter);
 
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
