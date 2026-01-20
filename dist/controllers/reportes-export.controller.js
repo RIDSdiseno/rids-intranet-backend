@@ -110,10 +110,12 @@ export async function exportReportesForSharepoint(req, res) {
         });
     }
     catch (err) {
-        console.error("❌ EXPORT REPORTES SP:", err);
+        console.error("❌ EXPORT REPORTES SP ERROR:");
+        console.error(err);
+        console.error(err?.stack);
         return res.status(500).json({
             ok: false,
-            error: "Error interno exportando reportes",
+            error: err?.message ?? "Error interno",
         });
     }
 }
