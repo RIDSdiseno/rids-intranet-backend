@@ -5,15 +5,10 @@ import { prisma } from "../lib/prisma.js";
 ====================================================== */
 export function monthRange(ym: string) {
     const [y, m] = ym.split("-").map(Number);
-
-    if (!y || !m) {
-        throw new Error("month inválido (usa YYYY-MM)");
-    }
+    if (!y || !m) throw new Error("month inválido (usa YYYY-MM)");
 
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-    const end = new Date(
-        Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 0, 0, 0)
-    );
+    const end = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 0, 0, 0));
 
     return { start, end };
 }
@@ -46,9 +41,7 @@ function clasificarTipoVisita(v: {
         v.estadoDisco ||
         v.mantenimientoReloj ||
         v.rendimientoEquipo
-    ) {
-        return "PROGRAMADA";
-    }
+    ) return "PROGRAMADA";
 
     if ((v.otrosDetalle ?? "").toLowerCase().includes("program")) {
         return "PROGRAMADA";
@@ -58,7 +51,7 @@ function clasificarTipoVisita(v: {
 }
 
 /* ======================================================
-   📊 Servicio principal de reportes
+   📊 SERVICE FINAL – REPORTE EMPRESA
 ====================================================== */
 export async function buildReporteEmpresaData(
     empresaId: number,
@@ -72,46 +65,36 @@ export async function buildReporteEmpresaData(
         select: { id_empresa: true, nombre: true },
     });
 
-    if (!empresa) {
-        throw new Error("Empresa no encontrada");
-    }
+    if (!empresa) throw new Error("Empresa no encontrada");
 
     const { start, end } = monthRange(ym);
 
     /* =====================
-       Visitas (KPIs)
+       VISITAS – KPIs
     ===================== */
-    const visitas = await prisma.visita.findMany({
-        where: {
-            empresaId,
-            inicio: { gte: start, lt: end },
-        },
+    const visitasBase = await prisma.visita.findMany({
+        where: { empresaId, inicio: { gte: start, lt: end } },
         select: {
             inicio: true,
             fin: true,
         },
     });
 
-    const visitasCount = visitas.length;
+    const visitasCount = visitasBase.length;
 
-    const duracionesMs = visitas
+    const duracionesMs = visitasBase
         .filter(v => v.fin)
         .map(v => new Date(v.fin!).getTime() - new Date(v.inicio!).getTime())
         .filter(ms => ms > 0);
 
     const totalMs = duracionesMs.reduce((a, b) => a + b, 0);
-    const avgMs = duracionesMs.length
-        ? Math.round(totalMs / duracionesMs.length)
-        : 0;
+    const avgMs = duracionesMs.length ? Math.round(totalMs / duracionesMs.length) : 0;
 
     /* =====================
-       Visitas por tipo (derivado)
+       VISITAS – CLASIFICACIÓN
     ===================== */
     const visitasClasificables = await prisma.visita.findMany({
-        where: {
-            empresaId,
-            inicio: { gte: start, lt: end },
-        },
+        where: { empresaId, inicio: { gte: start, lt: end } },
         select: {
             actualizaciones: true,
             antivirus: true,
@@ -135,28 +118,66 @@ export async function buildReporteEmpresaData(
     }
 
     const visitasPorTipo = Object.entries(visitasPorTipoMap).map(
-        ([tipo, cantidad]) => ({
-            tipo,
-            cantidad,
-        })
+        ([tipo, cantidad]) => ({ tipo, cantidad })
     );
 
     /* =====================
-       Equipos
+       VISITAS – DETALLE (IGUAL A LA WEB)
     ===================== */
-    const equiposCount = await prisma.equipo.count({
-        where: {
-            solicitante: {
-                empresaId,
-            },
+    const visitasDetalle = await prisma.visita.findMany({
+        where: { empresaId, inicio: { gte: start, lt: end } },
+        orderBy: { inicio: "asc" },
+        select: {
+            inicio: true,
+            fin: true,
+            solicitante: true,
+            tecnico: { select: { nombre: true } },
+            sucursal: { select: { nombre: true } },
+            otrosDetalle: true,
         },
     });
 
     /* =====================
-       Tickets
+       VISITAS – POR TÉCNICO
+    ===================== */
+    const visitasPorTecnicoMap: Record<string, number> = {};
+    for (const v of visitasDetalle) {
+        const tecnico = v.tecnico?.nombre ?? "SIN TÉCNICO";
+        visitasPorTecnicoMap[tecnico] = (visitasPorTecnicoMap[tecnico] ?? 0) + 1;
+    }
+
+    const visitasPorTecnico = Object.entries(visitasPorTecnicoMap).map(
+        ([tecnico, cantidad]) => ({ tecnico, cantidad })
+    );
+
+    /* =====================
+       EQUIPOS / INVENTARIO
+    ===================== */
+    const equipos = await prisma.equipo.findMany({
+        where: {
+            solicitante: { empresaId },
+        },
+        select: {
+            serial: true,
+            marca: true,
+            modelo: true,
+            procesador: true,
+            ram: true,
+            disco: true,
+            propiedad: true,
+            solicitante: { select: { nombre: true } },
+        },
+    });
+
+    /* =====================
+       TICKETS
     ===================== */
     const orgName = normalizeOrgName(empresa.nombre);
-    let ticketsTotal = 0;
+    let ticketsDetalle: {
+        createdAt: Date;
+        type: string | null;
+        status: number;
+    }[] = [];
 
     if (orgName) {
         const org = await prisma.ticketOrg.findUnique({
@@ -164,14 +185,29 @@ export async function buildReporteEmpresaData(
         });
 
         if (org) {
-            ticketsTotal = await prisma.freshdeskTicket.count({
+            ticketsDetalle = await prisma.freshdeskTicket.findMany({
                 where: {
                     ticketOrgId: org.id,
                     createdAt: { gte: start, lt: end },
                 },
+                select: {
+                    createdAt: true,
+                    type: true,
+                    status: true,
+                },
+                orderBy: { createdAt: "asc" },
             });
         }
     }
+
+    /* =====================
+       NARRATIVA AUTOMÁTICA
+    ===================== */
+    const narrativa = {
+        resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${Math.round(
+            avgMs / 60000
+        )} minutos por visita. Se registraron ${equipos.length} equipos y ${ticketsDetalle.length} tickets asociados a la empresa.`,
+    };
 
     /* =====================
        RETURN FINAL
@@ -187,13 +223,27 @@ export async function buildReporteEmpresaData(
                 avgMs,
             },
             equipos: {
-                count: equiposCount,
+                count: equipos.length,
             },
             tickets: {
-                total: ticketsTotal,
+                total: ticketsDetalle.length,
             },
         },
 
         visitasPorTipo,
+        visitasDetalle,
+        visitasPorTecnico,
+
+        inventario: {
+            equipos,
+            total: equipos.length,
+        },
+
+        tickets: {
+            detalle: ticketsDetalle,
+            total: ticketsDetalle.length,
+        },
+
+        narrativa,
     };
 }
