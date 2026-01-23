@@ -49,8 +49,8 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false, // evita bloqueos con recursos externos
     contentSecurityPolicy: false, // si quieres CSP, la definimos luego
 }));
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser());
 /* ========= CORS ========= */
 const corsOptions = {

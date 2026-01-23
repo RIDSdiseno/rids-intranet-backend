@@ -15,6 +15,7 @@ model Empresa {
     nombre              String                @unique
     razonSocial         String?
     tieneSucursales     Boolean               @default(false)
+    dominios            String[]              @default([])
     solicitantes        Solicitante[]
     visitas             Visita[]              @relation("Empresa_Visita")
     tickets             FreshdeskTicket[]
@@ -24,6 +25,8 @@ model Empresa {
     contactoEmpresas    ContactoEmpresa[]
     fichaEmpresa        FichaEmpresa?
     fichaTecnicaEmpresa FichaTecnicaEmpresa?
+    historials          Historial[]
+    ticketsRids         Ticket[]
 }
 
 model Sucursal {
@@ -227,6 +230,7 @@ model Solicitante {
     tickets         FreshdeskTicket[]
     requesterMaps   FreshdeskRequesterMap[]
     msLicenses      SolicitanteMsLicense[]
+    ticketsRids     Ticket[]
 
     @@index([empresaId])
     @@index([isActive])
@@ -421,10 +425,13 @@ model Historial {
     tecnico            Tecnico     @relation(fields: [tecnicoId], references: [id_tecnico])
     solicitanteRef     Solicitante @relation("Solicitante_Historial", fields: [solicitanteId], references: [id_solicitante])
     sucursal           Sucursal?   @relation(fields: [sucursalId], references: [id_sucursal])
+    empresaId          Int?
+    empresa            Empresa?    @relation(fields: [empresaId], references: [id_empresa])
 
     @@index([tecnicoId, fin(sort: Desc)])
     @@index([solicitanteId])
     @@index([sucursalId])
+    @@index([empresaId])
 }
 
 model RefreshToken {
@@ -454,6 +461,7 @@ model Tecnico {
     visitas         Visita[]
     detalleTrabajos DetalleTrabajoGestioo[]
     entregas        Entrega[]
+    tickets         Ticket[]
 }
 
 model Visita {
@@ -653,6 +661,153 @@ model EvidenciaEntrega {
 
     @@index([entregaId])
     @@index([tipo])
+}
+
+model Ticket {
+    id       Int    @id @default(autoincrement())
+    publicId String @unique
+
+    // Relaciones
+    empresaId   Int
+    requesterId Int?
+    assigneeId  Int?
+
+    empresa   Empresa      @relation(fields: [empresaId], references: [id_empresa])
+    requester Solicitante? @relation(fields: [requesterId], references: [id_solicitante])
+    assignee  Tecnico?     @relation(fields: [assigneeId], references: [id_tecnico])
+
+    // Datos base
+    subject  String
+    status   TicketStatus   @default(NEW)
+    priority TicketPriority @default(NORMAL)
+    channel  TicketChannel  @default(WEB)
+
+    // Correo (aunque no lo uses aún)
+    fromEmail  String?
+    inboxEmail String?
+
+    // Fechas KPI
+    firstResponseAt DateTime?
+    resolvedAt      DateTime?
+    closedAt        DateTime?
+
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+    lastActivityAt DateTime @default(now())
+
+    messages TicketMessage[]
+    events   TicketEvent[]
+
+    @@index([empresaId])
+    @@index([status])
+    @@index([assigneeId])
+    @@index([createdAt])
+}
+
+model TicketMessage {
+    id       Int @id @default(autoincrement())
+    ticketId Int
+
+    ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+    direction  MessageDirection
+    isInternal Boolean          @default(false)
+
+    bodyText String?
+    bodyHtml String?
+
+    // Preparado para correo
+    fromEmail        String?
+    toEmail          String?
+    cc               String?
+    sourceMessageId  String? @unique
+    sourceInReplyTo  String?
+    sourceReferences String?
+
+    createdAt DateTime @default(now())
+
+    attachments TicketAttachment[]
+
+    @@index([ticketId])
+    @@index([createdAt])
+}
+
+model TicketAttachment {
+    id        Int @id @default(autoincrement())
+    messageId Int
+
+    message TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+    filename String
+    mimeType String
+    url      String
+    bytes    Int
+
+    createdAt DateTime @default(now())
+
+    @@index([messageId])
+}
+
+model TicketEvent {
+    id       Int @id @default(autoincrement())
+    ticketId Int
+
+    ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+    type     TicketEventType
+    oldValue String?
+    newValue String?
+
+    actorType TicketActorType
+    actorId   Int?
+
+    createdAt DateTime @default(now())
+
+    @@index([ticketId])
+}
+
+enum TicketChannel {
+    WEB
+    EMAIL
+    API
+}
+
+enum TicketStatus {
+    NEW
+    OPEN
+    PENDING
+    ON_HOLD
+    RESOLVED
+    CLOSED
+}
+
+enum TicketPriority {
+    LOW
+    NORMAL
+    HIGH
+    URGENT
+}
+
+enum MessageDirection {
+    INBOUND
+    OUTBOUND
+}
+
+enum TicketEventType {
+    STATUS_CHANGED
+    ASSIGNED
+    PRIORITY_CHANGED
+    CREATED
+    CLOSED
+    REOPENED
+    MESSAGE_SENT
+    INTERNAL_NOTE
+}
+
+enum TicketActorType {
+    REQUESTER
+    AGENT
+    SYSTEM
 }
 
 enum MonedaGestioo {

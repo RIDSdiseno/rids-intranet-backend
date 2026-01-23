@@ -10,8 +10,9 @@ import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
+// Reportes e Inventario export
 import inventarioRoutes from "./routes/inventario.routes.js";
-import reportesExportRouter from "./routes/reportes-export.routes.js";
+import reportesUploadRouter from "./routes/reportes-upload.routes.js";
 /* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
 import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
@@ -35,6 +36,8 @@ import { debugRouter } from "./routes/debug.js";
 import whatchimpRouter from "./routes/whatchimp.routes.js";
 /* ===================== CLOUDINARY ===================== */
 import uploadRoutes from "./routes/upload-imagenes.routes.js";
+// src/routes.ts
+import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
 /* ========================================================= */
 export const api = Router();
 /* ===================== App Core ===================== */
@@ -47,8 +50,9 @@ api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
 api.use("/ficha-empresa", fichaEmpresasRouter);
 api.use("/tecnicos", tecnicosRouter);
+// Reportes e Inventario
 api.use("/inventario", inventarioRoutes);
-api.use("/reportes-export", reportesExportRouter);
+api.use("/reportes-upload", reportesUploadRouter);
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
 api.use("/fd", fdRouter);
@@ -57,6 +61,8 @@ api.use("/fd", fdRouter);
 api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
 api.use("/tickets", ticketsApiRouter);
+/* ===================== HELP DESK RIDS ===================== */
+api.use("/helpdesk/tickets", ticketeraRouter);
 /* ===================== GESTIOO ===================== */
 api.use("/entidades", entidadesRouter);
 api.use("/productos-gestioo", productosGestiooRouter);
