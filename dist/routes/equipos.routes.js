@@ -1,6 +1,6 @@
 // src/routes/equipos.routes.ts
 import { Router, } from "express";
-import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, } from "../controllers/equipos.controller.js";
+import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, } from "../controllers/equipos.controller.js";
 export const equiposRouter = Router();
 /* ============ Helpers ============ */
 // Async wrapper tipado para capturar rejects sin romper el proceso
@@ -21,6 +21,7 @@ const requireNumericId = (req, res, next) => {
 equiposRouter.get("/", asyncHandler(listEquipos));
 // Crear
 equiposRouter.post("/", asyncHandler(createEquipo));
+equiposRouter.patch("/reasignar", asyncHandler(reassignEquipos));
 // Leer uno
 equiposRouter.get("/:id", requireNumericId, asyncHandler(getEquipoById));
 // Actualizar (parcial o total)

@@ -11,7 +11,8 @@ const listQuerySchema = z.object({
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
-    sortBy: z.enum([
+    sortBy: z
+        .enum([
         "id_equipo",
         "serial",
         "tipo",
@@ -21,7 +22,9 @@ const listQuerySchema = z.object({
         "ram",
         "disco",
         "propiedad",
-    ]).default("id_equipo").optional(),
+    ])
+        .default("id_equipo")
+        .optional(),
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 const createEquipoSchema = z.object({
@@ -36,6 +39,13 @@ const createEquipoSchema = z.object({
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
 });
+// 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
+const createEquiposRequestSchema = z.union([
+    createEquipoSchema,
+    z.object({
+        equipos: z.array(createEquipoSchema).min(1),
+    }),
+]);
 const equipoUpdateSchema = z.object({
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
     tipo: z.nativeEnum(TipoEquipo).optional(),
@@ -119,7 +129,11 @@ export async function listEquipos(req, res) {
             ...(q.empresaName
                 ? {
                     solicitante: {
-                        is: { empresa: { is: { nombre: { contains: q.empresaName, mode: INS } } } },
+                        is: {
+                            empresa: {
+                                is: { nombre: { contains: q.empresaName, mode: INS } },
+                            },
+                        },
                     },
                 }
                 : {}),
@@ -166,60 +180,105 @@ export async function listEquipos(req, res) {
     catch (err) {
         console.error("listEquipos error:", err);
         if (err instanceof z.ZodError) {
-            return res.status(400).json({ error: "Parámetros inválidos", details: err.flatten() });
+            return res.status(400).json({
+                error: "Parámetros inválidos",
+                details: err.flatten(),
+            });
         }
         return res.status(500).json({ error: "Error al listar equipos" });
     }
 }
-/* ================== CREATE ================== */
+/* ================== CREATE (single o bulk) ================== */
 export async function createEquipo(req, res) {
     try {
-        const data = createEquipoSchema.parse(req.body);
-        if (data.serial) {
-            const existe = await prisma.equipo.findUnique({ where: { serial: data.serial } });
-            if (existe) {
-                return res.status(400).json({ error: "Ya existe un equipo con ese serial" });
+        const parsed = createEquiposRequestSchema.parse(req.body);
+        const equiposToCreate = "equipos" in parsed ? parsed.equipos : [parsed];
+        const created = [];
+        const errors = [];
+        // 🔥 transacción para que sea más estable
+        await prisma.$transaction(async (tx) => {
+            for (const data of equiposToCreate) {
+                try {
+                    // Validación duplicado por serial
+                    const existe = await tx.equipo.findUnique({
+                        where: { serial: data.serial },
+                    });
+                    if (existe) {
+                        errors.push({
+                            serial: data.serial,
+                            error: "Ya existe un equipo con ese serial",
+                        });
+                        continue;
+                    }
+                    let idSolicitanteFinal = null;
+                    if (data.idSolicitante) {
+                        const sol = await tx.solicitante.findUnique({
+                            where: { id_solicitante: data.idSolicitante },
+                        });
+                        if (!sol) {
+                            errors.push({
+                                serial: data.serial,
+                                error: `Solicitante no encontrado (idSolicitante=${data.idSolicitante})`,
+                            });
+                            continue;
+                        }
+                        idSolicitanteFinal = sol.id_solicitante;
+                    }
+                    else if (data.empresaId) {
+                        const empresa = await tx.empresa.findUnique({
+                            where: { id_empresa: data.empresaId },
+                        });
+                        if (!empresa) {
+                            errors.push({
+                                serial: data.serial,
+                                error: `Empresa no encontrada (empresaId=${data.empresaId})`,
+                            });
+                            continue;
+                        }
+                        idSolicitanteFinal = await ensurePlaceholderSolicitante(empresa.id_empresa);
+                    }
+                    const equipo = await tx.equipo.create({
+                        data: {
+                            tipo: data.tipo,
+                            marca: data.marca,
+                            modelo: data.modelo,
+                            serial: data.serial,
+                            procesador: data.procesador,
+                            ram: data.ram,
+                            disco: data.disco,
+                            propiedad: data.propiedad,
+                            idSolicitante: idSolicitanteFinal,
+                        },
+                    });
+                    created.push(equipo);
+                }
+                catch (e) {
+                    errors.push({
+                        serial: data.serial,
+                        error: e?.message ?? "Error desconocido",
+                    });
+                }
             }
-        }
-        let idSolicitanteFinal = null;
-        if (data.idSolicitante) {
-            const sol = await prisma.solicitante.findUnique({
-                where: { id_solicitante: data.idSolicitante },
-            });
-            if (!sol)
-                return res.status(400).json({ error: "Solicitante no encontrado" });
-            idSolicitanteFinal = sol.id_solicitante;
-        }
-        else if (data.empresaId) {
-            const empresa = await prisma.empresa.findUnique({
-                where: { id_empresa: data.empresaId },
-            });
-            if (!empresa)
-                return res.status(400).json({ error: "Empresa no encontrada" });
-            idSolicitanteFinal = await ensurePlaceholderSolicitante(empresa.id_empresa);
-        }
-        const equipo = await prisma.equipo.create({
-            data: {
-                tipo: data.tipo,
-                marca: data.marca,
-                modelo: data.modelo,
-                serial: data.serial,
-                procesador: data.procesador,
-                ram: data.ram,
-                disco: data.disco,
-                propiedad: data.propiedad,
-                idSolicitante: idSolicitanteFinal,
-            },
         });
         clearCache();
-        return res.status(201).json(equipo);
+        return res.status(201).json({
+            ok: true,
+            totalReceived: equiposToCreate.length,
+            totalCreated: created.length,
+            totalErrors: errors.length,
+            created,
+            errors,
+        });
     }
     catch (err) {
         console.error("createEquipo error:", err);
         if (err instanceof z.ZodError) {
-            return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
+            return res.status(400).json({
+                error: "Datos inválidos",
+                details: err.flatten(),
+            });
         }
-        return res.status(500).json({ error: "Error al crear equipo" });
+        return res.status(500).json({ error: "Error al crear equipo(s)" });
     }
 }
 /* ================== READ ONE ================== */
@@ -318,7 +377,7 @@ export async function deleteEquipo(req, res) {
         return res.status(500).json({ error: "Error al eliminar equipo" });
     }
 }
-// ================== EQUIPOS POR EMPRESA (MODAL) ==================
+/* ================== EQUIPOS POR EMPRESA (MODAL) ================== */
 // GET /api/empresas/:empresaId/equipos
 export async function getEquiposByEmpresa(req, res) {
     try {
@@ -352,6 +411,66 @@ export async function getEquiposByEmpresa(req, res) {
         return res.status(500).json({
             error: "Error al obtener equipos por empresa",
         });
+    }
+}
+const reassignEquiposSchema = z.object({
+    equipos: z.array(z.object({
+        serial: z.string().trim().min(1),
+        idSolicitante: z.coerce.number().int().positive(),
+    })).min(1),
+});
+export async function reassignEquipos(req, res) {
+    try {
+        const { equipos } = reassignEquiposSchema.parse(req.body);
+        const updated = [];
+        const errors = [];
+        for (const item of equipos) {
+            try {
+                const equipo = await prisma.equipo.findUnique({
+                    where: { serial: item.serial },
+                });
+                if (!equipo) {
+                    errors.push({ serial: item.serial, error: "Equipo no encontrado" });
+                    continue;
+                }
+                const solicitante = await prisma.solicitante.findUnique({
+                    where: { id_solicitante: item.idSolicitante },
+                });
+                if (!solicitante) {
+                    errors.push({
+                        serial: item.serial,
+                        error: `Solicitante ${item.idSolicitante} no existe`,
+                    });
+                    continue;
+                }
+                const upd = await prisma.equipo.update({
+                    where: { serial: item.serial },
+                    data: { idSolicitante: solicitante.id_solicitante },
+                });
+                updated.push(upd);
+            }
+            catch (e) {
+                errors.push({
+                    serial: item.serial,
+                    error: e?.message ?? "Error desconocido",
+                });
+            }
+        }
+        return res.json({
+            ok: true,
+            totalReceived: equipos.length,
+            totalUpdated: updated.length,
+            totalErrors: errors.length,
+            updated,
+            errors,
+        });
+    }
+    catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
+        }
+        console.error("reassignEquipos error:", err);
+        return res.status(500).json({ error: "Error al reasignar equipos" });
     }
 }
 //# sourceMappingURL=equipos.controller.js.map

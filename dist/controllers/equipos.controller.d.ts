@@ -5,4 +5,5 @@ export declare function getEquipoById(req: Request, res: Response): Promise<Resp
 export declare function updateEquipo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function deleteEquipo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getEquiposByEmpresa(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function reassignEquipos(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=equipos.controller.d.ts.map
