@@ -152,7 +152,7 @@ function buildInventarioExcel(
         if (items.length === 0) continue;
 
         const rows = items.map((e, i) => ({
-            "N°": i + 1,
+            "Código": i + 1,
             "USUARIO": e.solicitante?.nombre ?? "",
             "CORREO": e.solicitante?.email ?? "",
             "SERIAL": e.serial ?? "",
@@ -169,7 +169,7 @@ function buildInventarioExcel(
         }));
 
         const headers = [
-            "N°",
+            "Código",
             "USUARIO",
             "CORREO",
             "SERIAL",

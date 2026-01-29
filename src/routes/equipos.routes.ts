@@ -9,6 +9,7 @@ import {
   getEquipoById,
   updateEquipo,
   deleteEquipo,
+  reassignEquipos,
 } from "../controllers/equipos.controller.js";
 
 export const equiposRouter = Router();
@@ -37,6 +38,8 @@ equiposRouter.get("/", asyncHandler(listEquipos));
 
 // Crear
 equiposRouter.post("/", asyncHandler(createEquipo));
+
+equiposRouter.patch("/reasignar",asyncHandler(reassignEquipos));
 
 // Leer uno
 equiposRouter.get("/:id", requireNumericId, asyncHandler(getEquipoById));
