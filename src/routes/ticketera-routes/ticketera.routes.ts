@@ -10,6 +10,9 @@ import {
     inboundEmail
 } from "../../controllers/tickets-rids/ticketera.controller.js";
 
+// 🆕 Importar controlador de email
+import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
+
 import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
 import {
     getTicketKpis,
@@ -28,9 +31,10 @@ ticketeraRouter.post("/", createTicket);
 ticketeraRouter.get("/", listTickets);
 
 // =======================
-// EMAIL INBOUND
+// EMAIL ENDPOINTS
 // =======================
-ticketeraRouter.post("/inbound-email", inboundEmail);
+ticketeraRouter.post("/inbound-email", inboundEmail); // Webhook legacy
+ticketeraRouter.post("/process-emails", processEmails); // Procesar emails IMAP manualmente
 
 // =======================
 // RUTAS FIJAS (ANTES DE :id)

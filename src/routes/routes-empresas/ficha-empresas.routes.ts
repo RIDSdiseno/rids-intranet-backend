@@ -10,13 +10,15 @@ import {
     obtenerFichaSucursal,
     actualizarFichaSucursal,
     listarSucursalesEmpresa,
-    crearSucursal
+    crearSucursal,
+    obtenerRedSucursal,
+    upsertRedSucursal
 } from "../../controllers/controllers-empresas/sucursal.controller.js";
 
 // Red sucursal
 import {
-    obtenerRedSucursal,
-    upsertRedSucursal
+    obtenerEmpresaISP,
+    upsertEmpresaISP,
 } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
 
 export const fichaEmpresasRouter = Router();
@@ -28,17 +30,20 @@ fichaEmpresasRouter.put("/:empresaId/ficha", actualizarFichaEmpresa);
 fichaEmpresasRouter.get("/:empresaId/ficha-tecnica", obtenerFichaTecnicaEmpresa);
 fichaEmpresasRouter.put("/:empresaId/ficha-tecnica", upsertFichaTecnicaEmpresa);
 
+/* ===================== ISP / CONECTIVIDAD ===================== */
+fichaEmpresasRouter.get("/:empresaId/isp", obtenerEmpresaISP);
+fichaEmpresasRouter.put("/:empresaId/isp", upsertEmpresaISP);
 
 /* ===================== RED SUCURSAL ===================== */
 fichaEmpresasRouter.get("/sucursales/:sucursalId/red", obtenerRedSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId/red", upsertRedSucursal);
 
-// Sucursales
-fichaEmpresasRouter.get("/sucursales/:sucursalId",obtenerFichaSucursal);
-fichaEmpresasRouter.put("/sucursales/:sucursalId",actualizarFichaSucursal);
-fichaEmpresasRouter.get( "/:empresaId/sucursales",listarSucursalesEmpresa);
+/* ===================== SUCURSALES ===================== */
+fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
+fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);
+fichaEmpresasRouter.get("/:empresaId/sucursales", listarSucursalesEmpresa);
 fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
 
-fichaEmpresasRouter.put("/:empresaId/checklist",upsertChecklistEmpresa);
+fichaEmpresasRouter.put("/:empresaId/checklist", upsertChecklistEmpresa);
 
 export default fichaEmpresasRouter;

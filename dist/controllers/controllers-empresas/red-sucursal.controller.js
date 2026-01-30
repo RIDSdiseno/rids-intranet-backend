@@ -1,32 +1,41 @@
 import { prisma } from "../../lib/prisma.js";
-export async function obtenerRedSucursal(req, res) {
-    const { sucursalId } = req.params;
-    const red = await prisma.redSucursal.findUnique({
-        where: { sucursalId: Number(sucursalId) }
+export async function obtenerEmpresaISP(req, res) {
+    const empresaId = Number(req.params.empresaId);
+    let isp = await prisma.empresaISP.findUnique({
+        where: { empresaId },
     });
-    res.json(red);
+    if (!isp) {
+        isp = await prisma.empresaISP.create({
+            data: { empresaId },
+        });
+    }
+    res.json(isp);
 }
-export async function upsertRedSucursal(req, res) {
-    const { sucursalId } = req.params;
-    const { wifiNombre, claveWifi, ipRed, gateway, observaciones } = req.body;
-    const red = await prisma.redSucursal.upsert({
-        where: { sucursalId: Number(sucursalId) },
+export async function upsertEmpresaISP(req, res) {
+    const empresaId = Number(req.params.empresaId);
+    const body = req.body;
+    const isp = await prisma.empresaISP.upsert({
+        where: { empresaId },
         update: {
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones
+            operador: body.operador ?? null,
+            telefono: body.telefono ?? null,
+            servicio: body.servicio ?? null,
+            numeroTicket: body.numeroTicket ?? null,
+            wifiNombre: body.wifiNombre ?? null,
+            wifiClaveRef: body.wifiClaveRef ?? null,
+            ipRed: body.ipRed ?? null,
         },
         create: {
-            sucursalId: Number(sucursalId),
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones
-        }
+            empresaId,
+            operador: body.operador ?? null,
+            telefono: body.telefono ?? null,
+            servicio: body.servicio ?? null,
+            numeroTicket: body.numeroTicket ?? null,
+            wifiNombre: body.wifiNombre ?? null,
+            wifiClaveRef: body.wifiClaveRef ?? null,
+            ipRed: body.ipRed ?? null,
+        },
     });
-    res.json(red);
+    res.json({ ok: true, isp });
 }
 //# sourceMappingURL=red-sucursal.controller.js.map

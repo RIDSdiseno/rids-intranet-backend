@@ -4,7 +4,7 @@ import { z } from "zod";
 /* ================== Schemas ================== */
 const listQuerySchema = z.object({
     page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().positive().max(500).default(20),
+    pageSize: z.coerce.number().int().positive().max(1000).default(20),
     search: z.string().trim().optional(),
     marca: z.string().trim().optional(),
     tipo: z.nativeEnum(TipoEquipo).optional(),
@@ -199,8 +199,7 @@ export async function createEquipo(req, res) {
         await prisma.$transaction(async (tx) => {
             for (const data of equiposToCreate) {
                 try {
-                    // Validación duplicado por serial
-                    const existe = await tx.equipo.findUnique({
+                    const existe = await prisma.equipo.findUnique({
                         where: { serial: data.serial },
                     });
                     if (existe) {
@@ -212,32 +211,19 @@ export async function createEquipo(req, res) {
                     }
                     let idSolicitanteFinal = null;
                     if (data.idSolicitante) {
-                        const sol = await tx.solicitante.findUnique({
+                        const sol = await prisma.solicitante.findUnique({
                             where: { id_solicitante: data.idSolicitante },
                         });
                         if (!sol) {
                             errors.push({
                                 serial: data.serial,
-                                error: `Solicitante no encontrado (idSolicitante=${data.idSolicitante})`,
+                                error: "Solicitante no encontrado",
                             });
                             continue;
                         }
                         idSolicitanteFinal = sol.id_solicitante;
                     }
-                    else if (data.empresaId) {
-                        const empresa = await tx.empresa.findUnique({
-                            where: { id_empresa: data.empresaId },
-                        });
-                        if (!empresa) {
-                            errors.push({
-                                serial: data.serial,
-                                error: `Empresa no encontrada (empresaId=${data.empresaId})`,
-                            });
-                            continue;
-                        }
-                        idSolicitanteFinal = await ensurePlaceholderSolicitante(empresa.id_empresa);
-                    }
-                    const equipo = await tx.equipo.create({
+                    const equipo = await prisma.equipo.create({
                         data: {
                             tipo: data.tipo,
                             marca: data.marca,

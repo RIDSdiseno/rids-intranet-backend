@@ -27,6 +27,7 @@ model Empresa {
     fichaTecnicaEmpresa FichaTecnicaEmpresa?
     historials          Historial[]
     ticketsRids         Ticket[]
+    empresaISP          EmpresaISP?
 }
 
 model Sucursal {
@@ -157,6 +158,27 @@ model FichaTecnicaEmpresa {
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
 }
+
+model EmpresaISP {
+  id         Int @id @default(autoincrement())
+  empresaId  Int @unique
+
+  operador       String?
+  telefono       String?
+  servicio       String?
+  numeroTicket   String?
+
+  ipRed        String?
+
+  wifiNombre     String?
+  wifiClaveRef   String? // ⚠️ ideal referencia, no password plano
+
+  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 model ChecklistGestionEmpresa {
     id             Int @id @default(autoincrement())

@@ -1,38 +1,48 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 
-export async function obtenerRedSucursal(req: Request, res: Response) {
-    const { sucursalId } = req.params;
+export async function obtenerEmpresaISP(req: Request, res: Response) {
+    const empresaId = Number(req.params.empresaId);
 
-    const red = await prisma.redSucursal.findUnique({
-        where: { sucursalId: Number(sucursalId) }
+    let isp = await prisma.empresaISP.findUnique({
+        where: { empresaId },
     });
 
-    res.json(red);
+    if (!isp) {
+        isp = await prisma.empresaISP.create({
+            data: { empresaId },
+        });
+    }
+
+    res.json(isp);
 }
 
-export async function upsertRedSucursal(req: Request, res: Response) {
-    const { sucursalId } = req.params;
-    const { wifiNombre, claveWifi, ipRed, gateway, observaciones } = req.body;
+export async function upsertEmpresaISP(req: Request, res: Response) {
+    const empresaId = Number(req.params.empresaId);
+    const body = req.body;
 
-    const red = await prisma.redSucursal.upsert({
-        where: { sucursalId: Number(sucursalId) },
+    const isp = await prisma.empresaISP.upsert({
+        where: { empresaId },
         update: {
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones
+            operador: body.operador ?? null,
+            telefono: body.telefono ?? null,
+            servicio: body.servicio ?? null,
+            numeroTicket: body.numeroTicket ?? null,
+            wifiNombre: body.wifiNombre ?? null,
+            wifiClaveRef: body.wifiClaveRef ?? null,
+            ipRed: body.ipRed ?? null,
         },
         create: {
-            sucursalId: Number(sucursalId),
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones
-        }
+            empresaId,
+            operador: body.operador ?? null,
+            telefono: body.telefono ?? null,
+            servicio: body.servicio ?? null,
+            numeroTicket: body.numeroTicket ?? null,
+            wifiNombre: body.wifiNombre ?? null,
+            wifiClaveRef: body.wifiClaveRef ?? null,
+            ipRed: body.ipRed ?? null,
+        },
     });
 
-    res.json(red);
+    res.json({ ok: true, isp });
 }

@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
+import { emailSenderService } from '../../service/email/email-sender.service.js';
 import crypto from "crypto";
 // Crear ticket
 export async function createTicket(req, res) {
@@ -81,7 +82,7 @@ export async function replyTicketAsAgent(req, res) {
     try {
         const ticketId = Number(req.params.id);
         const { message, isInternal } = req.body;
-        const agentId = req.user?.id; // puede ser undefined
+        const agentId = req.user?.id;
         if (!ticketId) {
             return res.status(400).json({
                 ok: false,
@@ -90,18 +91,24 @@ export async function replyTicketAsAgent(req, res) {
         }
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
+            include: {
+                requester: true, // 🆕 Incluir requester para email
+            },
         });
         if (!ticket) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
         await prisma.$transaction(async (tx) => {
-            // Mensaje
+            const fromEmail = process.env.SMTP_USER ?? null;
+            const toEmail = ticket.requester?.email ?? null;
             await tx.ticketMessage.create({
                 data: {
                     ticketId,
                     direction: MessageDirection.OUTBOUND,
                     bodyText: message,
                     isInternal: Boolean(isInternal),
+                    fromEmail,
+                    toEmail,
                 },
             });
             // Update dinámico
@@ -132,6 +139,17 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
         });
+        // 🆕 Enviar email al cliente (solo si no es nota interna)
+        if (!isInternal && ticket.requester?.email) {
+            try {
+                await emailSenderService.sendAgentReply(ticket, message, ticket.requester.email);
+                console.log(`📧 Email enviado a ${ticket.requester.email}`);
+            }
+            catch (emailError) {
+                console.error('❌ Error enviando email, pero respuesta guardada:', emailError);
+                // No fallar la request si el email falla
+            }
+        }
         return res.status(200).json({
             ok: true,
             message: "Respuesta enviada correctamente",
@@ -338,7 +356,6 @@ export async function updateTicket(req, res) {
         });
     }
 }
-/* ===================== INBOUND EMAIL ===================== */
 /* ===================== INBOUND EMAIL ===================== */
 export async function inboundEmail(req, res) {
     try {

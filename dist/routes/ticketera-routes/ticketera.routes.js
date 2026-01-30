@@ -1,6 +1,8 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
 import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail } from "../../controllers/tickets-rids/ticketera.controller.js";
+// 🆕 Importar controlador de email
+import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
 import { getTicketKpis, getTicketKpisByAgent, } from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
 import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
@@ -12,9 +14,10 @@ const ticketeraRouter = Router();
 ticketeraRouter.post("/", createTicket);
 ticketeraRouter.get("/", listTickets);
 // =======================
-// EMAIL INBOUND
+// EMAIL ENDPOINTS
 // =======================
-ticketeraRouter.post("/inbound-email", inboundEmail);
+ticketeraRouter.post("/inbound-email", inboundEmail); // Webhook legacy
+ticketeraRouter.post("/process-emails", processEmails); // Procesar emails IMAP manualmente
 // =======================
 // RUTAS FIJAS (ANTES DE :id)
 // =======================
