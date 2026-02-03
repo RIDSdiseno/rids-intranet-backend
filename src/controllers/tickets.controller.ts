@@ -14,6 +14,7 @@ export async function listTickets(req: Request, res: Response) {
     const empresa = (req.query.empresa as string)?.trim(); // NUEVO: parámetro para filtrar por empresa
 
     const where: any = {};
+    
 
     if (typeof statusParam !== "undefined") {
       const s = Number(statusParam);
