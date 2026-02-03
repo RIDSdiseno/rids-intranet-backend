@@ -1,11 +1,8 @@
-import { imapReaderService } from '../../service/email/imap-reader.service.js';
-/**
- * Procesa emails manualmente (para testing)
- */
+import { graphReaderService } from '../../service/email/graph-reader.service.js';
 export async function processEmails(req, res) {
     try {
         console.log('📧 Procesando emails manualmente...');
-        await imapReaderService.readUnreadEmails();
+        await graphReaderService.readUnreadEmails();
         return res.json({
             ok: true,
             message: 'Emails procesados correctamente'

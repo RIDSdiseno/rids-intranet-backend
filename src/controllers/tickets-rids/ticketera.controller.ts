@@ -139,6 +139,7 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                     isInternal: Boolean(isInternal),
                     fromEmail,
                     toEmail,
+                    cc: null,
                 },
             });
 
@@ -209,33 +210,31 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 // Listar tickets con filtros
 export async function listTickets(req: Request, res: Response) {
     try {
-        const { status, assigneeId, empresaId, search } = req.query;
+        const {
+            status,
+            assigneeId,
+            empresaId,
+            search,
+            page = "1",
+            pageSize = "30",
+            from,
+            to,
+        } = req.query;
+
+        const pageNum = Math.max(Number(page), 1);
+        const take = Math.min(Number(pageSize) || 30, 100);
+        const skip = (pageNum - 1) * take;
 
         const where: any = {};
-        const validStatuses = Object.values(TicketStatus);
 
+        /* ===== STATUS ===== */
         if (status) {
-            if (Array.isArray(status)) {
-                where.status = {
-                    in: status.filter((s) =>
-                        validStatuses.includes(s as TicketStatus)
-                    ),
-                };
-            } else if (validStatuses.includes(status as TicketStatus)) {
-                where.status = status as TicketStatus;
-            }
-        } else {
-            // 👇 default: solo activos
-            where.status = { not: TicketStatus.CLOSED };
+            where.status = status;
         }
 
-        if (assigneeId) {
-            where.assigneeId = Number(assigneeId);
-        }
-
-        if (empresaId) {
-            where.empresaId = Number(empresaId);
-        }
+        /* ===== FILTROS ===== */
+        if (assigneeId) where.assigneeId = Number(assigneeId);
+        if (empresaId) where.empresaId = Number(empresaId);
 
         if (search) {
             where.subject = {
@@ -244,17 +243,41 @@ export async function listTickets(req: Request, res: Response) {
             };
         }
 
-        const tickets = await prisma.ticket.findMany({
-            where,
-            include: {
-                empresa: { select: { id_empresa: true, nombre: true } },
-                assignee: { select: { id_tecnico: true, nombre: true } },
-            },
-            orderBy: { lastActivityAt: "desc" },
-            take: 50,
-        });
+        /* ===== RANGO DE FECHAS ===== */
+        if (from || to) {
+            where.createdAt = {
+                ...(from && { gte: new Date(from as string) }),
+                ...(to && { lte: new Date(to as string) }),
+            };
+        }
 
-        return res.json({ ok: true, tickets });
+        /* ===== QUERY PRINCIPAL ===== */
+        const [tickets, total] = await Promise.all([
+            prisma.ticket.findMany({
+                where,
+                include: {
+                    empresa: { select: { nombre: true } },
+                    assignee: { select: { id_tecnico: true, nombre: true } },
+                    requester: { select: { nombre: true } },
+                },
+                orderBy: [
+                    { priority: "desc" },
+                    { lastActivityAt: "desc" },
+                ],
+                skip,
+                take,
+            }),
+            prisma.ticket.count({ where }),
+        ]);
+
+        return res.json({
+            ok: true,
+            page: pageNum,
+            pageSize: take,
+            total,
+            totalPages: Math.ceil(total / take),
+            tickets,
+        });
     } catch (error) {
         console.error("[helpdesk] listTickets error:", error);
         return res.status(500).json({

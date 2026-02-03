@@ -21,17 +21,13 @@ export async function getTicketKpis(req: Request, res: Response) {
             open,
             pending,
             resolved,
+            closed,
         ] = await Promise.all([
             prisma.ticket.count({ where: whereBase }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.OPEN },
-            }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.PENDING },
-            }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.RESOLVED },
-            }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.OPEN } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.PENDING } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.RESOLVED } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.CLOSED } }),
         ]);
 
         /* =============================
@@ -98,6 +94,7 @@ export async function getTicketKpis(req: Request, res: Response) {
                 openTickets: open,
                 pendingTickets: pending,
                 resolvedTickets: resolved,
+                closedTickets: closed,
 
                 avgFirstResponseMinutes,
                 avgResolutionMinutes,
@@ -106,7 +103,7 @@ export async function getTicketKpis(req: Request, res: Response) {
                     firstResponse: frtDurations.length,
                     resolution: resolutionDurations.length,
                 },
-            },
+            }
         });
     } catch (error) {
         console.error("[helpdesk] getTicketKpis error:", error);

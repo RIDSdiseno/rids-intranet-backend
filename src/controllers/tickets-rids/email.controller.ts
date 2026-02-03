@@ -1,14 +1,11 @@
 // src/controllers/tickets-rids/email.controller.ts
 import type { Request, Response } from 'express';
-import { imapReaderService } from '../../service/email/imap-reader.service.js';
+import { graphReaderService } from '../../service/email/graph-reader.service.js';
 
-/**
- * Procesa emails manualmente (para testing)
- */
 export async function processEmails(req: Request, res: Response) {
     try {
         console.log('📧 Procesando emails manualmente...');
-        await imapReaderService.readUnreadEmails();
+        await graphReaderService.readUnreadEmails();
 
         return res.json({
             ok: true,

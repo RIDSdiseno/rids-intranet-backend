@@ -639,7 +639,7 @@ model CotizacionItemGestioo {
     id                Int               @id @default(autoincrement())
     cotizacionId      Int
     tipo              ItemTipoGestioo
-    descripcion       String
+    descripcion       String?
     cantidad          Int               @default(1)
     precio            Float             @default(0)
     porcentaje        Float?

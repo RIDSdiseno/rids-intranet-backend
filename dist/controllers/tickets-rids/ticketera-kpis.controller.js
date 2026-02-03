@@ -11,17 +11,12 @@ export async function getTicketKpis(req, res) {
         /* =============================
            1️⃣ Contadores básicos
         ============================= */
-        const [total, open, pending, resolved,] = await Promise.all([
+        const [total, open, pending, resolved, closed,] = await Promise.all([
             prisma.ticket.count({ where: whereBase }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.OPEN },
-            }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.PENDING },
-            }),
-            prisma.ticket.count({
-                where: { ...whereBase, status: TicketStatus.RESOLVED },
-            }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.OPEN } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.PENDING } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.RESOLVED } }),
+            prisma.ticket.count({ where: { ...whereBase, status: TicketStatus.CLOSED } }),
         ]);
         /* =============================
            2️⃣ First Response Time (FRT)
@@ -69,13 +64,14 @@ export async function getTicketKpis(req, res) {
                 openTickets: open,
                 pendingTickets: pending,
                 resolvedTickets: resolved,
+                closedTickets: closed,
                 avgFirstResponseMinutes,
                 avgResolutionMinutes,
                 samples: {
                     firstResponse: frtDurations.length,
                     resolution: resolutionDurations.length,
                 },
-            },
+            }
         });
     }
     catch (error) {
