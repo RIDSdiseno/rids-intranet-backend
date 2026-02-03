@@ -8,6 +8,7 @@ export type RunAIInput = {
   userText: string;
   context?: {
     from: string;             // id/teléfono de WhatsApp
+    intent?: string;
     lastUserMsg?: string;
     lastAIReply?: string;
     turns?: number;
@@ -388,6 +389,14 @@ ${escalateLine}
 
   const SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}
 ${sessionFacts}
+Intención detectada (heurística): ${input.context?.intent ?? "desconocida"}.
+
+Usa esta intención como guía principal, incluso si el texto tiene errores ortográficos.
+Recuerda: si correo y empresa ya están disponibles en este contexto, NO los vuelvas a pedir.
+Si falta solo uno, pide SOLO ese dato y continúa con la ayuda (ventas o soporte).
+Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama a la función create_freshdesk_ticket.
+Recuerda: si correo y empresa ya están disponibles en este contexto, NO los vuelvas a pedir.
+...
 Recuerda: si correo y empresa ya están disponibles en este contexto, NO los vuelvas a pedir.
 Si falta solo uno, pide SOLO ese dato y continúa con la ayuda (ventas o soporte).
 Cuando el usuario confirme que desea generar ticket y ambos datos estén, llama a la función create_freshdesk_ticket.
