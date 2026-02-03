@@ -258,3 +258,4 @@ export const wcReceive = async (req: Request, res: Response) => {
 export const wcHealth = (_req: Request, res: Response) => {
   res.status(200).json({ ok: true, service: "whatchimp-webhook-ia" });
 };
+
