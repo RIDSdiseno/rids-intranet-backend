@@ -11,6 +11,32 @@ type Incoming = {
   raw?: unknown;
 };
 
+function normalizeForAI(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .replace(/[’‘]/g, "'")
+    .trim();
+}
+
+function detectSoftIntent(text: string) {
+  if (!text) return "unknown";
+
+  if (/ticket|tiket|tikcet|tiket|crear|generar/i.test(text))
+    return "create_ticket";
+
+  if (/error|problema|falla|no funciona|no anda|no pesca/i.test(text))
+    return "support";
+
+  if (/precio|vale|cuanto sale|cotiz/i.test(text))
+    return "sales";
+
+  return "unknown";
+}
+
+
+
 function parseIncoming(body: any): Incoming {
   const from =
     body?.from ||
@@ -125,7 +151,7 @@ export const wcReceive = async (req: Request, res: Response) => {
     }
 
     // Texto normalizado
-    let inputText = inc.text ?? "";
+    let inputText = inc.text ? normalizeForAI(inc.text) : "";
     if (inputText.length > MAX_TEXT_LEN)
       inputText = inputText.slice(0, MAX_TEXT_LEN);
 
@@ -162,6 +188,8 @@ export const wcReceive = async (req: Request, res: Response) => {
       reply =
         "¿Me cuentas en una frase qué necesitas? (equipo, síntoma y urgencia)";
     } else {
+      const softIntent = detectSoftIntent(inputText);
+      intent: softIntent
       const context = {
         from: inc.from,
         ...(mem.lastUserMsg ? { lastUserMsg: mem.lastUserMsg } : {}),
