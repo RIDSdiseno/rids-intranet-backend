@@ -207,6 +207,14 @@ model ChecklistGestionEmpresa {
     @@index([fichaEmpresaId])
 }
 
+model ChatLog {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  role      String   @default("user") // "user" o "assistant"
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+}
+
 model RedSucursal {
     id         Int @id @default(autoincrement())
     sucursalId Int @unique
