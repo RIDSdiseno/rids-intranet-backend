@@ -68,7 +68,7 @@ export const wcReceive = async (req: Request, res: Response) => {
   const t0 = Date.now();
 
   try {
-    const inc: Incoming = parseIncoming(req.body); // Aquí usamos el tipo
+    const inc: Incoming = parseIncoming(req.body); 
     
     if (!inc.from) {
       return res.status(400).json({ ok: false, error: "missing 'from'", requestId });
@@ -81,7 +81,7 @@ export const wcReceive = async (req: Request, res: Response) => {
     const turns = (mem.turns ?? 0) + 1;
 
     let email = mem.email || (inputText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0]);
-    let company = mem.company; // Aquí puedes re-agregar tu lógica de extractCompany si la necesitas
+    let company = mem.company;
 
     let reply: string;
 
@@ -90,28 +90,38 @@ export const wcReceive = async (req: Request, res: Response) => {
     } else if (!inputText) {
       reply = "¿Me cuentas qué necesitas? (equipo, síntoma y urgencia)";
     } else {
-      // PERSISTENCIA CON PRISMA
+      // ==========================================================
+      // 1. PERSISTENCIA INMEDIATA: Guardamos lo que dijo el cliente
+      // ==========================================================
+      if (inputText) {
+        await saveMessage(inc.from, "client", inputText);
+      }
+
+      // ==========================================================
+      // 2. RECUPERACIÓN: Ahora el historial SI incluye el mensaje actual
+      // ==========================================================
       const dbHistory = await getLongTermMemory(inc.from, 15);
 
       const context = {
-        from: inc.from as string, // Aseguramos que sea string
+        from: inc.from as string,
         phone: inc.from,
         turns,
         ...(email ? { email } : {}),
         ...(company ? { company } : {}),
-        // El mapeo con "as const" es lo que elimina el error ts(2322)
         transcript: dbHistory.map((h) => ({
-        from: (h.role === "assistant" || h.role === "bot" ? "bot" : "client") as "bot" | "client",
-        text: h.content,
+          from: (h.role === "assistant" || h.role === "bot" ? "bot" : "client") as "bot" | "client",
+          text: h.content,
         })),
       };
 
       try {
+        // 3. LA IA AHORA RECIBE EL CONTEXTO COMPLETO
         reply = (await runAI({ userText: inputText, context })) || "";
         
-        // Guardamos los mensajes en la DB
-        if (inputText) await saveMessage(inc.from, "client", inputText);
-        if (reply.trim()) await saveMessage(inc.from, "bot", reply);
+        // 4. GUARDAR RESPUESTA DEL BOT
+        if (reply.trim()) {
+          await saveMessage(inc.from, "bot", reply);
+        }
 
       } catch (e) {
         console.error(`[AI ERROR]`, e);
