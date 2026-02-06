@@ -6,11 +6,14 @@ async function main() {
         // Fallback obligatorio
         { nombre: "SIN CLASIFICAR", dominios: [] },
 
+        // 🔹 Dominios confiables externos
+        { nombre: "EXTERNOS / PARTNERS", dominios: ["escs.cl"] },
+
         // ✅ Empresas con emails conocidos
         { nombre: "ALIANZ", dominios: ["alianz.cl"] },
         { nombre: "ASUR", dominios: ["asursa.com"] }, // ✅ Corregido
         { nombre: "BERCIA", dominios: ["bercia.cl"] },
-        { nombre: "BDK", dominios: ["bdk.cl"] }, // ⚠️ Sin confirmar
+        { nombre: "BDK", dominios: ["bdk.cl", "bdk-spa.cl"] }, // ⚠️ Sin confirmar
         { nombre: "RWAY", dominios: ["rway.cl"] }, // ⚠️ Sin confirmar
         { nombre: "CINTAX", dominios: ["cintax.cl"] },
 
@@ -29,7 +32,7 @@ async function main() {
         { nombre: "PINI", dominios: ["pini.cl"] },
 
         // Clínica Nace - ⚠️ Sin emails conocidos
-        { nombre: "CLÍNICA NACE", dominios: ["clinicalnace.cl", "nace.cl"] },
+        { nombre: "CLÍNICA NACE", dominios: ["clinicanace.cl", "nace.cl"] },
     ];
 
     console.log("🔄 Actualizando empresas con dominios corregidos...\n");

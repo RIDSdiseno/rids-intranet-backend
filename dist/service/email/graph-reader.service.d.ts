@@ -1,11 +1,13 @@
+import { Client } from '@microsoft/microsoft-graph-client';
 import 'isomorphic-fetch';
 declare class GraphReaderService {
     private client;
     private supportEmail;
     constructor();
-    private getClient;
+    getClient(): Promise<Client>;
     readUnreadEmails(): Promise<void>;
     private processMessage;
+    private fetchAttachmentsMeta;
     private stripHtml;
     private createOrUpdateTicket;
     private findExistingTicket;

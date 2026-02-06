@@ -160,25 +160,24 @@ model FichaTecnicaEmpresa {
 }
 
 model EmpresaISP {
-  id         Int @id @default(autoincrement())
-  empresaId  Int @unique
+    id        Int @id @default(autoincrement())
+    empresaId Int @unique
 
-  operador       String?
-  telefono       String?
-  servicio       String?
-  numeroTicket   String?
+    operador     String?
+    telefono     String?
+    servicio     String?
+    numeroTicket String?
 
-  ipRed        String?
+    ipRed String?
 
-  wifiNombre     String?
-  wifiClaveRef   String? // ⚠️ ideal referencia, no password plano
+    wifiNombre   String?
+    wifiClaveRef String? // ⚠️ ideal referencia, no password plano
 
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+    empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 }
-
 
 model ChecklistGestionEmpresa {
     id             Int @id @default(autoincrement())
@@ -760,14 +759,17 @@ model TicketAttachment {
 
     message TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
-    filename String
-    mimeType String
-    url      String
-    bytes    Int
+    filename  String
+    mimeType  String
+    url       String
+    bytes     Int
+    isInline  Boolean @default(false)
+    contentId String?
 
     createdAt DateTime @default(now())
 
     @@index([messageId])
+    @@index([contentId])
 }
 
 model TicketEvent {

@@ -38,35 +38,35 @@ export async function getServicioById(req, res) {
 // ✅ Crear servicio
 export async function createServicio(req, res) {
     try {
-        const { nombre, descripcion, precio, codigo, categoria } = req.body;
-        if (!nombre || nombre.trim() === '') {
+        const { nombre, descripcion, precio, categoria, duracionHoras, entidadId, } = req.body;
+        if (!nombre || nombre.trim() === "") {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
-        const data = {
-            nombre: nombre.trim(),
-            descripcion: descripcion ? descripcion.trim() : null,
-            precio: precio !== undefined ? Number(precio) : null,
-            codigo: codigo || null,
-            categoria: categoria || null,
-            tipo: "servicio",
-            estado: "disponible",
-            activo: true,
-        };
         const nuevoServicio = await prisma.servicioGestioo.create({
-            data
+            data: {
+                nombre: nombre.trim(),
+                descripcion: descripcion ? descripcion.trim() : null,
+                precio: precio !== undefined ? Number(precio) : null,
+                categoria: categoria || null,
+                duracionHoras: duracionHoras !== undefined ? Number(duracionHoras) : null,
+                entidadId: entidadId ? Number(entidadId) : null,
+                // defaults del schema
+                tipo: "servicio",
+                estado: "disponible",
+                activo: true,
+            },
         });
-        res.status(201).json({ data: nuevoServicio });
+        return res.status(201).json({ data: nuevoServicio });
     }
     catch (error) {
         console.error("❌ Error al crear servicio:", error);
-        res.status(500).json({
+        return res.status(500).json({
             error: "Error al crear servicio",
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            details: process.env.NODE_ENV === "development"
+                ? error.message
+                : undefined,
         });
     }
-    return res.status(500).json({
-        error: "Error al crear servicio",
-    });
 }
 // ✅ Actualizar servicio
 export async function updateServicio(req, res) {
@@ -76,41 +76,39 @@ export async function updateServicio(req, res) {
             return res.status(400).json({ error: "ID de servicio inválido" });
         }
         const existe = await prisma.servicioGestioo.findUnique({
-            where: { id }
+            where: { id },
         });
         if (!existe) {
             return res.status(404).json({ error: "Servicio no encontrado" });
         }
-        const { nombre, descripcion, precio, codigo, categoria } = req.body;
-        if (!nombre || nombre.trim() === '') {
+        const { nombre, descripcion, precio, categoria, duracionHoras, estado, activo, entidadId, } = req.body;
+        if (!nombre || nombre.trim() === "") {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
-        const data = {
-            nombre: nombre.trim(),
-            descripcion: descripcion ? descripcion.trim() : null,
-            precio: precio !== undefined ? Number(precio) : null,
-            codigo: codigo || null,
-            categoria: categoria || null,
-        };
         const servicioActualizado = await prisma.servicioGestioo.update({
             where: { id },
-            data,
+            data: {
+                nombre: nombre.trim(),
+                descripcion: descripcion ? descripcion.trim() : null,
+                precio: precio !== undefined ? Number(precio) : null,
+                categoria: categoria || null,
+                duracionHoras: duracionHoras !== undefined ? Number(duracionHoras) : null,
+                estado: estado || existe.estado,
+                activo: typeof activo === "boolean" ? activo : existe.activo,
+                entidadId: entidadId ? Number(entidadId) : null,
+            },
         });
-        res.json({ data: servicioActualizado });
+        return res.json({ data: servicioActualizado });
     }
     catch (error) {
         console.error("❌ Error al actualizar servicio:", error);
-        if (error.code === 'P2025') {
-            return res.status(404).json({ error: "Servicio no encontrado" });
-        }
-        res.status(500).json({
+        return res.status(500).json({
             error: "Error al actualizar servicio",
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            details: process.env.NODE_ENV === "development"
+                ? error.message
+                : undefined,
         });
     }
-    return res.status(500).json({
-        error: "Error al actualizar servicio",
-    });
 }
 // ✅ Eliminar servicio
 export async function deleteServicio(req, res) {

@@ -1,5 +1,24 @@
 import { wcSendText } from "../utils/wc.js";
 import { runAI } from "../utils/ai.js";
+function normalizeForAI(text) {
+    return text
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[“”]/g, '"')
+        .replace(/[’‘]/g, "'")
+        .trim();
+}
+function detectSoftIntent(text) {
+    if (!text)
+        return "unknown";
+    if (/ticket|tiket|tikcet|tiket|crear|generar/i.test(text))
+        return "create_ticket";
+    if (/error|problema|falla|no funciona|no anda|no pesca/i.test(text))
+        return "support";
+    if (/precio|vale|cuanto sale|cotiz/i.test(text))
+        return "sales";
+    return "unknown";
+}
 function parseIncoming(body) {
     const from = body?.from ||
         body?.message?.from ||
@@ -76,7 +95,7 @@ export const wcReceive = async (req, res) => {
             return res.status(200).type("text/plain; charset=utf-8").send(msg);
         }
         // Texto normalizado
-        let inputText = inc.text ?? "";
+        let inputText = inc.text ? normalizeForAI(inc.text) : "";
         if (inputText.length > MAX_TEXT_LEN)
             inputText = inputText.slice(0, MAX_TEXT_LEN);
         // Contador de turnos
@@ -109,6 +128,8 @@ export const wcReceive = async (req, res) => {
                 "¿Me cuentas en una frase qué necesitas? (equipo, síntoma y urgencia)";
         }
         else {
+            const softIntent = detectSoftIntent(inputText);
+            intent: softIntent;
             const context = {
                 from: inc.from,
                 ...(mem.lastUserMsg ? { lastUserMsg: mem.lastUserMsg } : {}),

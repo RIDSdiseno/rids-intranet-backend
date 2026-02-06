@@ -36,7 +36,7 @@ import { debugRouter } from "./routes/debug.js";
 import whatchimpRouter from "./routes/whatchimp.routes.js";
 /* ===================== CLOUDINARY ===================== */
 import uploadRoutes from "./routes/upload-imagenes.routes.js";
-// src/routes.ts
+/* ===================== HELP DESK RIDS ===================== */
 import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
 /* ========================================================= */
 export const api = Router();

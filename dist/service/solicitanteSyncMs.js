@@ -41,6 +41,9 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
             // 1) Resolver target por prioridad:
             //    a) por microsoftUserId
             //    b) por email (misma empresa > cualquiera)
+            // 1) Resolver target por prioridad:
+            //    a) microsoftUserId
+            //    b) email + misma empresa
             const byMs = await tx.solicitante.findUnique({
                 where: { microsoftUserId: u.id },
                 select: { id_solicitante: true },
@@ -53,14 +56,6 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
                 });
                 if (byEmailSameEmpresa) {
                     targetId = byEmailSameEmpresa.id_solicitante;
-                }
-                else {
-                    const byEmailAny = await tx.solicitante.findFirst({
-                        where: { email: cleanEmail },
-                        select: { id_solicitante: true },
-                    });
-                    if (byEmailAny)
-                        targetId = byEmailAny.id_solicitante;
                 }
             }
             // 2) Crear / actualizar Solicitante

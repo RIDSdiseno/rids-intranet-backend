@@ -32,7 +32,6 @@ function styleSheet(
             alignment: { horizontal: "center", vertical: "center", wrapText: true },
         };
     }
-    
 
     // Body
     for (let r = 1; r <= rows; r++) {

@@ -6,6 +6,7 @@ import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, Message
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 
 import crypto from "crypto";
+import { graphReaderService } from "@/service/email/graph-reader.service.js";
 
 // Extiende Request para tener req.user.id
 declare global {
@@ -74,6 +75,7 @@ export async function createTicket(req: Request, res: Response) {
                         direction: MessageDirection.INBOUND,
                         bodyText: message,
                         isInternal: false,
+                        fromEmail: process.env.SMTP_USER ?? null,
                     },
                 });
 
@@ -261,8 +263,9 @@ export async function listTickets(req: Request, res: Response) {
                     requester: { select: { nombre: true } },
                 },
                 orderBy: [
-                    { priority: "desc" },
+                    { firstResponseAt: "asc" },
                     { lastActivityAt: "desc" },
+                    { createdAt: "desc" },
                 ],
                 skip,
                 take,
@@ -464,18 +467,17 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 1️⃣ Extraer dominio del correo
+        // 1️⃣ Extraer dominio
         const domain = from.split("@")[1]?.toLowerCase();
-
         if (!domain) {
             return res.status(400).json({
                 ok: false,
-                message: "No se pudo obtener dominio del email",
+                message: "No se pudo obtener dominio",
             });
         }
 
         // 2️⃣ Buscar empresa por dominio
-        let empresa = await prisma.empresa.findFirst({
+        const empresa = await prisma.empresa.findFirst({
             where: {
                 dominios: {
                     has: domain,
@@ -483,36 +485,23 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 3️⃣ Fallback: SIN CLASIFICAR
         if (!empresa) {
-            empresa = await prisma.empresa.findFirst({
-                where: { nombre: "SIN CLASIFICAR" },
-            });
-        }
-
-        if (!empresa) {
-            return res.status(500).json({
+            return res.status(200).json({
                 ok: false,
-                message: "Empresa fallback no configurada",
+                message: "Empresa no registrada, email ignorado",
             });
         }
 
-        // 4️⃣ Buscar o crear solicitante
-        let requester = await prisma.solicitante.findFirst({
-            where: { email: from },
+        // 3️⃣ Buscar solicitante EXISTENTE (NO crear)
+        const requester = await prisma.solicitante.findFirst({
+            where: {
+                email: from,
+                empresaId: empresa.id_empresa,
+                isActive: true,
+            },
         });
 
-        if (!requester) {
-            requester = await prisma.solicitante.create({
-                data: {
-                    nombre: from.split("@")[0],
-                    email: from,
-                    empresaId: empresa.id_empresa,
-                },
-            });
-        }
-
-        // 5️⃣ Crear ticket
+        // 4️⃣ Crear ticket (con o sin requester)
         const ticket = await prisma.ticket.create({
             data: {
                 publicId: crypto.randomUUID(),
@@ -520,34 +509,40 @@ export async function inboundEmail(req: Request, res: Response) {
                 status: TicketStatus.NEW,
                 priority: TicketPriority.NORMAL,
                 channel: "EMAIL",
+
                 empresaId: empresa.id_empresa,
-                requesterId: requester.id_solicitante,
+
+                requesterId: requester?.id_solicitante ?? null,
+                fromEmail: from,
+
                 lastActivityAt: new Date(),
             },
         });
 
-        // 6️⃣ Mensaje inicial
+        // 5️⃣ Mensaje inicial
         await prisma.ticketMessage.create({
             data: {
                 ticketId: ticket.id,
                 direction: MessageDirection.INBOUND,
                 bodyText: text,
                 isInternal: false,
+                fromEmail: from,
             },
         });
 
-        // 7️⃣ Evento
+        // 6️⃣ Evento
         await prisma.ticketEvent.create({
             data: {
                 ticketId: ticket.id,
                 type: TicketEventType.CREATED,
-                actorType: TicketActorType.REQUESTER,
+                actorType: TicketActorType.SYSTEM,
             },
         });
 
         return res.json({
             ok: true,
             ticketId: ticket.id,
+            requesterAssigned: Boolean(requester),
         });
     } catch (error) {
         console.error("[helpdesk] inboundEmail error:", error);
@@ -558,3 +553,123 @@ export async function inboundEmail(req: Request, res: Response) {
     }
 }
 
+// GET /helpdesk/attachments/:id/download
+export async function downloadTicketAttachment(req: Request, res: Response) {
+    const attachmentId = Number(req.params.id);
+    if (!Number.isInteger(attachmentId)) {
+        return res.status(400).json({ ok: false, message: "id inválido" });
+    }
+
+    // 1) Buscar metadata en DB
+    const att = await prisma.ticketAttachment.findUnique({
+        where: { id: attachmentId },
+        include: { message: { include: { ticket: true } } },
+    });
+
+    if (!att) return res.status(404).json({ ok: false, message: "No existe" });
+
+    // 2) Necesitamos graphMessageId guardado en TicketMessage.sourceReferences
+    const graphMessageId = att.message.sourceReferences;
+    if (!graphMessageId) {
+        return res.status(500).json({ ok: false, message: "Falta graphMessageId" });
+    }
+
+    // 3) Descargar desde Graph
+    const graphAttachmentId = att.url; // acá guardaste el attachmentId
+    const client = await graphReaderService["getClient"](); // o mueve getClient a util
+
+    // Este endpoint devuelve el attachment con contentBytes (base64) en muchos casos
+    const graphAtt = await client
+        .api(`/users/${process.env.EMAIL_USER}/messages/${graphMessageId}/attachments/${graphAttachmentId}`)
+        .get();
+
+    const contentBytes = graphAtt?.contentBytes;
+    if (!contentBytes) {
+        return res.status(404).json({ ok: false, message: "Adjunto no disponible" });
+    }
+
+    const buffer = Buffer.from(contentBytes, "base64");
+
+    res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${att.filename}"`);
+    res.setHeader("Content-Length", buffer.length);
+
+    return res.send(buffer);
+}
+// GET /helpdesk/inline/:attachmentId
+export async function getInlineImage(req: Request, res: Response) {
+    const attachmentId = Number(req.params.attachmentId);
+
+    if (!Number.isInteger(attachmentId)) {
+        return res.sendStatus(400);
+    }
+
+    const att = await prisma.ticketAttachment.findUnique({
+        where: { id: attachmentId },
+        include: { message: true },
+    });
+
+    if (!att || !att.isInline) {
+        return res.sendStatus(404);
+    }
+
+    const graphMessageId = att.message.sourceReferences;
+    if (!graphMessageId) {
+        console.error("❌ Falta sourceReferences");
+        return res.sendStatus(500);
+    }
+
+    try {
+        const client = await graphReaderService.getClient();
+
+        const graphAtt = await client
+            .api(
+                `/users/${process.env.EMAIL_USER}/messages/${graphMessageId}/attachments/${att.url}`
+            )
+            .get();
+
+        if (!graphAtt?.contentBytes) {
+            return res.sendStatus(404);
+        }
+
+        const buffer = Buffer.from(graphAtt.contentBytes, "base64");
+
+        res.setHeader("Content-Type", att.mimeType);
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        res.setHeader("Content-Length", buffer.length);
+
+        return res.send(buffer);
+    } catch (err) {
+        console.error("❌ Error inline image:", err);
+        return res.sendStatus(500);
+    }
+}
+
+// GET /helpdesk/external-image
+export async function proxyExternalImage(req: Request, res: Response) {
+    const rawUrl = req.query.url as string;
+    if (!rawUrl) return res.sendStatus(400);
+
+    const url = decodeURIComponent(rawUrl);
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "image/*",
+            },
+        });
+
+        if (!response.ok) return res.sendStatus(404);
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        res.setHeader("Content-Type", response.headers.get("content-type") || "image/png");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+
+        return res.send(buffer);
+    } catch (err) {
+        console.error("❌ proxyExternalImage error", err);
+        return res.sendStatus(500);
+    }
+}

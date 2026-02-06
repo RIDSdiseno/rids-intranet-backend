@@ -56,8 +56,8 @@ async function retry<T>(
  */
 export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: number) {
   const cleanEmail = (u.email || "").trim().toLowerCase() || null;
-  const cleanName  = (u.name  || "").trim() || "Usuario";
-  const active     = !u.suspended;
+  const cleanName = (u.name || "").trim() || "Usuario";
+  const active = !u.suspended;
 
   return await retry(async () => {
     return prisma.$transaction(
@@ -65,6 +65,9 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
         // 1) Resolver target por prioridad:
         //    a) por microsoftUserId
         //    b) por email (misma empresa > cualquiera)
+        // 1) Resolver target por prioridad:
+        //    a) microsoftUserId
+        //    b) email + misma empresa
         const byMs = await tx.solicitante.findUnique({
           where: { microsoftUserId: u.id },
           select: { id_solicitante: true },
@@ -77,14 +80,9 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
             where: { email: cleanEmail, empresaId },
             select: { id_solicitante: true },
           });
+
           if (byEmailSameEmpresa) {
             targetId = byEmailSameEmpresa.id_solicitante;
-          } else {
-            const byEmailAny = await tx.solicitante.findFirst({
-              where: { email: cleanEmail },
-              select: { id_solicitante: true },
-            });
-            if (byEmailAny) targetId = byEmailAny.id_solicitante;
           }
         }
 
@@ -153,7 +151,7 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
         });
 
         const currentSet = new Set(current.map((x) => x.skuId));
-        const nextSet    = new Set((u.licenses ?? []).map((x) => x.skuId));
+        const nextSet = new Set((u.licenses ?? []).map((x) => x.skuId));
 
         const toRemove = [...currentSet].filter((skuId) => !nextSet.has(skuId));
         if (toRemove.length) {

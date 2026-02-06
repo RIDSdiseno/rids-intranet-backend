@@ -17,7 +17,7 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
 
     // Base: empresas (solo id + nombre)
     const empresasBase = await prisma.empresa.findMany({
-      select: { id_empresa: true, nombre: true, tieneSucursales: true },
+      select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
       orderBy: { nombre: "asc" },
     });
 
@@ -141,6 +141,8 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         return {
           id_empresa: e.id_empresa,
           nombre: e.nombre,
+          dominios: e.dominios ?? [],
+          dominioPrincipal: e.dominios?.[0] ?? null,
           detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
           solicitantes: solicitantesEmp,
           estadisticas: {
@@ -165,6 +167,8 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         data: empresasBase.map((e) => ({
           id_empresa: e.id_empresa,
           nombre: e.nombre,
+          dominios: e.dominios ?? [],
+          dominioPrincipal: e.dominios?.[0] ?? null,
         })),
         total: empresasBase.length,
       });
@@ -338,7 +342,7 @@ export async function getEmpresaById(
     const id = Number(req.params.id);
     const empresa = await prisma.empresa.findUnique({
       where: { id_empresa: id },
-      select: { id_empresa: true, nombre: true, tieneSucursales: true },
+      select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
     });
 
     if (!empresa) {

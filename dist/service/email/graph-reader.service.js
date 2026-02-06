@@ -48,8 +48,8 @@ class GraphReaderService {
             const response = await client
                 .api(`/users/${this.supportEmail}/messages`)
                 .filter('isRead eq false')
-                .select('id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId')
-                .top(20)
+                .select('id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId,hasAttachments')
+                .top(50)
                 .orderby('receivedDateTime desc')
                 .get();
             const messages = response.value ?? [];
@@ -84,6 +84,8 @@ class GraphReaderService {
         const fromName = message.from?.emailAddress?.name ||
             fromEmail.split('@')[0] ||
             'Desconocido';
+        const graphMessageId = message.id; // ESTE ES CLAVE
+        const attachmentsMeta = message.hasAttachments ? await this.fetchAttachmentsMeta(graphMessageId) : [];
         /* ------------------------------
            1️⃣ Ignorar correos internos
         ------------------------------ */
@@ -132,9 +134,42 @@ class GraphReaderService {
             messageId: message.internetMessageId || '',
             conversationId: message.conversationId || '',
             cc: ccAddresses,
+            graphMessageId,
+            attachmentsMeta,
         };
         console.log(`📨 Procesando: ${emailData.fromEmail} - ${emailData.subject}`);
         await this.createOrUpdateTicket(emailData);
+    }
+    /* ======================================================
+       Obtener metadatos de adjuntos
+    ====================================================== */
+    async fetchAttachmentsMeta(graphMessageId) {
+        const client = await this.getClient();
+        const res = await client
+            .api(`/users/${this.supportEmail}/messages/${graphMessageId}/attachments`)
+            .top(50)
+            .get();
+        const items = res.value ?? [];
+        return items.map((a) => {
+            let contentId = null;
+            // 🔥 SOLO fileAttachment tiene contentId
+            if (a['@odata.type'] === '#microsoft.graph.fileAttachment') {
+                contentId = a.contentId
+                    ? a.contentId
+                        .replace(/^cid:/i, '')
+                        .replace(/^</, '')
+                        .replace(/>$/, '')
+                    : null;
+            }
+            return {
+                graphAttachmentId: a.id,
+                filename: a.name,
+                mimeType: a.contentType,
+                bytes: a.size ?? 0,
+                isInline: a.isInline ?? false,
+                contentId, // ✅ AHORA SÍ
+            };
+        });
     }
     /* ======================================================
        Limpieza HTML
@@ -178,18 +213,16 @@ class GraphReaderService {
         if (!empresa) {
             throw new Error('Empresa SIN CLASIFICAR no existe');
         }
-        let requester = await prisma.solicitante.findFirst({
-            where: { email: data.fromEmail },
+        // 🔍 Buscar solicitante EXISTENTE (NO crear)
+        const requester = await prisma.solicitante.findFirst({
+            where: {
+                email: data.fromEmail,
+                empresaId: empresa.id_empresa,
+            },
         });
+        // ⚠️ Solo log, NO crear
         if (!requester) {
-            requester = await prisma.solicitante.create({
-                data: {
-                    nombre: data.fromName,
-                    email: data.fromEmail,
-                    empresaId: empresa.id_empresa,
-                },
-            });
-            console.log(`👤 Solicitante creado: ${data.fromName}`);
+            console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
         const ticket = await prisma.ticket.create({
             data: {
@@ -199,13 +232,13 @@ class GraphReaderService {
                 priority: this.detectPriority(data.subject, data.bodyText),
                 channel: TicketChannel.EMAIL,
                 empresaId: empresa.id_empresa,
-                requesterId: requester.id_solicitante,
+                requesterId: requester?.id_solicitante ?? null,
                 fromEmail: data.fromEmail,
                 inboxEmail: this.supportEmail,
                 lastActivityAt: new Date(),
             },
         });
-        await prisma.ticketMessage.create({
+        const msg = await prisma.ticketMessage.create({
             data: {
                 ticketId: ticket.id,
                 direction: MessageDirection.INBOUND,
@@ -217,15 +250,22 @@ class GraphReaderService {
                 toEmail: this.supportEmail,
                 sourceMessageId: data.messageId,
                 sourceInReplyTo: data.conversationId || null,
+                sourceReferences: data.graphMessageId,
             },
         });
-        await prisma.ticketEvent.create({
-            data: {
-                ticketId: ticket.id,
-                type: TicketEventType.CREATED,
-                actorType: TicketActorType.REQUESTER,
-            },
-        });
+        if (data.attachmentsMeta?.length) {
+            await prisma.ticketAttachment.createMany({
+                data: data.attachmentsMeta.map((a) => ({
+                    messageId: msg.id,
+                    filename: a.filename,
+                    mimeType: a.mimeType,
+                    bytes: a.bytes,
+                    url: a.graphAttachmentId,
+                    isInline: a.isInline, // ✅ Guardar
+                    contentId: a.contentId ?? null, // ✅ Guardar
+                })),
+            });
+        }
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
     }
     /* ======================================================
@@ -269,7 +309,7 @@ class GraphReaderService {
     ====================================================== */
     async addMessageToTicket(ticketId, data) {
         await prisma.$transaction(async (tx) => {
-            await tx.ticketMessage.create({
+            const msg = await tx.ticketMessage.create({
                 data: {
                     ticketId,
                     direction: MessageDirection.INBOUND,
@@ -281,8 +321,23 @@ class GraphReaderService {
                     cc: data.cc.length ? data.cc.join(",") : null,
                     sourceMessageId: data.messageId,
                     sourceInReplyTo: data.conversationId || null,
+                    sourceReferences: data.graphMessageId,
                 },
             });
+            // ✅ adjuntos (metadata) para replies también
+            if (data.attachmentsMeta?.length) {
+                await tx.ticketAttachment.createMany({
+                    data: data.attachmentsMeta.map((a) => ({
+                        messageId: msg.id,
+                        filename: a.filename,
+                        mimeType: a.mimeType,
+                        bytes: a.bytes,
+                        url: a.graphAttachmentId,
+                        isInline: a.isInline, // ✅ Guardar
+                        contentId: a.contentId ?? null, // ✅ Guardar
+                    })),
+                });
+            }
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },

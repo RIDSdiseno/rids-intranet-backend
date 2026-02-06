@@ -42,7 +42,7 @@ export async function listTickets(req, res) {
         const rows = await prisma.freshdeskTicket.findMany({
             where,
             orderBy: { createdAt: "desc" },
-            ...(all ? {} : { skip: 0, take: 1000 }),
+            ...(all ? {} : { skip: 0, take: 3000 }),
             select: {
                 id: true,
                 subject: true,

@@ -12,7 +12,7 @@ export async function getEmpresas(req, res) {
         const full = String(req.query.full ?? "").toLowerCase() === "1";
         // Base: empresas (solo id + nombre)
         const empresasBase = await prisma.empresa.findMany({
-            select: { id_empresa: true, nombre: true, tieneSucursales: true },
+            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
             orderBy: { nombre: "asc" },
         });
         if (empresasBase.length === 0) {
@@ -105,6 +105,8 @@ export async function getEmpresas(req, res) {
                 return {
                     id_empresa: e.id_empresa,
                     nombre: e.nombre,
+                    dominios: e.dominios ?? [],
+                    dominioPrincipal: e.dominios?.[0] ?? null,
                     detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
                     solicitantes: solicitantesEmp,
                     estadisticas: {
@@ -127,6 +129,8 @@ export async function getEmpresas(req, res) {
                 data: empresasBase.map((e) => ({
                     id_empresa: e.id_empresa,
                     nombre: e.nombre,
+                    dominios: e.dominios ?? [],
+                    dominioPrincipal: e.dominios?.[0] ?? null,
                 })),
                 total: empresasBase.length,
             });
@@ -261,7 +265,7 @@ export async function getEmpresaById(req, res) {
         const id = Number(req.params.id);
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: id },
-            select: { id_empresa: true, nombre: true, tieneSucursales: true },
+            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
         });
         if (!empresa) {
             res.status(404).json({ success: false, error: "Empresa no encontrada" });

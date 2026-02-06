@@ -1,6 +1,6 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
-import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, getInlineImage, proxyExternalImage, } from "../../controllers/tickets-rids/ticketera.controller.js";
 // 🆕 Importar controlador de email
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
@@ -13,6 +13,12 @@ const ticketeraRouter = Router();
 // =======================
 ticketeraRouter.post("/", createTicket);
 ticketeraRouter.get("/", listTickets);
+ticketeraRouter.get("/external-image", proxyExternalImage); // NUEVO: endpoint para servir imágenes externas
+// =======================
+// ATTACHMENT ENDPOINTS
+// =======================
+ticketeraRouter.get("/attachments/:attachmentId/download", downloadTicketAttachment);
+ticketeraRouter.get("/inline/:attachmentId", getInlineImage);
 // =======================
 // EMAIL ENDPOINTS
 // =======================

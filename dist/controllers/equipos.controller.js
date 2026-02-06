@@ -41,9 +41,10 @@ const createEquipoSchema = z.object({
 });
 // 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
-    createEquipoSchema,
+    createEquipoSchema, // 1 solo equipo
+    z.array(createEquipoSchema).min(1), // array directo
     z.object({
-        equipos: z.array(createEquipoSchema).min(1),
+        equipos: z.array(createEquipoSchema).min(1), // { equipos: [...] }
     }),
 ]);
 const equipoUpdateSchema = z.object({
@@ -192,60 +193,49 @@ export async function listEquipos(req, res) {
 export async function createEquipo(req, res) {
     try {
         const parsed = createEquiposRequestSchema.parse(req.body);
-        const equiposToCreate = "equipos" in parsed ? parsed.equipos : [parsed];
+        const equiposToCreate = Array.isArray(parsed)
+            ? parsed
+            : "equipos" in parsed
+                ? parsed.equipos
+                : [parsed];
         const created = [];
         const errors = [];
         // 🔥 transacción para que sea más estable
-        await prisma.$transaction(async (tx) => {
-            for (const data of equiposToCreate) {
-                try {
-                    const existe = await prisma.equipo.findUnique({
-                        where: { serial: data.serial },
-                    });
-                    if (existe) {
-                        errors.push({
-                            serial: data.serial,
-                            error: "Ya existe un equipo con ese serial",
-                        });
-                        continue;
-                    }
-                    let idSolicitanteFinal = null;
-                    if (data.idSolicitante) {
-                        const sol = await prisma.solicitante.findUnique({
-                            where: { id_solicitante: data.idSolicitante },
-                        });
-                        if (!sol) {
-                            errors.push({
-                                serial: data.serial,
-                                error: "Solicitante no encontrado",
-                            });
-                            continue;
-                        }
-                        idSolicitanteFinal = sol.id_solicitante;
-                    }
-                    const equipo = await prisma.equipo.create({
-                        data: {
-                            tipo: data.tipo,
-                            marca: data.marca,
-                            modelo: data.modelo,
-                            serial: data.serial,
-                            procesador: data.procesador,
-                            ram: data.ram,
-                            disco: data.disco,
-                            propiedad: data.propiedad,
-                            idSolicitante: idSolicitanteFinal,
-                        },
-                    });
-                    created.push(equipo);
-                }
-                catch (e) {
+        for (const data of equiposToCreate) {
+            try {
+                const existe = await prisma.equipo.findUnique({
+                    where: { serial: data.serial },
+                });
+                if (existe) {
                     errors.push({
                         serial: data.serial,
-                        error: e?.message ?? "Error desconocido",
+                        error: "Ya existe un equipo con ese serial",
                     });
+                    continue;
                 }
+                let idSolicitanteFinal = data.idSolicitante ?? null;
+                const equipo = await prisma.equipo.create({
+                    data: {
+                        tipo: data.tipo,
+                        marca: data.marca,
+                        modelo: data.modelo,
+                        serial: data.serial,
+                        procesador: data.procesador,
+                        ram: data.ram,
+                        disco: data.disco,
+                        propiedad: data.propiedad,
+                        idSolicitante: idSolicitanteFinal,
+                    },
+                });
+                created.push(equipo);
             }
-        });
+            catch (e) {
+                errors.push({
+                    serial: data.serial,
+                    error: e?.message ?? "Error desconocido",
+                });
+            }
+        }
         clearCache();
         return res.status(201).json({
             ok: true,

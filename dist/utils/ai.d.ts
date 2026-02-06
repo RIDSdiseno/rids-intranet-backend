@@ -2,6 +2,7 @@ export type RunAIInput = {
     userText: string;
     context?: {
         from: string;
+        intent?: string;
         lastUserMsg?: string;
         lastAIReply?: string;
         turns?: number;
