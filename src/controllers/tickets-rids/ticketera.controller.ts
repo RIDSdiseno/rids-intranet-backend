@@ -6,7 +6,7 @@ import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, Message
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 
 import crypto from "crypto";
-import { graphReaderService } from "@/service/email/graph-reader.service.js";
+import { graphReaderService } from "../../service/email/graph-reader.service.js";
 
 // Extiende Request para tener req.user.id
 declare global {

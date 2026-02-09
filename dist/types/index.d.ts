@@ -14,5 +14,4 @@ export type RunAIInput = {
         }>;
     };
 };
-export declare const runAI: ({ userText, context }: RunAIInput) => Promise<string>;
-//# sourceMappingURL=ai.d.ts.map
+//# sourceMappingURL=index.d.ts.map

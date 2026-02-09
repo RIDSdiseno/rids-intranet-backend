@@ -2,7 +2,7 @@
 import cron from 'node-cron';
 import { graphReaderService } from '../service/email/graph-reader.service.js';
 export function startEmailReaderJob() {
-    cron.schedule('/2 * * * *', async () => {
+    cron.schedule('*/2 * * * *', async () => {
         console.log('🔄 [CRON] Leyendo emails...');
         try {
             await graphReaderService.readUnreadEmails();

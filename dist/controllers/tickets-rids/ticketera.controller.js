@@ -2,7 +2,7 @@ import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 import crypto from "crypto";
-import { graphReaderService } from "@/service/email/graph-reader.service.js";
+import { graphReaderService } from "../../service/email/graph-reader.service.js";
 // Crear ticket
 export async function createTicket(req, res) {
     try {
