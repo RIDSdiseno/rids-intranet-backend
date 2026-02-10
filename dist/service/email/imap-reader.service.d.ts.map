@@ -1,1 +1,0 @@
-{"version":3,"file":"imap-reader.service.d.ts","sourceRoot":"","sources":["../../../src/service/email/imap-reader.service.ts"],"names":[],"mappings":"AA6BA,cAAM,iBAAiB;IACnB,OAAO,CAAC,MAAM,CAYZ;;IAaI,gBAAgB,IAAI,OAAO,CAAC,IAAI,CAAC;YAyDzB,YAAY;YAuCZ,oBAAoB;YAuGpB,kBAAkB;YAiClB,kBAAkB;IAoChC,OAAO,CAAC,cAAc;CASzB;AAED,eAAO,MAAM,iBAAiB,mBAA0B,CAAC"}
