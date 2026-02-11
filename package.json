@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "cross-env DOTENV_CONFIG_PATH=.env tsx watch --ignore node_modules -r dotenv/config --require tsconfig-paths/register src/server.ts",
-    "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.build.json || echo 'Ignorando errores de TS para deploy'",
+    "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.build.json",
     "start": "node --enable-source-maps -r dotenv/config dist/server.js",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
