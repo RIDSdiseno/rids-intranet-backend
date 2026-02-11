@@ -3,323 +3,8 @@ generator client {
 }
 
 datasource db {
-HEAD
   provider = "postgresql"
   url      = env("DATABASE_URL")
-
-    provider          = "postgresql"
-    url               = env("DATABASE_URL")
-    shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
-    relationMode      = "prisma"
-}
-
-// APARTADO EMPRESAS
-model Empresa {
-    id_empresa   gonzalov@Matiass-iMac rids-intranet-backend % git rm -rf dist
-rm 'dist/config/db.d.ts'
-rm 'dist/config/db.d.ts.map'
-rm 'dist/config/db.js'
-rm 'dist/config/db.js.map'
-rm 'dist/controllers/empresas.controller.d.ts.map'
-rm 'dist/controllers/empresas.controller.d.ts.map'
-rm 'dist/controllers/empresas.controller.js'
-rm 'dist/controllers/empresas.controller.js'
-rm 'dist/controllers/empresas.controller.js.map'
-rm 'dist/controllers/empresas.controller.js.map'
-rm 'dist/controllers/equipos.controller.d.ts.map'
-rm 'dist/controllers/equipos.controller.d.ts.map'
-rm 'dist/controllers/equipos.controller.js'
-rm 'dist/controllers/equipos.controller.js'
-rm 'dist/controllers/equipos.controller.js.map'
-rm 'dist/controllers/equipos.controller.js.map'
-rm 'dist/controllers/servicios-gestioo.controller.d.ts.map'
-rm 'dist/controllers/servicios-gestioo.controller.d.ts.map'
-rm 'dist/controllers/servicios-gestioo.controller.js'
-rm 'dist/controllers/servicios-gestioo.controller.js'
-rm 'dist/controllers/servicios-gestioo.controller.js.map'
-rm 'dist/controllers/servicios-gestioo.controller.js.map'
-rm 'dist/controllers/tickets-rids/ticketera.controller.d.ts'
-rm 'dist/controllers/tickets-rids/ticketera.controller.d.ts'
-rm 'dist/controllers/tickets-rids/ticketera.controller.d.ts.map'
-rm 'dist/controllers/tickets-rids/ticketera.controller.d.ts.map'
-rm 'dist/controllers/tickets-rids/ticketera.controller.js'
-rm 'dist/controllers/tickets-rids/ticketera.controller.js'
-rm 'dist/controllers/tickets-rids/ticketera.controller.js.map'
-rm 'dist/controllers/tickets-rids/ticketera.controller.js.map'
-rm 'dist/controllers/tickets.controller.d.ts.map'
-rm 'dist/controllers/tickets.controller.d.ts.map'
-rm 'dist/controllers/tickets.controller.js'
-rm 'dist/controllers/tickets.controller.js'
-rm 'dist/controllers/tickets.controller.js.map'
-rm 'dist/controllers/tickets.controller.js.map'
-rm 'dist/controllers/whatchimp.controller.d.ts.map'
-rm 'dist/controllers/whatchimp.controller.d.ts.map'
-rm 'dist/controllers/whatchimp.controller.js'
-rm 'dist/controllers/whatchimp.controller.js'
-rm 'dist/controllers/whatchimp.controller.js.map'
-rm 'dist/controllers/whatchimp.controller.js.map'
-rm 'dist/routes.d.ts.map'
-rm 'dist/routes.d.ts.map'
-rm 'dist/routes.js'
-rm 'dist/routes.js'
-rm 'dist/routes.js.map'
-rm 'dist/routes.js.map'
-rm 'dist/routes/msSync.d.ts.map'
-rm 'dist/routes/msSync.d.ts.map'
-rm 'dist/routes/msSync.js'
-rm 'dist/routes/msSync.js'
-rm 'dist/routes/msSync.js.map'
-rm 'dist/routes/msSync.js.map'
-rm 'dist/routes/ticketera-routes/ticketera.routes.d.ts.map'
-rm 'dist/routes/ticketera-routes/ticketera.routes.d.ts.map'
-rm 'dist/routes/ticketera-routes/ticketera.routes.js'
-rm 'dist/routes/ticketera-routes/ticketera.routes.js'
-rm 'dist/routes/ticketera-routes/ticketera.routes.js.map'
-rm 'dist/routes/ticketera-routes/ticketera.routes.js.map'
-rm 'dist/service/email/graph-reader.service.d.ts'
-rm 'dist/service/email/graph-reader.service.d.ts'
-rm 'dist/service/email/graph-reader.service.d.ts.map'
-rm 'dist/service/email/graph-reader.service.d.ts.map'
-rm 'dist/service/email/graph-reader.service.js'
-rm 'dist/service/email/graph-reader.service.js'
-rm 'dist/service/email/graph-reader.service.js.map'
-rm 'dist/service/email/graph-reader.service.js.map'
-rm 'dist/service/memory.service.d.ts'
-rm 'dist/service/memory.service.d.ts.map'
-rm 'dist/service/memory.service.js'
-rm 'dist/service/memory.service.js.map'
-rm 'dist/service/solicitanteSyncMs.d.ts.map'
-rm 'dist/service/solicitanteSyncMs.d.ts.map'
-rm 'dist/service/solicitanteSyncMs.js'
-rm 'dist/service/solicitanteSyncMs.js'
-rm 'dist/service/solicitanteSyncMs.js.map'
-rm 'dist/service/solicitanteSyncMs.js.map'
-rm 'dist/types/index.d.ts'
-rm 'dist/types/index.d.ts.map'
-rm 'dist/types/index.js'
-rm 'dist/types/index.js.map'
-rm 'dist/utils/ai.d.ts'
-rm 'dist/utils/ai.d.ts'
-rm 'dist/utils/ai.d.ts.map'
-rm 'dist/utils/ai.d.ts.map'
-rm 'dist/utils/ai.js'
-rm 'dist/utils/ai.js'
-rm 'dist/utils/ai.js.map'
-rm 'dist/utils/ai.js.map'       Int                   @id @default(autoincrement())
-    nombre              String                @unique
-    razonSocial         String?
-    tieneSucursales     Boolean               @default(false)
-    dominios            String[]              @default([])
-    solicitantes        Solicitante[]
-    visitas             Visita[]              @relation("Empresa_Visita")
-    tickets             FreshdeskTicket[]
-    companyMaps         FreshdeskCompanyMap[]
-    detalleEmpresa      DetalleEmpresa?
-    sucursales          Sucursal[]
-    contactoEmpresas    ContactoEmpresa[]
-    fichaEmpresa        FichaEmpresa?
-    fichaTecnicaEmpresa FichaTecnicaEmpresa?
-    historials          Historial[]
-    ticketsRids         Ticket[]
-    empresaISP          EmpresaISP?
-}
-
-model Sucursal {
-    id_sucursal           Int                    @id @default(autoincrement())
-    nombre                String
-    direccion             String?
-    telefono              String?
-    empresaId             Int
-    empresa               Empresa                @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-    historiales           Historial[]
-    visitas               Visita[]
-    responsableSucursals  ResponsableSucursal[]
-    redSucursal           RedSucursal?
-    accesoRouterSucursals AccesoRouterSucursal[]
-
-    @@index([empresaId])
-}
-
-model ResponsableSucursal {
-    id         Int @id @default(autoincrement())
-    sucursalId Int
-
-    nombre   String
-    cargo    String
-    email    String?
-    telefono String?
-
-    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
-
-    @@index([sucursalId])
-}
-
-model DetalleEmpresa {
-    id         Int     @id @default(autoincrement())
-    rut        String  @unique
-    direccion  String?
-    telefono   String?
-    email      String?
-    empresa_id Int     @unique
-    empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
-
-    @@map("detalle_empresas")
-}
-
-model ContactoEmpresa {
-    id        Int @id @default(autoincrement())
-    empresaId Int
-
-    nombre    String
-    cargo     String
-    email     String?
-    telefono  String?
-    principal Boolean @default(false)
-
-    empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
-
-    @@index([empresaId])
-}
-
-model FichaEmpresa {
-    id        Int @id @default(autoincrement())
-    empresaId Int @unique
-
-    creadaEn               DateTime @default(now())
-    actualizadaEn          DateTime @updatedAt
-    condicionesComerciales String?
-
-    empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
-
-    checklist ChecklistGestionEmpresa?
-}
-
-model FichaTecnicaEmpresa {
-    id        Int     @id @default(autoincrement())
-    empresaId Int     @unique
-    empresa   Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-
-    /**
-     * ===================== Técnicos / Visitas =====================
-     */
-    tecnicoPrincipal        String?
-    tecnicosRespaldo        String?
-    fechaUltimaVisita       DateTime?
-    proximaVisitaProgramada DateTime?
-    observacionesVisita     String?
-
-    /**
-     * ===================== Equipos y hardware =====================
-     */
-    pcsNotebooks          String?
-    servidores            String?
-    impresorasPerifericos String?
-    otrosEquipos          String?
-
-    /**
-     * ===================== Software y sistemas =====================
-     */
-    sistemasOperativos   String?
-    aplicacionesCriticas String?
-    licenciasVigentes    String?
-    antivirusSeguridad   String?
-
-    /**
-     * ===================== Redes y conectividad =====================
-     */
-    proveedorInternet   String?
-    velocidadContratada String?
-    routersSwitches     String?
-    configuracionIP     String?
-
-    /**
-     * ===================== Servicios digitales =====================
-     */
-    dominioWeb          String?
-    hostingProveedor    String?
-    certificadoSSL      String?
-    correosCorporativos String?
-    redesSociales       String?
-
-    /**
-     * ===================== Respaldo y seguridad =====================
-     */
-    metodoRespaldo      String?
-    frecuenciaRespaldo  String?
-    responsableRespaldo String?
-    ultimaRestauracion  DateTime?
-
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-model EmpresaISP {
-    id        Int @id @default(autoincrement())
-    empresaId Int @unique
-
-    operador     String?
-    telefono     String?
-    servicio     String?
-    numeroTicket String?
-
-    ipRed String?
-
-    wifiNombre   String?
-    wifiClaveRef String? // ⚠️ ideal referencia, no password plano
-
-    empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
-}
-
-model ChecklistGestionEmpresa {
-    id             Int @id @default(autoincrement())
-    fichaEmpresaId Int @unique
-
-    levantamientoEquipos Boolean @default(false)
-    inventarioSoftware   Boolean @default(false)
-
-    soporteComputacional Boolean @default(false)
-    sitiosWeb            Boolean @default(false)
-    visitasPresenciales  Boolean @default(false)
-
-    contratoFirmado    Boolean @default(false)
-    facturasArchivadas Boolean @default(false)
-
-    historialIncidencias Boolean @default(false)
-    reunionesRevision    Boolean @default(false)
-
-    registroAccesos Boolean @default(false)
-
-    metasDigitales Boolean @default(false)
-    planAccion     Boolean @default(false)
-
-    fichaEmpresa FichaEmpresa @relation(fields: [fichaEmpresaId], references: [id])
-
-    @@index([fichaEmpresaId])
-}
-
-model ChatLog {
-  id        Int      @id @default(autoincrement())
-  phone     String
-  role      String   @default("user") // "user" o "assistant"
-  text      String   @db.Text
-  createdAt DateTime @default(now())
-}
-
-model RedSucursal {
-    id         Int @id @default(autoincrement())
-    sucursalId Int @unique
-
-    wifiNombre    String?
-    claveWifi     String? // ⚠️ NO password plano (ideal: encriptado o referencia)
-    ipRed         String?
-    gateway       String?
-    observaciones String?
-
-    sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
-752c0a04d0efafee314cd061ff234ba7368e68a3
 }
 
 model AccesoRouterSucursal {
@@ -331,6 +16,14 @@ model AccesoRouterSucursal {
   notas      String?
 
   @@index([sucursalId])
+}
+
+model ChatLog {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  role      String   @default("user")
+  text      String
+  createdAt DateTime @default(now())
 }
 
 model ChecklistGestionEmpresa {
@@ -417,19 +110,6 @@ model DetalleEquipo {
   revisado          String?
 
   @@index([idEquipo])
-}
-
-// Este es el modelo que permite la persistencia de los chats
-model ChatLog {
-  id        Int      @id @default(autoincrement())
-  phone     String   // Identificador del usuario de WhatsApp
-  role      String   // Define si el mensaje es del "client" o del "bot"
-  content   String   // El texto del mensaje (máximo 1000 caracteres para el bot)
-  createdAt DateTime @default(now())
-
-  // Este índice es CRÍTICO para que la función getLongTermMemory
-  // sea rápida y la IA responda a tiempo.
-  @@index([phone])
 }
 
 model DetalleTrabajoGestioo {
@@ -576,6 +256,19 @@ model FichaTecnicaEmpresa {
   routersSwitches         String?
   servidores              String?
   velocidadContratada     String?
+}
+
+model Firma {
+  id            Int      @id @default(autoincrement())
+  path          String
+  mimeType      String?
+  size          Int?
+  createdAt     DateTime @default(now())
+  solicitanteId Int?     @unique
+  tecnicoId     Int?     @unique
+
+  @@index([solicitanteId])
+  @@index([tecnicoId])
 }
 
 model FreshdeskCompanyMap {
@@ -815,6 +508,16 @@ model Ticket {
   @@index([status])
 }
 
+model TicketAdjunto {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  path      String
+  fileName  String
+  mimeType  String
+  size      Int
+  createdAt DateTime @default(now())
+}
+
 model TicketAttachment {
   id        Int      @id @default(autoincrement())
   messageId Int
@@ -826,24 +529,8 @@ model TicketAttachment {
   contentId String?
   isInline  Boolean  @default(false)
 
-HEAD
   @@index([contentId])
   @@index([messageId])
-
-    message TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-
-    filename  String
-    mimeType  String
-    url       String
-    bytes     Int
-    isInline  Boolean @default(false)
-    contentId String?
-
-    createdAt DateTime @default(now())
-
-    @@index([messageId])
-    @@index([contentId])
-752c0a04d0efafee314cd061ff234ba7368e68a3
 }
 
 model TicketEvent {
