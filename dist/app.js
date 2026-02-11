@@ -6,6 +6,8 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
 import { prisma } from "./lib/prisma.js";
+import path from "path";
+import { UPLOADS_DIR } from "./config/paths.js";
 /* ========= Helpers ========= */
 function normalizeOrigin(origin) {
     return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
@@ -61,8 +63,6 @@ const corsOptions = {
     maxAge: 600,
 };
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-app.use(cors(corsOptions));
 // Preflight global con respuesta 204 (más limpio que el 200 con body)
 // Delega el preflight al mismo corsOptions (no hagas headers a mano)
 app.options("*", cors(corsOptions));
@@ -70,6 +70,14 @@ app.options("*", cors(corsOptions));
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 /* ========= Healthcheck ========= */
 app.get("/health", (_req, res) => res.status(200).send("ok"));
+/* ========= Archivos estáticos (uploads) ========= */
+// Sirve firmas, adjuntos, etc. desde /uploads
+app.use("/uploads", express.static(UPLOADS_DIR, {
+    maxAge: "7d",
+    setHeaders: (res) => {
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+}));
 /* ========= Rutas ========= */
 // Asegúrate que dentro de routes.js tengas algo como:
 // router.post("/auth/login", ...)
@@ -79,6 +87,7 @@ app.use("/api", api);
 app.use((_req, res) => {
     res.status(404).json({ ok: false, error: "Not Found" });
 });
+// Manejo centralizado de errores (puedes expandirlo para manejar distintos tipos de errores)
 app.use((err, _req, res, _next) => {
     const code = err?.status ?? 500;
     const msg = err?.message ?? "Internal Server Error";

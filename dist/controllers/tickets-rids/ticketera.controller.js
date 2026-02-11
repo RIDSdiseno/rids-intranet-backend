@@ -3,6 +3,9 @@ import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, Message
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 import crypto from "crypto";
 import { graphReaderService } from "../../service/email/graph-reader.service.js";
+import fs from "fs";
+import path from "path";
+import { bus } from "../../lib/events.js";
 // Crear ticket
 export async function createTicket(req, res) {
     try {
@@ -66,6 +69,14 @@ export async function createTicket(req, res) {
             }
             return ticket;
         });
+        bus.emit("ticket.created", {
+            id: ticket.id,
+            publicId: ticket.publicId,
+            subject: ticket.subject,
+            empresaId: ticket.empresaId,
+            priority: ticket.priority,
+            channel: ticket.channel,
+        });
         return res.status(201).json({
             ok: true,
             ticketId: ticket.id,
@@ -100,9 +111,11 @@ export async function replyTicketAsAgent(req, res) {
         if (!ticket) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
+        const toEmail = ticket.requester?.email ||
+            ticket.fromEmail ||
+            null;
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
-            const toEmail = ticket.requester?.email ?? null;
             await tx.ticketMessage.create({
                 data: {
                     ticketId,
@@ -143,16 +156,14 @@ export async function replyTicketAsAgent(req, res) {
             });
         });
         // 🆕 Enviar email al cliente (solo si no es nota interna)
-        if (!isInternal && ticket.requester?.email) {
-            try {
-                await emailSenderService.sendAgentReply(ticket, message, ticket.requester.email);
-                console.log(`📧 Email enviado a ${ticket.requester.email}`);
-            }
-            catch (emailError) {
-                console.error('❌ Error enviando email, pero respuesta guardada:', emailError);
-                // No fallar la request si el email falla
-            }
+        if (!isInternal && toEmail) {
+            await emailSenderService.sendAgentReply(ticket, message, toEmail);
         }
+        bus.emit("ticket.replied", {
+            ticketId,
+            byAgentId: agentId ?? null,
+            isInternal,
+        });
         return res.status(200).json({
             ok: true,
             message: "Respuesta enviada correctamente",
@@ -204,6 +215,16 @@ export async function listTickets(req, res) {
                     empresa: { select: { nombre: true } },
                     assignee: { select: { id_tecnico: true, nombre: true } },
                     requester: { select: { nombre: true } },
+                    // 🔥 SOLO último mensaje
+                    messages: {
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                        select: {
+                            direction: true,
+                            isInternal: true,
+                            createdAt: true,
+                        },
+                    },
                 },
                 orderBy: [
                     { firstResponseAt: "asc" },
@@ -361,6 +382,14 @@ export async function updateTicket(req, res) {
                 await tx.ticketEvent.createMany({ data: events });
             }
         });
+        bus.emit("ticket.updated", {
+            ticketId,
+            changes: {
+                status,
+                priority,
+                assigneeId,
+            },
+        });
         return res.json({
             ok: true,
             message: "Ticket actualizado correctamente",
@@ -375,6 +404,7 @@ export async function updateTicket(req, res) {
     }
 }
 /* ===================== INBOUND EMAIL ===================== */
+// Endpoint para recibir emails entrantes desde Graph API (configurado en Azure como webhook)
 export async function inboundEmail(req, res) {
     try {
         const { from, subject, text } = req.body;
@@ -446,6 +476,15 @@ export async function inboundEmail(req, res) {
                 actorType: TicketActorType.SYSTEM,
             },
         });
+        bus.emit("ticket.created", {
+            id: ticket.id,
+            publicId: ticket.publicId,
+            subject: ticket.subject,
+            empresaId: ticket.empresaId,
+            priority: ticket.priority,
+            channel: "EMAIL",
+            from,
+        });
         return res.json({
             ok: true,
             ticketId: ticket.id,
@@ -461,78 +500,29 @@ export async function inboundEmail(req, res) {
     }
 }
 // GET /helpdesk/attachments/:id/download
+// Endpoint para descargar adjuntos de tickets (firmas, archivos, etc.)
 export async function downloadTicketAttachment(req, res) {
-    const attachmentId = Number(req.params.id);
+    const attachmentId = Number(req.params.attachmentId);
     if (!Number.isInteger(attachmentId)) {
         return res.status(400).json({ ok: false, message: "id inválido" });
     }
-    // 1) Buscar metadata en DB
     const att = await prisma.ticketAttachment.findUnique({
         where: { id: attachmentId },
-        include: { message: { include: { ticket: true } } },
     });
-    if (!att)
+    if (!att) {
         return res.status(404).json({ ok: false, message: "No existe" });
-    // 2) Necesitamos graphMessageId guardado en TicketMessage.sourceReferences
-    const graphMessageId = att.message.sourceReferences;
-    if (!graphMessageId) {
-        return res.status(500).json({ ok: false, message: "Falta graphMessageId" });
     }
-    // 3) Descargar desde Graph
-    const graphAttachmentId = att.url; // acá guardaste el attachmentId
-    const client = await graphReaderService["getClient"](); // o mueve getClient a util
-    // Este endpoint devuelve el attachment con contentBytes (base64) en muchos casos
-    const graphAtt = await client
-        .api(`/users/${process.env.EMAIL_USER}/messages/${graphMessageId}/attachments/${graphAttachmentId}`)
-        .get();
-    const contentBytes = graphAtt?.contentBytes;
-    if (!contentBytes) {
-        return res.status(404).json({ ok: false, message: "Adjunto no disponible" });
+    // att.url = /uploads/tickets/715/archivo.jpg
+    const filePath = path.join(process.cwd(), att.url);
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ ok: false, message: "Archivo no encontrado" });
     }
-    const buffer = Buffer.from(contentBytes, "base64");
     res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${att.filename}"`);
-    res.setHeader("Content-Length", buffer.length);
-    return res.send(buffer);
-}
-// GET /helpdesk/inline/:attachmentId
-export async function getInlineImage(req, res) {
-    const attachmentId = Number(req.params.attachmentId);
-    if (!Number.isInteger(attachmentId)) {
-        return res.sendStatus(400);
-    }
-    const att = await prisma.ticketAttachment.findUnique({
-        where: { id: attachmentId },
-        include: { message: true },
-    });
-    if (!att || !att.isInline) {
-        return res.sendStatus(404);
-    }
-    const graphMessageId = att.message.sourceReferences;
-    if (!graphMessageId) {
-        console.error("❌ Falta sourceReferences");
-        return res.sendStatus(500);
-    }
-    try {
-        const client = await graphReaderService.getClient();
-        const graphAtt = await client
-            .api(`/users/${process.env.EMAIL_USER}/messages/${graphMessageId}/attachments/${att.url}`)
-            .get();
-        if (!graphAtt?.contentBytes) {
-            return res.sendStatus(404);
-        }
-        const buffer = Buffer.from(graphAtt.contentBytes, "base64");
-        res.setHeader("Content-Type", att.mimeType);
-        res.setHeader("Cache-Control", "public, max-age=86400");
-        res.setHeader("Content-Length", buffer.length);
-        return res.send(buffer);
-    }
-    catch (err) {
-        console.error("❌ Error inline image:", err);
-        return res.sendStatus(500);
-    }
+    return res.sendFile(filePath);
 }
 // GET /helpdesk/external-image
+// Proxy para mostrar imágenes externas (ej. en plantillas de email) sin exponer el URL directo al cliente
 export async function proxyExternalImage(req, res) {
     const rawUrl = req.query.url;
     if (!rawUrl)

@@ -6,6 +6,7 @@ declare class GraphReaderService {
     constructor();
     getClient(): Promise<Client>;
     readUnreadEmails(): Promise<void>;
+    private saveAttachments;
     private processMessage;
     private fetchAttachmentsMeta;
     private stripHtml;
@@ -13,6 +14,15 @@ declare class GraphReaderService {
     private findExistingTicket;
     private addMessageToTicket;
     private detectPriority;
+    private downloadAttachment;
+    sendReplyEmail(params: {
+        to: string;
+        subject: string;
+        bodyHtml: string;
+        bodyText?: string;
+        inReplyTo?: string;
+        references?: string;
+    }): Promise<void>;
 }
 export declare const graphReaderService: GraphReaderService;
 export {};

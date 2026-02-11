@@ -4,6 +4,9 @@ import 'isomorphic-fetch';
 import { prisma } from '../../lib/prisma.js';
 import crypto from 'crypto';
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection, TicketChannel, } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
+import { bus } from "../../lib/events.js";
 /* ======================================================
    Servicio Graph Reader
 ====================================================== */
@@ -74,6 +77,35 @@ class GraphReaderService {
         catch (err) {
             console.error('❌ Error en Graph API:', err.message);
             throw err;
+        }
+    }
+    // ... otros métodos (fetchAttachmentsMeta, stripHtml, createOrUpdateTicket, etc.) ...
+    /* ======================================================
+       Guardar adjuntos
+    ====================================================== */
+    async saveAttachments(ticketId, messageId, data) {
+        if (!data.attachmentsMeta?.length)
+            return;
+        const uploadsDir = path.join(process.cwd(), "uploads", "tickets", ticketId.toString());
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        for (const att of data.attachmentsMeta) {
+            const buffer = await this.downloadAttachment(data.graphMessageId, att.graphAttachmentId);
+            if (!buffer)
+                continue;
+            const safeName = att.filename.replace(/[^\w.\-]/g, "_");
+            const filePath = path.join(uploadsDir, safeName);
+            fs.writeFileSync(filePath, buffer);
+            await prisma.ticketAttachment.create({
+                data: {
+                    messageId,
+                    filename: safeName,
+                    mimeType: att.mimeType,
+                    bytes: att.bytes,
+                    url: `/uploads/tickets/${ticketId}/${safeName}`,
+                    isInline: att.isInline,
+                    contentId: att.contentId,
+                },
+            });
         }
     }
     /* ======================================================
@@ -224,6 +256,7 @@ class GraphReaderService {
         if (!requester) {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
+        // CREAR TICKET (con o sin solicitante)
         const ticket = await prisma.ticket.create({
             data: {
                 publicId: crypto.randomUUID(),
@@ -238,6 +271,7 @@ class GraphReaderService {
                 lastActivityAt: new Date(),
             },
         });
+        // Agregar primer mensaje
         const msg = await prisma.ticketMessage.create({
             data: {
                 ticketId: ticket.id,
@@ -253,19 +287,16 @@ class GraphReaderService {
                 sourceReferences: data.graphMessageId,
             },
         });
-        if (data.attachmentsMeta?.length) {
-            await prisma.ticketAttachment.createMany({
-                data: data.attachmentsMeta.map((a) => ({
-                    messageId: msg.id,
-                    filename: a.filename,
-                    mimeType: a.mimeType,
-                    bytes: a.bytes,
-                    url: a.graphAttachmentId,
-                    isInline: a.isInline, // ✅ Guardar
-                    contentId: a.contentId ?? null, // ✅ Guardar
-                })),
-            });
-        }
+        await this.saveAttachments(ticket.id, msg.id, data);
+        bus.emit("ticket.created", {
+            id: ticket.id,
+            publicId: ticket.publicId,
+            subject: ticket.subject,
+            empresaId: ticket.empresaId,
+            priority: ticket.priority,
+            channel: TicketChannel.EMAIL,
+            from: data.fromEmail,
+        });
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
     }
     /* ======================================================
@@ -324,20 +355,7 @@ class GraphReaderService {
                     sourceReferences: data.graphMessageId,
                 },
             });
-            // ✅ adjuntos (metadata) para replies también
-            if (data.attachmentsMeta?.length) {
-                await tx.ticketAttachment.createMany({
-                    data: data.attachmentsMeta.map((a) => ({
-                        messageId: msg.id,
-                        filename: a.filename,
-                        mimeType: a.mimeType,
-                        bytes: a.bytes,
-                        url: a.graphAttachmentId,
-                        isInline: a.isInline, // ✅ Guardar
-                        contentId: a.contentId ?? null, // ✅ Guardar
-                    })),
-                });
-            }
+            await this.saveAttachments(ticketId, msg.id, data);
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },
@@ -349,6 +367,18 @@ class GraphReaderService {
                     actorType: TicketActorType.REQUESTER,
                 },
             });
+        });
+        // Emitir eventos para frontend
+        bus.emit("ticket.message", {
+            ticketId,
+            direction: "INBOUND",
+            from: data.fromEmail,
+            subject: data.subject,
+        });
+        // Opcional: también emitir actualización de ticket (si quieres que el frontend refresque estado, prioridad, etc.)
+        bus.emit("ticket.updated", {
+            ticketId,
+            lastActivityAt: new Date(),
         });
     }
     /* ======================================================
@@ -363,6 +393,53 @@ class GraphReaderService {
             return TicketPriority.HIGH;
         }
         return TicketPriority.NORMAL;
+    }
+    // ... otros métodos como translateStatus, escapeHtml, etc. ...
+    /* ======================================================
+       Descargar adjunto desde Graph API
+    ====================================================== */
+    async downloadAttachment(graphMessageId, attachmentId) {
+        const client = await this.getClient();
+        const res = await client
+            .api(`/users/${this.supportEmail}/messages/${graphMessageId}/attachments/${attachmentId}`)
+            .get();
+        // Solo fileAttachment tiene contenido
+        if (res['@odata.type'] === '#microsoft.graph.fileAttachment' &&
+            res.contentBytes) {
+            return Buffer.from(res.contentBytes, 'base64');
+        }
+        return null;
+    }
+    // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
+    async sendReplyEmail(params) {
+        const client = await this.getClient();
+        await client
+            .api(`/users/${this.supportEmail}/sendMail`)
+            .post({
+            message: {
+                subject: params.subject,
+                body: {
+                    contentType: "HTML",
+                    content: params.bodyHtml,
+                },
+                toRecipients: [
+                    {
+                        emailAddress: {
+                            address: params.to,
+                        },
+                    },
+                ],
+                internetMessageHeaders: [
+                    ...(params.inReplyTo
+                        ? [{ name: "In-Reply-To", value: params.inReplyTo }]
+                        : []),
+                    ...(params.references
+                        ? [{ name: "References", value: params.references }]
+                        : []),
+                ],
+            },
+            saveToSentItems: true,
+        });
     }
 }
 /* ======================================================

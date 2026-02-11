@@ -207,11 +207,11 @@ model ChecklistGestionEmpresa {
 }
 
 model ChatLog {
-  id        Int      @id @default(autoincrement())
-  phone     String
-  role      String   @default("user") // "user" o "assistant"
-  text      String   @db.Text
-  createdAt DateTime @default(now())
+    id        Int      @id @default(autoincrement())
+    phone     String
+    role      String   @default("user") // "user" o "assistant"
+    text      String   @db.Text
+    createdAt DateTime @default(now())
 }
 
 model RedSucursal {
@@ -260,6 +260,7 @@ model Solicitante {
     requesterMaps   FreshdeskRequesterMap[]
     msLicenses      SolicitanteMsLicense[]
     ticketsRids     Ticket[]
+    firma           Firma?
 
     @@index([empresaId])
     @@index([isActive])
@@ -491,6 +492,7 @@ model Tecnico {
     detalleTrabajos DetalleTrabajoGestioo[]
     entregas        Entrega[]
     tickets         Ticket[]
+    firma           Firma?
 }
 
 model Visita {
@@ -724,8 +726,9 @@ model Ticket {
     updatedAt      DateTime @updatedAt
     lastActivityAt DateTime @default(now())
 
-    messages TicketMessage[]
-    events   TicketEvent[]
+    messages       TicketMessage[]
+    events         TicketEvent[]
+    ticketAdjuntos TicketAdjunto[]
 
     @@index([empresaId])
     @@index([status])
@@ -778,6 +781,41 @@ model TicketAttachment {
 
     @@index([messageId])
     @@index([contentId])
+}
+
+model Firma {
+  id            Int @id @default(autoincrement())
+
+  // Relación opcional (solo uno debe existir)
+  tecnicoId     Int?
+  solicitanteId Int?
+
+  path          String
+  mimeType      String?
+  size          Int?
+  createdAt     DateTime @default(now())
+
+  tecnico       Tecnico?     @relation(fields: [tecnicoId], references: [id_tecnico])
+  solicitante   Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([tecnicoId])
+  @@index([solicitanteId])
+
+  // Evita duplicados
+  @@unique([tecnicoId])
+  @@unique([solicitanteId])
+}
+
+model TicketAdjunto {
+    id        Int      @id @default(autoincrement())
+    ticketId  Int
+    path      String
+    fileName  String
+    mimeType  String
+    size      Int
+    createdAt DateTime @default(now())
+
+    ticket Ticket @relation(fields: [ticketId], references: [id])
 }
 
 model TicketEvent {

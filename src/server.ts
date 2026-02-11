@@ -19,6 +19,7 @@ function parseOrigins(raw?: string) {
     .map(s => (s.startsWith("http://") || s.startsWith("https://") ? s : `https://${s}`));
 }
 
+// Opcional: si quieres usar un path específico para Socket.IO (útil con proxies que reescriben paths)
 const ORIGINS = parseOrigins(process.env.CORS_ORIGIN);
 const SOCKET_PATH = process.env.SOCKET_IO_PATH || "/socket.io"; // opcional, por si usas proxy que reescribe paths
 
@@ -58,6 +59,19 @@ io.on("connection", (socket) => {
 */
 bus.on("solicitante.created", (payload) => io.emit("solicitante.created", payload));
 bus.on("solicitante.updated", (payload) => io.emit("solicitante.updated", payload));
+
+// Eventos de tickets (creación, actualización, mensajes nuevos, etc.)
+bus.on("ticket.created", (payload) => {
+  io.emit("ticket.created", payload);
+});
+
+bus.on("ticket.updated", (payload) => {
+  io.emit("ticket.updated", payload);
+});
+
+bus.on("ticket.message", (payload) => {
+  io.emit("ticket.message", payload);
+});
 
 // Arranque
 const PORT = Number(process.env.PORT ?? 3000);

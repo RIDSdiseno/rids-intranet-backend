@@ -50,6 +50,7 @@ import uploadRoutes from "./routes/upload-imagenes.routes.js";
 
 /* ===================== HELP DESK RIDS ===================== */
 import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
+import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
 
 /* ========================================================= */
 export const api = Router();
@@ -81,6 +82,7 @@ api.use("/tickets", ticketsApiRouter);
 
 /* ===================== HELP DESK RIDS ===================== */
 api.use("/helpdesk/tickets", ticketeraRouter);
+api.use("/helpdesk/firmas", FirmasRouter);
 
 /* ===================== GESTIOO ===================== */
 api.use("/entidades", entidadesRouter);
