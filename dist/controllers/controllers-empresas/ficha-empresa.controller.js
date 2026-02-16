@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 /* =====================================================
    FICHA EMPRESA (BÁSICA)
 ===================================================== */
@@ -73,42 +74,109 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
    ACTUALIZAR FICHA EMPRESA
 ===================================================== */
 export async function actualizarFichaEmpresa(req, res) {
-    const empresaId = Number(req.params.empresaId);
-    const { razonSocial, rut, direccion, condicionesComerciales, contactos, } = req.body;
-    /* 1️⃣ EMPRESA */
-    await prisma.empresa.update({
-        where: { id_empresa: empresaId },
-        data: { razonSocial },
-    });
-    /* 2️⃣ DETALLE EMPRESA */
-    await prisma.detalleEmpresa.upsert({
-        where: { empresa_id: empresaId },
-        update: { rut, direccion },
-        create: { empresa_id: empresaId, rut, direccion },
-    });
-    /* 3️⃣ FICHA */
-    await prisma.fichaEmpresa.upsert({
-        where: { empresaId },
-        update: { condicionesComerciales },
-        create: { empresaId, condicionesComerciales },
-    });
-    /* 🔥 4️⃣ CONTACTOS / JEFES */
-    if (Array.isArray(contactos)) {
-        await prisma.contactoEmpresa.deleteMany({
-            where: { empresaId },
+    try {
+        const empresaId = Number(req.params.empresaId);
+        if (!empresaId || Number.isNaN(empresaId)) {
+            return res.status(400).json({ message: "empresaId inválido" });
+        }
+        const { razonSocial, rut, direccion, // 🔵 Principal
+        direcciones, // 🟢 Sucursales
+        telefono, email, condicionesComerciales, contactos, } = req.body;
+        /* =====================================================
+           1️⃣ EMPRESA
+        ===================================================== */
+        await prisma.empresa.update({
+            where: { id_empresa: empresaId },
+            data: {
+                razonSocial: razonSocial ?? null,
+            },
         });
-        await prisma.contactoEmpresa.createMany({
-            data: contactos.map((c) => ({
+        /* =====================================================
+           🔥 LIMPIAR DIRECCIONES SECUNDARIAS
+           - eliminar vacías
+           - eliminar si coinciden con principal
+        ===================================================== */
+        const cleanedDirecciones = Array.isArray(direcciones)
+            ? direcciones
+                .filter((d) => d?.direccion &&
+                typeof d.direccion === "string" &&
+                d.direccion.trim() !== "" &&
+                d.direccion.trim() !== direccion?.trim())
+                .map((d) => ({
+                tipo: d.tipo ?? "Sucursal",
+                direccion: d.direccion.trim(),
+            }))
+            : null;
+        /* =====================================================
+           2️⃣ DETALLE EMPRESA
+        ===================================================== */
+        await prisma.detalleEmpresa.upsert({
+            where: { empresa_id: empresaId },
+            update: {
+                rut: rut ?? null,
+                direccion: direccion ?? null,
+                direcciones: cleanedDirecciones && cleanedDirecciones.length > 0
+                    ? cleanedDirecciones
+                    : Prisma.JsonNull,
+                telefono: telefono ?? null,
+                email: email ?? null,
+            },
+            create: {
+                empresa_id: empresaId,
+                rut: rut ?? null,
+                direccion: direccion ?? null,
+                direcciones: cleanedDirecciones && cleanedDirecciones.length > 0
+                    ? cleanedDirecciones
+                    : Prisma.JsonNull,
+                telefono: telefono ?? null,
+                email: email ?? null,
+            },
+        });
+        /* =====================================================
+           3️⃣ FICHA
+        ===================================================== */
+        await prisma.fichaEmpresa.upsert({
+            where: { empresaId },
+            update: {
+                condicionesComerciales: condicionesComerciales ?? null,
+            },
+            create: {
+                empresaId,
+                condicionesComerciales: condicionesComerciales ?? null,
+            },
+        });
+        /* =====================================================
+           4️⃣ CONTACTOS
+        ===================================================== */
+        if (Array.isArray(contactos)) {
+            await prisma.contactoEmpresa.deleteMany({
+                where: { empresaId },
+            });
+            const cleanedContactos = contactos
+                .filter((c) => c?.nombre)
+                .map((c) => ({
                 empresaId,
                 nombre: c.nombre,
-                cargo: c.cargo,
-                email: c.email,
-                telefono: c.telefono,
+                cargo: c.cargo ?? null,
+                email: c.email ?? null,
+                telefono: c.telefono ?? null,
                 principal: !!c.principal,
-            })),
+            }));
+            if (cleanedContactos.length > 0) {
+                await prisma.contactoEmpresa.createMany({
+                    data: cleanedContactos,
+                });
+            }
+        }
+        return res.status(200).json({ ok: true });
+    }
+    catch (error) {
+        console.error("Error al actualizar ficha empresa:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "No se pudo actualizar la ficha empresa",
         });
     }
-    return res.json({ ok: true });
 }
 /* =====================================================
    FICHA TÉCNICA EMPRESA (NUEVO)

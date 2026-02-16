@@ -152,4 +152,50 @@ export async function obtenerRedSucursal(req, res) {
     });
     return res.json(red);
 }
+/* =====================================================
+   ELIMINAR SUCURSAL
+===================================================== */
+export async function eliminarSucursal(req, res) {
+    try {
+        const sucursalId = Number(req.params.sucursalId);
+        if (!sucursalId || Number.isNaN(sucursalId)) {
+            return res.status(400).json({
+                message: "sucursalId inválido",
+            });
+        }
+        /* ===============================
+           1️⃣ DESVINCULAR RELACIONES
+        =============================== */
+        await prisma.visita.updateMany({
+            where: { sucursalId },
+            data: { sucursalId: null },
+        });
+        await prisma.historial.updateMany({
+            where: { sucursalId },
+            data: { sucursalId: null },
+        });
+        await prisma.accesoRouterSucursal.deleteMany({
+            where: { sucursalId },
+        });
+        await prisma.responsableSucursal.deleteMany({
+            where: { sucursalId },
+        });
+        await prisma.redSucursal.deleteMany({
+            where: { sucursalId },
+        });
+        /* ===============================
+           2️⃣ ELIMINAR SUCURSAL
+        =============================== */
+        await prisma.sucursal.delete({
+            where: { id_sucursal: sucursalId },
+        });
+        return res.json({ ok: true });
+    }
+    catch (error) {
+        console.error("Error eliminando sucursal:", error);
+        return res.status(500).json({
+            message: "No se pudo eliminar la sucursal",
+        });
+    }
+}
 //# sourceMappingURL=sucursal.controller.js.map

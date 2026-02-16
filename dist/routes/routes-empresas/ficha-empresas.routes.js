@@ -1,7 +1,7 @@
 import { Router } from "express";
 // Ficha
 import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, upsertChecklistEmpresa } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
-import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedSucursal, upsertRedSucursal } from "../../controllers/controllers-empresas/sucursal.controller.js";
+import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedSucursal, upsertRedSucursal, eliminarSucursal, } from "../../controllers/controllers-empresas/sucursal.controller.js";
 // Red sucursal
 import { obtenerEmpresaISP, upsertEmpresaISP, } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
 export const fichaEmpresasRouter = Router();
@@ -22,6 +22,7 @@ fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);
 fichaEmpresasRouter.get("/:empresaId/sucursales", listarSucursalesEmpresa);
 fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
+fichaEmpresasRouter.delete("/sucursales/:sucursalId", eliminarSucursal);
 fichaEmpresasRouter.put("/:empresaId/checklist", upsertChecklistEmpresa);
 export default fichaEmpresasRouter;
 //# sourceMappingURL=ficha-empresas.routes.js.map

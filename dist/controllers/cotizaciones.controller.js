@@ -61,10 +61,12 @@ function normalizeCotizacionData(body) {
         out.tipo = body.tipo;
     if (body.estado)
         out.estado = body.estado;
-    out.entidadId =
-        body.entidadId === "" || body.entidadId === null || body.entidadId === undefined
-            ? null
-            : Number(body.entidadId);
+    if (body.entidadId !== undefined) {
+        out.entidadId =
+            body.entidadId === "" || body.entidadId === null
+                ? null
+                : Number(body.entidadId);
+    }
     // nuevos campos
     if (body.subtotal !== undefined)
         out.subtotal = Number(body.subtotal);
@@ -245,72 +247,60 @@ export async function updateCotizacion(req, res) {
             return res.status(404).json({ error: "Cotización no encontrada" });
         }
         const { items, ...rest } = req.body;
-        if (!items || !Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ error: "Debe incluir items" });
+        if (items !== undefined) {
+            if (!Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({ error: "Debe incluir items válidos" });
+            }
         }
         const data = normalizeCotizacionData(rest);
-        const updated = await prisma.$transaction(async (tx) => {
-            // 🔥 Borrar items antiguos
-            await tx.cotizacionItemGestioo.deleteMany({
-                where: { cotizacionId: id },
-            });
-            // 🔥 Crear cotización con items nuevos
-            return await tx.cotizacionGestioo.update({
-                where: { id },
-                data: {
-                    ...data,
-                    comentariosCotizacion: req.body.comentariosCotizacion ?? null,
-                    imagen: req.body.imagen ?? null,
+        const updated = await prisma.cotizacionGestioo.update({
+            where: { id },
+            data: {
+                ...data,
+                ...(req.body.comentariosCotizacion !== undefined && {
+                    comentariosCotizacion: req.body.comentariosCotizacion
+                }),
+                ...(req.body.imagen !== undefined && {
+                    imagen: req.body.imagen
+                }),
+                ...(items !== undefined && {
                     items: {
-                        create: items.map((i) => {
-                            const precioCLP = Number(i.precioOriginalCLP ?? i.precio ?? 0);
-                            return {
-                                tipo: i.tipo,
-                                // 🔤 TEXTO
-                                nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                                descripcion: i.descripcion?.trim() && i.descripcion.trim() !== ""
-                                    ? i.descripcion.trim()
-                                    : "", // <-- Cambiar null por string vacío
-                                cantidad: Number(i.cantidad ?? 1),
-                                // 🔥 PRECIO REAL (CLP)
-                                precio: precioCLP,
-                                precioOriginalCLP: precioCLP,
-                                // COSTOS
-                                precioCosto: i.precioCosto != null
-                                    ? Number(i.precioCosto)
-                                    : null,
-                                porcGanancia: i.porcGanancia != null
-                                    ? Number(i.porcGanancia)
-                                    : null,
-                                // DESCUENTOS
-                                tieneDescuento: Boolean(i.tieneDescuento),
-                                porcentaje: i.tieneDescuento
-                                    ? Number(i.porcentaje ?? 0)
-                                    : 0,
-                                // IVA
-                                tieneIVA: Boolean(i.tieneIVA),
-                                // OTROS
-                                sku: i.sku && i.sku.trim() !== ""
-                                    ? i.sku
-                                    : generarSKU(),
-                                imagen: i.imagen ?? null,
-                            };
-                        }),
+                        deleteMany: {},
+                        create: items.map((i) => ({
+                            tipo: i.tipo,
+                            nombre: i.nombre?.trim() ?? "",
+                            descripcion: i.descripcion?.trim() ?? "",
+                            cantidad: Number(i.cantidad ?? 1),
+                            precio: Number(i.precioOriginalCLP ?? i.precio ?? 0),
+                            precioOriginalCLP: Number(i.precioOriginalCLP ?? i.precio ?? 0),
+                            precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
+                            porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
+                            tieneDescuento: Boolean(i.tieneDescuento),
+                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                            tieneIVA: Boolean(i.tieneIVA),
+                            sku: i.sku?.trim() || generarSKU(),
+                            imagen: i.imagen ?? null,
+                        })),
+                    },
+                }),
+            },
+            include: {
+                entidad: true,
+                items: true,
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
                     },
                 },
-                include: {
-                    entidad: true,
-                    items: true,
-                },
-            });
+            },
         });
         return res.json({ data: updated });
     }
     catch (error) {
         console.error("❌ Error updateCotizacion:", error);
-        return res
-            .status(500)
-            .json({ error: "Error al actualizar cotización" });
+        return res.status(500).json({ error: "Error al actualizar cotización" });
     }
 }
 /* =====================================================

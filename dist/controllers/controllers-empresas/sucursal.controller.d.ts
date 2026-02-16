@@ -5,4 +5,5 @@ export declare function actualizarFichaSucursal(req: Request, res: Response): Pr
 export declare function listarSucursalesEmpresa(req: Request, res: Response): Promise<Response>;
 export declare function upsertRedSucursal(req: Request, res: Response): Promise<Response>;
 export declare function obtenerRedSucursal(req: Request, res: Response): Promise<Response>;
+export declare function eliminarSucursal(req: Request, res: Response): Promise<Response>;
 //# sourceMappingURL=sucursal.controller.d.ts.map

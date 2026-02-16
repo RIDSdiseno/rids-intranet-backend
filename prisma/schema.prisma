@@ -61,13 +61,14 @@ model ResponsableSucursal {
 }
 
 model DetalleEmpresa {
-  id         Int     @id @default(autoincrement())
-  rut        String  @unique
-  direccion  String?
-  telefono   String?
-  email      String?
-  empresa_id Int     @unique
-  empresa    Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
+  id          Int     @id @default(autoincrement())
+  rut         String  @unique
+  direccion   String?
+  direcciones Json?
+  telefono    String?
+  email       String?
+  empresa_id  Int     @unique
+  empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
 
   @@map("detalle_empresas")
 }
@@ -819,7 +820,7 @@ model ChatLog {
   id        Int      @id @default(autoincrement())
   phone     String
   role      String   @default("user") // "user" o "assistant"
-  text      String?   @db.Text
+  text      String?  @db.Text
   createdAt DateTime @default(now())
 }
 
@@ -929,10 +930,9 @@ enum OrigenGestioo {
 
 enum EstadoCotizacionGestioo {
   BORRADOR
-  GENERADA
-  ENVIADA
   APROBADA
   RECHAZADA
+  FACTURACION
 }
 
 enum TipoCotizacionGestioo {

@@ -1,9 +1,15 @@
 import { prisma } from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 /* ================== Schemas ================== */
+const direccionItemSchema = z.object({
+    tipo: z.string(),
+    direccion: z.string(),
+});
 const detalleEmpresaSchema = z.object({
     rut: z.string(),
-    direccion: z.string().optional(),
+    direccion: z.string().optional(), // mantener temporalmente
+    direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
     telefono: z.string().optional(),
     email: z.string().email().nullable().optional(),
     empresa_id: z.number(),
@@ -19,6 +25,9 @@ export async function createDetalleEmpresa(req, res) {
                 rut: parsed.rut,
                 empresa_id: parsed.empresa_id,
                 direccion: parsed.direccion ?? null,
+                direcciones: parsed.direcciones !== undefined
+                    ? parsed.direcciones
+                    : Prisma.JsonNull,
                 telefono: parsed.telefono ?? null,
                 email: parsed.email ?? null,
             },
@@ -119,12 +128,24 @@ export async function updateDetalleEmpresa(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const parsed = detalleEmpresaUpdateSchema.parse(req.body);
-        const { empresa_id, rut, direccion, telefono, email } = parsed;
+        const { empresa_id, rut, direccion, direcciones, telefono, email } = parsed;
         const data = {};
         if (rut !== undefined)
             data.rut = rut;
-        if (direccion !== undefined)
+        // 🔵 Dirección principal
+        if (direccion !== undefined) {
             data.direccion = direccion ?? null;
+        }
+        // 🟢 Direcciones adicionales (JSON limpio)
+        if (direcciones !== undefined) {
+            const cleaned = Array.isArray(direcciones)
+                ? direcciones.filter(d => d?.direccion?.trim())
+                : [];
+            data.direcciones =
+                cleaned.length > 0
+                    ? cleaned
+                    : Prisma.JsonNull;
+        }
         if (telefono !== undefined)
             data.telefono = telefono ?? null;
         if (email !== undefined)

@@ -12,7 +12,8 @@ import {
     listarSucursalesEmpresa,
     crearSucursal,
     obtenerRedSucursal,
-    upsertRedSucursal
+    upsertRedSucursal,
+    eliminarSucursal,
 } from "../../controllers/controllers-empresas/sucursal.controller.js";
 
 // Red sucursal
@@ -43,6 +44,7 @@ fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);
 fichaEmpresasRouter.get("/:empresaId/sucursales", listarSucursalesEmpresa);
 fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
+fichaEmpresasRouter.delete("/sucursales/:sucursalId",eliminarSucursal);
 
 fichaEmpresasRouter.put("/:empresaId/checklist", upsertChecklistEmpresa);
 

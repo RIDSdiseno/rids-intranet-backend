@@ -1,13 +1,20 @@
 // src/controllers/detalle-empresa.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 /* ================== Schemas ================== */
 
+const direccionItemSchema = z.object({
+  tipo: z.string(),
+  direccion: z.string(),
+});
+
 const detalleEmpresaSchema = z.object({
   rut: z.string(),
-  direccion: z.string().optional(),
+  direccion: z.string().optional(), // mantener temporalmente
+  direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
   telefono: z.string().optional(),
   email: z.string().email().nullable().optional(),
   empresa_id: z.number(),
@@ -27,6 +34,11 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
         rut: parsed.rut,
         empresa_id: parsed.empresa_id,
         direccion: parsed.direccion ?? null,
+        direcciones:
+          parsed.direcciones !== undefined
+            ? parsed.direcciones
+            : Prisma.JsonNull,
+
         telefono: parsed.telefono ?? null,
         email: parsed.email ?? null,
       },
@@ -128,12 +140,37 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
 
     const parsed = detalleEmpresaUpdateSchema.parse(req.body);
 
-    const { empresa_id, rut, direccion, telefono, email } = parsed;
+    const {
+      empresa_id,
+      rut,
+      direccion,
+      direcciones,
+      telefono,
+      email
+    } = parsed;
 
-    const data: any = {};
+    const data: Prisma.DetalleEmpresaUpdateInput = {};
 
     if (rut !== undefined) data.rut = rut;
-    if (direccion !== undefined) data.direccion = direccion ?? null;
+
+    // 🔵 Dirección principal
+    if (direccion !== undefined) {
+      data.direccion = direccion ?? null;
+    }
+
+    // 🟢 Direcciones adicionales (JSON limpio)
+    if (direcciones !== undefined) {
+      const cleaned =
+        Array.isArray(direcciones)
+          ? direcciones.filter(d => d?.direccion?.trim())
+          : [];
+
+      data.direcciones =
+        cleaned.length > 0
+          ? (cleaned as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
+    }
+
     if (telefono !== undefined) data.telefono = telefono ?? null;
     if (email !== undefined) data.email = email ?? null;
 
@@ -152,11 +189,19 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
     });
 
     return res.status(200).json(actualizado);
+
   } catch (err: any) {
     console.error("Error al actualizar detalle empresa:", err);
-    if (err.code === "P2002") return res.status(400).json({ error: "RUT ya existe" });
-    if (err.code === "P2003") return res.status(400).json({ error: "Empresa no existe" });
-    if (err.code === "P2025") return res.status(404).json({ error: "Detalle empresa no encontrado" });
+
+    if (err.code === "P2002")
+      return res.status(400).json({ error: "RUT ya existe" });
+
+    if (err.code === "P2003")
+      return res.status(400).json({ error: "Empresa no existe" });
+
+    if (err.code === "P2025")
+      return res.status(404).json({ error: "Detalle empresa no encontrado" });
+
     return res.status(500).json({ error: "Error al actualizar detalle empresa" });
   }
 }
