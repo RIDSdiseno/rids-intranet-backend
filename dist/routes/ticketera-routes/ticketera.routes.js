@@ -1,6 +1,7 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
-import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
 import { getTicketKpis, getTicketKpisByAgent, } from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
@@ -21,6 +22,8 @@ ticketeraRouter.get("/kpis", getTicketKpis);
 ticketeraRouter.get("/kpis/agent", getTicketKpisByAgent);
 ticketeraRouter.get("/dashboard", getAgentDashboard);
 ticketeraRouter.get("/queues", getTicketQueues);
+ticketeraRouter.patch("/bulk", bulkUpdateTickets);
+ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
 // =======================
 // EMAIL ENDPOINTS
 // =======================
@@ -35,6 +38,11 @@ ticketeraRouter.get("/attachments/:attachmentId/download", downloadTicketAttachm
 // =======================
 ticketeraRouter.get("/:id", getTicketById);
 ticketeraRouter.patch("/:id", updateTicket);
-ticketeraRouter.post("/:id/reply", replyTicketAsAgent);
+ticketeraRouter.post("/:id/reply", uploadTicketAttachments.array("attachments"), (err, _req, res, next) => {
+    if (err) {
+        return res.status(400).json({ ok: false, message: err.message });
+    }
+    return next();
+}, replyTicketAsAgent);
 export default ticketeraRouter;
 //# sourceMappingURL=ticketera.routes.js.map

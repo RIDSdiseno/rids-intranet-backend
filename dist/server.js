@@ -29,7 +29,7 @@ export const io = new IOServer(server, {
         credentials: true,
         methods: ["GET", "POST"],
     },
-    // Ajustes opcionales si hay proxies agresivos / latencia
+    // Ajustes opcionales si/*  */ hay proxies agresivos / latencia
     // pingInterval: 25000,
     // pingTimeout: 60000,
 });
@@ -37,7 +37,7 @@ export const io = new IOServer(server, {
 io.on("connection", (socket) => {
     // console.log("[socket] connected:", socket.id);
     // Ejemplo: permitir que el cliente se una a una sala por empresaId
-    // socket.on("join:empresa", (empresaId: number) => {
+    // socket.on/*  */("join:empresa", (empresaId: number) => {
     //   if (Number.isFinite(empresaId)) socket.join(`empresa:${empresaId}`);
     // });
     socket.on("disconnect", () => {
@@ -59,6 +59,9 @@ bus.on("ticket.updated", (payload) => {
 });
 bus.on("ticket.message", (payload) => {
     io.emit("ticket.message", payload);
+});
+bus.on("ticket.updated", (payload) => {
+    io.emit("ticket.updated", payload);
 });
 // Arranque
 const PORT = Number(process.env.PORT ?? 3000);

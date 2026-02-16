@@ -16,4 +16,6 @@ export declare function updateTicket(req: Request, res: Response): Promise<Respo
 export declare function inboundEmail(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function downloadTicketAttachment(req: Request, res: Response): Promise<void | Response<any, Record<string, any>>>;
 export declare function proxyExternalImage(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function bulkUpdateTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function bulkMergeTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=ticketera.controller.d.ts.map

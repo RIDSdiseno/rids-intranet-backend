@@ -4,9 +4,9 @@ import 'isomorphic-fetch';
 import { prisma } from '../../lib/prisma.js';
 import crypto from 'crypto';
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection, TicketChannel, } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
 import { bus } from "../../lib/events.js";
+import cloudinary from "../../config/cloudinary.js";
+import { Readable } from "stream";
 /* ======================================================
    Servicio Graph Reader
 ====================================================== */
@@ -86,22 +86,32 @@ class GraphReaderService {
     async saveAttachments(ticketId, messageId, data) {
         if (!data.attachmentsMeta?.length)
             return;
-        const uploadsDir = path.join(process.cwd(), "uploads", "tickets", ticketId.toString());
-        fs.mkdirSync(uploadsDir, { recursive: true });
         for (const att of data.attachmentsMeta) {
             const buffer = await this.downloadAttachment(data.graphMessageId, att.graphAttachmentId);
             if (!buffer)
                 continue;
             const safeName = att.filename.replace(/[^\w.\-]/g, "_");
-            const filePath = path.join(uploadsDir, safeName);
-            fs.writeFileSync(filePath, buffer);
+            // 🔥 Subir a Cloudinary usando stream
+            const uploadResult = await new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream({
+                    folder: `rids/helpdesk/tickets/${ticketId}`,
+                    resource_type: "auto",
+                    public_id: `email_${ticketId}_${Date.now()}`,
+                }, (error, result) => {
+                    if (error)
+                        reject(error);
+                    else
+                        resolve(result);
+                });
+                Readable.from(buffer).pipe(stream);
+            });
             await prisma.ticketAttachment.create({
                 data: {
                     messageId,
                     filename: safeName,
                     mimeType: att.mimeType,
                     bytes: att.bytes,
-                    url: `/uploads/tickets/${ticketId}/${safeName}`,
+                    url: uploadResult.secure_url,
                     isInline: att.isInline,
                     contentId: att.contentId,
                 },

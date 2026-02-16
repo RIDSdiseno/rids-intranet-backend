@@ -20,7 +20,7 @@ export const saveMessage = async (
       data: {
         phone,
         role,
-        content, // 👈 FALTABA ESTO
+        text: content, // ✅ CAMBIADO
       },
     });
   } catch (error) {
@@ -37,18 +37,14 @@ export const getLongTermMemory = async (
 ): Promise<MemoryMessage[]> => {
   try {
     const logs = await prisma.chatLog.findMany({
-      where: {
-        phone,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+      where: { phone },
+      orderBy: { createdAt: "desc" },
       take: limit,
     });
 
     return logs.reverse().map((log) => ({
       role: log.role as "client" | "bot" | "assistant",
-      content: log.content, // 👈 FALTABA ESTO
+      content: log.text ?? "", // ✅ CAMBIADO
     }));
   } catch (error) {
     console.error("Error obteniendo memoria de ChatLog:", error);
