@@ -19,7 +19,6 @@
   "dependencies": {
     "@azure/identity": "^4.13.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@prisma/client": "^6.16.3",
     "argon2": "^0.44.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
@@ -49,6 +48,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@prisma/client": "^6.19.2",
     "@types/argon2": "^0.14.1",
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
@@ -67,7 +67,7 @@
     "@types/nodemailer": "^7.0.9",
     "cross-env": "^7.0.3",
     "esbuild": "^0.19.12",
-    "prisma": "^6.16.3",
+    "prisma": "^6.19.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.19.0",

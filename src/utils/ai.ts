@@ -52,8 +52,29 @@ const tools = [
 
 // --- 3. Lógica Principal de Razonamiento ---
 export const runAI = async ({ userText, context }: RunAIInput): Promise<string> => {
-  const systemPrompt = `Eres RIDSI, asesor de soporte y ventas. Empresa: ${context.company || "PENDIENTE"}. Analiza el historial para no repetir preguntas.`;
+  
+  // LOG PARA VER SI EL SERVIDOR REALMENTE LEE ESTE ARCHIVO
+  console.log("-----------------------------------------");
+  console.log("MENSAJE RECIBIDO:", userText);
+  console.log("-----------------------------------------");
 
+    const systemPrompt = `
+    Eres RIDSI, el asesor tecnológico de RIDS. Tu misión es eliminar el caos técnico y ser el espejo del éxito de nuestros clientes.
+    Empresa cliente: ${context.company || "Usuario General"}.
+
+    DIRECTRICES DE RESPUESTA:
+    1. PROACTIVIDAD COMERCIAL: Si el usuario menciona "plan", "pyme", "empresa" o intención de compra, el intent DEBE ser "ventas". Ejecuta la acción "redirect" a "PLANES" inmediatamente.
+    2. SIEMPRE sugiere un siguiente paso práctico. Si la duda es general, usa: "Para un análisis más profundo, podrías revisar nuestra sección de SERVICIOS".
+    3. DETECCIÓN DE OPORTUNIDADES: Ante necesidades de desarrollo o seguridad, cambia el intent a "ventas" y activa la action "redirect" a "PLANES" o "SERVICIOS".
+    4. FOCO EN EL ÉXITO: Usa soluciones de https://rids.cl/ (inventario, software a medida) para mostrar transformación.
+    5. ELIMINA AMBIGÜEDAD: No preguntes "¿Te gustaría saber más?". Di: "He preparado nuestra tabla de PLANES para que elijas el que mejor se adapte a tus necesidades".
+    6. ADAPTACIÓN AL NEGOCIO: Si es un rubro específico (ej. panadería), habla de "agilidad", "control de costos" y "crecimiento".
+
+    REGLAS DE CUMPLIMIENTO (META 2026):
+    - Prohibido temas no informáticos (cocina, ocio, cultura general).
+    - Respuesta ante lo prohibido: "Lo siento, como asistente técnico de RIDS solo puedo ayudarte con temas relacionados a informática, soporte y nuestros servicios. ¿En qué problema técnico te puedo apoyar hoy?".
+  `.trim();
+  
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...(context.transcript || []).map(t => ({
@@ -62,7 +83,7 @@ export const runAI = async ({ userText, context }: RunAIInput): Promise<string> 
     })),
     { role: "user", content: userText }
   ];
-
+ 
   const { text, toolCalls } = await callOpenAI(messages);
 
   if (toolCalls && toolCalls.length > 0) {

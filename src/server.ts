@@ -4,7 +4,6 @@ import app from "./app.js"; // 👈 default import (sin llaves)
 import { Server as IOServer } from "socket.io";
 
 /* ==== Carga tareas programadas (cron) al arrancar ==== */
-
 /* ==== Puente de eventos → sockets (tiempo real) ==== */
 import { bus } from "./lib/events.js";
 import { startEmailReaderJob } from "./jobs/email-reader.job.js";
@@ -34,7 +33,7 @@ export const io = new IOServer(server, {
     credentials: true,
     methods: ["GET", "POST"],
   },
-  // Ajustes opcionales si hay proxies agresivos / latencia
+  // Ajustes opcionales si/*  */ hay proxies agresivos / latencia
   // pingInterval: 25000,
   // pingTimeout: 60000,
 });
@@ -44,7 +43,7 @@ io.on("connection", (socket) => {
   // console.log("[socket] connected:", socket.id);
 
   // Ejemplo: permitir que el cliente se una a una sala por empresaId
-  // socket.on("join:empresa", (empresaId: number) => {
+  // socket.on/*  */("join:empresa", (empresaId: number) => {
   //   if (Number.isFinite(empresaId)) socket.join(`empresa:${empresaId}`);
   // });
 
@@ -71,6 +70,10 @@ bus.on("ticket.updated", (payload) => {
 
 bus.on("ticket.message", (payload) => {
   io.emit("ticket.message", payload);
+});
+
+bus.on("ticket.updated", (payload) => {
+  io.emit("ticket.updated", payload);
 });
 
 // Arranque

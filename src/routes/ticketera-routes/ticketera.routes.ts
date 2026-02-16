@@ -1,5 +1,6 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
 
 import {
     createTicket,
@@ -10,7 +11,11 @@ import {
     inboundEmail,
     downloadTicketAttachment,
     proxyExternalImage,
+    bulkUpdateTickets,
+    bulkMergeTickets,
 } from "../../controllers/tickets-rids/ticketera.controller.js";
+
+import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 
@@ -35,12 +40,13 @@ ticketeraRouter.get("/", listTickets);
 // RUTAS FIJAS (ANTES DE :id)
 // =======================
 ticketeraRouter.get("/external-image", proxyExternalImage);
-
 ticketeraRouter.get("/sla", getTicketSla);
 ticketeraRouter.get("/kpis", getTicketKpis);
 ticketeraRouter.get("/kpis/agent", getTicketKpisByAgent);
 ticketeraRouter.get("/dashboard", getAgentDashboard);
 ticketeraRouter.get("/queues", getTicketQueues);
+ticketeraRouter.patch("/bulk", bulkUpdateTickets);
+ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
 
 // =======================
 // EMAIL ENDPOINTS
@@ -51,13 +57,20 @@ ticketeraRouter.post("/process-emails", processEmails);
 // =======================
 // ATTACHMENTS
 // =======================
-ticketeraRouter.get("/attachments/:attachmentId/download",downloadTicketAttachment);
+ticketeraRouter.get("/attachments/:attachmentId/download", downloadTicketAttachment);
 
 // =======================
 // RUTAS CON ID (AL FINAL)
 // =======================
 ticketeraRouter.get("/:id", getTicketById);
 ticketeraRouter.patch("/:id", updateTicket);
-ticketeraRouter.post("/:id/reply", replyTicketAsAgent);
+ticketeraRouter.post("/:id/reply",uploadTicketAttachments.array("attachments"),(err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err) {
+            return res.status(400).json({ ok: false, message: err.message });
+        }
+        return next();
+    },
+    replyTicketAsAgent
+);
 
 export default ticketeraRouter;

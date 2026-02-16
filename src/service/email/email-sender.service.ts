@@ -26,14 +26,23 @@ class EmailSenderService {
             status: string;
         },
         message: string,
-        toEmail: string
+        toEmail: string,
+        files?: Express.Multer.File[]
     ): Promise<void> {
         try {
+
+            // 🆕 Construir adjuntos si existen
+            const attachments = files?.map(file => ({
+                filename: file.originalname,
+                path: file.path, // Cloudinary secure_url
+            })) || [];
+
             await this.transporter.sendMail({
                 from: `"Soporte RIDS" <${process.env.SMTP_USER}>`,
                 to: toEmail,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 html: this.buildReplyTemplate(ticket, message),
+                attachments, // 👈 AQUÍ SE AGREGAN
                 headers: {
                     'In-Reply-To': `<ticket-${ticket.id}@rids.cl>`,
                     References: `<ticket-${ticket.id}@rids.cl>`,
@@ -41,6 +50,7 @@ class EmailSenderService {
             });
 
             console.log(`✅ Email enviado a ${toEmail} (Ticket #${ticket.id})`);
+
         } catch (error) {
             console.error('❌ Error enviando email:', error);
             throw error;

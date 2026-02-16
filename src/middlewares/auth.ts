@@ -15,7 +15,7 @@ export function auth(required = true): RequestHandler {
     const token = header.slice(7);
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET!);
-      (req as any).user = payload;
+      (req as any).userId = Number(payload.sub);
       return next();
     } catch {
       if (!required) return next();

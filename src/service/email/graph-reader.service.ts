@@ -14,10 +14,11 @@ import {
     TicketChannel,
 } from '@prisma/client';
 
-import fs from 'fs';
-import path from 'path';
-
 import { bus } from "../../lib/events.js";
+
+import cloudinary from "../../config/cloudinary.js";
+import { Readable } from "stream";
+
 
 /* ======================================================
    Tipos
@@ -147,15 +148,6 @@ class GraphReaderService {
     ) {
         if (!data.attachmentsMeta?.length) return;
 
-        const uploadsDir = path.join(
-            process.cwd(),
-            "uploads",
-            "tickets",
-            ticketId.toString()
-        );
-
-        fs.mkdirSync(uploadsDir, { recursive: true });
-
         for (const att of data.attachmentsMeta) {
             const buffer = await this.downloadAttachment(
                 data.graphMessageId,
@@ -165,9 +157,23 @@ class GraphReaderService {
             if (!buffer) continue;
 
             const safeName = att.filename.replace(/[^\w.\-]/g, "_");
-            const filePath = path.join(uploadsDir, safeName);
 
-            fs.writeFileSync(filePath, buffer);
+            // 🔥 Subir a Cloudinary usando stream
+            const uploadResult = await new Promise<any>((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    {
+                        folder: `rids/helpdesk/tickets/${ticketId}`,
+                        resource_type: "auto",
+                        public_id: `email_${ticketId}_${Date.now()}`,
+                    },
+                    (error, result) => {
+                        if (error) reject(error);
+                        else resolve(result);
+                    }
+                );
+
+                Readable.from(buffer).pipe(stream);
+            });
 
             await prisma.ticketAttachment.create({
                 data: {
@@ -175,7 +181,7 @@ class GraphReaderService {
                     filename: safeName,
                     mimeType: att.mimeType,
                     bytes: att.bytes,
-                    url: `/uploads/tickets/${ticketId}/${safeName}`,
+                    url: uploadResult.secure_url,
                     isInline: att.isInline,
                     contentId: att.contentId,
                 },
@@ -558,7 +564,7 @@ class GraphReaderService {
 
         return null;
     }
-    
+
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params: {
         to: string;

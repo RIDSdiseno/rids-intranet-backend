@@ -6,10 +6,7 @@ import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, Message
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 
 import crypto from "crypto";
-import { graphReaderService } from "../../service/email/graph-reader.service.js";
 
-import fs from "fs";
-import path from "path";
 
 import { bus } from "../../lib/events.js";
 
@@ -74,15 +71,6 @@ export async function createTicket(req: Request, res: Response) {
             });
 
             if (message?.trim()) {
-                await tx.ticketMessage.create({
-                    data: {
-                        ticketId: ticket.id,
-                        direction: MessageDirection.INBOUND,
-                        bodyText: message,
-                        isInternal: false,
-                        fromEmail: process.env.SMTP_USER ?? null,
-                    },
-                });
 
                 await tx.ticketEvent.create({
                     data: {
@@ -122,8 +110,12 @@ export async function createTicket(req: Request, res: Response) {
 export async function replyTicketAsAgent(req: Request, res: Response) {
     try {
         const ticketId = Number(req.params.id);
-        const { message, isInternal } = req.body;
+        const { message } = req.body;
+        const isInternal = req.body.isInternal === "true";
+
         const agentId = req.user?.id;
+
+        const files = req.files as Express.Multer.File[] | undefined;
 
         if (!ticketId) {
             return res.status(400).json({
@@ -151,7 +143,8 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
 
-            await tx.ticketMessage.create({
+            // 1️⃣ Crear mensaje UNA SOLA VEZ
+            const createdMessage = await tx.ticketMessage.create({
                 data: {
                     ticketId,
                     direction: MessageDirection.OUTBOUND,
@@ -159,11 +152,25 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                     isInternal: Boolean(isInternal),
                     fromEmail,
                     toEmail,
-                    cc: null,
                 },
             });
 
-            // Update dinámico
+            // 2️⃣ Adjuntos
+            if (files?.length) {
+                for (const file of files) {
+                    await tx.ticketAttachment.create({
+                        data: {
+                            messageId: createdMessage.id,
+                            filename: file.originalname,
+                            mimeType: file.mimetype,
+                            url: file.path,
+                            bytes: file.size,
+                        },
+                    });
+                }
+            }
+
+            // 3️⃣ Update ticket
             const updateData: any = {
                 lastActivityAt: new Date(),
             };
@@ -188,7 +195,7 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 data: updateData,
             });
 
-            // Evento
+            // 4️⃣ Evento
             await tx.ticketEvent.create({
                 data: {
                     ticketId,
@@ -204,14 +211,14 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             await emailSenderService.sendAgentReply(
                 ticket,
                 message,
-                toEmail
+                toEmail,
+                files?.filter(f => !f.mimetype.includes("internal"))
             );
         }
 
-        bus.emit("ticket.replied", {
+        bus.emit("ticket.updated", {
             ticketId,
-            byAgentId: agentId ?? null,
-            isInternal,
+            source: "agent_reply",
         });
 
         return res.status(200).json({
@@ -250,6 +257,11 @@ export async function listTickets(req: Request, res: Response) {
         /* ===== STATUS ===== */
         if (status) {
             where.status = status;
+        } else {
+            // 👇 Por defecto no mostrar cerrados
+            where.status = {
+                not: TicketStatus.CLOSED
+            };
         }
 
         /* ===== FILTROS ===== */
@@ -265,9 +277,9 @@ export async function listTickets(req: Request, res: Response) {
 
         /* ===== RANGO DE FECHAS ===== */
         if (from || to) {
-            where.createdAt = {
+            where.lastActivityAt = {
                 ...(from && { gte: new Date(from as string) }),
-                ...(to && { lte: new Date(to as string) }),
+                ...(to && { lt: new Date(to as string) }),
             };
         }
 
@@ -283,7 +295,7 @@ export async function listTickets(req: Request, res: Response) {
                     // SOLO último mensaje
                     messages: {
                         orderBy: { createdAt: "desc" },
-                        take: 1,
+                        take: 2,
                         select: {
                             direction: true,
                             isInternal: true,
@@ -292,8 +304,7 @@ export async function listTickets(req: Request, res: Response) {
                     },
                 },
                 orderBy: [
-                    { firstResponseAt: "asc" },
-                    { lastActivityAt: "desc" },
+                    { lastActivityAt: "desc" }, // Lo más importante
                     { createdAt: "desc" },
                 ],
                 skip,
@@ -302,14 +313,36 @@ export async function listTickets(req: Request, res: Response) {
             prisma.ticket.count({ where }),
         ]);
 
+        const statusCounts = await prisma.ticket.groupBy({
+            by: ["status"],
+            _count: {
+                status: true,
+            },
+        });
+
+        const counts: Record<string, number> = {};
+
+        statusCounts.forEach(s => {
+            counts[s.status] = s._count.status;
+        });
+
         const formattedTickets = tickets.map(t => {
-            const lastMsg = t.messages[0];
+            const messages = t.messages;
+            const lastMsg = messages[0];
+
+            const isOnlyInitialMessage = messages.length <= 1;
+
+            let lastMessageDirection: MessageDirection | "INTERNAL" | null = null;
+
+            if (!isOnlyInitialMessage) {
+                lastMessageDirection = lastMsg?.isInternal
+                    ? "INTERNAL"
+                    : lastMsg?.direction ?? null;
+            }
 
             return {
                 ...t,
-                lastMessageDirection: lastMsg?.isInternal
-                    ? "INTERNAL"
-                    : lastMsg?.direction ?? null,
+                lastMessageDirection,
             };
         });
 
@@ -321,6 +354,7 @@ export async function listTickets(req: Request, res: Response) {
             total,
             totalPages: Math.ceil(total / take),
             tickets: formattedTickets,
+            counts,
         });
 
     } catch (error) {
@@ -619,35 +653,14 @@ export async function inboundEmail(req: Request, res: Response) {
 // Endpoint para descargar adjuntos de tickets (firmas, archivos, etc.)
 export async function downloadTicketAttachment(req: Request, res: Response) {
     const attachmentId = Number(req.params.attachmentId);
-    if (!Number.isInteger(attachmentId)) {
-        return res.status(400).json({ ok: false, message: "id inválido" });
-    }
 
     const att = await prisma.ticketAttachment.findUnique({
         where: { id: attachmentId },
     });
 
-    if (!att) {
-        return res.status(404).json({ ok: false, message: "No existe" });
-    }
+    if (!att) return res.status(404).json({ ok: false });
 
-    // att.url = /uploads/tickets/715/archivo.jpg
-    const filePath = path.join(process.cwd(), att.url);
-
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ ok: false, message: "Archivo no encontrado" });
-    }
-
-    res.setHeader(
-        "Content-Type",
-        att.mimeType || "application/octet-stream"
-    );
-    res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${att.filename}"`
-    );
-
-    return res.sendFile(filePath);
+    return res.redirect(att.url);
 }
 
 // GET /helpdesk/external-image
@@ -677,5 +690,98 @@ export async function proxyExternalImage(req: Request, res: Response) {
     } catch (err) {
         console.error("❌ proxyExternalImage error", err);
         return res.sendStatus(500);
+    }
+}
+
+export async function bulkUpdateTickets(req: Request, res: Response) {
+    try {
+        const { ticketIds, status, assigneeId } = req.body;
+
+        if (!ticketIds?.length) {
+            return res.status(400).json({ ok: false });
+        }
+
+        await prisma.ticket.updateMany({
+            where: { id: { in: ticketIds } },
+            data: {
+                ...(status && { status }),
+                ...(assigneeId !== undefined && { assigneeId }),
+                lastActivityAt: new Date(),
+            },
+        });
+
+        return res.json({ ok: true });
+    } catch (err) {
+        return res.status(500).json({ ok: false });
+    }
+}
+
+export async function bulkMergeTickets(req: Request, res: Response) {
+    try {
+        const { mainTicketId, ticketIds } = req.body;
+
+        if (!mainTicketId || !ticketIds || ticketIds.length < 2) {
+            return res.status(400).json({
+                ok: false,
+                message: "Datos inválidos para fusión",
+            });
+        }
+
+        const otherTickets = ticketIds.filter((id: number) => id !== mainTicketId);
+
+        await prisma.$transaction(async (tx) => {
+
+            for (const id of otherTickets) {
+
+                // 1️⃣ Obtener ticket actual
+                const ticketToMerge = await tx.ticket.findUnique({
+                    where: { id },
+                });
+
+                if (!ticketToMerge) continue;
+
+                // 2️⃣ Mover mensajes
+                await tx.ticketMessage.updateMany({
+                    where: { ticketId: id },
+                    data: { ticketId: mainTicketId },
+                });
+
+                // 3️⃣ Cerrar ticket secundario
+                await tx.ticket.update({
+                    where: { id },
+                    data: {
+                        status: TicketStatus.CLOSED,
+                        closedAt: new Date(),
+                    },
+                });
+
+                // 4️⃣ Crear evento correcto
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId: id,
+                        type: TicketEventType.STATUS_CHANGED,
+                        oldValue: ticketToMerge.status,
+                        newValue: TicketStatus.CLOSED,
+                        actorType: TicketActorType.SYSTEM,
+                    },
+                });
+            }
+            await tx.ticket.update({
+                where: { id: mainTicketId },
+                data: {
+                    lastActivityAt: new Date(),
+                },
+            });
+
+        });
+
+        return res.json({ ok: true });
+
+    } catch (error) {
+        console.error("bulkMergeTickets error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al fusionar tickets",
+        });
     }
 }

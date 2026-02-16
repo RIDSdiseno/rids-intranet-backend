@@ -26,6 +26,13 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                 orderBy: { id: "desc" },
                 include: {
                     entidad: true,
+                    tecnico: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                        },
+                    },
                     items: {
                         orderBy: { id: "asc" },
                     },
@@ -101,6 +108,13 @@ export async function getCotizaciones(_req: Request, res: Response) {
                 items: { // Asegurar que siempre se incluyan los items
                     orderBy: { id: "asc" }
                 },
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                    },
+                },
             },
         });
 
@@ -132,6 +146,13 @@ export async function getCotizacionById(req: Request, res: Response) {
                 items: {
                     orderBy: { id: "asc" }
                 },
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                    },
+                },
             },
         });
 
@@ -158,6 +179,12 @@ export async function getCotizacionById(req: Request, res: Response) {
 ===================================================== */
 export async function createCotizacion(req: Request, res: Response) {
     try {
+        const userId = (req as any).userId;
+
+        if (!userId) {
+            return res.status(401).json({ error: "No autenticado" });
+        }
+
         const { items, ...rest } = req.body;
 
         if (!items || !Array.isArray(items) || items.length === 0) {
@@ -171,6 +198,7 @@ export async function createCotizacion(req: Request, res: Response) {
                 ...data,
                 comentariosCotizacion: req.body.comentariosCotizacion ?? null,
                 imagen: req.body.imagen ?? null,
+                tecnicoId: userId,
 
                 items: {
                     create: items.map((i: any) => {
@@ -222,6 +250,13 @@ export async function createCotizacion(req: Request, res: Response) {
             include: {
                 entidad: true,
                 items: true,
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                    },
+                },
             },
         });
 
