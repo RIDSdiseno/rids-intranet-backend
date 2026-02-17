@@ -83,6 +83,7 @@ function mapOrderBy(sortBy, sortDir) {
     return { [key]: sortDir };
 }
 function flattenRow(e) {
+    const detalle = e.equipo?.[0] ?? null;
     return {
         id_equipo: e.id_equipo,
         serial: e.serial,
@@ -97,6 +98,15 @@ function flattenRow(e) {
         empresa: e.solicitante?.empresa?.nombre ?? null,
         empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
+        // 🔥 NUEVO BLOQUE
+        macWifi: detalle?.macWifi ?? null,
+        so: detalle?.so ?? null,
+        tipoDd: detalle?.tipoDd ?? null,
+        estadoAlm: detalle?.estadoAlm ?? null,
+        office: detalle?.office ?? null,
+        teamViewer: detalle?.teamViewer ?? null,
+        claveTv: detalle?.claveTv ?? null,
+        revisado: detalle?.revisado ?? null,
     };
 }
 async function ensurePlaceholderSolicitante(empresaId) {
@@ -164,7 +174,7 @@ export async function listEquipos(req, res) {
             prisma.equipo.count({ where }),
             prisma.equipo.findMany({
                 where,
-                include: { solicitante: { include: { empresa: true } } },
+                include: { solicitante: { include: { empresa: true } }, equipo: true, },
                 orderBy,
                 skip: (q.page - 1) * q.pageSize,
                 take: q.pageSize,
@@ -265,7 +275,7 @@ export async function getEquipoById(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
-            include: { solicitante: { include: { empresa: true } } },
+            include: { solicitante: { include: { empresa: true } }, equipo: true, },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });

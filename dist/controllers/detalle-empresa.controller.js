@@ -10,8 +10,8 @@ const detalleEmpresaSchema = z.object({
     rut: z.string(),
     direccion: z.string().optional(), // mantener temporalmente
     direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
-    telefono: z.string().optional(),
-    email: z.string().email().nullable().optional(),
+    telefono: z.string().nullable().optional().or(z.literal("")),
+    email: z.string().email().nullable().optional().or(z.literal("")),
     empresa_id: z.number(),
 });
 const detalleEmpresaUpdateSchema = detalleEmpresaSchema.partial();

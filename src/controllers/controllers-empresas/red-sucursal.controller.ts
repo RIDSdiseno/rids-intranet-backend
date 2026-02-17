@@ -80,6 +80,8 @@ export async function actualizarEmpresaISP(req: Request, res: Response) {
     });
 
     res.json({ ok: true, isp: actualizada });
+    {return
+    }
 }
 
 export async function eliminarEmpresaISP(req: Request, res: Response) {

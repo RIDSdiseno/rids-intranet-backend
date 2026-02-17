@@ -46,6 +46,9 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
     });
     const contactos = await prisma.contactoEmpresa.findMany({
         where: { empresaId },
+        include: {
+            sucursal: true, // 👈 clave
+        },
         orderBy: [
             { principal: "desc" },
             { nombre: "asc" },
@@ -156,6 +159,7 @@ export async function actualizarFichaEmpresa(req, res) {
                 .filter((c) => c?.nombre)
                 .map((c) => ({
                 empresaId,
+                sucursalId: c.sucursalId ?? null, // 👈 importante
                 nombre: c.nombre,
                 cargo: c.cargo ?? null,
                 email: c.email ?? null,

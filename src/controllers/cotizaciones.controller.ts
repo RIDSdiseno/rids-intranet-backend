@@ -395,7 +395,7 @@ export async function deleteCotizacion(req: Request, res: Response) {
     } catch (error: any) {
         console.error("❌ Error deleteCotizacion:", error);
         res.status(500).json({ error: "Error al eliminar cotización" });
-    }
+    } return
 }
 
 export async function facturarCotizacion(req: Request, res: Response) {
@@ -475,7 +475,7 @@ export async function facturarCotizacion(req: Request, res: Response) {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Error interno al facturar" });
-    }
+    } return
 }
 
 export async function anularFactura(req: Request, res: Response) {
@@ -510,7 +510,7 @@ export async function anularFactura(req: Request, res: Response) {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Error al anular factura" });
-    }
+    } return
 }
 
 export async function pagarFactura(req: Request, res: Response) {
@@ -540,5 +540,5 @@ export async function pagarFactura(req: Request, res: Response) {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Error al pagar factura" });
-    }
+    } return
 }

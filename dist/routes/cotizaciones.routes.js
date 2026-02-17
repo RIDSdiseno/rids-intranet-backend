@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { auth } from "../middlewares/auth.js"; // 🔥 IMPORTANTE
-import { getCotizaciones, getCotizacionById, createCotizacion, updateCotizacion, deleteCotizacion, getCotizacionesPaginadas } from "../controllers/cotizaciones.controller.js";
+import { getCotizaciones, getCotizacionById, createCotizacion, updateCotizacion, deleteCotizacion, getCotizacionesPaginadas, facturarCotizacion, anularFactura, pagarFactura } from "../controllers/cotizaciones.controller.js";
 const cotizacionesRouter = Router();
 /* ============================
    RUTAS CRUD COTIZACION GESTIOO
@@ -13,5 +13,8 @@ cotizacionesRouter.get("/:id", getCotizacionById);
 cotizacionesRouter.post("/", createCotizacion);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
+cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
+cotizacionesRouter.post("/:id/anular", anularFactura);
+cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);
 export default cotizacionesRouter;
 //# sourceMappingURL=cotizaciones.routes.js.map
