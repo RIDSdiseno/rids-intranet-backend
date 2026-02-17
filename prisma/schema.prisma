@@ -27,7 +27,7 @@ model Empresa {
   fichaTecnicaEmpresa FichaTecnicaEmpresa?
   historials          Historial[]
   ticketsRids         Ticket[]
-  empresaISP          EmpresaISP?
+  empresaISP          EmpresaISP[]
 }
 
 model Sucursal {
@@ -42,6 +42,8 @@ model Sucursal {
   responsableSucursals  ResponsableSucursal[]
   redSucursal           RedSucursal?
   accesoRouterSucursals AccesoRouterSucursal[]
+  empresaISPs           EmpresaISP[]
+  contactoEmpresas      ContactoEmpresa[]
 
   @@index([empresaId])
 }
@@ -74,8 +76,9 @@ model DetalleEmpresa {
 }
 
 model ContactoEmpresa {
-  id        Int @id @default(autoincrement())
-  empresaId Int
+  id         Int  @id @default(autoincrement())
+  empresaId  Int
+  sucursalId Int?
 
   nombre    String
   cargo     String
@@ -83,9 +86,11 @@ model ContactoEmpresa {
   telefono  String?
   principal Boolean @default(false)
 
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa])
+  empresa  Empresa   @relation(fields: [empresaId], references: [id_empresa])
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
 
   @@index([empresaId])
+  @@index([sucursalId])
 }
 
 model FichaEmpresa {
@@ -162,22 +167,28 @@ model FichaTecnicaEmpresa {
 
 model EmpresaISP {
   id        Int @id @default(autoincrement())
-  empresaId Int @unique
+  empresaId Int
+
+  esPrincipal Boolean @default(false)
+
+  sucursalId Int? // opcional
 
   operador     String?
   telefono     String?
   servicio     String?
   numeroTicket String?
-
-  ipRed String?
-
+  ipRed        String?
   wifiNombre   String?
-  wifiClaveRef String? // ⚠️ ideal referencia, no password plano
+  wifiClaveRef String?
 
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  empresa  Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  sucursal Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([empresaId])
+  @@index([sucursalId])
 }
 
 model ChecklistGestionEmpresa {
@@ -360,12 +371,14 @@ model DetalleTrabajoGestioo {
   servicioId      Int?
   equipoId        Int?
 
-  tecnicoId Int?
-  tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
-  entidad   EntidadGestioo?  @relation(fields: [entidadId], references: [id])
-  producto  ProductoGestioo? @relation(fields: [productoId], references: [id])
-  servicio  ServicioGestioo? @relation(fields: [servicioId], references: [id])
-  equipo    Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+  tecnicoId    Int?
+  tecnico      Tecnico?           @relation(fields: [tecnicoId], references: [id_tecnico])
+  entidad      EntidadGestioo?    @relation(fields: [entidadId], references: [id])
+  producto     ProductoGestioo?   @relation(fields: [productoId], references: [id])
+  servicio     ServicioGestioo?   @relation(fields: [servicioId], references: [id])
+  equipo       Equipo?            @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+  cotizacionId Int?
+  cotizacion   CotizacionGestioo? @relation(fields: [cotizacionId], references: [id])
 
   @@index([productoId])
   @@index([servicioId])
@@ -636,8 +649,25 @@ model CotizacionGestioo {
   tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+  facturas              Factura[]
+  ordenes               DetalleTrabajoGestioo[]
 
   @@index([entidadId])
+}
+
+model Factura {
+  id_factura    Int       @id @default(autoincrement())
+  numeroFactura String    @unique
+  fechaEmision  DateTime  @default(now())
+  fechaPago     DateTime?
+  total         Float
+
+  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
+  cotizacionId Int
+
+  estado EstadoFactura @default(PENDIENTE)
+
+  createdAt DateTime @default(now())
 }
 
 model CotizacionItemGestioo {
@@ -932,7 +962,13 @@ enum EstadoCotizacionGestioo {
   BORRADOR
   APROBADA
   RECHAZADA
-  FACTURACION
+  FACTURADA
+}
+
+enum EstadoFactura {
+  PENDIENTE
+  PAGADA
+  ANULADA
 }
 
 enum TipoCotizacionGestioo {

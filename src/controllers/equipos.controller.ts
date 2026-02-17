@@ -122,6 +122,7 @@ type RowWithRels = {
   disco: string | null;
   propiedad: string;
   idSolicitante: number | null;
+
   solicitante: {
     id_solicitante: number;
     nombre: string;
@@ -131,9 +132,22 @@ type RowWithRels = {
       nombre: string;
     } | null;
   } | null;
+
+  equipo: {
+    macWifi: string | null;
+    so: string | null;
+    tipoDd: string | null;
+    estadoAlm: string | null;
+    office: string | null;
+    teamViewer: string | null;
+    claveTv: string | null;
+    revisado: string | null;
+  }[];
 };
 
 function flattenRow(e: RowWithRels) {
+  const detalle = e.equipo?.[0] ?? null;
+
   return {
     id_equipo: e.id_equipo,
     serial: e.serial,
@@ -148,6 +162,16 @@ function flattenRow(e: RowWithRels) {
     empresa: e.solicitante?.empresa?.nombre ?? null,
     empresaId: e.solicitante?.empresa?.id_empresa ?? null,
     idSolicitante: e.idSolicitante,
+
+    // 🔥 NUEVO BLOQUE
+    macWifi: detalle?.macWifi ?? null,
+    so: detalle?.so ?? null,
+    tipoDd: detalle?.tipoDd ?? null,
+    estadoAlm: detalle?.estadoAlm ?? null,
+    office: detalle?.office ?? null,
+    teamViewer: detalle?.teamViewer ?? null,
+    claveTv: detalle?.claveTv ?? null,
+    revisado: detalle?.revisado ?? null,
   };
 }
 
@@ -224,7 +248,7 @@ export async function listEquipos(req: Request, res: Response) {
       prisma.equipo.count({ where }),
       prisma.equipo.findMany({
         where,
-        include: { solicitante: { include: { empresa: true } } },
+        include: { solicitante: { include: { empresa: true } }, equipo: true, },
         orderBy,
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
@@ -339,7 +363,7 @@ export async function getEquipoById(req: Request, res: Response) {
 
     const equipo = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: { solicitante: { include: { empresa: true } } },
+      include: { solicitante: { include: { empresa: true } }, equipo: true, },
     });
 
     if (!equipo) return res.status(404).json({ error: "Equipo no encontrado" });

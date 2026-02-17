@@ -7,7 +7,10 @@ import {
     createCotizacion,
     updateCotizacion,
     deleteCotizacion,
-    getCotizacionesPaginadas
+    getCotizacionesPaginadas,
+    facturarCotizacion,
+    anularFactura,
+    pagarFactura
 } from "../controllers/cotizaciones.controller.js";
 
 const cotizacionesRouter = Router();
@@ -25,5 +28,8 @@ cotizacionesRouter.get("/:id", getCotizacionById);
 cotizacionesRouter.post("/", createCotizacion);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
+cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
+cotizacionesRouter.post("/:id/anular", anularFactura)
+cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);
 
 export default cotizacionesRouter;

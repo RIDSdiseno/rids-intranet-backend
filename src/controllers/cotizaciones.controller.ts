@@ -36,6 +36,7 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                     items: {
                         orderBy: { id: "asc" },
                     },
+                    facturas: true,
                 },
             }),
 
@@ -101,15 +102,31 @@ function normalizeCotizacionData(body: any) {
 /* =====================================================
       GET ALL - ASEGURAR INCLUSIÓN DE ITEMS
 ===================================================== */
-export async function getCotizaciones(_req: Request, res: Response) {
+export async function getCotizaciones(req: Request, res: Response) {
     try {
+
+        const { fechaDesde, fechaHasta } = req.query;
+
+        const where: any = {};
+
+        if (fechaDesde || fechaHasta) {
+            where.fecha = {};
+
+            if (fechaDesde) {
+                where.fecha.gte = new Date(String(fechaDesde));
+            }
+
+            if (fechaHasta) {
+                where.fecha.lte = new Date(String(fechaHasta));
+            }
+        }
+
         const rows = await prisma.cotizacionGestioo.findMany({
+            where,
             orderBy: { id: "desc" },
             include: {
                 entidad: true,
-                items: { // Asegurar que siempre se incluyan los items
-                    orderBy: { id: "asc" }
-                },
+                items: { orderBy: { id: "asc" } },
                 tecnico: {
                     select: {
                         id_tecnico: true,
@@ -117,19 +134,14 @@ export async function getCotizaciones(_req: Request, res: Response) {
                         email: true,
                     },
                 },
+                facturas: true,
             },
         });
 
-        // Verificar que cada cotización tenga items array
-        const rowsConItems = rows.map(cotizacion => ({
-            ...cotizacion,
-            imagen: cotizacion.imagen ?? null,
-            items: cotizacion.items || [] // Asegurar array vacío si es null/undefined
-        }));
+        res.json({ data: rows });
 
-        res.json({ data: rowsConItems });
-    } catch (error: any) {
-        console.error("❌ Error getCotizaciones:", error);
+    } catch (error) {
+        console.error(error);
         res.status(500).json({ error: "Error al obtener cotizaciones" });
     }
 }
@@ -360,13 +372,173 @@ export async function deleteCotizacion(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
 
+        const cotizacion = await prisma.cotizacionGestioo.findUnique({
+            where: { id },
+            include: { facturas: true },
+        });
+
+        if (!cotizacion)
+            return res.status(404).json({ error: "Cotización no encontrada" });
+
+        if (cotizacion.facturas.length > 0) {
+            return res.status(400).json({
+                error: "No se puede eliminar una cotización que ya fue facturada"
+            });
+        }
+
         await prisma.cotizacionGestioo.delete({
             where: { id },
         });
 
         res.json({ message: "Cotización eliminada correctamente" });
+
     } catch (error: any) {
         console.error("❌ Error deleteCotizacion:", error);
         res.status(500).json({ error: "Error al eliminar cotización" });
+    }
+}
+
+export async function facturarCotizacion(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
+        const cotizacion = await prisma.cotizacionGestioo.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!cotizacion)
+            return res.status(404).json({ error: "Cotización no encontrada" });
+
+        if (cotizacion.estado !== "APROBADA")
+            return res.status(400).json({ error: "Solo se pueden facturar cotizaciones aprobadas" });
+
+        const yaFacturada = await prisma.factura.findFirst({
+            where: { cotizacionId: cotizacion.id },
+        });
+
+        if (yaFacturada)
+            return res.status(400).json({ error: "Esta cotización ya fue facturada" });
+
+        // ==============================
+        // 🔥 1️⃣ OBTENER AÑO ACTUAL
+        // ==============================
+        const year = new Date().getFullYear();
+
+        // ==============================
+        // 🔥 2️⃣ BUSCAR ÚLTIMA FACTURA DEL AÑO
+        // ==============================
+        const ultimaFacturaDelAnio = await prisma.factura.findFirst({
+            where: {
+                numeroFactura: {
+                    startsWith: `F-${year}-`
+                }
+            },
+            orderBy: {
+                id_factura: "desc"
+            }
+        });
+
+        let nuevoNumero = 1;
+
+        if (ultimaFacturaDelAnio) {
+            const partes = ultimaFacturaDelAnio.numeroFactura.split("-");
+            const numeroActual = Number(partes[2]); // 0001
+            nuevoNumero = numeroActual + 1;
+        }
+
+        // ==============================
+        // 🔥 3️⃣ FORMATEAR 4 DÍGITOS
+        // ==============================
+        const numeroFormateado = `F-${year}-${String(nuevoNumero).padStart(4, "0")}`;
+
+        // ==============================
+        // 🔥 4️⃣ CREAR FACTURA
+        // ==============================
+        const factura = await prisma.factura.create({
+            data: {
+                numeroFactura: numeroFormateado,
+                total: cotizacion.total,
+                cotizacionId: cotizacion.id,
+            },
+        });
+
+        // ==============================
+        // 🔥 5️⃣ CAMBIAR ESTADO COTIZACIÓN
+        // ==============================
+        await prisma.cotizacionGestioo.update({
+            where: { id: cotizacion.id },
+            data: { estado: "FACTURADA" },
+        });
+
+        res.json({ message: "Facturada correctamente", factura });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Error interno al facturar" });
+    }
+}
+
+export async function anularFactura(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
+        const factura = await prisma.factura.findUnique({
+            where: { id_factura: Number(id) },
+            include: { cotizacion: true }
+        });
+
+        if (!factura)
+            return res.status(404).json({ error: "Factura no encontrada" });
+
+        if (factura.estado === "ANULADA")
+            return res.status(400).json({ error: "La factura ya está anulada" });
+
+        // 🔥 1️⃣ Cambiar estado factura
+        await prisma.factura.update({
+            where: { id_factura: factura.id_factura },
+            data: { estado: "ANULADA" }
+        });
+
+        // 🔥 2️⃣ Volver cotización a APROBADA
+        await prisma.cotizacionGestioo.update({
+            where: { id: factura.cotizacionId },
+            data: { estado: "APROBADA" }
+        });
+
+        res.json({ message: "Factura anulada correctamente" });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Error al anular factura" });
+    }
+}
+
+export async function pagarFactura(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
+        const factura = await prisma.factura.findUnique({
+            where: { id_factura: Number(id) },
+        });
+
+        if (!factura)
+            return res.status(404).json({ error: "Factura no encontrada" });
+
+        if (factura.estado === "PAGADA")
+            return res.status(400).json({ error: "La factura ya está pagada" });
+
+        if (factura.estado === "ANULADA")
+            return res.status(400).json({ error: "No se puede pagar una factura anulada" });
+
+        await prisma.factura.update({
+            where: { id_factura: factura.id_factura },
+            data: { estado: "PAGADA" },
+        });
+
+        res.json({ message: "Factura marcada como pagada" });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Error al pagar factura" });
     }
 }
