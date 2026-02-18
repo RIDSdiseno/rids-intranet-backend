@@ -57,6 +57,15 @@ const equipoUpdateSchema = z.object({
     ram: z.string().trim().min(1).optional(),
     disco: z.string().trim().min(1).optional(),
     propiedad: z.string().trim().min(1).optional(),
+    // 🔥 NUEVOS
+    macWifi: z.string().optional(),
+    so: z.string().optional(),
+    tipoDd: z.string().optional(),
+    estadoAlm: z.string().optional(),
+    office: z.string().optional(),
+    teamViewer: z.string().optional(),
+    claveTv: z.string().optional(),
+    revisado: z.string().optional(),
     empresaId: z.coerce.number().int().positive().optional(),
 });
 /* ================== CACHE SIMPLE ================== */
@@ -83,7 +92,7 @@ function mapOrderBy(sortBy, sortDir) {
     return { [key]: sortDir };
 }
 function flattenRow(e) {
-    const detalle = e.equipo?.[0] ?? null;
+    const detalle = e.detalle ?? null;
     return {
         id_equipo: e.id_equipo,
         serial: e.serial,
@@ -94,11 +103,10 @@ function flattenRow(e) {
         ram: e.ram,
         disco: e.disco,
         propiedad: e.propiedad,
-        solicitante: e.solicitante ? e.solicitante.nombre : "[Sin solicitante]",
+        solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
         empresa: e.solicitante?.empresa?.nombre ?? null,
         empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
-        // 🔥 NUEVO BLOQUE
         macWifi: detalle?.macWifi ?? null,
         so: detalle?.so ?? null,
         tipoDd: detalle?.tipoDd ?? null,
@@ -174,7 +182,7 @@ export async function listEquipos(req, res) {
             prisma.equipo.count({ where }),
             prisma.equipo.findMany({
                 where,
-                include: { solicitante: { include: { empresa: true } }, equipo: true, },
+                include: { solicitante: { include: { empresa: true } }, detalle: true },
                 orderBy,
                 skip: (q.page - 1) * q.pageSize,
                 take: q.pageSize,
@@ -275,7 +283,7 @@ export async function getEquipoById(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
-            include: { solicitante: { include: { empresa: true } }, equipo: true, },
+            include: { solicitante: { include: { empresa: true } }, detalle: true },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
@@ -293,6 +301,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
+        const { macWifi, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, ...equipoData } = data;
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: { solicitante: { select: { empresaId: true } } },
@@ -319,17 +328,44 @@ export async function updateEquipo(req, res) {
         const actualizado = await prisma.equipo.update({
             where: { id_equipo: id },
             data: {
-                ...(data.tipo ? { tipo: data.tipo } : {}),
-                ...(data.serial ? { serial: data.serial } : {}),
-                ...(data.marca ? { marca: data.marca } : {}),
-                ...(data.modelo ? { modelo: data.modelo } : {}),
-                ...(data.procesador ? { procesador: data.procesador } : {}),
-                ...(data.ram ? { ram: data.ram } : {}),
-                ...(data.disco ? { disco: data.disco } : {}),
-                ...(data.propiedad ? { propiedad: data.propiedad } : {}),
-                ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
+                ...(equipoData.tipo ? { tipo: equipoData.tipo } : {}),
+                ...(equipoData.serial ? { serial: equipoData.serial } : {}),
+                ...(equipoData.marca ? { marca: equipoData.marca } : {}),
+                ...(equipoData.modelo ? { modelo: equipoData.modelo } : {}),
+                ...(equipoData.procesador ? { procesador: equipoData.procesador } : {}),
+                ...(equipoData.ram ? { ram: equipoData.ram } : {}),
+                ...(equipoData.disco ? { disco: equipoData.disco } : {}),
+                ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
+                // 🔥 AQUI VA EL DETALLE
+                detalle: {
+                    upsert: {
+                        create: {
+                            macWifi: macWifi ?? null,
+                            so: so ?? null,
+                            tipoDd: tipoDd ?? null,
+                            estadoAlm: estadoAlm ?? null,
+                            office: office ?? null,
+                            teamViewer: teamViewer ?? null,
+                            claveTv: claveTv ?? null,
+                            revisado: revisado ?? null,
+                        },
+                        update: {
+                            macWifi: macWifi ?? null,
+                            so: so ?? null,
+                            tipoDd: tipoDd ?? null,
+                            estadoAlm: estadoAlm ?? null,
+                            office: office ?? null,
+                            teamViewer: teamViewer ?? null,
+                            claveTv: claveTv ?? null,
+                            revisado: revisado ?? null,
+                        },
+                    },
+                },
             },
-            include: { solicitante: { include: { empresa: true } } },
+            include: {
+                solicitante: { include: { empresa: true } },
+                detalle: true,
+            },
         });
         clearCache();
         return res.status(200).json(actualizado);

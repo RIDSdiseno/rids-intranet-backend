@@ -4,6 +4,10 @@ import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpres
 import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedSucursal, upsertRedSucursal, eliminarSucursal, } from "../../controllers/controllers-empresas/sucursal.controller.js";
 // Red sucursal
 import { obtenerEmpresaISPs, crearEmpresaISP, actualizarEmpresaISP, eliminarEmpresaISP, } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
+/* ===================== SERVIDORES ===================== */
+import { getServidoresByEmpresa, getServidorById, createServidor, updateServidor, toggleServidorProbado, deleteServidor, } from "../../controllers/controllers-empresas/servidores.controller.js";
+/* ===================== SERVIDOR USUARIOS ===================== */
+import { getUsuariosByServidor, createUsuarioServidor, updateUsuarioServidor, deleteUsuarioServidor, } from "../../controllers/controllers-empresas/servidor-usuarios.controller.js";
 export const fichaEmpresasRouter = Router();
 /* ===================== FICHA ===================== */
 fichaEmpresasRouter.get("/:empresaId/ficha", obtenerFichaEmpresa);
@@ -19,6 +23,18 @@ fichaEmpresasRouter.delete("/isp/:id", eliminarEmpresaISP);
 /* ===================== RED SUCURSAL ===================== */
 fichaEmpresasRouter.get("/sucursales/:sucursalId/red", obtenerRedSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId/red", upsertRedSucursal);
+/* ===================== SERVIDORES ===================== */
+fichaEmpresasRouter.get("/:empresaId/servidores", getServidoresByEmpresa);
+fichaEmpresasRouter.get("/servidores/:id", getServidorById);
+fichaEmpresasRouter.post("/servidores", createServidor);
+fichaEmpresasRouter.put("/servidores/:id", updateServidor);
+fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);
+fichaEmpresasRouter.delete("/servidores/:id", deleteServidor);
+/* ===================== SERVIDOR USUARIOS ===================== */
+fichaEmpresasRouter.get("/servidores/:servidorId/usuarios", getUsuariosByServidor);
+fichaEmpresasRouter.post("/servidores/:servidorId/usuarios", createUsuarioServidor);
+fichaEmpresasRouter.put("/servidor-usuarios/:id", updateUsuarioServidor);
+fichaEmpresasRouter.delete("/servidor-usuarios/:id", deleteUsuarioServidor);
 /* ===================== SUCURSALES ===================== */
 fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
 fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);

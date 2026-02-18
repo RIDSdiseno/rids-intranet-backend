@@ -9,13 +9,13 @@ export declare function getInventarioByEmpresa(params: {
             nombre: string;
         };
     } | null;
-    equipo: {
+    detalle: {
         macWifi: string | null;
         so: string | null;
         office: string | null;
         teamViewer: string | null;
         revisado: string | null;
-    }[];
+    } | null;
 } & {
     id_equipo: number;
     idSolicitante: number | null;

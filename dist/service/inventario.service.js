@@ -31,7 +31,7 @@ export async function getInventarioByEmpresa(params) {
                     },
                 },
             },
-            equipo: {
+            detalle: {
                 select: {
                     macWifi: true,
                     so: true,

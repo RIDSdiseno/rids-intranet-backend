@@ -28,6 +28,7 @@ model Empresa {
   historials          Historial[]
   ticketsRids         Ticket[]
   empresaISP          EmpresaISP[]
+  servidors           Servidor[]
 }
 
 model Sucursal {
@@ -231,6 +232,44 @@ model RedSucursal {
   sucursal Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
 }
 
+model Servidor {
+  id            Int      @id @default(autoincrement())
+  empresaId     Int
+  nombre        String // Ej: "Servidor Contable", "Win Server 213"
+  nombreUsuario String
+  contrasena    String
+  ipExterna     String
+  probado       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa          Empresa           @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  servidorUsuarios ServidorUsuario[]
+
+  @@index([empresaId])
+}
+
+model ServidorUsuario {
+  id            Int  @id @default(autoincrement())
+  servidorId    Int
+  solicitanteId Int?
+
+  usuario       String
+  nombreUsuario String
+  contrasena    String
+  equipo        String?
+  acceso        String?
+  tipo          String? // ADMIN, SOPORTE, etc
+  estado        String? // OK, BLOQUEADO, etc
+  updatedAt     DateTime @updatedAt
+
+  servidor    Servidor     @relation(fields: [servidorId], references: [id])
+  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([servidorId])
+  @@index([solicitanteId])
+}
+
 model AccesoRouterSucursal {
   id         Int @id @default(autoincrement())
   sucursalId Int
@@ -246,25 +285,26 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante  Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre          String
-  email           String?
-  telefono        String?
-  empresaId       Int
-  clienteId       Int?                    @unique
-  googleUserId    String?                 @unique
-  isActive        Boolean                 @default(true)
-  microsoftUserId String?                 @unique
-  accountType     AccountType?
-  empresa         Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos         Equipo[]
-  visitas         Visita[]                @relation("Solicitante_Visita")
-  historiales     Historial[]             @relation("Solicitante_Historial")
-  tickets         FreshdeskTicket[]
-  requesterMaps   FreshdeskRequesterMap[]
-  msLicenses      SolicitanteMsLicense[]
-  ticketsRids     Ticket[]
-  firma           Firma?
+  id_solicitante   Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre           String
+  email            String?
+  telefono         String?
+  empresaId        Int
+  clienteId        Int?                    @unique
+  googleUserId     String?                 @unique
+  isActive         Boolean                 @default(true)
+  microsoftUserId  String?                 @unique
+  accountType      AccountType?
+  empresa          Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+  equipos          Equipo[]
+  visitas          Visita[]                @relation("Solicitante_Visita")
+  historiales      Historial[]             @relation("Solicitante_Historial")
+  tickets          FreshdeskTicket[]
+  requesterMaps    FreshdeskRequesterMap[]
+  msLicenses       SolicitanteMsLicense[]
+  ticketsRids      Ticket[]
+  firma            Firma?
+  servidorUsuarios ServidorUsuario[]
 
   @@index([empresaId])
   @@index([isActive])
@@ -417,7 +457,7 @@ model Equipo {
   disco                  String?
   propiedad              String                  @default("ASUR")
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
-  equipo                 DetalleEquipo[]
+  detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
@@ -425,7 +465,7 @@ model Equipo {
 
 model DetalleEquipo {
   id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo   Int
+  idEquipo   Int     @unique
   macWifi    String?
   so         String?
   tipoDd     String?
@@ -434,7 +474,8 @@ model DetalleEquipo {
   teamViewer String?
   claveTv    String?
   revisado   String?
-  equipo     Equipo? @relation(fields: [idEquipo], references: [id_equipo])
+
+  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo])
 
   @@index([idEquipo])
 }

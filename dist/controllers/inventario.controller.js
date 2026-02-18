@@ -114,10 +114,10 @@ function buildInventarioExcel(equipos, mes) {
             "CPU": e.procesador ?? "",
             "RAM": e.ram ?? "",
             "DISCO": e.disco ?? "",
-            "SO": e.equipo?.[0]?.so ?? "",
-            "OFFICE": e.equipo?.[0]?.office ?? "",
-            "TEAMVIEWER": e.equipo?.[0]?.teamViewer ?? "",
-            "MAC WIFI": e.equipo?.[0]?.macWifi ?? "",
+            "SO": e.detalle?.so ?? "",
+            "OFFICE": e.detalle?.office ?? "",
+            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
+            "MAC WIFI": e.detalle?.macWifi ?? "",
             "PROPIEDAD": e.propiedad ?? "",
         }));
         const headers = [
@@ -245,10 +245,10 @@ export async function getInventario(req, res) {
             procesador: e.procesador,
             ram: e.ram,
             disco: e.disco,
-            so: e.equipo?.[0]?.so ?? null,
-            office: e.equipo?.[0]?.office ?? null,
-            teamViewer: e.equipo?.[0]?.teamViewer ?? null,
-            macWifi: e.equipo?.[0]?.macWifi ?? null,
+            so: e.detalle?.so ?? null,
+            office: e.detalle?.office ?? null,
+            teamViewer: e.detalle?.teamViewer ?? null,
+            macWifi: e.detalle?.macWifi ?? null,
             propiedad: e.propiedad
         }));
         return res.json({
