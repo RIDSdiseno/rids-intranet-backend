@@ -410,20 +410,26 @@ model DetalleTrabajoGestioo {
   productoId      Int?
   servicioId      Int?
   equipoId        Int?
+  numeroOrden     String?
+  origenTrabajo   OrigenTrabajo    @default(INDEPENDIENTE)
 
-  tecnicoId    Int?
-  tecnico      Tecnico?           @relation(fields: [tecnicoId], references: [id_tecnico])
-  entidad      EntidadGestioo?    @relation(fields: [entidadId], references: [id])
-  producto     ProductoGestioo?   @relation(fields: [productoId], references: [id])
-  servicio     ServicioGestioo?   @relation(fields: [servicioId], references: [id])
-  equipo       Equipo?            @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+  // SOLO ESTA PARTE NUEVA
   cotizacionId Int?
-  cotizacion   CotizacionGestioo? @relation(fields: [cotizacionId], references: [id])
+  cotizacion   CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
 
+  tecnicoId Int?
+  tecnico   Tecnico?         @relation(fields: [tecnicoId], references: [id_tecnico])
+  entidad   EntidadGestioo?  @relation(fields: [entidadId], references: [id])
+  producto  ProductoGestioo? @relation(fields: [productoId], references: [id])
+  servicio  ServicioGestioo? @relation(fields: [servicioId], references: [id])
+  equipo    Equipo?          @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+
+  @@index([cotizacionId])
   @@index([productoId])
   @@index([servicioId])
   @@index([entidadId])
   @@index([tecnicoId])
+  @@index([numeroOrden])
 }
 
 model MarcaGestioo {
@@ -686,12 +692,14 @@ model CotizacionGestioo {
   comentariosCotizacion String?
   personaResponsable    String?
   imagen                String?
+  ordenGenerada         Boolean                 @default(false)
   tecnicoId             Int?
   tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   facturas              Factura[]
-  ordenes               DetalleTrabajoGestioo[]
+  // 👇 RELACIÓN INVERSA
+  trabajos              DetalleTrabajoGestioo[]
 
   @@index([entidadId])
 }
@@ -1054,4 +1062,9 @@ enum TipoEquipo {
   RELOJ_CONTROL
 
   OTRO
+}
+
+enum OrigenTrabajo {
+  INDEPENDIENTE
+  DESDE_COTIZACION
 }

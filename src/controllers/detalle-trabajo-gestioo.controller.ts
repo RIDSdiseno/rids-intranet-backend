@@ -3,6 +3,32 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+async function generarNumeroOrdenOT(): Promise<string> {
+    const year = new Date().getFullYear();
+
+    const ultimaOrden = await prisma.detalleTrabajoGestioo.findFirst({
+        where: {
+            numeroOrden: {
+                startsWith: `OT-${year}-`
+            }
+        },
+        orderBy: {
+            id: "desc"
+        }
+    });
+
+    let nuevoNumero = 1;
+
+    if (ultimaOrden?.numeroOrden) {
+        const partes = ultimaOrden.numeroOrden.split("-");
+        const numeroActual = Number(partes[2]);
+        nuevoNumero = numeroActual + 1;
+    }
+
+    return `OT-${year}-${String(nuevoNumero).padStart(4, "0")}`;
+}
+
+
 /* =====================================================
    CRUD: DETALLETRABAJOGESTIOO
 ===================================================== */
@@ -23,6 +49,12 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             }
         }
 
+        let numeroOrden: string | null = null;
+
+        if (data.area === "ENTRADA") {
+            numeroOrden = await generarNumeroOrdenOT();
+        }
+
         const fechaTrabajo = data.fecha ? new Date(data.fecha) : new Date();
 
         // SI ES SALIDA → cerrar órdenes de entrada del mismo equipo
@@ -39,10 +71,20 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        if (data.area !== "ENTRADA" && data.ordenGrupoId) {
+            const ordenGrupo = await prisma.detalleTrabajoGestioo.findUnique({
+                where: { id: Number(data.ordenGrupoId) },
+                select: { numeroOrden: true }
+            });
+
+            numeroOrden = ordenGrupo?.numeroOrden ?? null;
+        }
+
         // 👉 Crear trabajo
         const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
             data: {
                 fecha: fechaTrabajo,
+                numeroOrden,
                 ordenGrupoId: data.ordenGrupoId ?? null,
                 fechaIngreso:
                     data.area === "ENTRADA"
@@ -108,20 +150,27 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 export async function getDetallesTrabajo(_req: Request, res: Response) {
     try {
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
+            where: {
+                area: "ENTRADA"   // 👈 SOLO CABECERAS
+            },
             orderBy: { fecha: "desc" },
             include: {
                 entidad: true,
-                producto: true,
-                servicio: true,
                 equipo: true,
                 tecnico: true,
+                cotizacion: {
+                    select: {
+                        id: true,
+                        estado: true
+                    }
+                }
             },
         });
 
         return res.json(detalles);
     } catch (error) {
-        console.error("❌ Error al obtener trabajos:", error);
-        return res.status(500).json({ error: "Error al obtener trabajos" });
+        console.error("❌ Error al obtener órdenes:", error);
+        return res.status(500).json({ error: "Error al obtener órdenes" });
     }
 }
 
@@ -313,5 +362,84 @@ export async function getDetallesTrabajoByTecnico(req: Request, res: Response) {
     } catch (error) {
         console.error("❌ Error al obtener trabajos por técnico:", error);
         return res.status(500).json({ error: "Error al obtener trabajos por técnico" });
+    }
+}
+
+export async function generarCotizacionDesdeOrden(req: Request, res: Response) {
+    try {
+        const numeroOrden = req.params.numeroOrden;
+
+        if (!numeroOrden) {
+            return res.status(400).json({ error: "numeroOrden es requerido" });
+        }
+
+        // 1️⃣ Traer todos los trabajos de la orden
+        const trabajos = await prisma.detalleTrabajoGestioo.findMany({
+            where: { numeroOrden },
+        });
+
+        if (trabajos.length === 0) {
+            return res.status(404).json({ error: "Orden no encontrada" });
+        }
+
+        // 2️⃣ Filtrar trabajos que aún no estén vinculados a cotización
+        const trabajosPendientes = trabajos.filter(t => !t.cotizacionId);
+
+        if (trabajosPendientes.length === 0) {
+            return res.status(400).json({
+                error: "Todos los trabajos de esta orden ya están cotizados"
+            });
+        }
+
+        const entidadId = trabajos[0]?.entidadId ?? null;
+
+        // 3️⃣ Crear cotización
+        const nuevaCotizacion = await prisma.cotizacionGestioo.create({
+            data: {
+                entidadId,
+                estado: "BORRADOR",
+                ordenGenerada: false,
+                items: {
+                    create: trabajosPendientes.map(t => ({
+                        tipo: t.productoId
+                            ? "PRODUCTO"
+                            : t.servicioId
+                                ? "SERVICIO"
+                                : "ADICIONAL",
+
+                        nombre: t.descripcion ?? "Trabajo técnico",
+                        descripcion: t.descripcion ?? "",
+                        cantidad: 1,
+                        precio: 0,
+                        precioOriginalCLP: 0,
+                        tieneIVA: true,
+                        tieneDescuento: false,
+                        porcentaje: 0,
+                        sku: null
+                    }))
+                }
+            }
+        });
+
+        // 4️⃣ Vincular trabajos a la cotización creada
+        await prisma.detalleTrabajoGestioo.updateMany({
+            where: {
+                numeroOrden,
+                cotizacionId: null
+            },
+            data: {
+                cotizacionId: nuevaCotizacion.id,
+                origenTrabajo: "DESDE_COTIZACION"
+            }
+        });
+
+        return res.json({
+            message: "Cotización creada correctamente",
+            cotizacionId: nuevaCotizacion.id
+        });
+
+    } catch (error) {
+        console.error("❌ Error al generar cotización:", error);
+        return res.status(500).json({ error: "Error al generar cotización" });
     }
 }

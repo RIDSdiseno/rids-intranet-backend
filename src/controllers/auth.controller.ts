@@ -456,3 +456,70 @@ export const me = async (req: Request, res: Response) => {
 setInterval(() => {
   emailCheckCache.clear();
 }, CACHE_TTL * 2);
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Contraseña actual requerida"),
+  newPassword: z.string().min(6, "Mínimo 6 caracteres"),
+});
+
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId as number | undefined;
+    if (!userId) {
+      return res.status(401).json({ error: "No autenticado" });
+    }
+
+    const parsed = changePasswordSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Datos inválidos",
+      });
+    }
+
+    const { currentPassword, newPassword } = parsed.data;
+
+    const tecnico = await prisma.tecnico.findUnique({
+      where: { id_tecnico: userId },
+      select: {
+        passwordHash: true,
+      },
+    });
+
+    if (!tecnico || !tecnico.passwordHash) {
+      return res.status(400).json({ error: "Usuario inválido" });
+    }
+
+    // Verificar contraseña actual
+    let isValid = false;
+    const hash = tecnico.passwordHash;
+
+    if (hash.startsWith("$argon2")) {
+      isValid = await argon2.verify(hash, currentPassword);
+    } else if (hash.startsWith("$2")) {
+      isValid = await bcrypt.compare(currentPassword, hash);
+    }
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Contraseña actual incorrecta" });
+    }
+
+    // Generar nuevo hash con argon2
+    const newHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 4096,
+      timeCost: 2,
+      parallelism: 1,
+    });
+
+    await prisma.tecnico.update({
+      where: { id_tecnico: userId },
+      data: { passwordHash: newHash },
+    });
+
+    return res.json({ ok: true, message: "Contraseña actualizada" });
+  } catch (error) {
+    console.error("Error changePassword:", error);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+};

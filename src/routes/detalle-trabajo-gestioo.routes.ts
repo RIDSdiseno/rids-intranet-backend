@@ -5,7 +5,8 @@ import {
   getDetalleTrabajoById,
   updateDetalleTrabajo,
   deleteDetalleTrabajo,
-  getDetallesTrabajoByEquipo
+  getDetallesTrabajoByEquipo,
+  generarCotizacionDesdeOrden
 } from "../controllers/detalle-trabajo-gestioo.controller.js";
 
 const detalleTrabajoGestiooRouter = Router();
@@ -15,10 +16,10 @@ const detalleTrabajoGestiooRouter = Router();
 ============================ */
 detalleTrabajoGestiooRouter.post("/", createDetalleTrabajo);
 detalleTrabajoGestiooRouter.get("/", getDetallesTrabajo);
+detalleTrabajoGestiooRouter.get("/equipo/:equipoId", getDetallesTrabajoByEquipo);
+detalleTrabajoGestiooRouter.post("/ordenes/:numeroOrden/generar-cotizacion", generarCotizacionDesdeOrden);
 detalleTrabajoGestiooRouter.get("/:id", getDetalleTrabajoById);
 detalleTrabajoGestiooRouter.put("/:id", updateDetalleTrabajo);
 detalleTrabajoGestiooRouter.delete("/:id", deleteDetalleTrabajo);
-detalleTrabajoGestiooRouter.get("/equipo/:equipoId", getDetallesTrabajoByEquipo);
-
 
 export default detalleTrabajoGestiooRouter;
