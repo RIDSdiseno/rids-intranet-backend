@@ -150,9 +150,6 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 export async function getDetallesTrabajo(_req: Request, res: Response) {
     try {
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
-            where: {
-                area: "ENTRADA"   // 👈 SOLO CABECERAS
-            },
             orderBy: { fecha: "desc" },
             include: {
                 entidad: true,
