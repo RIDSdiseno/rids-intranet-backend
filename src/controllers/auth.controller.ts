@@ -87,9 +87,18 @@ function ttlToMs(ttl: string): number {
 }
 
 // CORRECCIÓN: Funciones de token con tipos correctos
-function signAccessToken(userId: number, email: string): string {
+function signAccessToken(
+  userId: number,
+  email: string,
+  rol: string,
+  empresaId?: number | null
+): string {
   return jwt.sign(
-    { email },
+    {
+      email,
+      rol,
+      empresaId: empresaId ?? null,
+    },
     getJwtSecret(),
     {
       subject: String(userId),
@@ -237,6 +246,8 @@ export const login = async (req: Request, res: Response) => {
         email: true,
         passwordHash: true,
         status: true,
+        rol: true,
+        empresaId: true,
       },
     });
 
@@ -266,7 +277,12 @@ export const login = async (req: Request, res: Response) => {
     }
 
     // Generar tokens
-    const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
+    const accessToken = signAccessToken(
+      tecnico.id_tecnico,
+      tecnico.email,
+      tecnico.rol ?? "TECNICO",
+      tecnico.empresaId
+    );
     const refreshRaw = signRefreshToken(tecnico.id_tecnico);
 
     const hashStart = Date.now();
@@ -303,6 +319,8 @@ export const login = async (req: Request, res: Response) => {
         id_tecnico: tecnico.id_tecnico,
         nombre: tecnico.nombre,
         email: tecnico.email,
+        rol: tecnico.rol,
+        empresaId: tecnico.empresaId,
       },
     });
   } catch (error) {
@@ -377,8 +395,29 @@ export const refresh = async (req: Request, res: Response) => {
     }
 
     // Generar nuevos tokens
-    const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email);
-    const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
+    const tecnicoFull = await prisma.tecnico.findUnique({
+      where: { id_tecnico: userId },
+      select: {
+        id_tecnico: true,
+        nombre: true,
+        email: true,
+        rol: true,
+        empresaId: true,
+      },
+    });
+
+    if (!tecnicoFull) {
+      return res.status(401).json({ error: "Usuario no encontrado" });
+    }
+
+    const newAccess = signAccessToken(
+      tecnicoFull.id_tecnico,
+      tecnicoFull.email,
+      tecnicoFull.rol ?? "TECNICO",
+      tecnicoFull.empresaId
+    );
+
+    const newRefreshRaw = signRefreshToken(tecnicoFull.id_tecnico);
 
     const newHash = await argon2.hash(
       newRefreshRaw,
@@ -398,7 +437,7 @@ export const refresh = async (req: Request, res: Response) => {
 
         await tx.refreshToken.create({
           data: {
-            userId: tecnico.id_tecnico,
+            userId: tecnicoFull.id_tecnico,
             rtHash: newHash,
             expiresAt: expiresAt2,
             userAgent,
@@ -430,18 +469,21 @@ export const logout = async (_req: Request, res: Response) => {
 };
 
 export const me = async (req: Request, res: Response) => {
-  const userId = (req as any).userId as number | undefined;
-  if (!userId) {
+  const user = (req as any).user;
+
+  if (!user?.id) {
     return res.status(401).json({ error: "No autenticado" });
   }
 
   const tecnico = await prisma.tecnico.findUnique({
-    where: { id_tecnico: userId },
+    where: { id_tecnico: user.id },
     select: {
       id_tecnico: true,
       nombre: true,
       email: true,
       status: true,
+      rol: true,
+      empresaId: true,
     },
   });
 
@@ -464,11 +506,11 @@ const changePasswordSchema = z.object({
 
 export const changePassword = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).userId as number | undefined;
-    if (!userId) {
+    const user = (req as any).user;
+
+    if (!user?.id) {
       return res.status(401).json({ error: "No autenticado" });
     }
-
     const parsed = changePasswordSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       const firstIssue = parsed.error.issues[0];
@@ -480,7 +522,7 @@ export const changePassword = async (req: Request, res: Response) => {
     const { currentPassword, newPassword } = parsed.data;
 
     const tecnico = await prisma.tecnico.findUnique({
-      where: { id_tecnico: userId },
+      where: { id_tecnico: user.id },
       select: {
         passwordHash: true,
       },
@@ -513,7 +555,7 @@ export const changePassword = async (req: Request, res: Response) => {
     });
 
     await prisma.tecnico.update({
-      where: { id_tecnico: userId },
+      where: { id_tecnico: user.id },
       data: { passwordHash: newHash },
     });
 

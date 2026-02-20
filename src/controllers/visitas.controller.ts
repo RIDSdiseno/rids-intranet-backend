@@ -147,21 +147,28 @@ export const listVisitas = async (req: Request, res: Response) => {
 
   const INS: Prisma.QueryMode = "insensitive";
 
+  const user = (req as any).user;
+
   const where: Prisma.VisitaWhereInput = {
+    ...(user?.rol === "CLIENTE"
+      ? { empresaId: user.empresaId }
+      : empresaIdQ
+        ? { empresaId: Number(empresaIdQ) }
+        : {}),
     ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
     ...(empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
     ...(statusQ ? { status: statusQ as any } : {}),
     ...(dateFilter ? { inicio: dateFilter } : {}),
     ...(q
       ? {
-          OR: [
-            { solicitante: { contains: q, mode: INS } },
-            { otrosDetalle: { contains: q, mode: INS } },
-            { empresa: { is: { nombre: { contains: q, mode: INS } } } },
-            { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
-            { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-          ] satisfies Prisma.VisitaWhereInput[],
-        }
+        OR: [
+          { solicitante: { contains: q, mode: INS } },
+          { otrosDetalle: { contains: q, mode: INS } },
+          { empresa: { is: { nombre: { contains: q, mode: INS } } } },
+          { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
+          { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
+        ] satisfies Prisma.VisitaWhereInput[],
+      }
       : {}),
   };
 
@@ -195,8 +202,17 @@ export const getVisitaById = async (req: Request, res: Response) => {
   if (!id) return res.status(400).json({ error: "id inválido" });
 
   const row = await prisma.visita.findUnique({ where: { id_visita: id }, select: visitaSelect });
+
   if (!row) return res.status(404).json({ error: "Visita no encontrada" });
+
+  const user = (req as any).user;
+
+  if (user?.rol === "CLIENTE" && row.empresaId !== user.empresaId) {
+    return res.status(403).json({ error: "No autorizado" });
+  }
+
   return res.json(row);
+
 };
 
 /* ------------------------------------ */
@@ -439,9 +455,9 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
     const tecnicoIds = grouped.map((g) => g.tecnicoId);
     const tecnicos = tecnicoIds.length
       ? await prisma.tecnico.findMany({
-          where: { id_tecnico: { in: tecnicoIds } },
-          select: { id_tecnico: true, nombre: true },
-        })
+        where: { id_tecnico: { in: tecnicoIds } },
+        select: { id_tecnico: true, nombre: true },
+      })
       : [];
 
     const nameById = new Map(tecnicos.map((t) => [t.id_tecnico, t.nombre]));

@@ -4,6 +4,26 @@ function generarSKU() {
     const random = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
     return `SKU-${random}`;
 }
+async function generarNumeroOrdenOT() {
+    const year = new Date().getFullYear();
+    const ultimaOrden = await prisma.detalleTrabajoGestioo.findFirst({
+        where: {
+            numeroOrden: {
+                startsWith: `OT-${year}-`
+            }
+        },
+        orderBy: {
+            id: "desc"
+        }
+    });
+    let nuevoNumero = 1;
+    if (ultimaOrden?.numeroOrden) {
+        const partes = ultimaOrden.numeroOrden.split("-");
+        const numeroActual = Number(partes[2]);
+        nuevoNumero = numeroActual + 1;
+    }
+    return `OT-${year}-${String(nuevoNumero).padStart(4, "0")}`;
+}
 /* =====================================================
       GET PAGINADO - /cotizaciones/paginacion
 ===================================================== */
@@ -31,6 +51,12 @@ export async function getCotizacionesPaginadas(req, res) {
                         orderBy: { id: "asc" },
                     },
                     facturas: true,
+                    trabajos: {
+                        select: {
+                            id: true,
+                            numeroOrden: true
+                        }
+                    }
                 },
             }),
             prisma.cotizacionGestioo.count()
@@ -118,6 +144,9 @@ export async function getCotizaciones(req, res) {
                     },
                 },
                 facturas: true,
+                trabajos: {
+                    select: { id: true, numeroOrden: true }
+                }
             },
         });
         res.json({ data: rows });
@@ -456,5 +485,67 @@ export async function pagarFactura(req, res) {
         res.status(500).json({ error: "Error al pagar factura" });
     }
     return;
+}
+export async function generarOrdenDesdeCotizacion(req, res) {
+    try {
+        const cotizacionId = Number(req.params.id);
+        const cotizacion = await prisma.cotizacionGestioo.findUnique({
+            where: { id: cotizacionId },
+            include: { items: true }
+        });
+        if (!cotizacion)
+            return res.status(404).json({ error: "Cotización no encontrada" });
+        if (cotizacion.estado !== "APROBADA")
+            return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden generar orden" });
+        if (cotizacion.ordenGenerada)
+            return res.status(400).json({ error: "Esta cotización ya generó una orden" });
+        let numeroOrdenGenerado = "";
+        await prisma.$transaction(async (tx) => {
+            numeroOrdenGenerado = await generarNumeroOrdenOT();
+            const entrada = await tx.detalleTrabajoGestioo.create({
+                data: {
+                    numeroOrden: numeroOrdenGenerado,
+                    origenTrabajo: "DESDE_COTIZACION",
+                    cotizacionId: cotizacion.id,
+                    tipoTrabajo: "INGRESO DESDE COTIZACIÓN",
+                    descripcion: "Orden generada desde cotización aprobada",
+                    entidadId: cotizacion.entidadId,
+                    estado: "PENDIENTE",
+                    area: "ENTRADA"
+                }
+            });
+            await tx.detalleTrabajoGestioo.update({
+                where: { id: entrada.id },
+                data: { ordenGrupoId: entrada.id }
+            });
+            for (const item of cotizacion.items) {
+                await tx.detalleTrabajoGestioo.create({
+                    data: {
+                        numeroOrden: numeroOrdenGenerado,
+                        ordenGrupoId: entrada.id,
+                        origenTrabajo: "DESDE_COTIZACION",
+                        cotizacionId: cotizacion.id,
+                        tipoTrabajo: item.tipo,
+                        descripcion: item.descripcion || item.nombre,
+                        entidadId: cotizacion.entidadId,
+                        estado: "PENDIENTE",
+                        area: "REPARACION"
+                    }
+                });
+            }
+            await tx.cotizacionGestioo.update({
+                where: { id: cotizacion.id },
+                data: { ordenGenerada: true }
+            });
+        });
+        return res.json({
+            message: "Orden generada correctamente",
+            numeroOrden: numeroOrdenGenerado
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Error al generar orden" });
+    }
 }
 //# sourceMappingURL=cotizaciones.controller.js.map

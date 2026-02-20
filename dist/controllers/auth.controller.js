@@ -73,8 +73,12 @@ function ttlToMs(ttl) {
     return n * (map[u] ?? 86400000);
 }
 // CORRECCIÓN: Funciones de token con tipos correctos
-function signAccessToken(userId, email) {
-    return jwt.sign({ email }, getJwtSecret(), {
+function signAccessToken(userId, email, rol, empresaId) {
+    return jwt.sign({
+        email,
+        rol,
+        empresaId: empresaId ?? null,
+    }, getJwtSecret(), {
         subject: String(userId),
         expiresIn: ACCESS_TTL,
         algorithm: "HS256",
@@ -193,6 +197,8 @@ export const login = async (req, res) => {
                 email: true,
                 passwordHash: true,
                 status: true,
+                rol: true,
+                empresaId: true,
             },
         });
         if (!tecnico) {
@@ -217,7 +223,7 @@ export const login = async (req, res) => {
             return res.status(401).json({ error: "Credenciales inválidas" });
         }
         // Generar tokens
-        const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email);
+        const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, tecnico.rol ?? "TECNICO", tecnico.empresaId);
         const refreshRaw = signRefreshToken(tecnico.id_tecnico);
         const hashStart = Date.now();
         const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
@@ -248,6 +254,8 @@ export const login = async (req, res) => {
                 id_tecnico: tecnico.id_tecnico,
                 nombre: tecnico.nombre,
                 email: tecnico.email,
+                rol: tecnico.rol,
+                empresaId: tecnico.empresaId,
             },
         });
     }
@@ -312,8 +320,21 @@ export const refresh = async (req, res) => {
             return res.status(401).json({ error: "Usuario no encontrado" });
         }
         // Generar nuevos tokens
-        const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email);
-        const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
+        const tecnicoFull = await prisma.tecnico.findUnique({
+            where: { id_tecnico: userId },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                empresaId: true,
+            },
+        });
+        if (!tecnicoFull) {
+            return res.status(401).json({ error: "Usuario no encontrado" });
+        }
+        const newAccess = signAccessToken(tecnicoFull.id_tecnico, tecnicoFull.email, tecnicoFull.rol ?? "TECNICO", tecnicoFull.empresaId);
+        const newRefreshRaw = signRefreshToken(tecnicoFull.id_tecnico);
         const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const { userAgent, ip } = getClientInfo(req);
         const expiresAt2 = new Date(Date.now() + REFRESH_MS);
@@ -325,7 +346,7 @@ export const refresh = async (req, res) => {
             });
             await tx.refreshToken.create({
                 data: {
-                    userId: tecnico.id_tecnico,
+                    userId: tecnicoFull.id_tecnico,
                     rtHash: newHash,
                     expiresAt: expiresAt2,
                     userAgent,
@@ -353,17 +374,19 @@ export const logout = async (_req, res) => {
     return res.json({ ok: true });
 };
 export const me = async (req, res) => {
-    const userId = req.userId;
-    if (!userId) {
+    const user = req.user;
+    if (!user?.id) {
         return res.status(401).json({ error: "No autenticado" });
     }
     const tecnico = await prisma.tecnico.findUnique({
-        where: { id_tecnico: userId },
+        where: { id_tecnico: user.id },
         select: {
             id_tecnico: true,
             nombre: true,
             email: true,
             status: true,
+            rol: true,
+            empresaId: true,
         },
     });
     if (!tecnico) {
@@ -375,4 +398,61 @@ export const me = async (req, res) => {
 setInterval(() => {
     emailCheckCache.clear();
 }, CACHE_TTL * 2);
+const changePasswordSchema = z.object({
+    currentPassword: z.string().min(1, "Contraseña actual requerida"),
+    newPassword: z.string().min(6, "Mínimo 6 caracteres"),
+});
+export const changePassword = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user?.id) {
+            return res.status(401).json({ error: "No autenticado" });
+        }
+        const parsed = changePasswordSchema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+            const firstIssue = parsed.error.issues[0];
+            return res.status(400).json({
+                error: firstIssue?.message ?? "Datos inválidos",
+            });
+        }
+        const { currentPassword, newPassword } = parsed.data;
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { id_tecnico: user.id },
+            select: {
+                passwordHash: true,
+            },
+        });
+        if (!tecnico || !tecnico.passwordHash) {
+            return res.status(400).json({ error: "Usuario inválido" });
+        }
+        // Verificar contraseña actual
+        let isValid = false;
+        const hash = tecnico.passwordHash;
+        if (hash.startsWith("$argon2")) {
+            isValid = await argon2.verify(hash, currentPassword);
+        }
+        else if (hash.startsWith("$2")) {
+            isValid = await bcrypt.compare(currentPassword, hash);
+        }
+        if (!isValid) {
+            return res.status(401).json({ error: "Contraseña actual incorrecta" });
+        }
+        // Generar nuevo hash con argon2
+        const newHash = await argon2.hash(newPassword, {
+            type: argon2.argon2id,
+            memoryCost: 4096,
+            timeCost: 2,
+            parallelism: 1,
+        });
+        await prisma.tecnico.update({
+            where: { id_tecnico: user.id },
+            data: { passwordHash: newHash },
+        });
+        return res.json({ ok: true, message: "Contraseña actualizada" });
+    }
+    catch (error) {
+        console.error("Error changePassword:", error);
+        return res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
 //# sourceMappingURL=auth.controller.js.map

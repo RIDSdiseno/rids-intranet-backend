@@ -29,6 +29,7 @@ model Empresa {
   ticketsRids         Ticket[]
   empresaISP          EmpresaISP[]
   servidors           Servidor[]
+  tecnicos            Tecnico[]
 }
 
 model Sucursal {
@@ -534,11 +535,16 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico      Int                     @id @default(autoincrement())
-  nombre          String
-  email           String                  @unique
+  id_tecnico Int    @id @default(autoincrement())
+  nombre     String
+  email      String @unique
+
+  rol       String @default("TECNICO")
+  empresaId Int?
+
   passwordHash    String
   status          Boolean                 @default(true)
+  empresa         Empresa?                @relation(fields: [empresaId], references: [id_empresa])
   tokens          RefreshToken[]
   historiales     Historial[]
   visitas         Visita[]
@@ -547,6 +553,8 @@ model Tecnico {
   tickets         Ticket[]
   firma           Firma?
   cotizaciones    CotizacionGestioo[]
+
+  @@index([empresaId])
 }
 
 model Visita {

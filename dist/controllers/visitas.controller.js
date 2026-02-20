@@ -121,7 +121,13 @@ export const listVisitas = async (req, res) => {
         dateFilter = { gte: from, lt: to };
     }
     const INS = "insensitive";
+    const user = req.user;
     const where = {
+        ...(user?.rol === "CLIENTE"
+            ? { empresaId: user.empresaId }
+            : empresaIdQ
+                ? { empresaId: Number(empresaIdQ) }
+                : {}),
         ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
         ...(empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
         ...(statusQ ? { status: statusQ } : {}),
@@ -166,6 +172,10 @@ export const getVisitaById = async (req, res) => {
     const row = await prisma.visita.findUnique({ where: { id_visita: id }, select: visitaSelect });
     if (!row)
         return res.status(404).json({ error: "Visita no encontrada" });
+    const user = req.user;
+    if (user?.rol === "CLIENTE" && row.empresaId !== user.empresaId) {
+        return res.status(403).json({ error: "No autorizado" });
+    }
     return res.json(row);
 };
 /* ------------------------------------ */

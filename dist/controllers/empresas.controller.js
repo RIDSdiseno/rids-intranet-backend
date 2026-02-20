@@ -11,8 +11,13 @@ export async function getEmpresas(req, res) {
         const withStats = String(req.query.withStats ?? "").toLowerCase() === "1";
         const full = String(req.query.full ?? "").toLowerCase() === "1";
         // Base: empresas (solo id + nombre)
+        const user = req.user;
+        const whereEmpresa = user?.rol === "CLIENTE"
+            ? { id_empresa: user.empresaId }
+            : {};
         const empresasBase = await prisma.empresa.findMany({
-            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
+            where: whereEmpresa,
+            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true },
             orderBy: { nombre: "asc" },
         });
         if (empresasBase.length === 0) {
@@ -263,6 +268,11 @@ export async function getEmpresasStats(_req, res) {
 export async function getEmpresaById(req, res) {
     try {
         const id = Number(req.params.id);
+        const user = req.user;
+        if (user?.rol === "CLIENTE") {
+            res.status(403).json({ error: "No autorizado" });
+            return;
+        }
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: id },
             select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },

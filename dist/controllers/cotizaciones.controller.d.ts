@@ -8,4 +8,5 @@ export declare function deleteCotizacion(req: Request, res: Response): Promise<R
 export declare function facturarCotizacion(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
 export declare function anularFactura(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
 export declare function pagarFactura(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
+export declare function generarOrdenDesdeCotizacion(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=cotizaciones.controller.d.ts.map

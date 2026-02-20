@@ -6,4 +6,5 @@ export declare function updateDetalleTrabajo(req: Request, res: Response): Promi
 export declare function deleteDetalleTrabajo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getDetallesTrabajoByEquipo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getDetallesTrabajoByTecnico(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function generarCotizacionDesdeOrden(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=detalle-trabajo-gestioo.controller.d.ts.map

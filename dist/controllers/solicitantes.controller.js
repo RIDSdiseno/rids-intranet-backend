@@ -60,8 +60,13 @@ export const listSolicitantes = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const INS = "insensitive";
+        const user = req.user;
         const where = {
-            ...(empresaId > 0 ? { empresaId } : {}),
+            ...(user?.rol === "CLIENTE"
+                ? { empresaId: user.empresaId }
+                : empresaId > 0
+                    ? { empresaId }
+                    : {}),
             ...(q
                 ? {
                     OR: [
@@ -179,6 +184,10 @@ export const listSolicitantes = async (req, res) => {
 export const listSolicitantesByEmpresa = async (req, res) => {
     try {
         const empresaId = toInt(req.query.empresaId);
+        const user = req.user;
+        if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
+            return res.status(403).json({ error: "No autorizado" });
+        }
         if (empresaId <= 0) {
             return res
                 .status(400)
@@ -384,6 +393,10 @@ export const getSolicitanteById = async (req, res) => {
         });
         if (!solicitante)
             return res.status(404).json({ error: "No encontrado" });
+        const user = req.user;
+        if (user?.rol === "CLIENTE" && solicitante.empresaId !== user.empresaId) {
+            return res.status(403).json({ error: "No autorizado" });
+        }
         const links = await prisma.solicitanteMsLicense.findMany({
             where: { solicitanteId: solicitante.id_solicitante },
             include: {

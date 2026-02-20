@@ -11,7 +11,11 @@ export function auth(required = true) {
         const token = header.slice(7);
         try {
             const payload = jwt.verify(token, process.env.JWT_SECRET);
-            req.userId = Number(payload.sub);
+            req.user = {
+                id: Number(payload.sub),
+                rol: payload.rol ?? "TECNICO",
+                empresaId: payload.empresaId ?? null,
+            };
             return next();
         }
         catch {
