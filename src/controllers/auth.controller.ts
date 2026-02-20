@@ -429,7 +429,7 @@ export const refresh = async (req: Request, res: Response) => {
 
     // Transacción optimizada
     await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
+      async (tx) => {
         await tx.refreshToken.update({
           where: { id: matchedToken!.id },
           data: { revokedAt: new Date() },

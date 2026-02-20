@@ -8,6 +8,7 @@ import { api } from "./routes.js";
 import { prisma } from "./lib/prisma.js";
 import path from "path";
 import { UPLOADS_DIR } from "./config/paths.js";
+import { asyncLocalStorage } from "./lib/request-context.js";
 /* ========= Helpers ========= */
 function normalizeOrigin(origin) {
     return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
@@ -78,6 +79,10 @@ app.use("/uploads", express.static(UPLOADS_DIR, {
         res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     },
 }));
+// 🔥 CONTEXTO GLOBAL POR REQUEST
+app.use((req, res, next) => {
+    asyncLocalStorage.run({ userId: null }, () => next());
+});
 /* ========= Rutas ========= */
 // Asegúrate que dentro de routes.js tengas algo como:
 // router.post("/auth/login", ...)

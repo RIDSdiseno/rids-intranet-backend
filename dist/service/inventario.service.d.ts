@@ -3,11 +3,11 @@ export declare function getInventarioByEmpresa(params: {
     empresaNombre?: string;
 }): Promise<({
     solicitante: {
-        nombre: string;
-        email: string | null;
         empresa: {
             nombre: string;
         };
+        nombre: string;
+        email: string | null;
     } | null;
     detalle: {
         macWifi: string | null;
@@ -17,15 +17,17 @@ export declare function getInventarioByEmpresa(params: {
         revisado: string | null;
     } | null;
 } & {
+    updatedAt: Date;
+    createdAt: Date;
+    tipo: import("@prisma/client").$Enums.TipoEquipo;
+    marca: string;
+    modelo: string;
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
-    marca: string;
-    modelo: string;
     procesador: string | null;
     ram: string | null;
     disco: string | null;
     propiedad: string;
-    tipo: import("@prisma/client").$Enums.TipoEquipo;
 })[]>;
 //# sourceMappingURL=inventario.service.d.ts.map

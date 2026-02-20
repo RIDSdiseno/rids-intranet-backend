@@ -39,8 +39,12 @@ import uploadRoutes from "./routes/upload-imagenes.routes.js";
 /* ===================== HELP DESK RIDS ===================== */
 import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
 import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
+/* ===================== HISTORIAL DE CAMBIOS ===================== */
+import auditRouter from "../src/routes/historial-cambios-routes/audit.routes.js";
 /* ========================================================= */
+import { auth } from "./middlewares/auth.js";
 export const api = Router();
+api.use(auth(false));
 /* ===================== App Core ===================== */
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
@@ -86,6 +90,8 @@ api.use("/debug", debugRouter);
 api.use(whatchimpRouter);
 /* ===================== CLOUDINARY ===================== */
 api.use("/upload-imagenes", uploadRoutes);
+/* ===================== HISTORIAL DE CAMBIOS ===================== */
+api.use("/audit", auditRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

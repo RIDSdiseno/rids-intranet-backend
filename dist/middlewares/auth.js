@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { asyncLocalStorage } from "../lib/request-context.js";
 export function auth(required = true) {
     return (req, res, next) => {
         const header = req.headers.authorization;
@@ -16,6 +17,11 @@ export function auth(required = true) {
                 rol: payload.rol ?? "TECNICO",
                 empresaId: payload.empresaId ?? null,
             };
+            // 🔥 Guardar usuario en contexto global para auditoría
+            const store = asyncLocalStorage.getStore();
+            if (store) {
+                store.userId = Number(payload.sub);
+            }
             return next();
         }
         catch {

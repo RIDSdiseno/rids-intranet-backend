@@ -2,6 +2,8 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 
+import { asyncLocalStorage } from "../lib/request-context.js";
+
 interface JwtPayloadCustom {
   sub: string;
   email: string;
@@ -32,6 +34,12 @@ export function auth(required = true): RequestHandler {
         rol: payload.rol ?? "TECNICO",
         empresaId: payload.empresaId ?? null,
       };
+
+      // 🔥 Guardar usuario en contexto global para auditoría
+      const store = asyncLocalStorage.getStore();
+      if (store) {
+        store.userId = Number(payload.sub);
+      }
 
       return next();
     } catch {

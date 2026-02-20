@@ -1,5 +1,14 @@
-import { PrismaClient } from "@prisma/client";
-export declare const prisma: PrismaClient<{
+export declare const prisma: import("@prisma/client/runtime/library").DynamicClientExtensionThis<import("@prisma/client").Prisma.TypeMap<import("@prisma/client/runtime/library").InternalArgs & {
+    result: {};
+    model: {};
+    query: {};
+    client: {};
+}, {}>, import("@prisma/client").Prisma.TypeMapCb<{
     log: ("query" | "warn" | "error")[];
-}, "query" | "warn" | "error", import("@prisma/client/runtime/library").DefaultArgs>;
+}>, {
+    result: {};
+    model: {};
+    query: {};
+    client: {};
+}>;
 //# sourceMappingURL=prisma.d.ts.map

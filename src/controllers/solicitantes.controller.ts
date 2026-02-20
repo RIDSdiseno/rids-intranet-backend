@@ -628,27 +628,39 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
     };
 
     await prisma.$transaction(async (tx) => {
+
+
+
+      // ======================================
+      // 1️⃣ TRANSFERENCIAS PRINCIPALES
+      // ======================================
+
       if (transferToId) {
         await tx.equipo.updateMany({
           where: { idSolicitante: id },
           data: { idSolicitante: transferToId },
         });
+
         await tx.historial.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: transferToId },
         });
+
         await tx.freshdeskRequesterMap.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: transferToId },
         });
+
         await tx.freshdeskTicket.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: transferToId },
         });
+
         await tx.visita.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: transferToId },
         });
+
       } else {
         const saId = await ensureSaSolicitante(source.empresaId);
 
@@ -656,37 +668,59 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
           where: { idSolicitante: id },
           data: { idSolicitante: saId },
         });
+
         await tx.historial.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: saId },
         });
+
         await tx.freshdeskRequesterMap.updateMany({
           where: { solicitanteId: id },
           data: { solicitanteId: saId },
         });
 
-        if (fallback === "sa") {
-          await tx.freshdeskTicket.updateMany({
-            where: { solicitanteId: id },
-            data: { solicitanteId: saId },
-          });
-          await tx.visita.updateMany({
-            where: { solicitanteId: id },
-            data: { solicitanteId: saId },
-          });
-        } else {
-          await tx.freshdeskTicket.updateMany({
-            where: { solicitanteId: id },
-            data: { solicitanteId: null },
-          });
-          await tx.visita.updateMany({
-            where: { solicitanteId: id },
-            data: { solicitanteId: null },
-          });
-        }
+        await tx.freshdeskTicket.updateMany({
+          where: { solicitanteId: id },
+          data: { solicitanteId: fallback === "sa" ? saId : null },
+        });
+
+        await tx.visita.updateMany({
+          where: { solicitanteId: id },
+          data: { solicitanteId: fallback === "sa" ? saId : null },
+        });
       }
 
-      await tx.solicitante.delete({ where: { id_solicitante: id } });
+      // ======================================
+      // 2️⃣ LIMPIEZA DE RELACIONES DIRECTAS
+      // ======================================
+
+      await tx.solicitanteMsLicense.deleteMany({
+        where: { solicitanteId: id },
+      });
+
+      await tx.firma.deleteMany({
+        where: { solicitanteId: id },
+      });
+
+      await tx.servidorUsuario.deleteMany({
+        where: { solicitanteId: id },
+      });
+
+      await tx.ticket.updateMany({
+        where: { requesterId: id },
+        data: { requesterId: null },
+      });
+
+      // ======================================
+      // 3️⃣ DELETE FINAL
+      // ======================================
+
+      await tx.solicitante.delete({
+        where: { id_solicitante: id },
+      });
+
+    }, {
+      timeout: 15000, // 15 segundos
     });
 
     return res.json({

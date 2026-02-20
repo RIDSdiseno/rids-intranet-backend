@@ -11,6 +11,8 @@ import path from "path";
 
 import { UPLOADS_DIR } from "./config/paths.js";
 
+import { asyncLocalStorage } from "./lib/request-context.js";
+
 /* ========= Helpers ========= */
 function normalizeOrigin(origin: string): string {
   return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
@@ -105,6 +107,11 @@ app.use(
     },
   })
 );
+
+// 🔥 CONTEXTO GLOBAL POR REQUEST
+app.use((req, res, next) => {
+  asyncLocalStorage.run({ userId: null }, () => next());
+});
 
 /* ========= Rutas ========= */
 // Asegúrate que dentro de routes.js tengas algo como:

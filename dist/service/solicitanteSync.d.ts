@@ -11,10 +11,10 @@ export type GoogleUser = {
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
     nombre: string;
-    email: string | null;
-    empresaId: number;
-    id_solicitante: number;
     telefono: string | null;
+    empresaId: number;
+    email: string | null;
+    id_solicitante: number;
     clienteId: number | null;
     googleUserId: string | null;
     isActive: boolean;
@@ -25,10 +25,10 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
 export { upsertSolicitanteFromGoogle_min as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
     nombre: string;
-    email: string | null;
-    empresaId: number;
-    id_solicitante: number;
     telefono: string | null;
+    empresaId: number;
+    email: string | null;
+    id_solicitante: number;
     clienteId: number | null;
     googleUserId: string | null;
     isActive: boolean;

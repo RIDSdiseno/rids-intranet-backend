@@ -418,6 +418,8 @@ model Equipo {
   disco                  String?
   propiedad              String                  @default("ASUR")
   tipo                   TipoEquipo              @default(GENERICO)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @default(now()) @updatedAt
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -436,7 +438,7 @@ model DetalleEquipo {
   teamViewer String?
   claveTv    String?
   revisado   String?
-  equipo     Equipo  @relation(fields: [idEquipo], references: [id_equipo])
+  equipo     Equipo  @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
@@ -505,6 +507,7 @@ model Tecnico {
   tickets         Ticket[]
   firma           Firma?
   cotizaciones    CotizacionGestioo[]
+  auditLogs       AuditLog[]
 
   @@index([empresaId])
 }
@@ -853,6 +856,31 @@ model MantencionRemota {
   @@index([empresaId])
   @@index([inicio])
   @@index([tecnicoId])
+}
+
+model AuditLog {
+  id          Int         @id @default(autoincrement())
+  entity      String
+  entityId    String
+  empresaId   Int?
+  action      AuditAction
+  changes     Json?
+  description String?
+  createdAt   DateTime    @default(now())
+
+  actorId Int?
+  actor   Tecnico? @relation(fields: [actorId], references: [id_tecnico])
+
+  @@index([entity])
+  @@index([entityId])
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
 }
 
 enum TicketChannel {

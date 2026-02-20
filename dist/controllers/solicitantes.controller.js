@@ -544,6 +544,9 @@ export const deleteSolicitante = async (req, res) => {
             return created.id_solicitante;
         };
         await prisma.$transaction(async (tx) => {
+            // ======================================
+            // 1️⃣ TRANSFERENCIAS PRINCIPALES
+            // ======================================
             if (transferToId) {
                 await tx.equipo.updateMany({
                     where: { idSolicitante: id },
@@ -580,28 +583,39 @@ export const deleteSolicitante = async (req, res) => {
                     where: { solicitanteId: id },
                     data: { solicitanteId: saId },
                 });
-                if (fallback === "sa") {
-                    await tx.freshdeskTicket.updateMany({
-                        where: { solicitanteId: id },
-                        data: { solicitanteId: saId },
-                    });
-                    await tx.visita.updateMany({
-                        where: { solicitanteId: id },
-                        data: { solicitanteId: saId },
-                    });
-                }
-                else {
-                    await tx.freshdeskTicket.updateMany({
-                        where: { solicitanteId: id },
-                        data: { solicitanteId: null },
-                    });
-                    await tx.visita.updateMany({
-                        where: { solicitanteId: id },
-                        data: { solicitanteId: null },
-                    });
-                }
+                await tx.freshdeskTicket.updateMany({
+                    where: { solicitanteId: id },
+                    data: { solicitanteId: fallback === "sa" ? saId : null },
+                });
+                await tx.visita.updateMany({
+                    where: { solicitanteId: id },
+                    data: { solicitanteId: fallback === "sa" ? saId : null },
+                });
             }
-            await tx.solicitante.delete({ where: { id_solicitante: id } });
+            // ======================================
+            // 2️⃣ LIMPIEZA DE RELACIONES DIRECTAS
+            // ======================================
+            await tx.solicitanteMsLicense.deleteMany({
+                where: { solicitanteId: id },
+            });
+            await tx.firma.deleteMany({
+                where: { solicitanteId: id },
+            });
+            await tx.servidorUsuario.deleteMany({
+                where: { solicitanteId: id },
+            });
+            await tx.ticket.updateMany({
+                where: { requesterId: id },
+                data: { requesterId: null },
+            });
+            // ======================================
+            // 3️⃣ DELETE FINAL
+            // ======================================
+            await tx.solicitante.delete({
+                where: { id_solicitante: id },
+            });
+        }, {
+            timeout: 15000, // 15 segundos
         });
         return res.json({
             ok: true,

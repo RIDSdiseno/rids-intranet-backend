@@ -130,6 +130,10 @@ function flattenRow(e: any) {
     ram: e.ram,
     disco: e.disco,
     propiedad: e.propiedad,
+
+    createdAt: e.createdAt,
+    updatedAt: e.updatedAt,
+
     solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
     empresa: e.solicitante?.empresa?.nombre ?? null,
     empresaId: e.solicitante?.empresa?.id_empresa ?? null,

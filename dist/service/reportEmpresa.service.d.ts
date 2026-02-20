@@ -26,13 +26,13 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         cantidad: number;
     }[];
     visitasDetalle: {
-        tecnico: {
-            nombre: string;
-        };
         sucursal: {
             nombre: string;
         } | null;
         solicitante: string;
+        tecnico: {
+            nombre: string;
+        };
         inicio: Date;
         fin: Date | null;
         otrosDetalle: string | null;
@@ -46,9 +46,9 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
             solicitante: {
                 nombre: string;
             } | null;
-            serial: string | null;
             marca: string;
             modelo: string;
+            serial: string | null;
             procesador: string | null;
             ram: string | null;
             disco: string | null;
