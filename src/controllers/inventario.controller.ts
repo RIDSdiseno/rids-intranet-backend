@@ -205,17 +205,41 @@ function buildInventarioExcel(
 ====================================================== */
 export async function exportInventario(req: Request, res: Response) {
     try {
+        const user = (req as any).user;
+
         const mes =
             typeof req.query.mes === "string" && /^\d{4}-\d{2}$/.test(req.query.mes)
                 ? req.query.mes
                 : "SIN_MES";
 
-        const equipos = await getInventarioByEmpresa({});
+        let empresaId: number | undefined = undefined;
+
+        // 🔒 Si es cliente → forzar su empresa
+        if (user?.rol === "CLIENTE") {
+            empresaId = user.empresaId;
+        } else {
+            // 👨‍💻 Técnico puede usar filtro opcional
+            if (req.query.empresaId) {
+                const id = Number(req.query.empresaId);
+                if (!Number.isNaN(id)) {
+                    empresaId = id;
+                }
+            }
+        }
+
+        const equipos = await getInventarioByEmpresa(
+            empresaId ? { empresaId } : {}
+        );
+
         const buffer = buildInventarioExcel(equipos, mes);
+
+        const fileName = empresaId
+            ? `Inventario_${empresaId}_${mes}.xlsx`
+            : `Inventario_TODAS_${mes}.xlsx`;
 
         res.setHeader(
             "Content-Disposition",
-            `attachment; filename=Inventario_${mes}.xlsx`
+            `attachment; filename=${fileName}`
         );
         res.setHeader(
             "Content-Type",

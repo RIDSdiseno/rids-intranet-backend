@@ -12,6 +12,7 @@ export async function getEmpresas(req, res) {
         const full = String(req.query.full ?? "").toLowerCase() === "1";
         // Base: empresas (solo id + nombre)
         const user = req.user;
+        console.log("USER:", user);
         const whereEmpresa = user?.rol === "CLIENTE"
             ? { id_empresa: user.empresaId }
             : {};
@@ -229,8 +230,14 @@ export async function getEmpresas(req, res) {
 /* =======================================================
    GET /api/empresas/stats  (agregado total del sistema)
    ======================================================= */
-export async function getEmpresasStats(_req, res) {
+export async function getEmpresasStats(req, res) {
     try {
+        const user = req.user;
+        console.log("USER:", user);
+        if (user?.rol === "CLIENTE") {
+            res.status(403).json({ error: "No autorizado" });
+            return;
+        }
         const [empresas, solicitantes, equipos, tickets, visitas] = await Promise.all([
             prisma.empresa.count(),
             prisma.solicitante.count(),
@@ -269,7 +276,7 @@ export async function getEmpresaById(req, res) {
     try {
         const id = Number(req.params.id);
         const user = req.user;
-        if (user?.rol === "CLIENTE") {
+        if (user?.rol === "CLIENTE" && user.empresaId !== id) {
             res.status(403).json({ error: "No autorizado" });
             return;
         }

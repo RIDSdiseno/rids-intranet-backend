@@ -148,12 +148,30 @@ function buildInventarioExcel(equipos, mes) {
 ====================================================== */
 export async function exportInventario(req, res) {
     try {
+        const user = req.user;
         const mes = typeof req.query.mes === "string" && /^\d{4}-\d{2}$/.test(req.query.mes)
             ? req.query.mes
             : "SIN_MES";
-        const equipos = await getInventarioByEmpresa({});
+        let empresaId = undefined;
+        // 🔒 Si es cliente → forzar su empresa
+        if (user?.rol === "CLIENTE") {
+            empresaId = user.empresaId;
+        }
+        else {
+            // 👨‍💻 Técnico puede usar filtro opcional
+            if (req.query.empresaId) {
+                const id = Number(req.query.empresaId);
+                if (!Number.isNaN(id)) {
+                    empresaId = id;
+                }
+            }
+        }
+        const equipos = await getInventarioByEmpresa(empresaId ? { empresaId } : {});
         const buffer = buildInventarioExcel(equipos, mes);
-        res.setHeader("Content-Disposition", `attachment; filename=Inventario_${mes}.xlsx`);
+        const fileName = empresaId
+            ? `Inventario_${empresaId}_${mes}.xlsx`
+            : `Inventario_TODAS_${mes}.xlsx`;
+        res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         return res.send(buffer);
     }

@@ -136,15 +136,21 @@ export async function listEquipos(req, res) {
     try {
         const q = listQuerySchema.parse(req.query);
         const INS = "insensitive";
+        const user = req.user;
         const where = {
-            ...(q.tipo ? { tipo: q.tipo } : {}),
-            ...(q.empresaId
+            ...(user?.rol === "CLIENTE"
                 ? {
                     solicitante: {
-                        is: { empresaId: q.empresaId },
+                        is: { empresaId: user.empresaId },
                     },
                 }
-                : {}),
+                : q.empresaId
+                    ? {
+                        solicitante: {
+                            is: { empresaId: q.empresaId },
+                        },
+                    }
+                    : {}),
             ...(q.empresaName
                 ? {
                     solicitante: {
@@ -404,6 +410,10 @@ export async function deleteEquipo(req, res) {
 export async function getEquiposByEmpresa(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);
+        const user = req.user;
+        if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
+            return res.status(403).json({ error: "No autorizado" });
+        }
         if (!Number.isInteger(empresaId) || empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
         }

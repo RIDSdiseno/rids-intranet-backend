@@ -83,7 +83,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
 
     const where: Prisma.SolicitanteWhereInput = {
       ...(user?.rol === "CLIENTE"
-        ? { empresaId: user.empresaId }
+        ? { empresaId: Number(user.empresaId) }
         : empresaId > 0
           ? { empresaId }
           : {}),
@@ -267,6 +267,13 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
     const orderByKey = parseOrderBy(req.query.orderBy);
     const orderDir = parseOrderDir(req.query.orderDir);
     const empresaId = toInt(req.query.empresaId);
+
+    const user = (req as any).user;
+
+    const userEmpresaId =
+      user?.rol === "CLIENTE" && user?.empresaId
+        ? Number(user.empresaId)
+        : null;
     const includeEmpresa =
       String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
     const q = (req.query.q as string | undefined)?.trim();
@@ -275,7 +282,11 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
 
     const INS: Prisma.QueryMode = "insensitive";
     const where: Prisma.SolicitanteWhereInput = {
-      ...(empresaId > 0 ? { empresaId } : {}),
+      ...(userEmpresaId
+        ? { empresaId: userEmpresaId }
+        : empresaId > 0
+          ? { empresaId }
+          : {}),
       ...(q
         ? {
           OR: [
@@ -330,9 +341,20 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     const q = (req.query.q as string | undefined)?.trim();
     const empresaId = toInt(req.query.empresaId);
 
+    const user = (req as any).user;
+
+    const userEmpresaId =
+      user?.rol === "CLIENTE" && user?.empresaId
+        ? Number(user.empresaId)
+        : null;
+
     const INS: Prisma.QueryMode = "insensitive";
     const where: Prisma.SolicitanteWhereInput = {
-      ...(empresaId > 0 ? { empresaId } : {}),
+      ...(userEmpresaId
+        ? { empresaId: userEmpresaId }
+        : empresaId > 0
+          ? { empresaId }
+          : {}),
       ...(q
         ? {
           OR: [
