@@ -22,10 +22,10 @@ export declare function getInventarioByEmpresa(params: {
     serial: string | null;
     marca: string;
     modelo: string;
-    tipo: import("@prisma/client").$Enums.TipoEquipo;
     procesador: string | null;
     ram: string | null;
     disco: string | null;
     propiedad: string;
+    tipo: import("@prisma/client").$Enums.TipoEquipo;
 })[]>;
 //# sourceMappingURL=inventario.service.d.ts.map

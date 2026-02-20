@@ -171,15 +171,22 @@ export async function listEquipos(req: Request, res: Response) {
     const q = listQuerySchema.parse(req.query);
     const INS: Prisma.QueryMode = "insensitive";
 
+    const user = (req as any).user;
+
     const where: Prisma.EquipoWhereInput = {
-      ...(q.tipo ? { tipo: q.tipo } : {}),
-      ...(q.empresaId
+      ...(user?.rol === "CLIENTE"
         ? {
           solicitante: {
-            is: { empresaId: q.empresaId },
+            is: { empresaId: user.empresaId },
           },
         }
-        : {}),
+        : q.empresaId
+          ? {
+            solicitante: {
+              is: { empresaId: q.empresaId },
+            },
+          }
+          : {}),
       ...(q.empresaName
         ? {
           solicitante: {
@@ -484,6 +491,12 @@ export async function deleteEquipo(req: Request, res: Response) {
 export async function getEquiposByEmpresa(req: Request, res: Response) {
   try {
     const empresaId = Number(req.params.empresaId);
+
+    const user = (req as any).user;
+
+    if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
 
     if (!Number.isInteger(empresaId) || empresaId <= 0) {
       return res.status(400).json({ error: "empresaId inválido" });

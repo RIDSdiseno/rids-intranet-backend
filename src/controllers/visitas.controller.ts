@@ -156,7 +156,6 @@ export const listVisitas = async (req: Request, res: Response) => {
         ? { empresaId: Number(empresaIdQ) }
         : {}),
     ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
-    ...(empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
     ...(statusQ ? { status: statusQ as any } : {}),
     ...(dateFilter ? { inicio: dateFilter } : {}),
     ...(q

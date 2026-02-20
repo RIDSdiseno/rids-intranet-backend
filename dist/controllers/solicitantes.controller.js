@@ -63,7 +63,7 @@ export const listSolicitantes = async (req, res) => {
         const user = req.user;
         const where = {
             ...(user?.rol === "CLIENTE"
-                ? { empresaId: user.empresaId }
+                ? { empresaId: Number(user.empresaId) }
                 : empresaId > 0
                     ? { empresaId }
                     : {}),
@@ -225,12 +225,20 @@ export const listSolicitantesForSelect = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const empresaId = toInt(req.query.empresaId);
+        const user = req.user;
+        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId
+            ? Number(user.empresaId)
+            : null;
         const includeEmpresa = String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
         const q = req.query.q?.trim();
         const limit = clamp(toInt(req.query.limit, 100), 1, 500);
         const INS = "insensitive";
         const where = {
-            ...(empresaId > 0 ? { empresaId } : {}),
+            ...(userEmpresaId
+                ? { empresaId: userEmpresaId }
+                : empresaId > 0
+                    ? { empresaId }
+                    : {}),
             ...(q
                 ? {
                     OR: [
@@ -280,9 +288,17 @@ export const solicitantesMetrics = async (req, res) => {
     try {
         const q = req.query.q?.trim();
         const empresaId = toInt(req.query.empresaId);
+        const user = req.user;
+        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId
+            ? Number(user.empresaId)
+            : null;
         const INS = "insensitive";
         const where = {
-            ...(empresaId > 0 ? { empresaId } : {}),
+            ...(userEmpresaId
+                ? { empresaId: userEmpresaId }
+                : empresaId > 0
+                    ? { empresaId }
+                    : {}),
             ...(q
                 ? {
                     OR: [

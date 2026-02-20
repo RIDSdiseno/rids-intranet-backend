@@ -227,7 +227,8 @@ export async function getCotizacionById(req: Request, res: Response) {
 ===================================================== */
 export async function createCotizacion(req: Request, res: Response) {
     try {
-        const userId = (req as any).userId;
+        const user = (req as any).user;
+        const userId = user?.id;
 
         if (!userId) {
             return res.status(401).json({ error: "No autenticado" });
