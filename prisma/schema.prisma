@@ -29,6 +29,8 @@ model Empresa {
   empresaISP          EmpresaISP[]
   servidors           Servidor[]
   tecnicos            Tecnico[]
+
+  mantencionesRemotas MantencionRemota[] @relation("EmpresaMantencionesRemotas")
 }
 
 model Sucursal {
@@ -104,11 +106,28 @@ model FichaTecnicaEmpresa {
   id                      Int       @id @default(autoincrement())
   empresaId               Int       @unique
   /// *
+<<<<<<< HEAD
+  ///    * ===================== Técnicos / Visitas =====================
+=======
   /// * ===================== Técnicos / Visitas =====================
+>>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   tecnicoPrincipal        String?
   tecnicosRespaldo        String?
   observacionesVisita     String?
   /// *
+<<<<<<< HEAD
+  ///    * ===================== Software y sistemas =====================
+  sistemasOperativos      String?
+  /// *
+  ///    * ===================== Redes y conectividad =====================
+  proveedorInternet       String?
+  /// *
+  ///    * ===================== Servicios digitales =====================
+  dominioWeb              String?
+  redesSociales           String?
+  /// *
+  ///    * ===================== Respaldo y seguridad =====================
+=======
   /// * ===================== Software y sistemas =====================
   sistemasOperativos      String?
   /// *
@@ -120,6 +139,7 @@ model FichaTecnicaEmpresa {
   redesSociales           String?
   /// *
   /// * ===================== Respaldo y seguridad =====================
+>>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   metodoRespaldo          String?
   frecuenciaRespaldo      String?
   responsableRespaldo     String?
@@ -137,7 +157,11 @@ model FichaTecnicaEmpresa {
   licenciasVigentes       String?
   otrosEquipos            String?
   /// *
+<<<<<<< HEAD
+  ///    * ===================== Equipos y hardware =====================
+=======
   /// * ===================== Equipos y hardware =====================
+>>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   pcsNotebooks            String?
   proximaVisitaProgramada DateTime?
   routersSwitches         String?
@@ -246,26 +270,27 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante   Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre           String
-  email            String?
-  telefono         String?
-  empresaId        Int
-  clienteId        Int?                    @unique
-  googleUserId     String?                 @unique
-  isActive         Boolean                 @default(true)
-  microsoftUserId  String?                 @unique
-  accountType      AccountType?
-  empresa          Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos          Equipo[]
-  visitas          Visita[]                @relation("Solicitante_Visita")
-  historiales      Historial[]             @relation("Solicitante_Historial")
-  tickets          FreshdeskTicket[]
-  requesterMaps    FreshdeskRequesterMap[]
-  msLicenses       SolicitanteMsLicense[]
-  ticketsRids      Ticket[]
-  firma            Firma?
-  servidorUsuarios ServidorUsuario[]
+  id_solicitante      Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre              String
+  email               String?
+  telefono            String?
+  empresaId           Int
+  clienteId           Int?                    @unique
+  googleUserId        String?                 @unique
+  isActive            Boolean                 @default(true)
+  microsoftUserId     String?                 @unique
+  accountType         AccountType?
+  empresa             Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+  equipos             Equipo[]
+  visitas             Visita[]                @relation("Solicitante_Visita")
+  historiales         Historial[]             @relation("Solicitante_Historial")
+  tickets             FreshdeskTicket[]
+  requesterMaps       FreshdeskRequesterMap[]
+  msLicenses          SolicitanteMsLicense[]
+  ticketsRids         Ticket[]
+  firma               Firma?
+  servidorUsuarios    ServidorUsuario[]
+  mantencionesRemotas MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
 
   @@index([empresaId])
   @@index([isActive])
@@ -489,6 +514,25 @@ model RefreshToken {
 }
 
 model Tecnico {
+<<<<<<< HEAD
+  id_tecnico          Int                     @id @default(autoincrement())
+  nombre              String
+  email               String                  @unique
+  passwordHash        String
+  status              Boolean                 @default(true)
+  empresaId           Int?
+  rol                 String                  @default("TECNICO")
+  empresa             Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  tokens              RefreshToken[]
+  historiales         Historial[]
+  visitas             Visita[]
+  detalleTrabajos     DetalleTrabajoGestioo[]
+  entregas            Entrega[]
+  tickets             Ticket[]
+  firma               Firma?
+  cotizaciones        CotizacionGestioo[]
+  mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
+=======
   id_tecnico      Int                     @id @default(autoincrement())
   nombre          String
   email           String                  @unique
@@ -505,6 +549,7 @@ model Tecnico {
   tickets         Ticket[]
   firma           Firma?
   cotizaciones    CotizacionGestioo[]
+>>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
 
   @@index([empresaId])
 }
@@ -543,6 +588,45 @@ model Visita {
   @@index([tecnicoId])
   @@index([solicitanteId])
   @@index([sucursalId])
+}
+
+model MantencionRemota {
+  id_mantencion Int @id @default(autoincrement())
+
+  empresaId Int
+  tecnicoId Int
+
+  solicitanteId Int?
+  solicitante   String
+
+  inicio DateTime
+  fin    DateTime?
+
+  // flags (similares a visitas, pero enfocados a remoto)
+  soporteRemoto   Boolean @default(true)
+  actualizaciones Boolean @default(false)
+  antivirus       Boolean @default(false)
+  ccleaner        Boolean @default(false)
+  estadoDisco     Boolean @default(false)
+  licenciaOffice  Boolean @default(false)
+  licenciaWindows Boolean @default(false)
+  optimizacion    Boolean @default(false)
+  respaldo        Boolean @default(false)
+  otros           Boolean @default(false)
+  otrosDetalle    String?
+
+  status String @default("PENDIENTE") // o enum
+
+  empresa        Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
+  tecnico        Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([empresaId])
+  @@index([tecnicoId])
+  @@index([inicio])
 }
 
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
@@ -825,6 +909,8 @@ model ChatLog {
   role      String   @default("user")
   createdAt DateTime @default(now())
   text      String?
+<<<<<<< HEAD
+=======
 }
 
 model MantencionRemota {
@@ -853,6 +939,7 @@ model MantencionRemota {
   @@index([empresaId])
   @@index([inicio])
   @@index([tecnicoId])
+>>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
 }
 
 enum TicketChannel {
