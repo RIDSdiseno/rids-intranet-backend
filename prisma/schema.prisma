@@ -29,8 +29,7 @@ model Empresa {
   empresaISP          EmpresaISP[]
   servidors           Servidor[]
   tecnicos            Tecnico[]
-
-  mantencionesRemotas MantencionRemota[] @relation("EmpresaMantencionesRemotas")
+  mantencionesRemotas MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
 }
 
 model Sucursal {
@@ -105,41 +104,18 @@ model FichaEmpresa {
 model FichaTecnicaEmpresa {
   id                      Int       @id @default(autoincrement())
   empresaId               Int       @unique
-  /// *
-<<<<<<< HEAD
-  ///    * ===================== Técnicos / Visitas =====================
-=======
   /// * ===================== Técnicos / Visitas =====================
->>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   tecnicoPrincipal        String?
   tecnicosRespaldo        String?
   observacionesVisita     String?
-  /// *
-<<<<<<< HEAD
-  ///    * ===================== Software y sistemas =====================
-  sistemasOperativos      String?
-  /// *
-  ///    * ===================== Redes y conectividad =====================
-  proveedorInternet       String?
-  /// *
-  ///    * ===================== Servicios digitales =====================
-  dominioWeb              String?
-  redesSociales           String?
-  /// *
-  ///    * ===================== Respaldo y seguridad =====================
-=======
   /// * ===================== Software y sistemas =====================
   sistemasOperativos      String?
-  /// *
   /// * ===================== Redes y conectividad =====================
   proveedorInternet       String?
-  /// *
   /// * ===================== Servicios digitales =====================
   dominioWeb              String?
   redesSociales           String?
-  /// *
   /// * ===================== Respaldo y seguridad =====================
->>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   metodoRespaldo          String?
   frecuenciaRespaldo      String?
   responsableRespaldo     String?
@@ -156,12 +132,7 @@ model FichaTecnicaEmpresa {
   impresorasPerifericos   String?
   licenciasVigentes       String?
   otrosEquipos            String?
-  /// *
-<<<<<<< HEAD
-  ///    * ===================== Equipos y hardware =====================
-=======
   /// * ===================== Equipos y hardware =====================
->>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
   pcsNotebooks            String?
   proximaVisitaProgramada DateTime?
   routersSwitches         String?
@@ -443,6 +414,8 @@ model Equipo {
   disco                  String?
   propiedad              String                  @default("ASUR")
   tipo                   TipoEquipo              @default(GENERICO)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @default(now())
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -514,7 +487,6 @@ model RefreshToken {
 }
 
 model Tecnico {
-<<<<<<< HEAD
   id_tecnico          Int                     @id @default(autoincrement())
   nombre              String
   email               String                  @unique
@@ -532,24 +504,6 @@ model Tecnico {
   firma               Firma?
   cotizaciones        CotizacionGestioo[]
   mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
-=======
-  id_tecnico      Int                     @id @default(autoincrement())
-  nombre          String
-  email           String                  @unique
-  passwordHash    String
-  status          Boolean                 @default(true)
-  empresaId       Int?
-  rol             String                  @default("TECNICO")
-  empresa         Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  tokens          RefreshToken[]
-  historiales     Historial[]
-  visitas         Visita[]
-  detalleTrabajos DetalleTrabajoGestioo[]
-  entregas        Entrega[]
-  tickets         Ticket[]
-  firma           Firma?
-  cotizaciones    CotizacionGestioo[]
->>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
 
   @@index([empresaId])
 }
@@ -591,38 +545,30 @@ model Visita {
 }
 
 model MantencionRemota {
-  id_mantencion Int @id @default(autoincrement())
-
-  empresaId Int
-  tecnicoId Int
-
-  solicitanteId Int?
-  solicitante   String
-
-  inicio DateTime
-  fin    DateTime?
-
-  // flags (similares a visitas, pero enfocados a remoto)
-  soporteRemoto   Boolean @default(true)
-  actualizaciones Boolean @default(false)
-  antivirus       Boolean @default(false)
-  ccleaner        Boolean @default(false)
-  estadoDisco     Boolean @default(false)
-  licenciaOffice  Boolean @default(false)
-  licenciaWindows Boolean @default(false)
-  optimizacion    Boolean @default(false)
-  respaldo        Boolean @default(false)
-  otros           Boolean @default(false)
+  id_mantencion   Int          @id @default(autoincrement())
+  empresaId       Int
+  tecnicoId       Int
+  solicitanteId   Int?
+  solicitante     String
+  inicio          DateTime
+  fin             DateTime?
+  soporteRemoto   Boolean      @default(true)
+  actualizaciones Boolean      @default(false)
+  antivirus       Boolean      @default(false)
+  ccleaner        Boolean      @default(false)
+  estadoDisco     Boolean      @default(false)
+  licenciaOffice  Boolean      @default(false)
+  licenciaWindows Boolean      @default(false)
+  optimizacion    Boolean      @default(false)
+  respaldo        Boolean      @default(false)
+  otros           Boolean      @default(false)
   otrosDetalle    String?
-
-  status String @default("PENDIENTE") // o enum
-
-  empresa        Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
-  tecnico        Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status          String       @default("PENDIENTE")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  empresa         Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
+  tecnico         Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef  Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
 
   @@index([empresaId])
   @@index([tecnicoId])
@@ -909,37 +855,22 @@ model ChatLog {
   role      String   @default("user")
   createdAt DateTime @default(now())
   text      String?
-<<<<<<< HEAD
-=======
 }
 
-model MantencionRemota {
-  id_mantencion   Int       @id @default(autoincrement())
-  empresaId       Int
-  tecnicoId       Int
-  solicitanteId   Int?
-  solicitante     String
-  inicio          DateTime
-  fin             DateTime?
-  soporteRemoto   Boolean   @default(true)
-  actualizaciones Boolean   @default(false)
-  antivirus       Boolean   @default(false)
-  ccleaner        Boolean   @default(false)
-  estadoDisco     Boolean   @default(false)
-  licenciaOffice  Boolean   @default(false)
-  licenciaWindows Boolean   @default(false)
-  optimizacion    Boolean   @default(false)
-  respaldo        Boolean   @default(false)
-  otros           Boolean   @default(false)
-  otrosDetalle    String?
-  status          String    @default("PENDIENTE")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime
+model AuditLog {
+  id          Int         @id @default(autoincrement())
+  entity      String
+  entityId    String
+  action      AuditAction
+  changes     Json?
+  description String?
+  createdAt   DateTime    @default(now())
+  actorId     Int?
 
-  @@index([empresaId])
-  @@index([inicio])
-  @@index([tecnicoId])
->>>>>>> 2c442142a1ff51d558d1d6a97d25b9fb0b0fd29e
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([entityId])
+  @@index([entity])
 }
 
 enum TicketChannel {
@@ -1100,4 +1031,10 @@ enum TipoEquipo {
 enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
 }
