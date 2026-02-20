@@ -5,6 +5,187 @@ import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 
 /* ------------------------------------ */
+/* Types                                 */
+/* ------------------------------------ */
+
+type AuthedUser = {
+  id?: number | null; // normalmente req.user.id (sub)
+  rol?: string | null;
+  empresaId?: number | null;
+  email?: string | null;
+  userId?: number | null;
+};
+
+/* ------------------------------------ */
+/* Helpers                               */
+/* ------------------------------------ */
+
+const parseId = (raw: unknown) => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+const parsePositiveInt = (raw: unknown) => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+function parseStatus(raw: unknown): "PENDIENTE" | "COMPLETADA" | "CANCELADA" | null {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (s === "PENDIENTE" || s === "COMPLETADA" || s === "CANCELADA") return s;
+  return null;
+}
+
+function buildMonthFilter(monthN: number, yearN: number): Prisma.DateTimeFilter | undefined {
+  if (Number.isFinite(monthN) && Number.isFinite(yearN) && monthN >= 1 && monthN <= 12) {
+    const from = new Date(yearN, monthN - 1, 1, 0, 0, 0, 0);
+    const to = new Date(yearN, monthN, 1, 0, 0, 0, 0);
+    return { gte: from, lt: to };
+  }
+  return undefined;
+}
+
+function getUser(req: Request): AuthedUser {
+  const u = (req as any).user as AuthedUser | undefined;
+  return u ?? {};
+}
+
+function isCliente(user: AuthedUser) {
+  return String(user?.rol ?? "").toUpperCase() === "CLIENTE";
+}
+
+function isTecnico(user: AuthedUser) {
+  return String(user?.rol ?? "").toUpperCase() === "TECNICO";
+}
+
+async function assertClienteOwnershipOr404(
+  id_mantencion: number,
+  user: AuthedUser
+): Promise<{ empresaId: number } | null> {
+  const current = await prisma.mantencionRemota.findUnique({
+    where: { id_mantencion },
+    select: { empresaId: true },
+  });
+
+  if (!current) return null;
+
+  if (isCliente(user)) {
+    const userEmpresa = Number(user.empresaId);
+    if (!Number.isFinite(userEmpresa) || userEmpresa <= 0) {
+      const err = new Error("No autorizado");
+      (err as any).status = 403;
+      throw err;
+    }
+    if (current.empresaId !== userEmpresa) {
+      const err = new Error("No autorizado");
+      (err as any).status = 403;
+      throw err;
+    }
+  }
+
+  return current;
+}
+
+/** valida existencia FK para evitar Prisma issues */
+async function assertTecnicoExists(tecnicoId: number) {
+  const t = await prisma.tecnico.findUnique({
+    where: { id_tecnico: tecnicoId },
+    select: { id_tecnico: true },
+  });
+  return !!t;
+}
+async function assertEmpresaExists(empresaId: number) {
+  const e = await prisma.empresa.findUnique({
+    where: { id_empresa: empresaId },
+    select: { id_empresa: true },
+  });
+  return !!e;
+}
+
+/**
+ * Busca técnico por email (si existe).
+ */
+async function findTecnicoIdByEmail(email: string): Promise<number | null> {
+  const e = String(email ?? "").trim().toLowerCase();
+  if (!e) return null;
+
+  const t = await prisma.tecnico.findUnique({
+    where: { email: e },
+    select: { id_tecnico: true },
+  });
+
+  return t?.id_tecnico ?? null;
+}
+
+/**
+ * ✅ Fallback: algunos sistemas guardan sub como id_usuario (no id_tecnico).
+ * Intentamos mapear a técnico por un campo tipo id_usuario.
+ *
+ * Si tu modelo Tecnico NO tiene ese campo, el query fallará -> retornamos null.
+ */
+async function findTecnicoIdByUserIdMaybe(userId: number): Promise<number | null> {
+  if (!Number.isInteger(userId) || userId <= 0) return null;
+
+  try {
+    // OJO: esto requiere que exista un campo "id_usuario" en Tecnico.
+    // Si no existe, Prisma lanzará error y lo atrapamos.
+    const t = await (prisma.tecnico as any).findFirst({
+      where: { id_usuario: userId },
+      select: { id_tecnico: true },
+    });
+
+    return t?.id_tecnico ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ✅ Resolver tecnicoId sin depender del middleware:
+ * 1) tecnicoId en body
+ * 2) tecnicoEmail en body
+ * 3) si rol TECNICO:
+ *    3.1) probar req.user.id como id_tecnico (si existe)
+ *    3.2) si no existe, probar map por id_usuario
+ * 4) si req.user.email existe -> buscar por email
+ */
+async function resolveTecnicoId(user: AuthedUser, payload: any): Promise<number | null> {
+  // 1) tecnicoId explícito
+  const tecnicoIdBody = Number(payload?.tecnicoId);
+  if (Number.isInteger(tecnicoIdBody) && tecnicoIdBody > 0) return tecnicoIdBody;
+
+  // 2) tecnicoEmail explícito
+  const emailBody = String(payload?.tecnicoEmail ?? "").trim().toLowerCase();
+  if (emailBody) {
+    const byEmail = await findTecnicoIdByEmail(emailBody);
+    if (byEmail) return byEmail;
+  }
+
+  // 3) si rol TECNICO => usar id del token, pero validar que exista como técnico
+  if (isTecnico(user)) {
+    const idToken = Number(user?.id);
+    if (Number.isInteger(idToken) && idToken > 0) {
+      // 3.1) si el sub ya es id_tecnico
+      const exists = await assertTecnicoExists(idToken);
+      if (exists) return idToken;
+
+      // 3.2) si el sub es id_usuario
+      const mapped = await findTecnicoIdByUserIdMaybe(idToken);
+      if (mapped) return mapped;
+    }
+  }
+
+  // 4) fallback por email en req.user
+  const emailUser = String(user?.email ?? "").trim().toLowerCase();
+  if (emailUser) {
+    const byEmail = await findTecnicoIdByEmail(emailUser);
+    if (byEmail) return byEmail;
+  }
+
+  return null;
+}
+
+/* ------------------------------------ */
 /* Select                                */
 /* ------------------------------------ */
 
@@ -39,34 +220,40 @@ const mantencionSelect = {
 const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
 
 const baseFlags = z.object({
-  soporteRemoto: z.boolean().optional().default(true),
-  actualizaciones: z.boolean().optional().default(false),
-  antivirus: z.boolean().optional().default(false),
-  ccleaner: z.boolean().optional().default(false),
-  estadoDisco: z.boolean().optional().default(false),
-  licenciaOffice: z.boolean().optional().default(false),
-  licenciaWindows: z.boolean().optional().default(false),
-  optimizacion: z.boolean().optional().default(false),
-  respaldo: z.boolean().optional().default(false),
-  otros: z.boolean().optional().default(false),
+  soporteRemoto: z.boolean().optional(),
+  actualizaciones: z.boolean().optional(),
+  antivirus: z.boolean().optional(),
+  ccleaner: z.boolean().optional(),
+  estadoDisco: z.boolean().optional(),
+  licenciaOffice: z.boolean().optional(),
+  licenciaWindows: z.boolean().optional(),
+  optimizacion: z.boolean().optional(),
+  respaldo: z.boolean().optional(),
+  otros: z.boolean().optional(),
   otrosDetalle: z.string().trim().optional().nullable(),
 });
 
 /**
- * Regla:
- * - Uno: solicitanteId? / solicitante?
- * - Lote: solicitantesIds? / solicitantesNombres?
+ * create: acepta:
+ * - uno: solicitanteId / solicitante
+ * - lote: solicitantesIds / solicitantesNombres
+ * - empresaId opcional: si CLIENTE se toma del token
+ * - tecnicoId opcional: se resuelve por tecnicoEmail o token
  */
 const CreateMantencionSchema = z
   .object({
-    empresaId: z.number().int().positive(),
-    tecnicoId: z.number().int().positive(),
+    empresaId: z.number().int().positive().optional(),
+
+    tecnicoId: z.number().int().positive().optional(),
+    tecnicoEmail: z.string().trim().email().optional(),
 
     solicitanteId: z.number().int().positive().optional(),
     solicitante: z.string().trim().optional(),
 
     solicitantesIds: z.array(z.number().int().positive()).optional(),
-    solicititantesNombres: z.array(z.string().trim().min(1)).optional(), // typo safe alias (si viene mal)
+
+    // typo-safe alias
+    solicititantesNombres: z.array(z.string().trim().min(1)).optional(),
     solicitantesNombres: z.array(z.string().trim().min(1)).optional(),
 
     inicio: z.coerce.date(),
@@ -75,19 +262,17 @@ const CreateMantencionSchema = z
   })
   .extend(baseFlags.shape)
   .superRefine((d, ctx) => {
-    const nombres = d.solicitantesNombres ?? d.solicititantesNombres; // acepta ambas
-    const hasBatch =
-      (d.solicitantesIds && d.solicitantesIds.length > 0) ||
-      (nombres && nombres.length > 0);
+    const nombres = d.solicitantesNombres ?? d.solicititantesNombres;
 
-    const hasSingle =
-      !!d.solicitanteId || (d.solicitante && d.solicitante.trim().length > 0);
+    const hasBatch =
+      (d.solicitantesIds && d.solicitantesIds.length > 0) || (nombres && nombres.length > 0);
+
+    const hasSingle = !!d.solicitanteId || (d.solicitante && d.solicitante.trim().length > 0);
 
     if (!hasBatch && !hasSingle) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "Debes enviar: (solicitanteId o solicitante) o (solicitantesIds/solicitantesNombres).",
+        message: "Debes enviar: (solicitanteId o solicitante) o (solicitantesIds/solicitantesNombres).",
         path: ["solicitante"],
       });
     }
@@ -105,59 +290,35 @@ const UpdateMantencionSchema = z
   })
   .extend(baseFlags.partial().shape);
 
-const parseId = (raw: unknown) => {
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
-const parsePositiveInt = (raw: unknown) => {
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
 /* ------------------------------------ */
-/* Listado paginado + filtros            */
+/* WHERE                                 */
 /* ------------------------------------ */
 
-export const listMantencionesRemotas = async (req: Request, res: Response) => {
-  const page = Math.max(1, Number(req.query.page ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 10)));
+function buildWhereFromQuery(req: Request): Prisma.MantencionRemotaWhereInput {
+  const user = getUser(req);
 
   const tecnicoIdN = parsePositiveInt(req.query.tecnicoId);
   const empresaIdQ = req.query.empresaId as string | undefined;
-  const statusQ = (req.query.status as string | undefined)?.trim();
-  const q = (req.query.q as string | undefined)?.trim();
+
+  const q = String(req.query.q ?? "").trim();
+  const status = parseStatus(req.query.status);
 
   const monthN = Number(req.query.month);
   const yearN = Number(req.query.year);
-
-  let dateFilter: Prisma.DateTimeFilter | undefined;
-
-  if (
-    Number.isFinite(monthN) &&
-    Number.isFinite(yearN) &&
-    monthN >= 1 &&
-    monthN <= 12
-  ) {
-    const from = new Date(yearN, monthN - 1, 1, 0, 0, 0, 0);
-    const to = new Date(yearN, monthN, 1, 0, 0, 0, 0);
-    dateFilter = { gte: from, lt: to };
-  }
+  const dateFilter = buildMonthFilter(monthN, yearN);
 
   const INS: Prisma.QueryMode = "insensitive";
-  const user = (req as any).user as { rol?: string; empresaId?: number | null };
 
-  const empresaIdFilter =
-    user?.rol === "CLIENTE"
-      ? parsePositiveInt(user.empresaId)
-      : empresaIdQ
-        ? parsePositiveInt(empresaIdQ)
-        : null;
+  const empresaIdFilter = isCliente(user)
+    ? parsePositiveInt(user.empresaId)
+    : empresaIdQ
+    ? parsePositiveInt(empresaIdQ)
+    : null;
 
   const where: Prisma.MantencionRemotaWhereInput = {
     ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
     ...(tecnicoIdN ? { tecnicoId: tecnicoIdN } : {}),
-    ...(statusQ ? { status: statusQ as any } : {}),
+    ...(status ? { status } : {}),
     ...(dateFilter ? { inicio: dateFilter } : {}),
     ...(q
       ? {
@@ -167,104 +328,179 @@ export const listMantencionesRemotas = async (req: Request, res: Response) => {
             { empresa: { is: { nombre: { contains: q, mode: INS } } } },
             { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
             { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-          ] satisfies Prisma.MantencionRemotaWhereInput[],
+          ],
         }
       : {}),
   };
 
-  const [total, rows] = await Promise.all([
-    prisma.mantencionRemota.count({ where }),
-    prisma.mantencionRemota.findMany({
-      where,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: [{ inicio: "desc" }],
-      select: mantencionSelect,
-    }),
-  ]);
+  return where;
+}
 
-  return res.json({
-    page,
-    pageSize,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    items: rows,
-  });
+/* ------------------------------------ */
+/* List                                  */
+/* ------------------------------------ */
+
+export const listMantencionesRemotas = async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, Number(req.query.page ?? 1));
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 10)));
+
+    const where = buildWhereFromQuery(req);
+
+    const [total, rows] = await Promise.all([
+      prisma.mantencionRemota.count({ where }),
+      prisma.mantencionRemota.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ inicio: "desc" }],
+        select: mantencionSelect,
+      }),
+    ]);
+
+    return res.json({
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      items: Array.isArray(rows) ? rows : [],
+    });
+  } catch (err) {
+    console.error("[mantencionesRemotas.list] error:", err);
+    return res.status(500).json({ error: "No se pudo listar mantenciones" });
+  }
 };
 
 /* ------------------------------------ */
-/* Get por ID                            */
+/* Export (JSON)                         */
+/* ------------------------------------ */
+
+export const exportMantencionesRemotas = async (req: Request, res: Response) => {
+  try {
+    const where = buildWhereFromQuery(req);
+
+    const rows = await prisma.mantencionRemota.findMany({
+      where,
+      orderBy: [{ inicio: "desc" }],
+      select: mantencionSelect,
+    });
+
+    return res.json({
+      total: rows.length,
+      items: Array.isArray(rows) ? rows : [],
+    });
+  } catch (err) {
+    console.error("[mantencionesRemotas.export] error:", err);
+    return res.status(500).json({ error: "No se pudo exportar mantenciones" });
+  }
+};
+
+/* ------------------------------------ */
+/* Get by ID                             */
 /* ------------------------------------ */
 
 export const getMantencionRemotaById = async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "id inválido" });
 
-  const row = await prisma.mantencionRemota.findUnique({
-    where: { id_mantencion: id },
-    select: mantencionSelect,
-  });
+  try {
+    const row = await prisma.mantencionRemota.findUnique({
+      where: { id_mantencion: id },
+      select: mantencionSelect,
+    });
 
-  if (!row) return res.status(404).json({ error: "Mantención no encontrada" });
+    if (!row) return res.status(404).json({ error: "Mantención no encontrada" });
 
-  const user = (req as any).user as { rol?: string; empresaId?: number | null };
-  if (user?.rol === "CLIENTE" && row.empresaId !== Number(user.empresaId)) {
-    return res.status(403).json({ error: "No autorizado" });
+    const user = getUser(req);
+    if (isCliente(user) && row.empresaId !== Number(user.empresaId)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    return res.json(row);
+  } catch (err) {
+    console.error("[mantencionesRemotas.getById] error:", err);
+    return res.status(500).json({ error: "No se pudo obtener la mantención" });
   }
-
-  return res.json(row);
 };
 
 /* ------------------------------------ */
-/* Crear (single o lote)                 */
+/* Create (single o lote)                */
 /* ------------------------------------ */
 
 export const createMantencionRemota = async (req: Request, res: Response) => {
   try {
     const payloadRaw = CreateMantencionSchema.parse(req.body);
 
-    // soporta ambos nombres si vino el typo
     const payload = {
       ...payloadRaw,
-      solicitantesNombres:
-        payloadRaw.solicitantesNombres ?? payloadRaw.solicititantesNombres,
+      solicitantesNombres: payloadRaw.solicitantesNombres ?? payloadRaw.solicititantesNombres,
     };
 
-    const user = (req as any).user as { rol?: string; empresaId?: number | null };
+    const user = getUser(req);
 
-    const empresaIdFinal: number =
-      user?.rol === "CLIENTE"
-        ? Number(user.empresaId)
-        : payload.empresaId;
+    // empresaId final
+    const empresaIdFinal = isCliente(user) ? Number(user.empresaId) : Number(payload.empresaId);
 
     if (!Number.isFinite(empresaIdFinal) || empresaIdFinal <= 0) {
-      return res.status(400).json({ error: "empresaId inválido" });
+      return res.status(400).json({ error: "empresaId inválido o faltante" });
     }
+
+    // tecnicoId final (robusto)
+    const tecnicoIdFinal = await resolveTecnicoId(user, payload);
+
+    if (!tecnicoIdFinal || !Number.isFinite(tecnicoIdFinal) || tecnicoIdFinal <= 0) {
+      return res.status(400).json({
+        error:
+          "No se pudo detectar el técnico. Envía 'tecnicoId' o 'tecnicoEmail' en el body, o asegúrate que tu token corresponda a un técnico.",
+      });
+    }
+
+    const [empresaOk, tecnicoOk] = await Promise.all([
+      assertEmpresaExists(empresaIdFinal),
+      assertTecnicoExists(tecnicoIdFinal),
+    ]);
+
+    if (!empresaOk) return res.status(400).json({ error: "empresaId no existe" });
+    if (!tecnicoOk) return res.status(400).json({ error: "tecnicoId no existe" });
 
     const isBatch =
       (payload.solicitantesIds && payload.solicitantesIds.length > 0) ||
       (payload.solicitantesNombres && payload.solicitantesNombres.length > 0);
 
-    const commonData = {
-      empresaId: empresaIdFinal,
-      tecnicoId: payload.tecnicoId,
-      inicio: payload.inicio,
-      fin: payload.fin ?? null,
-      status: payload.status,
+    const otrosDetalleFinal =
+      payload.otros === undefined
+        ? payload.otrosDetalle ?? null
+        : payload.otros
+        ? payload.otrosDetalle ?? null
+        : null;
 
-      soporteRemoto: !!payload.soporteRemoto,
-      actualizaciones: !!payload.actualizaciones,
-      antivirus: !!payload.antivirus,
-      ccleaner: !!payload.ccleaner,
-      estadoDisco: !!payload.estadoDisco,
-      licenciaOffice: !!payload.licenciaOffice,
-      licenciaWindows: !!payload.licenciaWindows,
-      optimizacion: !!payload.optimizacion,
-      respaldo: !!payload.respaldo,
-      otros: !!payload.otros,
-      otrosDetalle: payload.otros ? (payload.otrosDetalle ?? null) : null,
-    }
+    type CommonMantencionCreate = Omit<
+    Prisma.MantencionRemotaUncheckedCreateInput,
+    "solicitante" | "solicitanteId"
+    >;
 
+    const commonData: CommonMantencionCreate = {
+    empresaId: empresaIdFinal,
+    tecnicoId: tecnicoIdFinal,
+
+    inicio: payload.inicio,
+    fin: payload.fin ?? null,
+    status: payload.status ?? "PENDIENTE",
+
+    soporteRemoto: !!payload.soporteRemoto,
+    actualizaciones: !!payload.actualizaciones,
+    antivirus: !!payload.antivirus,
+    ccleaner: !!payload.ccleaner,
+    estadoDisco: !!payload.estadoDisco,
+    licenciaOffice: !!payload.licenciaOffice,
+    licenciaWindows: !!payload.licenciaWindows,
+    optimizacion: !!payload.optimizacion,
+    respaldo: !!payload.respaldo,
+    otros: !!payload.otros,
+    otrosDetalle: otrosDetalleFinal,
+    };
+
+    // SINGLE
     if (!isBatch) {
       let solicitante = payload.solicitante?.trim();
       let solicitanteId: number | null = payload.solicitanteId ?? null;
@@ -279,9 +515,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       }
 
       if (!solicitante) {
-        return res.status(400).json({
-          error: "Debe indicar 'solicitante' o 'solicitanteId' válido",
-        });
+        return res.status(400).json({ error: "Debe indicar 'solicitante' o 'solicitanteId' válido" });
       }
 
       const created = await prisma.mantencionRemota.create({
@@ -292,7 +526,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       return res.status(201).json(created);
     }
 
-    // ===== MODO LOTE =====
+    // LOTE
     let resolvedFromIds: Array<{ solicitanteId: number; solicitante: string }> = [];
 
     if (payload.solicitantesIds?.length) {
@@ -305,10 +539,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       const missing = payload.solicitantesIds.filter((id) => !foundIds.has(id));
 
       if (missing.length) {
-        return res.status(400).json({
-          error: "Algunos solicitantesId no existen",
-          missing,
-        });
+        return res.status(400).json({ error: "Algunos solicitantesId no existen", missing });
       }
 
       resolvedFromIds = rows.map((r) => ({
@@ -317,14 +548,12 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       }));
     }
 
-    const fromNames: Array<{ solicitanteId: number | null; solicitante: string }> =
-      (payload.solicitantesNombres ?? [])
-        .map((n) => n.trim())
-        .filter((n) => n.length > 0)
-        .map((n) => ({ solicitanteId: null, solicitante: n }));
+    const fromNames: Array<{ solicitanteId: number | null; solicitante: string }> = (payload.solicitantesNombres ?? [])
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0)
+      .map((n) => ({ solicitanteId: null, solicitante: n }));
 
-    const allTargets: Array<{ solicitanteId: number | null; solicitante: string }> =
-      [];
+    const allTargets: Array<{ solicitanteId: number | null; solicitante: string }> = [];
     const seen = new Set<string>();
 
     for (const r of [...resolvedFromIds, ...fromNames]) {
@@ -336,9 +565,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
     }
 
     if (allTargets.length === 0) {
-      return res.status(400).json({
-        error: "No hay solicitantes válidos para crear mantenciones",
-      });
+      return res.status(400).json({ error: "No hay solicitantes válidos para crear mantenciones" });
     }
 
     const createdList = await prisma.$transaction(
@@ -354,11 +581,13 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       )
     );
 
-    return res
-      .status(201)
-      .json({ createdCount: createdList.length, mantenciones: createdList });
+    return res.status(201).json({
+      createdCount: createdList.length,
+      mantenciones: createdList,
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
+      console.log("[mantencionesRemotas.create] zod:", err.flatten());
       return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
     }
     console.error("[mantencionesRemotas.create] error:", err);
@@ -367,7 +596,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
 };
 
 /* ------------------------------------ */
-/* Actualizar                            */
+/* Update                                */
 /* ------------------------------------ */
 
 export const updateMantencionRemota = async (req: Request, res: Response) => {
@@ -376,10 +605,10 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
 
   try {
     const payload = UpdateMantencionSchema.parse(req.body);
-    const user = (req as any).user as { rol?: string; empresaId?: number | null };
+    const user = getUser(req);
 
-    // Si es cliente, validar pertenencia y bloquear cambios peligrosos
-    if (user?.rol === "CLIENTE") {
+    // Cliente: validar ownership + bloquear cambio empresa
+    if (isCliente(user)) {
       const current = await prisma.mantencionRemota.findUnique({
         where: { id_mantencion: id },
         select: { empresaId: true },
@@ -389,9 +618,17 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
       if (current.empresaId !== Number(user.empresaId)) {
         return res.status(403).json({ error: "No autorizado" });
       }
-
-      // No permitir cambiar empresaId
       (payload as any).empresaId = undefined;
+    }
+
+    if (payload.empresaId !== undefined) {
+      const ok = await assertEmpresaExists(payload.empresaId);
+      if (!ok) return res.status(400).json({ error: "empresaId no existe" });
+    }
+
+    if (payload.tecnicoId !== undefined) {
+      const tecnicoOk = await assertTecnicoExists(payload.tecnicoId);
+      if (!tecnicoOk) return res.status(400).json({ error: "tecnicoId no existe" });
     }
 
     let solicitanteToSet = payload.solicitante;
@@ -408,8 +645,8 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
       payload.otros === undefined
         ? payload.otrosDetalle
         : payload.otros
-          ? payload.otrosDetalle ?? null
-          : null;
+        ? payload.otrosDetalle ?? null
+        : null;
 
     const updated = await prisma.mantencionRemota.update({
       where: { id_mantencion: id },
@@ -433,7 +670,7 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
         ...(payload.respaldo !== undefined ? { respaldo: !!payload.respaldo } : {}),
         ...(payload.otros !== undefined ? { otros: !!payload.otros } : {}),
         ...(otrosDetalle !== undefined ? { otrosDetalle } : {}),
-      },
+      } as any,
       select: mantencionSelect,
     });
 
@@ -451,7 +688,7 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
 };
 
 /* ------------------------------------ */
-/* Eliminar                              */
+/* Delete                                */
 /* ------------------------------------ */
 
 export const deleteMantencionRemota = async (req: Request, res: Response) => {
@@ -459,19 +696,24 @@ export const deleteMantencionRemota = async (req: Request, res: Response) => {
   if (!id) return res.status(400).json({ error: "id inválido" });
 
   try {
+    const user = getUser(req);
+
+    const current = await assertClienteOwnershipOr404(id, user);
+    if (!current) return res.status(404).json({ error: "Mantención no encontrada" });
+
     await prisma.mantencionRemota.delete({ where: { id_mantencion: id } });
     return res.status(204).send();
   } catch (err: any) {
-    if (err?.code === "P2025") {
-      return res.status(404).json({ error: "Mantención no encontrada" });
-    }
+    if (err?.status === 403) return res.status(403).json({ error: "No autorizado" });
+    if (err?.code === "P2025") return res.status(404).json({ error: "Mantención no encontrada" });
+
     console.error("[mantencionesRemotas.delete] error:", err);
     return res.status(500).json({ error: "No se pudo eliminar la mantención" });
   }
 };
 
 /* ------------------------------------ */
-/* Acciones rápidas                      */
+/* Close (COMPLETADA)                    */
 /* ------------------------------------ */
 
 export const closeMantencionRemota = async (req: Request, res: Response) => {
@@ -479,23 +721,29 @@ export const closeMantencionRemota = async (req: Request, res: Response) => {
   if (!id) return res.status(400).json({ error: "id inválido" });
 
   try {
+    const user = getUser(req);
+
+    const current = await assertClienteOwnershipOr404(id, user);
+    if (!current) return res.status(404).json({ error: "Mantención no encontrada" });
+
     const updated = await prisma.mantencionRemota.update({
       where: { id_mantencion: id },
       data: { status: "COMPLETADA", fin: new Date() },
       select: mantencionSelect,
     });
+
     return res.json(updated);
   } catch (err: any) {
-    if (err?.code === "P2025") {
-      return res.status(404).json({ error: "Mantención no encontrada" });
-    }
+    if (err?.status === 403) return res.status(403).json({ error: "No autorizado" });
+    if (err?.code === "P2025") return res.status(404).json({ error: "Mantención no encontrada" });
+
     console.error("[mantencionesRemotas.close] error:", err);
     return res.status(500).json({ error: "No se pudo cerrar la mantención" });
   }
 };
 
 /* ------------------------------------ */
-/* Métricas                              */
+/* Metrics                               */
 /* ------------------------------------ */
 
 export const mantencionesRemotasMetrics = async (req: Request, res: Response) => {
@@ -512,17 +760,29 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
     const from = fromQ ? new Date(fromQ) : startDefault;
     const to = toQ ? new Date(toQ) : endDefault;
 
-    const total = await prisma.mantencionRemota.count({
-      where: { inicio: { gte: from, lt: to } },
-    });
+    const user = getUser(req);
+    const empresaIdFilter = isCliente(user) ? parsePositiveInt(user.empresaId) : null;
 
-    const grouped = await prisma.mantencionRemota.groupBy({
+    const baseWhere: Prisma.MantencionRemotaWhereInput = {
+      ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
+      inicio: { gte: from, lt: to },
+    };
+
+    const total = await prisma.mantencionRemota.count({ where: baseWhere });
+
+    const groupedTecnico = await prisma.mantencionRemota.groupBy({
       by: ["tecnicoId"],
-      where: { inicio: { gte: from, lt: to } },
+      where: baseWhere,
       _count: { _all: true },
     });
 
-    const tecnicoIds = grouped.map((g) => g.tecnicoId);
+    const groupedStatus = await prisma.mantencionRemota.groupBy({
+      by: ["status"],
+      where: baseWhere,
+      _count: { _all: true },
+    });
+
+    const tecnicoIds = groupedTecnico.map((g) => g.tecnicoId);
     const tecnicos = tecnicoIds.length
       ? await prisma.tecnico.findMany({
           where: { id_tecnico: { in: tecnicoIds } },
@@ -531,7 +791,7 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
       : [];
 
     const nameById = new Map(tecnicos.map((t) => [t.id_tecnico, t.nombre]));
-    const porTecnico = grouped
+    const porTecnico = groupedTecnico
       .map((g) => ({
         tecnicoId: g.tecnicoId,
         tecnico: nameById.get(g.tecnicoId) ?? `Técnico ${g.tecnicoId}`,
@@ -539,27 +799,52 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
       }))
       .sort((a, b) => b.cantidad - a.cantidad);
 
-    return res.json({ total, porTecnico });
+    const porStatus = groupedStatus
+      .map((g) => ({
+        status: g.status,
+        cantidad: g._count._all,
+      }))
+      .sort((a, b) => b.cantidad - a.cantidad);
+
+    return res.json({ total, porTecnico, porStatus });
   } catch (err) {
     console.error("[mantencionesRemotas.metrics] error:", err);
     return res.status(500).json({ error: "No se pudieron obtener métricas" });
   }
 };
 
-export const getMantencionesRemotasFilters = async (_req: Request, res: Response) => {
-  const [tecnicos, empresas] = await Promise.all([
-    prisma.tecnico.findMany({
+/* ------------------------------------ */
+/* Filters                               */
+/* ------------------------------------ */
+
+export const getMantencionesRemotasFilters = async (req: Request, res: Response) => {
+  try {
+    const user = getUser(req);
+
+    const tecnicosPromise = prisma.tecnico.findMany({
       orderBy: { nombre: "asc" },
       select: { id_tecnico: true, nombre: true },
-    }),
-    prisma.empresa.findMany({
-      orderBy: { nombre: "asc" },
-      select: { id_empresa: true, nombre: true },
-    }),
-  ]);
+    });
 
-  res.json({
-    tecnicos: tecnicos.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
-    empresas: empresas.map((e) => ({ id: e.id_empresa, nombre: e.nombre })),
-  });
+    const empresasPromise = isCliente(user)
+      ? prisma.empresa.findMany({
+          where: { id_empresa: Number(user.empresaId) },
+          orderBy: { nombre: "asc" },
+          select: { id_empresa: true, nombre: true },
+        })
+      : prisma.empresa.findMany({
+          orderBy: { nombre: "asc" },
+          select: { id_empresa: true, nombre: true },
+        });
+
+    const [tecnicos, empresas] = await Promise.all([tecnicosPromise, empresasPromise]);
+
+    return res.json({
+      tecnicos: tecnicos.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
+      empresas: empresas.map((e) => ({ id: e.id_empresa, nombre: e.nombre })),
+    });
+  } catch (err) {
+    console.error("[mantencionesRemotas.filters] error:", err);
+    return res.status(500).json({ error: "No se pudieron cargar filtros" });
+  }
 };
