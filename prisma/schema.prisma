@@ -29,6 +29,7 @@ model Empresa {
   empresaISP          EmpresaISP[]
   servidors           Servidor[]
   tecnicos            Tecnico[]
+  mantencionesRemotas MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
 }
 
 model Sucursal {
@@ -103,22 +104,17 @@ model FichaEmpresa {
 model FichaTecnicaEmpresa {
   id                      Int       @id @default(autoincrement())
   empresaId               Int       @unique
-  /// *
   /// * ===================== Técnicos / Visitas =====================
   tecnicoPrincipal        String?
   tecnicosRespaldo        String?
   observacionesVisita     String?
-  /// *
   /// * ===================== Software y sistemas =====================
   sistemasOperativos      String?
-  /// *
   /// * ===================== Redes y conectividad =====================
   proveedorInternet       String?
-  /// *
   /// * ===================== Servicios digitales =====================
   dominioWeb              String?
   redesSociales           String?
-  /// *
   /// * ===================== Respaldo y seguridad =====================
   metodoRespaldo          String?
   frecuenciaRespaldo      String?
@@ -136,7 +132,6 @@ model FichaTecnicaEmpresa {
   impresorasPerifericos   String?
   licenciasVigentes       String?
   otrosEquipos            String?
-  /// *
   /// * ===================== Equipos y hardware =====================
   pcsNotebooks            String?
   proximaVisitaProgramada DateTime?
@@ -246,26 +241,27 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante   Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre           String
-  email            String?
-  telefono         String?
-  empresaId        Int
-  clienteId        Int?                    @unique
-  googleUserId     String?                 @unique
-  isActive         Boolean                 @default(true)
-  microsoftUserId  String?                 @unique
-  accountType      AccountType?
-  empresa          Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos          Equipo[]
-  visitas          Visita[]                @relation("Solicitante_Visita")
-  historiales      Historial[]             @relation("Solicitante_Historial")
-  tickets          FreshdeskTicket[]
-  requesterMaps    FreshdeskRequesterMap[]
-  msLicenses       SolicitanteMsLicense[]
-  ticketsRids      Ticket[]
-  firma            Firma?
-  servidorUsuarios ServidorUsuario[]
+  id_solicitante      Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre              String
+  email               String?
+  telefono            String?
+  empresaId           Int
+  clienteId           Int?                    @unique
+  googleUserId        String?                 @unique
+  isActive            Boolean                 @default(true)
+  microsoftUserId     String?                 @unique
+  accountType         AccountType?
+  empresa             Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+  equipos             Equipo[]
+  visitas             Visita[]                @relation("Solicitante_Visita")
+  historiales         Historial[]             @relation("Solicitante_Historial")
+  tickets             FreshdeskTicket[]
+  requesterMaps       FreshdeskRequesterMap[]
+  msLicenses          SolicitanteMsLicense[]
+  ticketsRids         Ticket[]
+  firma               Firma?
+  servidorUsuarios    ServidorUsuario[]
+  mantencionesRemotas MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
 
   @@index([empresaId])
   @@index([isActive])
@@ -491,23 +487,24 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico      Int                     @id @default(autoincrement())
-  nombre          String
-  email           String                  @unique
-  passwordHash    String
-  status          Boolean                 @default(true)
-  empresaId       Int?
-  rol             String                  @default("TECNICO")
-  empresa         Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  tokens          RefreshToken[]
-  historiales     Historial[]
-  visitas         Visita[]
-  detalleTrabajos DetalleTrabajoGestioo[]
-  entregas        Entrega[]
-  tickets         Ticket[]
-  firma           Firma?
-  cotizaciones    CotizacionGestioo[]
-  auditLogs       AuditLog[]
+  id_tecnico          Int                     @id @default(autoincrement())
+  nombre              String
+  email               String                  @unique
+  passwordHash        String
+  status              Boolean                 @default(true)
+  empresaId           Int?
+  rol                 String                  @default("TECNICO")
+  empresa             Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  tokens              RefreshToken[]
+  historiales         Historial[]
+  visitas             Visita[]
+  detalleTrabajos     DetalleTrabajoGestioo[]
+  entregas            Entrega[]
+  tickets             Ticket[]
+  firma               Firma?
+  cotizaciones        CotizacionGestioo[]
+  auditLogs           AuditLog[]
+  mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
 
   @@index([empresaId])
 }
@@ -546,6 +543,37 @@ model Visita {
   @@index([tecnicoId])
   @@index([solicitanteId])
   @@index([sucursalId])
+}
+
+model MantencionRemota {
+  id_mantencion   Int          @id @default(autoincrement())
+  empresaId       Int
+  tecnicoId       Int
+  solicitanteId   Int?
+  solicitante     String
+  inicio          DateTime
+  fin             DateTime?
+  soporteRemoto   Boolean      @default(true)
+  actualizaciones Boolean      @default(false)
+  antivirus       Boolean      @default(false)
+  ccleaner        Boolean      @default(false)
+  estadoDisco     Boolean      @default(false)
+  licenciaOffice  Boolean      @default(false)
+  licenciaWindows Boolean      @default(false)
+  optimizacion    Boolean      @default(false)
+  respaldo        Boolean      @default(false)
+  otros           Boolean      @default(false)
+  otrosDetalle    String?
+  status          String       @default("PENDIENTE")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  empresa         Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
+  tecnico         Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef  Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
+
+  @@index([empresaId])
+  @@index([tecnicoId])
+  @@index([inicio])
 }
 
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
@@ -830,51 +858,21 @@ model ChatLog {
   text      String?
 }
 
-model MantencionRemota {
-  id_mantencion   Int       @id @default(autoincrement())
-  empresaId       Int
-  tecnicoId       Int
-  solicitanteId   Int?
-  solicitante     String
-  inicio          DateTime
-  fin             DateTime?
-  soporteRemoto   Boolean   @default(true)
-  actualizaciones Boolean   @default(false)
-  antivirus       Boolean   @default(false)
-  ccleaner        Boolean   @default(false)
-  estadoDisco     Boolean   @default(false)
-  licenciaOffice  Boolean   @default(false)
-  licenciaWindows Boolean   @default(false)
-  optimizacion    Boolean   @default(false)
-  respaldo        Boolean   @default(false)
-  otros           Boolean   @default(false)
-  otrosDetalle    String?
-  status          String    @default("PENDIENTE")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime
-
-  @@index([empresaId])
-  @@index([inicio])
-  @@index([tecnicoId])
-}
-
 model AuditLog {
   id          Int         @id @default(autoincrement())
   entity      String
   entityId    String
-  empresaId   Int?
   action      AuditAction
   changes     Json?
   description String?
   createdAt   DateTime    @default(now())
-
-  actorId Int?
-  actor   Tecnico? @relation(fields: [actorId], references: [id_tecnico])
+  actorId     Int?
+  empresaId   Int?
+  actor       Tecnico?    @relation(fields: [actorId], references: [id_tecnico])
 
   @@index([entity])
   @@index([entityId])
   @@index([createdAt])
-  @@index([actorId])
 }
 
 enum AuditAction {

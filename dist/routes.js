@@ -9,6 +9,7 @@ import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
+import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 // Reportes e Inventario export
 import inventarioRoutes from "./routes/inventario.routes.js";
@@ -54,6 +55,7 @@ api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
 api.use("/ficha-empresa", fichaEmpresasRouter);
+api.use("/mantenciones-remotas", mantencionesRemotasRouter);
 api.use("/tecnicos", tecnicosRouter);
 // Reportes e Inventario
 api.use("/inventario", inventarioRoutes);

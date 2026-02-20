@@ -24,15 +24,13 @@ export function auth(required = true): RequestHandler {
     const token = header.slice(7);
 
     try {
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_SECRET!
-      ) as JwtPayloadCustom;
+      const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayloadCustom;
 
       (req as any).user = {
         id: Number(payload.sub),
         rol: payload.rol ?? "TECNICO",
         empresaId: payload.empresaId ?? null,
+        email: payload.email ?? null, // ✅ CLAVE
       };
 
       // 🔥 Guardar usuario en contexto global para auditoría

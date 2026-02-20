@@ -16,6 +16,7 @@ export function auth(required = true) {
                 id: Number(payload.sub),
                 rol: payload.rol ?? "TECNICO",
                 empresaId: payload.empresaId ?? null,
+                email: payload.email ?? null, // ✅ CLAVE
             };
             // 🔥 Guardar usuario en contexto global para auditoría
             const store = asyncLocalStorage.getStore();

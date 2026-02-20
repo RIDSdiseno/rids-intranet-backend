@@ -6,6 +6,8 @@ import { z } from "zod";
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
+// ✅ Rol fijo para Tecnico (evita depender de campo inexistente en Prisma)
+const ROL_DEFAULT = "TECNICO";
 const ARGON_REFRESH_TOKEN_OPTIONS = {
     type: argon2.argon2id,
     memoryCost: 512, // optimizado para tokens
@@ -188,7 +190,7 @@ export const login = async (req, res) => {
         }
         const emailNorm = parsed.data.email.trim().toLowerCase();
         const password = parsed.data.password;
-        // Consulta optimizada - traer solo lo necesario
+        // ✅ Traer solo lo necesario (sin rol, porque Tecnico no lo tiene)
         const tecnico = await prisma.tecnico.findUnique({
             where: { email: emailNorm },
             select: {
@@ -197,7 +199,6 @@ export const login = async (req, res) => {
                 email: true,
                 passwordHash: true,
                 status: true,
-                rol: true,
                 empresaId: true,
             },
         });
@@ -206,10 +207,6 @@ export const login = async (req, res) => {
             await new Promise((resolve) => setTimeout(resolve, 100));
             return res.status(401).json({ error: "Credenciales inválidas" });
         }
-        // (opcional) si quieres bloquear usuarios inactivos:
-        // if (!tecnico.status) {
-        //   return res.status(401).json({ error: "Usuario inactivo" });
-        // }
         // Verificación de password optimizada
         const hash = tecnico.passwordHash ?? "";
         let isValid = false;
@@ -222,8 +219,10 @@ export const login = async (req, res) => {
         if (!isValid) {
             return res.status(401).json({ error: "Credenciales inválidas" });
         }
+        // ✅ Rol fijo
+        const rol = ROL_DEFAULT;
         // Generar tokens
-        const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, tecnico.rol ?? "TECNICO", tecnico.empresaId);
+        const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, rol, tecnico.empresaId);
         const refreshRaw = signRefreshToken(tecnico.id_tecnico);
         const hashStart = Date.now();
         const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
@@ -254,7 +253,7 @@ export const login = async (req, res) => {
                 id_tecnico: tecnico.id_tecnico,
                 nombre: tecnico.nombre,
                 email: tecnico.email,
-                rol: tecnico.rol,
+                rol, // ✅ fijo
                 empresaId: tecnico.empresaId,
             },
         });
@@ -307,34 +306,20 @@ export const refresh = async (req, res) => {
                 .status(401)
                 .json({ error: "Refresh no reconocido (revocados los activos)" });
         }
-        // Obtener datos del usuario
+        // ✅ Obtener datos mínimos para generar access token (sin rol)
         const tecnico = await prisma.tecnico.findUnique({
             where: { id_tecnico: userId },
             select: {
                 id_tecnico: true,
-                nombre: true,
                 email: true,
+                empresaId: true,
             },
         });
         if (!tecnico) {
             return res.status(401).json({ error: "Usuario no encontrado" });
         }
-        // Generar nuevos tokens
-        const tecnicoFull = await prisma.tecnico.findUnique({
-            where: { id_tecnico: userId },
-            select: {
-                id_tecnico: true,
-                nombre: true,
-                email: true,
-                rol: true,
-                empresaId: true,
-            },
-        });
-        if (!tecnicoFull) {
-            return res.status(401).json({ error: "Usuario no encontrado" });
-        }
-        const newAccess = signAccessToken(tecnicoFull.id_tecnico, tecnicoFull.email, tecnicoFull.rol ?? "TECNICO", tecnicoFull.empresaId);
-        const newRefreshRaw = signRefreshToken(tecnicoFull.id_tecnico);
+        const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email, ROL_DEFAULT, tecnico.empresaId);
+        const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
         const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const { userAgent, ip } = getClientInfo(req);
         const expiresAt2 = new Date(Date.now() + REFRESH_MS);
@@ -346,16 +331,14 @@ export const refresh = async (req, res) => {
             });
             await tx.refreshToken.create({
                 data: {
-                    userId: tecnicoFull.id_tecnico,
+                    userId: tecnico.id_tecnico,
                     rtHash: newHash,
                     expiresAt: expiresAt2,
                     userAgent,
                     ip,
                 },
             });
-        }, {
-            timeout: 10000,
-        });
+        }, { timeout: 10000 });
         setRefreshCookie(res, newRefreshRaw);
         return res.json({
             accessToken: newAccess,
@@ -364,9 +347,7 @@ export const refresh = async (req, res) => {
     }
     catch (error) {
         console.error("Error en refresh:", error);
-        return res
-            .status(401)
-            .json({ error: "Refresh inválido o expirado" });
+        return res.status(401).json({ error: "Refresh inválido o expirado" });
     }
 };
 export const logout = async (_req, res) => {
@@ -378,6 +359,7 @@ export const me = async (req, res) => {
     if (!user?.id) {
         return res.status(401).json({ error: "No autenticado" });
     }
+    // ✅ sin rol en select
     const tecnico = await prisma.tecnico.findUnique({
         where: { id_tecnico: user.id },
         select: {
@@ -385,14 +367,18 @@ export const me = async (req, res) => {
             nombre: true,
             email: true,
             status: true,
-            rol: true,
             empresaId: true,
         },
     });
     if (!tecnico) {
         return res.status(404).json({ error: "Usuario no encontrado" });
     }
-    return res.json({ tecnico });
+    return res.json({
+        tecnico: {
+            ...tecnico,
+            rol: ROL_DEFAULT,
+        },
+    });
 };
 // Limpiar cache periódicamente
 setInterval(() => {
