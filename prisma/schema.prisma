@@ -873,6 +873,7 @@ model AuditLog {
   @@index([entity])
   @@index([entityId])
   @@index([createdAt])
+  @@index([empresaId])
 }
 
 enum AuditAction {

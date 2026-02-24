@@ -1,4 +1,5 @@
 import { buildReporteEmpresaData } from "../service/reportEmpresa.service.js";
+import { prisma } from "../lib/prisma.js";
 export async function getReporteEmpresa(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);

@@ -38,7 +38,7 @@ const listQuerySchema = z.object({
 });
 
 const createEquipoSchema = z.object({
-  empresaId: z.coerce.number().int().positive().optional(),
+  empresaId: z.coerce.number().int().positive(), // 👈 AHORA OBLIGATORIO
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
 
   tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
@@ -287,7 +287,13 @@ export async function createEquipo(req: Request, res: Response) {
           continue;
         }
 
-        let idSolicitanteFinal: number | null = data.idSolicitante ?? null;
+        let idSolicitanteFinal: number | null =
+          data.idSolicitante === undefined ? null : data.idSolicitante;
+
+        // ✅ Si viene null / undefined => asignamos placeholder de la empresa elegida
+        if (!idSolicitanteFinal) {
+          idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
+        }
 
         const equipo = await prisma.equipo.create({
           data: {
@@ -299,7 +305,7 @@ export async function createEquipo(req: Request, res: Response) {
             ram: data.ram,
             disco: data.disco,
             propiedad: data.propiedad,
-            idSolicitante: idSolicitanteFinal,
+            idSolicitante: idSolicitanteFinal, // ✅ ya no queda null
           },
         });
 
@@ -381,9 +387,16 @@ export async function updateEquipo(req: Request, res: Response) {
 
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: { solicitante: { select: { empresaId: true } } },
+      include: {
+        solicitante: {
+          select: {
+            id_solicitante: true,
+            nombre: true,
+            empresaId: true, // 🔥 AGREGA ESTO
+          },
+        },
+      },
     });
-
     if (!equipoActual) {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }
@@ -418,6 +431,7 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.ram ? { ram: equipoData.ram } : {}),
         ...(equipoData.disco ? { disco: equipoData.disco } : {}),
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
+        ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
 
         // 🔥 AQUI VA EL DETALLE
         detalle: {
@@ -602,5 +616,36 @@ export async function reassignEquipos(req: Request, res: Response) {
     }
     console.error("reassignEquipos error:", err);
     return res.status(500).json({ error: "Error al reasignar equipos" });
+  }
+}
+
+/* ================== HISTORIAL POR EQUIPO ================== */
+// GET /api/equipos/:id/historial
+export async function getEquipoHistorial(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    const user = (req as any).user;
+
+    // Trae logs del equipo + actor
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        entity: "Equipo",
+        entityId: String(id),
+        ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+      },
+      include: {
+        actor: { select: { id_tecnico: true, nombre: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json({ total: logs.length, items: logs });
+  } catch (err) {
+    console.error("getEquipoHistorial error:", err);
+    return res.status(500).json({ error: "Error al obtener historial del equipo" });
   }
 }

@@ -10,6 +10,7 @@ import {
   updateEquipo,
   deleteEquipo,
   reassignEquipos,
+  getEquipoHistorial,
 } from "../controllers/equipos.controller.js";
 
 export const equiposRouter = Router();
@@ -50,5 +51,7 @@ equiposRouter.patch("/:id", requireNumericId, asyncHandler(updateEquipo));
 
 // Borrar
 equiposRouter.delete("/:id", requireNumericId, asyncHandler(deleteEquipo));
+
+equiposRouter.get("/:id/historial", getEquipoHistorial);
 
 export default equiposRouter;

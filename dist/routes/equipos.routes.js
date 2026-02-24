@@ -1,6 +1,6 @@
 // src/routes/equipos.routes.ts
 import { Router, } from "express";
-import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, } from "../controllers/equipos.controller.js";
+import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, getEquipoHistorial, } from "../controllers/equipos.controller.js";
 export const equiposRouter = Router();
 /* ============ Helpers ============ */
 // Async wrapper tipado para capturar rejects sin romper el proceso
@@ -29,5 +29,6 @@ equiposRouter.put("/:id", requireNumericId, asyncHandler(updateEquipo));
 equiposRouter.patch("/:id", requireNumericId, asyncHandler(updateEquipo));
 // Borrar
 equiposRouter.delete("/:id", requireNumericId, asyncHandler(deleteEquipo));
+equiposRouter.get("/:id/historial", getEquipoHistorial);
 export default equiposRouter;
 //# sourceMappingURL=equipos.routes.js.map
