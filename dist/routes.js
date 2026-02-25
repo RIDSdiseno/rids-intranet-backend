@@ -41,7 +41,7 @@ import uploadRoutes from "./routes/upload-imagenes.routes.js";
 import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
 import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
-import auditRouter from "../src/routes/historial-cambios-routes/audit.routes.js";
+import auditRouter from "./routes/historial-cambios-routes/audit.routes.js";
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 export const api = Router();
