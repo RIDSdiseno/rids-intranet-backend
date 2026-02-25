@@ -61,7 +61,7 @@ function isTecnico(user: AuthedUser) {
 async function assertClienteOwnershipOr404(
   id_mantencion: number,
   user: AuthedUser
-): Promise<{ empresaId: number } | null> {
+): Promise<{ empresaId: number | null } | null> {
   const current = await prisma.mantencionRemota.findUnique({
     where: { id_mantencion },
     select: { empresaId: true },
@@ -76,6 +76,7 @@ async function assertClienteOwnershipOr404(
       (err as any).status = 403;
       throw err;
     }
+
     if (current.empresaId !== userEmpresa) {
       const err = new Error("No autorizado");
       (err as any).status = 403;
@@ -312,8 +313,8 @@ function buildWhereFromQuery(req: Request): Prisma.MantencionRemotaWhereInput {
   const empresaIdFilter = isCliente(user)
     ? parsePositiveInt(user.empresaId)
     : empresaIdQ
-    ? parsePositiveInt(empresaIdQ)
-    : null;
+      ? parsePositiveInt(empresaIdQ)
+      : null;
 
   const where: Prisma.MantencionRemotaWhereInput = {
     ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
@@ -322,14 +323,14 @@ function buildWhereFromQuery(req: Request): Prisma.MantencionRemotaWhereInput {
     ...(dateFilter ? { inicio: dateFilter } : {}),
     ...(q
       ? {
-          OR: [
-            { solicitante: { contains: q, mode: INS } },
-            { otrosDetalle: { contains: q, mode: INS } },
-            { empresa: { is: { nombre: { contains: q, mode: INS } } } },
-            { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
-            { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-          ],
-        }
+        OR: [
+          { solicitante: { contains: q, mode: INS } },
+          { otrosDetalle: { contains: q, mode: INS } },
+          { empresa: { is: { nombre: { contains: q, mode: INS } } } },
+          { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
+          { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
+        ],
+      }
       : {}),
   };
 
@@ -471,33 +472,33 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
       payload.otros === undefined
         ? payload.otrosDetalle ?? null
         : payload.otros
-        ? payload.otrosDetalle ?? null
-        : null;
+          ? payload.otrosDetalle ?? null
+          : null;
 
     type CommonMantencionCreate = Omit<
-    Prisma.MantencionRemotaUncheckedCreateInput,
-    "solicitante" | "solicitanteId"
+      Prisma.MantencionRemotaUncheckedCreateInput,
+      "solicitante" | "solicitanteId"
     >;
 
     const commonData: CommonMantencionCreate = {
-    empresaId: empresaIdFinal,
-    tecnicoId: tecnicoIdFinal,
+      empresaId: empresaIdFinal,
+      tecnicoId: tecnicoIdFinal,
 
-    inicio: payload.inicio,
-    fin: payload.fin ?? null,
-    status: payload.status ?? "PENDIENTE",
+      inicio: payload.inicio,
+      fin: payload.fin ?? null,
+      status: payload.status ?? "PENDIENTE",
 
-    soporteRemoto: !!payload.soporteRemoto,
-    actualizaciones: !!payload.actualizaciones,
-    antivirus: !!payload.antivirus,
-    ccleaner: !!payload.ccleaner,
-    estadoDisco: !!payload.estadoDisco,
-    licenciaOffice: !!payload.licenciaOffice,
-    licenciaWindows: !!payload.licenciaWindows,
-    optimizacion: !!payload.optimizacion,
-    respaldo: !!payload.respaldo,
-    otros: !!payload.otros,
-    otrosDetalle: otrosDetalleFinal,
+      soporteRemoto: !!payload.soporteRemoto,
+      actualizaciones: !!payload.actualizaciones,
+      antivirus: !!payload.antivirus,
+      ccleaner: !!payload.ccleaner,
+      estadoDisco: !!payload.estadoDisco,
+      licenciaOffice: !!payload.licenciaOffice,
+      licenciaWindows: !!payload.licenciaWindows,
+      optimizacion: !!payload.optimizacion,
+      respaldo: !!payload.respaldo,
+      otros: !!payload.otros,
+      otrosDetalle: otrosDetalleFinal,
     };
 
     // SINGLE
@@ -645,8 +646,8 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
       payload.otros === undefined
         ? payload.otrosDetalle
         : payload.otros
-        ? payload.otrosDetalle ?? null
-        : null;
+          ? payload.otrosDetalle ?? null
+          : null;
 
     const updated = await prisma.mantencionRemota.update({
       where: { id_mantencion: id },
@@ -782,21 +783,36 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
       _count: { _all: true },
     });
 
-    const tecnicoIds = groupedTecnico.map((g) => g.tecnicoId);
+    // 🔹 Filtrar null correctamente (type guard)
+    const tecnicoIds = groupedTecnico
+      .map((g) => g.tecnicoId)
+      .filter((id): id is number => id !== null);
+
     const tecnicos = tecnicoIds.length
       ? await prisma.tecnico.findMany({
-          where: { id_tecnico: { in: tecnicoIds } },
-          select: { id_tecnico: true, nombre: true },
-        })
+        where: { id_tecnico: { in: tecnicoIds } },
+        select: { id_tecnico: true, nombre: true },
+      })
       : [];
 
     const nameById = new Map(tecnicos.map((t) => [t.id_tecnico, t.nombre]));
+
     const porTecnico = groupedTecnico
-      .map((g) => ({
-        tecnicoId: g.tecnicoId,
-        tecnico: nameById.get(g.tecnicoId) ?? `Técnico ${g.tecnicoId}`,
-        cantidad: g._count._all,
-      }))
+      .map((g) => {
+        if (g.tecnicoId === null) {
+          return {
+            tecnicoId: null,
+            tecnico: "Sin asignar",
+            cantidad: g._count._all,
+          };
+        }
+
+        return {
+          tecnicoId: g.tecnicoId,
+          tecnico: nameById.get(g.tecnicoId) ?? `Técnico ${g.tecnicoId}`,
+          cantidad: g._count._all,
+        };
+      })
       .sort((a, b) => b.cantidad - a.cantidad);
 
     const porStatus = groupedStatus
@@ -828,14 +844,14 @@ export const getMantencionesRemotasFilters = async (req: Request, res: Response)
 
     const empresasPromise = isCliente(user)
       ? prisma.empresa.findMany({
-          where: { id_empresa: Number(user.empresaId) },
-          orderBy: { nombre: "asc" },
-          select: { id_empresa: true, nombre: true },
-        })
+        where: { id_empresa: Number(user.empresaId) },
+        orderBy: { nombre: "asc" },
+        select: { id_empresa: true, nombre: true },
+      })
       : prisma.empresa.findMany({
-          orderBy: { nombre: "asc" },
-          select: { id_empresa: true, nombre: true },
-        });
+        orderBy: { nombre: "asc" },
+        select: { id_empresa: true, nombre: true },
+      });
 
     const [tecnicos, empresas] = await Promise.all([tecnicosPromise, empresasPromise]);
 

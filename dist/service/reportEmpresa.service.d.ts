@@ -83,7 +83,7 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
             solicitante: string;
             tecnico: {
                 nombre: string;
-            };
+            } | null;
             inicio: Date;
             fin: Date | null;
             status: string;

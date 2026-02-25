@@ -39,12 +39,16 @@ export function auth(required = true): RequestHandler {
       return asyncLocalStorage.run({ userId: Number(payload.sub) }, async () => {
         next();
       });
-    } catch {
+    } catch (err: any) {
       if (!required) {
         return asyncLocalStorage.run({ userId: null }, () => next());
       }
-      res.status(401).json({ error: "Invalid token" });
-      return;
+
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({ error: "TOKEN_EXPIRED" });
+      }
+
+      return res.status(401).json({ error: "INVALID_TOKEN" });
     }
   };
 }

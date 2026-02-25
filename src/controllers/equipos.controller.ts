@@ -81,6 +81,14 @@ const equipoUpdateSchema = z.object({
   teamViewer: z.string().optional(),
   claveTv: z.string().optional(),
   revisado: z.string().optional(),
+  adminRidsUsuario: z.string().optional(),
+  adminRidsPassword: z.string().optional(),
+
+  usuarioEmpresa: z.string().optional(),
+  passwordEmpresa: z.string().optional(),
+
+  usuarioPersonal: z.string().optional(),
+  passwordPersonal: z.string().optional(),
 
   empresaId: z.coerce.number().int().positive().optional(),
 });
@@ -147,6 +155,13 @@ function flattenRow(e: any) {
     teamViewer: detalle?.teamViewer ?? null,
     claveTv: detalle?.claveTv ?? null,
     revisado: detalle?.revisado ?? null,
+
+    adminRidsUsuario: detalle?.adminRidsUsuario ?? null,
+    adminRidsPassword: detalle?.adminRidsPassword ?? null,
+    usuarioEmpresa: detalle?.usuarioEmpresa ?? null,
+    passwordEmpresa: detalle?.passwordEmpresa ?? null,
+    usuarioPersonal: detalle?.usuarioPersonal ?? null,
+    passwordPersonal: detalle?.passwordPersonal ?? null,
   };
 }
 
@@ -382,6 +397,14 @@ export async function updateEquipo(req: Request, res: Response) {
       teamViewer,
       claveTv,
       revisado,
+
+      adminRidsUsuario,
+      adminRidsPassword,
+      usuarioEmpresa,
+      passwordEmpresa,
+      usuarioPersonal,
+      passwordPersonal,
+
       ...equipoData
     } = data;
 
@@ -445,6 +468,12 @@ export async function updateEquipo(req: Request, res: Response) {
               teamViewer: teamViewer ?? null,
               claveTv: claveTv ?? null,
               revisado: revisado ?? null,
+              adminRidsUsuario: adminRidsUsuario ?? null,
+              adminRidsPassword: adminRidsPassword ?? null,
+              usuarioEmpresa: usuarioEmpresa ?? null,
+              passwordEmpresa: passwordEmpresa ?? null,
+              usuarioPersonal: usuarioPersonal ?? null,
+              passwordPersonal: passwordPersonal ?? null,
             },
             update: {
               macWifi: macWifi ?? null,
@@ -455,6 +484,14 @@ export async function updateEquipo(req: Request, res: Response) {
               teamViewer: teamViewer ?? null,
               claveTv: claveTv ?? null,
               revisado: revisado ?? null,
+              adminRidsUsuario: adminRidsUsuario ?? null,
+              adminRidsPassword: adminRidsPassword ?? null,
+
+              usuarioEmpresa: usuarioEmpresa ?? null,
+              passwordEmpresa: passwordEmpresa ?? null,
+
+              usuarioPersonal: usuarioPersonal ?? null,
+              passwordPersonal: passwordPersonal ?? null,
             },
           },
         },

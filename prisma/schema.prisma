@@ -412,7 +412,7 @@ model Equipo {
   procesador             String?
   ram                    String?
   disco                  String?
-  propiedad              String                  @default("ASUR")
+  propiedad              String                  @default("Empresa")
   tipo                   TipoEquipo              @default(GENERICO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
@@ -434,7 +434,17 @@ model DetalleEquipo {
   teamViewer String?
   claveTv    String?
   revisado   String?
-  equipo     Equipo  @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+
+  adminRidsUsuario  String?
+  adminRidsPassword String?
+
+  usuarioEmpresa  String?
+  passwordEmpresa String?
+
+  usuarioPersonal  String?
+  passwordPersonal String?
+
+  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
@@ -489,6 +499,7 @@ model RefreshToken {
 model Tecnico {
   id_tecnico          Int                     @id @default(autoincrement())
   nombre              String
+  teamviewerUserId    String?                 @unique
   email               String                  @unique
   passwordHash        String
   status              Boolean                 @default(true)
@@ -546,30 +557,39 @@ model Visita {
 }
 
 model MantencionRemota {
-  id_mantencion   Int          @id @default(autoincrement())
-  empresaId       Int
-  tecnicoId       Int
+  id_mantencion Int @id @default(autoincrement())
+
+  // 🔹 NUEVOS CAMPOS PARA TEAMVIEWER
+  teamviewerId    String? @unique
+  deviceId        String?
+  deviceNombre    String?
+  duracionMinutos Int?
+  origen          String? @default("MANUAL") // MANUAL | TEAMVIEWER
+
+  empresaId       Int?
+  tecnicoId       Int?
   solicitanteId   Int?
   solicitante     String
   inicio          DateTime
   fin             DateTime?
-  soporteRemoto   Boolean      @default(true)
-  actualizaciones Boolean      @default(false)
-  antivirus       Boolean      @default(false)
-  ccleaner        Boolean      @default(false)
-  estadoDisco     Boolean      @default(false)
-  licenciaOffice  Boolean      @default(false)
-  licenciaWindows Boolean      @default(false)
-  optimizacion    Boolean      @default(false)
-  respaldo        Boolean      @default(false)
-  otros           Boolean      @default(false)
+  soporteRemoto   Boolean   @default(true)
+  actualizaciones Boolean   @default(false)
+  antivirus       Boolean   @default(false)
+  ccleaner        Boolean   @default(false)
+  estadoDisco     Boolean   @default(false)
+  licenciaOffice  Boolean   @default(false)
+  licenciaWindows Boolean   @default(false)
+  optimizacion    Boolean   @default(false)
+  respaldo        Boolean   @default(false)
+  otros           Boolean   @default(false)
   otrosDetalle    String?
-  status          String       @default("PENDIENTE")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  empresa         Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
-  tecnico         Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
-  solicitanteRef  Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
+  status          String    @default("PENDIENTE")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  empresa        Empresa?      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
+  tecnico        Tecnico?      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
+  solicitanteRef Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
 
   @@index([empresaId])
   @@index([tecnicoId])

@@ -66,6 +66,12 @@ const equipoUpdateSchema = z.object({
     teamViewer: z.string().optional(),
     claveTv: z.string().optional(),
     revisado: z.string().optional(),
+    adminRidsUsuario: z.string().optional(),
+    adminRidsPassword: z.string().optional(),
+    usuarioEmpresa: z.string().optional(),
+    passwordEmpresa: z.string().optional(),
+    usuarioPersonal: z.string().optional(),
+    passwordPersonal: z.string().optional(),
     empresaId: z.coerce.number().int().positive().optional(),
 });
 /* ================== CACHE SIMPLE ================== */
@@ -117,6 +123,12 @@ function flattenRow(e) {
         teamViewer: detalle?.teamViewer ?? null,
         claveTv: detalle?.claveTv ?? null,
         revisado: detalle?.revisado ?? null,
+        adminRidsUsuario: detalle?.adminRidsUsuario ?? null,
+        adminRidsPassword: detalle?.adminRidsPassword ?? null,
+        usuarioEmpresa: detalle?.usuarioEmpresa ?? null,
+        passwordEmpresa: detalle?.passwordEmpresa ?? null,
+        usuarioPersonal: detalle?.usuarioPersonal ?? null,
+        passwordPersonal: detalle?.passwordPersonal ?? null,
     };
 }
 async function ensurePlaceholderSolicitante(empresaId) {
@@ -313,7 +325,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        const { macWifi, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, ...equipoData } = data;
+        const { macWifi, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: {
@@ -369,6 +381,12 @@ export async function updateEquipo(req, res) {
                             teamViewer: teamViewer ?? null,
                             claveTv: claveTv ?? null,
                             revisado: revisado ?? null,
+                            adminRidsUsuario: adminRidsUsuario ?? null,
+                            adminRidsPassword: adminRidsPassword ?? null,
+                            usuarioEmpresa: usuarioEmpresa ?? null,
+                            passwordEmpresa: passwordEmpresa ?? null,
+                            usuarioPersonal: usuarioPersonal ?? null,
+                            passwordPersonal: passwordPersonal ?? null,
                         },
                         update: {
                             macWifi: macWifi ?? null,
@@ -379,6 +397,12 @@ export async function updateEquipo(req, res) {
                             teamViewer: teamViewer ?? null,
                             claveTv: claveTv ?? null,
                             revisado: revisado ?? null,
+                            adminRidsUsuario: adminRidsUsuario ?? null,
+                            adminRidsPassword: adminRidsPassword ?? null,
+                            usuarioEmpresa: usuarioEmpresa ?? null,
+                            passwordEmpresa: passwordEmpresa ?? null,
+                            usuarioPersonal: usuarioPersonal ?? null,
+                            passwordPersonal: passwordPersonal ?? null,
                         },
                     },
                 },

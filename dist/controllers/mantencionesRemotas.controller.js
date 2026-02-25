@@ -653,7 +653,10 @@ export const mantencionesRemotasMetrics = async (req, res) => {
             where: baseWhere,
             _count: { _all: true },
         });
-        const tecnicoIds = groupedTecnico.map((g) => g.tecnicoId);
+        // 🔹 Filtrar null correctamente (type guard)
+        const tecnicoIds = groupedTecnico
+            .map((g) => g.tecnicoId)
+            .filter((id) => id !== null);
         const tecnicos = tecnicoIds.length
             ? await prisma.tecnico.findMany({
                 where: { id_tecnico: { in: tecnicoIds } },
@@ -662,11 +665,20 @@ export const mantencionesRemotasMetrics = async (req, res) => {
             : [];
         const nameById = new Map(tecnicos.map((t) => [t.id_tecnico, t.nombre]));
         const porTecnico = groupedTecnico
-            .map((g) => ({
-            tecnicoId: g.tecnicoId,
-            tecnico: nameById.get(g.tecnicoId) ?? `Técnico ${g.tecnicoId}`,
-            cantidad: g._count._all,
-        }))
+            .map((g) => {
+            if (g.tecnicoId === null) {
+                return {
+                    tecnicoId: null,
+                    tecnico: "Sin asignar",
+                    cantidad: g._count._all,
+                };
+            }
+            return {
+                tecnicoId: g.tecnicoId,
+                tecnico: nameById.get(g.tecnicoId) ?? `Técnico ${g.tecnicoId}`,
+                cantidad: g._count._all,
+            };
+        })
             .sort((a, b) => b.cantidad - a.cantidad);
         const porStatus = groupedStatus
             .map((g) => ({
