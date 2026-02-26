@@ -551,4 +551,32 @@ export async function reassignEquipos(req, res) {
         return res.status(500).json({ error: "Error al reasignar equipos" });
     }
 }
+/* ================== HISTORIAL POR EQUIPO ================== */
+// GET /api/equipos/:id/historial
+export async function getEquipoHistorial(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ error: "ID inválido" });
+        }
+        const user = req.user;
+        // Trae logs del equipo + actor
+        const logs = await prisma.auditLog.findMany({
+            where: {
+                entity: "Equipo",
+                entityId: String(id),
+                ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+            },
+            include: {
+                actor: { select: { id_tecnico: true, nombre: true, email: true } },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+        return res.json({ total: logs.length, items: logs });
+    }
+    catch (err) {
+        console.error("getEquipoHistorial error:", err);
+        return res.status(500).json({ error: "Error al obtener historial del equipo" });
+    }
+}
 //# sourceMappingURL=equipos.controller.js.map

@@ -10,6 +10,7 @@ import {
   updateEquipo,
   deleteEquipo,
   reassignEquipos,
+  getEquipoHistorial
 } from "../controllers/equipos.controller.js";
 
 export const equiposRouter = Router();
@@ -40,6 +41,8 @@ equiposRouter.get("/", asyncHandler(listEquipos));
 equiposRouter.post("/", asyncHandler(createEquipo));
 
 equiposRouter.patch("/reasignar",asyncHandler(reassignEquipos));
+
+equiposRouter.get("/:id/historial", getEquipoHistorial);
 
 // Leer uno
 equiposRouter.get("/:id", requireNumericId, asyncHandler(getEquipoById));
