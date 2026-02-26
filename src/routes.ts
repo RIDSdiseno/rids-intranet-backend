@@ -14,6 +14,9 @@ import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 
+// ✅ Maintenance / Jobs
+import solicitantesMaintenanceRouter from "./routes/solicitantesMaintenance.routes.js";
+
 // Reportes e Inventario export
 import inventarioRoutes from "./routes/inventario.routes.js";
 import reportesUploadRouter from "./routes/reportes-upload.routes.js";
@@ -23,7 +26,7 @@ import entidadesRouter from "./routes/entidades.routes.js";
 import productosGestiooRouter from "./routes/productos-gestioo.routes.js";
 import serviciosGestiooRouter from "./routes/servicios-gestioo.routes.js";
 import marcasGestiooRouter from "./routes/marcas-gestioo.routes.js";
-import modelosGestiooRouter from "./routes/modelos-gestioo.routes.js";
+import modelosGestiooRouter from "./routes/modelos-gestioo.routes.js"; // <- si tu archivo real es modelos.routes.js, ajusta
 import detalleTrabajoGestiooRouter from "./routes/detalle-trabajo-gestioo.routes.js";
 import cotizacionesRouter from "./routes/cotizaciones.routes.js";
 
@@ -69,6 +72,12 @@ api.use(auth(false));
 /* ===================== App Core ===================== */
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
+
+// ✅ Maintenance de solicitantes
+// Tu router define: POST /solicitantes/cleanup/no-cuenta
+// Entonces se monta sin prefijo extra para que quede: POST /api/solicitantes/cleanup/no-cuenta
+api.use(solicitantesMaintenanceRouter);
+
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
 api.use("/clientes", clientesRouter);
@@ -86,7 +95,6 @@ api.use("/reportes-upload", reportesUploadRouter);
 /* ===================== Freshdesk ===================== */
 // Rutas generales de Freshdesk (/api/fd/*)
 api.use("/fd", fdRouter);
-// API de tickets (/api/tickets/*)
 // Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
 api.use("/fd", fdWebhookRouter);
 // API de tickets (/api/tickets/*)
@@ -101,7 +109,7 @@ api.use("/entidades", entidadesRouter);
 api.use("/productos-gestioo", productosGestiooRouter);
 api.use("/servicios-gestioo", serviciosGestiooRouter);
 api.use("/marcas-gestioo", marcasGestiooRouter);
-api.use("/modelos-gestioo", modelosGestiooRouter);
+api.use("/modelos", modelosGestiooRouter);
 api.use("/detalle-trabajo-gestioo", detalleTrabajoGestiooRouter);
 api.use("/cotizaciones", cotizacionesRouter);
 
@@ -109,8 +117,7 @@ api.use("/cotizaciones", cotizacionesRouter);
 // Google Directory sync (ej: POST /api/sync/google/users)
 api.use(syncGoogleRouter);
 
-
-// Microsoft Graph sync 
+// Microsoft Graph sync
 api.use(msSyncRouter);
 
 /* ===================== Reportes ===================== */

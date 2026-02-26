@@ -1,5 +1,5 @@
 // src/routes/msSync.ts
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router, type Request, type Response } from "express";
 import pLimit from "p-limit";
 import { listUsersWithLicenses } from "../ms/graph.js";
 import { upsertSolicitanteFromMicrosoft } from "../service/solicitanteSyncMs.js";
