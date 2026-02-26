@@ -2,6 +2,8 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 
@@ -239,8 +241,10 @@ export async function listTickets(req: Request, res: Response) {
     try {
         const {
             status,
+            priority,
             assigneeId,
             empresaId,
+            area,
             search,
             page = "1",
             pageSize = "30",
@@ -252,66 +256,102 @@ export async function listTickets(req: Request, res: Response) {
         const take = Math.min(Number(pageSize) || 30, 100);
         const skip = (pageNum - 1) * take;
 
-        const where: any = {};
+        const whereActual: Prisma.TicketWhereInput = {};
 
-        /* ===== STATUS ===== */
         if (status) {
-            where.status = status;
+            whereActual.status = status as TicketStatus;
         } else {
-            // 👇 Por defecto no mostrar cerrados
-            where.status = {
-                not: TicketStatus.CLOSED
+            whereActual.status = {
+                not: TicketStatus.CLOSED,
             };
         }
 
-        /* ===== FILTROS ===== */
-        if (assigneeId) where.assigneeId = Number(assigneeId);
-        if (empresaId) where.empresaId = Number(empresaId);
+        if (priority) whereActual.priority = priority as TicketPriority;
+        if (assigneeId) whereActual.assigneeId = Number(assigneeId);
+        if (empresaId) whereActual.empresaId = Number(empresaId);
 
         if (search) {
-            where.subject = {
+            whereActual.subject = {
                 contains: String(search),
                 mode: "insensitive",
             };
         }
 
-        /* ===== RANGO DE FECHAS ===== */
         if (from || to) {
-            where.lastActivityAt = {
+            whereActual.lastActivityAt = {
                 ...(from && { gte: new Date(from as string) }),
                 ...(to && { lt: new Date(to as string) }),
             };
         }
 
-        /* ===== QUERY PRINCIPAL ===== */
-        const [tickets, total] = await Promise.all([
-            prisma.ticket.findMany({
-                where,
+        const parsedArea = parseArea(area);
+        const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
+            { lastActivityAt: "desc" },
+            { updatedAt: "desc" },
+            { createdAt: "desc" },
+        ];
+
+        let tickets: any[] = [];
+        let total = 0;
+
+        if (parsedArea) {
+            const areaCandidates = await prisma.ticket.findMany({
+                where: whereActual,
                 include: {
                     empresa: { select: { nombre: true } },
                     assignee: { select: { id_tecnico: true, nombre: true } },
                     requester: { select: { nombre: true } },
-
-                    // SOLO último mensaje
                     messages: {
                         orderBy: { createdAt: "desc" },
-                        take: 2,
                         select: {
                             direction: true,
                             isInternal: true,
                             createdAt: true,
+                            bodyText: true,
+                            bodyHtml: true,
+                            fromEmail: true,
+                            toEmail: true,
+                            cc: true,
                         },
                     },
                 },
-                orderBy: [
-                    { lastActivityAt: "desc" }, // Lo más importante
-                    { createdAt: "desc" },
-                ],
-                skip,
-                take,
-            }),
-            prisma.ticket.count({ where }),
-        ]);
+                orderBy,
+            });
+
+            const filteredByArea = areaCandidates.filter(
+                (ticket) => detectArea(ticket) === parsedArea
+            );
+
+            total = filteredByArea.length;
+            tickets = filteredByArea.slice(skip, skip + take);
+        } else {
+            const result = await Promise.all([
+                prisma.ticket.findMany({
+                    where: whereActual,
+                    include: {
+                        empresa: { select: { nombre: true } },
+                        assignee: { select: { id_tecnico: true, nombre: true } },
+                        requester: { select: { nombre: true } },
+                        messages: {
+                            orderBy: { createdAt: "desc" },
+                            take: 2,
+                            select: {
+                                direction: true,
+                                isInternal: true,
+                                createdAt: true,
+                            },
+                        },
+                    },
+                    orderBy,
+                    skip,
+                    take,
+                }),
+                prisma.ticket.count({ where: whereActual }),
+            ]);
+
+            tickets = result[0];
+            total = result[1];
+        }
 
         const statusCounts = await prisma.ticket.groupBy({
             by: ["status"],
@@ -326,10 +366,13 @@ export async function listTickets(req: Request, res: Response) {
             counts[s.status] = s._count.status;
         });
 
-        const formattedTickets = tickets.map(t => {
-            const messages = t.messages;
+        const formattedTickets = tickets.map((ticket) => {
+            const messages = (ticket.messages ?? []).slice(0, 2).map((message: any) => ({
+                direction: message.direction,
+                isInternal: message.isInternal,
+                createdAt: message.createdAt,
+            }));
             const lastMsg = messages[0];
-
             const isOnlyInitialMessage = messages.length <= 1;
 
             let lastMessageDirection: MessageDirection | "INTERNAL" | null = null;
@@ -341,12 +384,11 @@ export async function listTickets(req: Request, res: Response) {
             }
 
             return {
-                ...t,
+                ...ticket,
+                messages,
                 lastMessageDirection,
             };
         });
-
-        //  Y AQUÍ USAS formattedTickets
         return res.json({
             ok: true,
             page: pageNum,
@@ -356,7 +398,6 @@ export async function listTickets(req: Request, res: Response) {
             tickets: formattedTickets,
             counts,
         });
-
     } catch (error) {
         console.error("[helpdesk] listTickets error:", error);
         return res.status(500).json({

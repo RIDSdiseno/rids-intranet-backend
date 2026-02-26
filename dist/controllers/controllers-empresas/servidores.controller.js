@@ -1,6 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
 import { z } from "zod";
-import { getCurrentUserId } from "../../lib/request-context.js";
 /* ============================================================
    🔹 Schemas
 ============================================================ */
@@ -12,15 +11,14 @@ const servidorCreateSchema = z.object({
     ipExterna: z.string().min(1),
 });
 const servidorUpdateSchema = z.object({
-    nombre: z.string().min(1).optional(), // ✅ agregado
+    usuario: z.string().optional(),
     nombreUsuario: z.string().optional(),
     contrasena: z.string().optional(),
     ipExterna: z.string().optional(),
     probado: z.boolean().optional(),
-    // ❌ "usuario" eliminado — no existe en el modelo Servidor
 });
 /* ============================================================
-   GET /api/ficha-empresa/:empresaId/servidores
+   GET /api/empresas/:empresaId/servidores
 ============================================================ */
 export async function getServidoresByEmpresa(req, res) {
     try {
@@ -46,7 +44,7 @@ export async function getServidoresByEmpresa(req, res) {
     }
 }
 /* ============================================================
-   GET /api/ficha-empresa/servidores/:id
+   GET /api/servidores/:id
 ============================================================ */
 export async function getServidorById(req, res) {
     try {
@@ -66,12 +64,12 @@ export async function getServidorById(req, res) {
     }
 }
 /* ============================================================
-   POST /api/ficha-empresa/servidores
+   POST /api/servidores
 ============================================================ */
 export async function createServidor(req, res) {
-    console.log("[CONTROLLER] createServidor userId:", getCurrentUserId());
     try {
         const data = servidorCreateSchema.parse(req.body);
+        // Validar que empresa exista
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: data.empresaId },
             select: { id_empresa: true },
@@ -105,10 +103,9 @@ export async function createServidor(req, res) {
     }
 }
 /* ============================================================
-   PUT /api/ficha-empresa/servidores/:id
+   PUT /api/servidores/:id
 ============================================================ */
 export async function updateServidor(req, res) {
-    console.log("[CONTROLLER] updateServidor userId:", getCurrentUserId());
     try {
         const id = Number(req.params.id);
         if (isNaN(id)) {
@@ -116,10 +113,10 @@ export async function updateServidor(req, res) {
             return;
         }
         const parsed = servidorUpdateSchema.parse(req.body);
-        // Solo incluir campos que vienen en el body
+        // 🔥 ELIMINAR undefined manualmente
         const data = {};
-        if (parsed.nombre !== undefined)
-            data.nombre = parsed.nombre; // ✅
+        if (parsed.usuario !== undefined)
+            data.usuario = parsed.usuario;
         if (parsed.nombreUsuario !== undefined)
             data.nombreUsuario = parsed.nombreUsuario;
         if (parsed.contrasena !== undefined)
@@ -128,10 +125,6 @@ export async function updateServidor(req, res) {
             data.ipExterna = parsed.ipExterna;
         if (parsed.probado !== undefined)
             data.probado = parsed.probado;
-        if (Object.keys(data).length === 0) {
-            res.status(400).json({ success: false, error: "No hay campos para actualizar" });
-            return;
-        }
         const actualizado = await prisma.servidor.update({
             where: { id },
             data,
@@ -152,7 +145,7 @@ export async function updateServidor(req, res) {
     }
 }
 /* ============================================================
-   PATCH /api/ficha-empresa/servidores/:id/probado
+   PATCH /api/servidores/:id/probado
 ============================================================ */
 export async function toggleServidorProbado(req, res) {
     try {
@@ -176,10 +169,9 @@ export async function toggleServidorProbado(req, res) {
     }
 }
 /* ============================================================
-   DELETE /api/ficha-empresa/servidores/:id
+   DELETE /api/servidores/:id
 ============================================================ */
 export async function deleteServidor(req, res) {
-    console.log("[CONTROLLER] deleteServidor userId:", getCurrentUserId());
     try {
         const id = Number(req.params.id);
         const existente = await prisma.servidor.findUnique({

@@ -122,7 +122,7 @@ export async function buildReporteEmpresaData(
     );
 
     /* =====================
-       VISITAS – DETALLE
+       VISITAS – DETALLE (IGUAL A LA WEB)
     ===================== */
     const visitasDetalle = await prisma.visita.findMany({
         where: { empresaId, inicio: { gte: start, lt: end } },
@@ -170,29 +170,14 @@ export async function buildReporteEmpresaData(
     });
 
     /* =====================
-       🔥 SOLICITANTES DEL CRM (todos los de la empresa)
-    ===================== */
-    const solicitantesCRM = await prisma.solicitante.findMany({
-        where: { empresaId },
-        select: {
-            id_solicitante: true,
-            nombre: true,
-            email: true,
-        },
-        orderBy: { nombre: "asc" },
-    });
-
-    // Listado completo para el reporte
-    const usuariosCRMListado = solicitantesCRM.map(s => ({
-        usuario: s.nombre,
-        email: s.email ?? undefined,
-    }));
-
-    /* =====================
        TICKETS
     ===================== */
     const orgName = normalizeOrgName(empresa.nombre);
-    let ticketsDetalle: any[] = [];
+    let ticketsDetalle: {
+        createdAt: Date;
+        type: string | null;
+        status: number;
+    }[] = [];
 
     if (orgName) {
         const org = await prisma.ticketOrg.findUnique({
@@ -206,83 +191,14 @@ export async function buildReporteEmpresaData(
                     createdAt: { gte: start, lt: end },
                 },
                 select: {
-                    id: true,
-                    subject: true,
+                    createdAt: true,
                     type: true,
                     status: true,
-                    createdAt: true,
-                    requesterEmail: true,
-                    ticketRequester: {
-                        select: {
-                            name: true,
-                            email: true,
-                        },
-                    },
                 },
                 orderBy: { createdAt: "asc" },
             });
         }
     }
-
-    // Mapa de usuarios por tickets (Freshdesk)
-    const usuariosMap: Record<string, { email?: string; cantidad: number }> = {};
-
-    for (const t of ticketsDetalle) {
-        const nombre = t.ticketRequester?.name ?? "Sin nombre";
-        const email = t.ticketRequester?.email ?? "";
-
-        if (!usuariosMap[nombre]) {
-            usuariosMap[nombre] = { email, cantidad: 0 };
-        }
-        usuariosMap[nombre].cantidad++;
-    }
-
-    // Top usuarios por cantidad de tickets
-    const topUsuarios = Object.entries(usuariosMap)
-        .map(([usuario, { email, cantidad }]) => ({ usuario, email, cantidad }))
-        .sort((a, b) => b.cantidad - a.cantidad);
-
-    // Listado combinado: solicitantes CRM + datos de tickets si tienen
-    // Prioriza solicitantes del CRM, enriquece con ticket count si existe
-    const usuariosListado = usuariosCRMListado.map(s => {
-        const ticketData = usuariosMap[s.usuario];
-        return {
-            usuario: s.usuario,
-            email: s.email ?? ticketData?.email,
-            cantidad: ticketData?.cantidad ?? 0,
-        };
-    });
-
-    /* =====================
-       MANTENCIONES REMOTAS
-    ===================== */
-    const mantencionesDetalle = await prisma.mantencionRemota.findMany({
-        where: {
-            empresaId,
-            inicio: { gte: start, lt: end },
-        },
-        orderBy: { inicio: "asc" },
-        select: {
-            id_mantencion: true,
-            inicio: true,
-            fin: true,
-            status: true,
-            solicitante: true,
-            tecnico: { select: { nombre: true } },
-        },
-    });
-
-    const mantencionesCount = mantencionesDetalle.length;
-
-    const mantencionesPorStatusMap: Record<string, number> = {};
-    for (const m of mantencionesDetalle) {
-        const key = m.status ?? "SIN ESTADO";
-        mantencionesPorStatusMap[key] = (mantencionesPorStatusMap[key] ?? 0) + 1;
-    }
-
-    const mantencionesPorStatus = Object.entries(mantencionesPorStatusMap).map(
-        ([status, cantidad]) => ({ status, cantidad })
-    );
 
     /* =====================
        NARRATIVA AUTOMÁTICA
@@ -290,7 +206,7 @@ export async function buildReporteEmpresaData(
     const narrativa = {
         resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${Math.round(
             avgMs / 60000
-        )} minutos por visita. Se registraron ${equipos.length} equipos, ${ticketsDetalle.length} tickets y ${mantencionesCount} mantenciones remotas asociadas a la empresa. El CRM registra ${solicitantesCRM.length} solicitantes activos.`,
+        )} minutos por visita. Se registraron ${equipos.length} equipos y ${ticketsDetalle.length} tickets asociados a la empresa.`,
     };
 
     /* =====================
@@ -311,10 +227,6 @@ export async function buildReporteEmpresaData(
             },
             tickets: {
                 total: ticketsDetalle.length,
-                usuariosActivos: Object.keys(usuariosMap).length,
-            },
-            mantenciones: {
-                total: mantencionesCount,
             },
         },
 
@@ -330,16 +242,6 @@ export async function buildReporteEmpresaData(
         tickets: {
             detalle: ticketsDetalle,
             total: ticketsDetalle.length,
-            topUsuarios,           // ranking por tickets Freshdesk
-            usuariosListado,       // 🔥 todos los solicitantes CRM + ticket count
-        },
-
-        usuariosCRM: usuariosCRMListado, // 🔥 listado puro del CRM
-
-        mantenciones: {
-            detalle: mantencionesDetalle,
-            total: mantencionesCount,
-            porStatus: mantencionesPorStatus,
         },
 
         narrativa,

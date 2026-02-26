@@ -38,7 +38,7 @@ const listQuerySchema = z.object({
 });
 
 const createEquipoSchema = z.object({
-  empresaId: z.coerce.number().int().positive(),
+  empresaId: z.coerce.number().int().positive().optional(),
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
 
   tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
@@ -325,31 +325,7 @@ export async function createEquipo(req: Request, res: Response) {
           continue;
         }
 
-        let idSolicitanteFinal: number | null =
-          data.idSolicitante === undefined ? null : data.idSolicitante;
-
-        if (!idSolicitanteFinal) {
-          idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
-        }
-
-        // 🔥 AQUÍ EXTRAEMOS LOS CAMPOS DETALLE
-        const {
-          macWifi,
-          redEthernet,
-          so,
-          tipoDd,
-          estadoAlm,
-          office,
-          teamViewer,
-          claveTv,
-          revisado,
-          adminRidsUsuario,
-          adminRidsPassword,
-          usuarioEmpresa,
-          passwordEmpresa,
-          usuarioPersonal,
-          passwordPersonal,
-        } = data;
+        let idSolicitanteFinal: number | null = data.idSolicitante ?? null;
 
         const equipo = await prisma.equipo.create({
           data: {
@@ -362,29 +338,6 @@ export async function createEquipo(req: Request, res: Response) {
             disco: data.disco,
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
-
-            detalle: {
-              create: {
-                macWifi: macWifi ?? null,
-                redEthernet: data.redEthernet ?? null,
-                so: so ?? null,
-                tipoDd: tipoDd ?? null,
-                estadoAlm: estadoAlm ?? null,
-                office: office ?? null,
-                teamViewer: teamViewer ?? null,
-                claveTv: claveTv ?? null,
-                revisado: revisado ?? null,
-                adminRidsUsuario: adminRidsUsuario ?? null,
-                adminRidsPassword: adminRidsPassword ?? null,
-                usuarioEmpresa: usuarioEmpresa ?? null,
-                passwordEmpresa: passwordEmpresa ?? null,
-                usuarioPersonal: usuarioPersonal ?? null,
-                passwordPersonal: passwordPersonal ?? null,
-              },
-            },
-          },
-          include: {
-            detalle: true,
           },
         });
 
@@ -476,16 +429,9 @@ export async function updateEquipo(req: Request, res: Response) {
 
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: {
-        solicitante: {
-          select: {
-            id_solicitante: true,
-            nombre: true,
-            empresaId: true, // 🔥 AGREGA ESTO
-          },
-        },
-      },
+      include: { solicitante: { select: { empresaId: true } } },
     });
+
     if (!equipoActual) {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }
@@ -520,7 +466,6 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.ram ? { ram: equipoData.ram } : {}),
         ...(equipoData.disco ? { disco: equipoData.disco } : {}),
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
-        ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
 
         // 🔥 AQUI VA EL DETALLE
         detalle: {
@@ -721,36 +666,5 @@ export async function reassignEquipos(req: Request, res: Response) {
     }
     console.error("reassignEquipos error:", err);
     return res.status(500).json({ error: "Error al reasignar equipos" });
-  }
-}
-
-/* ================== HISTORIAL POR EQUIPO ================== */
-// GET /api/equipos/:id/historial
-export async function getEquipoHistorial(req: Request, res: Response) {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: "ID inválido" });
-    }
-
-    const user = (req as any).user;
-
-    // Trae logs del equipo + actor
-    const logs = await prisma.auditLog.findMany({
-      where: {
-        entity: "Equipo",
-        entityId: String(id),
-        ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
-      },
-      include: {
-        actor: { select: { id_tecnico: true, nombre: true, email: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return res.json({ total: logs.length, items: logs });
-  } catch (err) {
-    console.error("getEquipoHistorial error:", err);
-    return res.status(500).json({ error: "Error al obtener historial del equipo" });
   }
 }

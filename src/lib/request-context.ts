@@ -7,14 +7,11 @@ interface RequestStore {
 
 export const asyncLocalStorage = new AsyncLocalStorage<RequestStore>();
 
-export function runWithRequestContext(userId: number | null, fn: () => void) {
-    asyncLocalStorage.run({ userId }, fn);
-}
-
 export function getCurrentUserId(): number | null {
     return asyncLocalStorage.getStore()?.userId ?? null;
 }
 
+// Add this
 export function setCurrentUserId(id: number | null): void {
     const store = asyncLocalStorage.getStore();
     if (store) store.userId = id;

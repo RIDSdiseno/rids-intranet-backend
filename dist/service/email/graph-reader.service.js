@@ -349,18 +349,7 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     async addMessageToTicket(ticketId, data) {
-        // 1) Transacción corta (solo DB)
-        const result = await prisma.$transaction(async (tx) => {
-            // Dedup por Message-ID (internetMessageId)
-            if (data.messageId) {
-                const existing = await tx.ticketMessage.findUnique({
-                    where: { sourceMessageId: data.messageId },
-                });
-                if (existing) {
-                    console.log("⏭️ Mensaje ya procesado, se omite.");
-                    return { msgId: null, skipped: true };
-                }
-            }
+        await prisma.$transaction(async (tx) => {
             const msg = await tx.ticketMessage.create({
                 data: {
                     ticketId,
@@ -376,6 +365,7 @@ class GraphReaderService {
                     sourceReferences: data.graphMessageId,
                 },
             });
+            await this.saveAttachments(ticketId, msg.id, data);
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },
@@ -387,19 +377,15 @@ class GraphReaderService {
                     actorType: TicketActorType.REQUESTER,
                 },
             });
-            return { msgId: msg.id, skipped: false };
         });
-        if (result.skipped || !result.msgId)
-            return;
-        // 2) Fuera de transacción: adjuntos (lento)
-        await this.saveAttachments(ticketId, result.msgId, data);
-        // 3) Eventos
+        // Emitir eventos para frontend
         bus.emit("ticket.message", {
             ticketId,
             direction: "INBOUND",
             from: data.fromEmail,
             subject: data.subject,
         });
+        // Opcional: también emitir actualización de ticket (si quieres que el frontend refresque estado, prioridad, etc.)
         bus.emit("ticket.updated", {
             ticketId,
             lastActivityAt: new Date(),

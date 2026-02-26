@@ -1,7 +1,6 @@
 // src/middlewares/auth.ts
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-
 import { asyncLocalStorage } from "../lib/request-context.js";
 
 interface JwtPayloadCustom {
@@ -12,13 +11,11 @@ interface JwtPayloadCustom {
 }
 
 export function auth(required = true): RequestHandler {
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     const header = req.headers.authorization;
 
     if (!header || !header.startsWith("Bearer ")) {
-      if (!required) {
-        return asyncLocalStorage.run({ userId: null }, async () => next());
-      }
+      if (!required) return next();
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -35,20 +32,23 @@ export function auth(required = true): RequestHandler {
         email: payload.email ?? null,
       };
 
-      // ✅ Contexto creado con userId real
-      return asyncLocalStorage.run({ userId: Number(payload.sub) }, async () => {
+      asyncLocalStorage.run({ userId: Number(payload.sub) }, () => {
         next();
       });
+      return;
     } catch (err: any) {
       if (!required) {
-        return asyncLocalStorage.run({ userId: null }, () => next());
+        asyncLocalStorage.run({ userId: null }, () => next());
+        return;
       }
 
-      if (err.name === "TokenExpiredError") {
-        return res.status(401).json({ error: "TOKEN_EXPIRED" });
+      if (err?.name === "TokenExpiredError") {
+        res.status(401).json({ error: "TOKEN_EXPIRED" });
+        return;
       }
 
-      return res.status(401).json({ error: "INVALID_TOKEN" });
+      res.status(401).json({ error: "INVALID_TOKEN" });
+      return;
     }
   };
 }

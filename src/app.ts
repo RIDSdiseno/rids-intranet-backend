@@ -108,6 +108,11 @@ app.use(
   })
 );
 
+// 🔥 CONTEXTO GLOBAL POR REQUEST
+app.use((req, res, next) => {
+  asyncLocalStorage.run({ userId: null }, () => next());
+});
+
 /* ========= Rutas ========= */
 // Asegúrate que dentro de routes.js tengas algo como:
 // router.post("/auth/login", ...)

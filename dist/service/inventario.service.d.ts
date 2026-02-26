@@ -20,11 +20,11 @@ export declare function getInventarioByEmpresa(params: {
     updatedAt: Date;
     createdAt: Date;
     tipo: import("@prisma/client").$Enums.TipoEquipo;
+    marca: string;
+    modelo: string;
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
-    marca: string;
-    modelo: string;
     procesador: string | null;
     ram: string | null;
     disco: string | null;

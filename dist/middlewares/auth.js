@@ -4,9 +4,8 @@ export function auth(required = true) {
     return (req, res, next) => {
         const header = req.headers.authorization;
         if (!header || !header.startsWith("Bearer ")) {
-            if (!required) {
-                return asyncLocalStorage.run({ userId: null }, async () => next());
-            }
+            if (!required)
+                return next();
             res.status(401).json({ error: "Unauthorized" });
             return;
         }
@@ -19,19 +18,22 @@ export function auth(required = true) {
                 empresaId: payload.empresaId ?? null,
                 email: payload.email ?? null,
             };
-            // ✅ Contexto creado con userId real
-            return asyncLocalStorage.run({ userId: Number(payload.sub) }, async () => {
+            asyncLocalStorage.run({ userId: Number(payload.sub) }, () => {
                 next();
             });
+            return;
         }
         catch (err) {
             if (!required) {
-                return asyncLocalStorage.run({ userId: null }, () => next());
+                asyncLocalStorage.run({ userId: null }, () => next());
+                return;
             }
-            if (err.name === "TokenExpiredError") {
-                return res.status(401).json({ error: "TOKEN_EXPIRED" });
+            if (err?.name === "TokenExpiredError") {
+                res.status(401).json({ error: "TOKEN_EXPIRED" });
+                return;
             }
-            return res.status(401).json({ error: "INVALID_TOKEN" });
+            res.status(401).json({ error: "INVALID_TOKEN" });
+            return;
         }
     };
 }

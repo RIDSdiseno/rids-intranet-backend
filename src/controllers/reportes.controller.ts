@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { buildReporteEmpresaData } from "../service/reportEmpresa.service.js";
-import { prisma } from "../lib/prisma.js";
 
 export async function getReporteEmpresa(req: Request, res: Response) {
   try {
