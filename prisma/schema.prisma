@@ -412,7 +412,7 @@ model Equipo {
   procesador             String?
   ram                    String?
   disco                  String?
-  propiedad              String                  @default("ASUR")
+  propiedad              String                  @default("Empresa")
   tipo                   TipoEquipo              @default(GENERICO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
@@ -424,17 +424,23 @@ model Equipo {
 }
 
 model DetalleEquipo {
-  id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo   Int     @unique
-  macWifi    String?
-  so         String?
-  tipoDd     String?
-  estadoAlm  String?
-  office     String?
-  teamViewer String?
-  claveTv    String?
-  revisado   String?
-  equipo     Equipo  @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+  id                Int     @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo          Int     @unique
+  macWifi           String?
+  so                String?
+  tipoDd            String?
+  estadoAlm         String?
+  office            String?
+  teamViewer        String?
+  claveTv           String?
+  revisado          String?
+  adminRidsPassword String?
+  adminRidsUsuario  String?
+  passwordEmpresa   String?
+  passwordPersonal  String?
+  usuarioEmpresa    String?
+  usuarioPersonal   String?
+  equipo            Equipo  @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
@@ -494,6 +500,7 @@ model Tecnico {
   status              Boolean                 @default(true)
   empresaId           Int?
   rol                 String                  @default("TECNICO")
+  teamviewerUserId    String?                 @unique
   empresa             Empresa?                @relation(fields: [empresaId], references: [id_empresa])
   tokens              RefreshToken[]
   historiales         Historial[]
@@ -567,6 +574,11 @@ model MantencionRemota {
   status          String       @default("PENDIENTE")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  deviceId        String?
+  deviceNombre    String?
+  duracionMinutos Int?
+  origen          String?      @default("MANUAL")
+  teamviewerId    String?      @unique
   empresa         Empresa      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
   tecnico         Tecnico      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef  Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
@@ -873,6 +885,7 @@ model AuditLog {
   @@index([entity])
   @@index([entityId])
   @@index([createdAt])
+  @@index([empresaId])
 }
 
 enum AuditAction {
