@@ -5,17 +5,35 @@ const toInt = (v, def = 0) => {
     return Number.isFinite(n) && Number.isInteger(n) ? n : def;
 };
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+/** ✅ Empresas donde los solicitantes pueden ser "boxes" sin cuenta */
+const BOX_CLINIC_EMPRESA_IDS = new Set([6, 7, 22, 29, 31]); // Clínica Alameda, Providencia
 const parseOrderBy = (v) => {
     const s = String(v ?? "").toLowerCase();
     if (s === "nombre")
         return "nombre";
     if (s === "id" || s === "ids" || s === "id_solicitante")
         return "id";
-    return "empresa"; // default
+    return "empresa";
 };
 const parseOrderDir = (v) => {
     const s = String(v ?? "").toLowerCase();
     return s === "desc" ? "desc" : "asc";
+};
+/** Por defecto: mostrar SOLO solicitantes con cuenta (google/microsoft) */
+const parseOnlyWithAccount = (v) => {
+    const s = String(v ?? "").trim().toLowerCase();
+    // default = true (si no viene)
+    if (s === "" || s === "1" || s === "true" || s === "yes")
+        return true;
+    if (s === "0" || s === "false" || s === "no")
+        return false;
+    return true;
+};
+/** ✅ Override: en clínicas (6/7) SIEMPRE mostrar "sin cuenta" cuando se filtra por esa empresa */
+const applyClinicOverrideOnlyWithAccount = (empresaId, onlyWithAccount) => {
+    if (empresaId > 0 && BOX_CLINIC_EMPRESA_IDS.has(empresaId))
+        return false;
+    return onlyWithAccount;
 };
 /** Construye el orderBy compatible con Prisma para las 3 variantes */
 const buildSolicitanteOrderBy = (orderByKey, orderDir) => {
@@ -26,7 +44,7 @@ const buildSolicitanteOrderBy = (orderByKey, orderDir) => {
         return [{ id_solicitante: orderDir }];
     }
     // empresa
-    const secondaryForNulls = orderDir === "asc" ? "desc" : "asc"; // asc -> NULLS LAST, desc -> NULLS FIRST
+    const secondaryForNulls = orderDir === "asc" ? "desc" : "asc";
     return [
         { empresa: { nombre: orderDir } },
         { empresaId: secondaryForNulls },
@@ -34,17 +52,16 @@ const buildSolicitanteOrderBy = (orderByKey, orderDir) => {
         { id_solicitante: "asc" },
     ];
 };
+/** Filtro base: “tiene cuenta” */
+const buildWhereOnlyWithAccount = () => ({
+    OR: [
+        { accountType: { in: ["google", "microsoft"] } },
+        { googleUserId: { not: null } },
+        { microsoftUserId: { not: null } },
+    ],
+});
 /* ============================================================
  * GET /solicitantes
- *  Filtros:
- *   - empresaId (opcional)
- *   - q (busca en nombre, email y empresa)
- *   - onlyGMS=1 → solo cuentas google/microsoft (opcional)
- *  Orden:
- *   - orderBy: empresa|nombre|id (default empresa)
- *   - orderDir: asc|desc (default asc)
- *  Opcional:
- *   - includeMsDetails=1|true → incluye arreglo msLicenses (si no, sólo msLicensesCount)
  * ============================================================ */
 export const listSolicitantes = async (req, res) => {
     try {
@@ -54,6 +71,10 @@ export const listSolicitantes = async (req, res) => {
         const pageSize = clamp(toInt(req.query.pageSize, 10), 1, 100);
         const onlyGMS = String(req.query.onlyGMS ?? "").toLowerCase() === "1" ||
             String(req.query.onlyGMS ?? "").toLowerCase() === "true";
+        // default true
+        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
+        // ✅ override para clínicas cuando se filtra por empresa
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const includeMsDetails = String(req.query.includeMsDetails ?? "").toLowerCase() === "1" ||
             String(req.query.includeMsDetails ?? "").toLowerCase() === "true";
         const skip = (page - 1) * pageSize;
@@ -77,6 +98,7 @@ export const listSolicitantes = async (req, res) => {
                 }
                 : {}),
             ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] } } : {}),
+            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
         const [total, baseSolicitantes] = await Promise.all([
@@ -98,9 +120,7 @@ export const listSolicitantes = async (req, res) => {
             }),
         ]);
         // Enriquecer con empresa, equipos y licencias MS
-        const empresaIdSet = new Set(baseSolicitantes
-            .map((s) => s.empresaId)
-            .filter((x) => typeof x === "number"));
+        const empresaIdSet = new Set(baseSolicitantes.map((s) => s.empresaId).filter((x) => typeof x === "number"));
         const solicitanteIdSet = new Set(baseSolicitantes.map((s) => s.id_solicitante));
         const [empresas, equipos, msLinks] = await Promise.all([
             prisma.empresa.findMany({
@@ -167,38 +187,44 @@ export const listSolicitantes = async (req, res) => {
             pageSize,
             total,
             totalPages: Math.max(1, Math.ceil(total / pageSize)),
+            filters: {
+                empresaId: user?.rol === "CLIENTE" ? Number(user.empresaId) : empresaId || null,
+                q: q ?? null,
+                onlyGMS,
+                // ✅ devolvemos el valor final aplicado (con override)
+                onlyWithAccount,
+                includeMsDetails,
+            },
             items,
         });
     }
     catch (err) {
         console.error("[solicitantes.list] error:", err);
-        return res
-            .status(500)
-            .json({ error: "No se pudieron listar los solicitantes" });
+        return res.status(500).json({ error: "No se pudieron listar los solicitantes" });
     }
 };
 /* ============================================================
  * GET /solicitantes/by-empresa
- * (para selects del modal)
  * ============================================================ */
 export const listSolicitantesByEmpresa = async (req, res) => {
     try {
         const empresaId = toInt(req.query.empresaId);
+        const q = req.query.q?.trim();
+        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
         if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
             return res.status(403).json({ error: "No autorizado" });
         }
         if (empresaId <= 0) {
-            return res
-                .status(400)
-                .json({ error: "empresaId requerido y debe ser entero > 0" });
+            return res.status(400).json({ error: "empresaId requerido y debe ser entero > 0" });
         }
-        const q = req.query.q?.trim();
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const where = {
             empresaId,
             ...(q ? { nombre: { contains: q, mode: "insensitive" } } : {}),
+            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const rows = await prisma.solicitante.findMany({
             where,
@@ -211,34 +237,28 @@ export const listSolicitantesByEmpresa = async (req, res) => {
     }
     catch (err) {
         console.error("[solicitantes.byEmpresa] error:", err);
-        return res
-            .status(500)
-            .json({ error: "No se pudieron obtener solicitantes por empresa" });
+        return res.status(500).json({ error: "No se pudieron obtener solicitantes por empresa" });
     }
 };
 /* ============================================================
  * GET /solicitantes/select
- * (listado para <select>, con orden universal)
  * ============================================================ */
 export const listSolicitantesForSelect = async (req, res) => {
     try {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const empresaId = toInt(req.query.empresaId);
+        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
-        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId
-            ? Number(user.empresaId)
-            : null;
+        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const includeEmpresa = String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
         const q = req.query.q?.trim();
         const limit = clamp(toInt(req.query.limit, 100), 1, 500);
         const INS = "insensitive";
+        const effectiveEmpresaId = userEmpresaId ?? (empresaId > 0 ? empresaId : null);
         const where = {
-            ...(userEmpresaId
-                ? { empresaId: userEmpresaId }
-                : empresaId > 0
-                    ? { empresaId }
-                    : {}),
+            ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
             ...(q
                 ? {
                     OR: [
@@ -248,6 +268,7 @@ export const listSolicitantesForSelect = async (req, res) => {
                     ],
                 }
                 : {}),
+            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const rows = await prisma.solicitante.findMany({
             where,
@@ -261,9 +282,7 @@ export const listSolicitantesForSelect = async (req, res) => {
         });
         const items = rows.map((r) => {
             const empresaNombre = r.empresa?.nombre ?? null;
-            const text = includeEmpresa && empresaNombre
-                ? `${r.nombre} — ${empresaNombre}`
-                : r.nombre;
+            const text = includeEmpresa && empresaNombre ? `${r.nombre} — ${empresaNombre}` : r.nombre;
             return {
                 value: r.id_solicitante,
                 text,
@@ -276,9 +295,7 @@ export const listSolicitantesForSelect = async (req, res) => {
     }
     catch (err) {
         console.error("[solicitantes.select] error:", err);
-        return res
-            .status(500)
-            .json({ error: "No se pudo obtener el listado para select" });
+        return res.status(500).json({ error: "No se pudo obtener el listado para select" });
     }
 };
 /* ============================================================
@@ -288,17 +305,13 @@ export const solicitantesMetrics = async (req, res) => {
     try {
         const q = req.query.q?.trim();
         const empresaId = toInt(req.query.empresaId);
+        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
-        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId
-            ? Number(user.empresaId)
-            : null;
+        const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const INS = "insensitive";
         const where = {
-            ...(userEmpresaId
-                ? { empresaId: userEmpresaId }
-                : empresaId > 0
-                    ? { empresaId }
-                    : {}),
+            ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
             ...(q
                 ? {
                     OR: [
@@ -308,6 +321,7 @@ export const solicitantesMetrics = async (req, res) => {
                     ],
                 }
                 : {}),
+            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const solicitantes = await prisma.solicitante.count({ where });
         const distinctEmpresas = await prisma.solicitante.findMany({
@@ -326,7 +340,16 @@ export const solicitantesMetrics = async (req, res) => {
             : await prisma.equipo.count({
                 where: { idSolicitante: { in: idList } },
             });
-        return res.json({ solicitantes, empresas, equipos });
+        return res.json({
+            solicitantes,
+            empresas,
+            equipos,
+            filters: {
+                empresaId: userEmpresaId ?? (empresaId > 0 ? empresaId : null),
+                q: q ?? null,
+                onlyWithAccount,
+            },
+        });
     }
     catch (err) {
         console.error("[solicitantes.metrics] error:", err);
@@ -340,19 +363,16 @@ export const createSolicitante = async (req, res) => {
         const emailRaw = (req.body?.email ?? null);
         const email = emailRaw ? String(emailRaw).trim() : null;
         const empresaId = toInt(req.body?.empresaId);
-        if (!nombre) {
+        if (!nombre)
             return res.status(400).json({ error: "El nombre es obligatorio" });
-        }
-        if (empresaId <= 0) {
+        if (empresaId <= 0)
             return res.status(400).json({ error: "empresaId inválido" });
-        }
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: empresaId },
             select: { id_empresa: true },
         });
-        if (!empresa) {
+        if (!empresa)
             return res.status(404).json({ error: "La empresa no existe" });
-        }
         const created = await prisma.solicitante.create({
             data: { nombre, email, empresaId },
             select: {
@@ -369,9 +389,7 @@ export const createSolicitante = async (req, res) => {
     catch (err) {
         const e = err;
         if (e?.code === "P2002") {
-            return res
-                .status(409)
-                .json({ error: "Ya existe un solicitante con ese valor único" });
+            return res.status(409).json({ error: "Ya existe un solicitante con ese valor único" });
         }
         console.error("[solicitantes.create] error:", err);
         return res.status(500).json({ error: "No se pudo crear el solicitante" });
@@ -415,9 +433,7 @@ export const getSolicitanteById = async (req, res) => {
         }
         const links = await prisma.solicitanteMsLicense.findMany({
             where: { solicitanteId: solicitante.id_solicitante },
-            include: {
-                sku: { select: { skuId: true, skuPartNumber: true, displayName: true } },
-            },
+            include: { sku: { select: { skuId: true, skuPartNumber: true, displayName: true } } },
             orderBy: { skuId: "asc" },
         });
         const msLicenses = links.map((l) => ({
@@ -425,11 +441,7 @@ export const getSolicitanteById = async (req, res) => {
             skuPartNumber: l.sku?.skuPartNumber ?? l.skuId,
             ...(l.sku?.displayName ? { displayName: l.sku.displayName } : {}),
         }));
-        const out = {
-            ...solicitante,
-            msLicenses,
-        };
-        return res.json(out);
+        return res.json({ ...solicitante, msLicenses });
     }
     catch (err) {
         console.error("[solicitantes.getOne] error:", err);
@@ -448,9 +460,7 @@ export const updateSolicitante = async (req, res) => {
             : typeof req.body?.email === "string"
                 ? req.body.email.trim()
                 : undefined;
-        const empresaId = typeof req.body?.empresaId !== "undefined"
-            ? toInt(req.body.empresaId)
-            : undefined;
+        const empresaId = typeof req.body?.empresaId !== "undefined" ? toInt(req.body.empresaId) : undefined;
         if (empresaId !== undefined && empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
         }
@@ -489,9 +499,7 @@ export const updateSolicitante = async (req, res) => {
     catch (err) {
         const e = err;
         if (e?.code === "P2002") {
-            return res
-                .status(409)
-                .json({ error: "Conflicto de unicidad (email u otro campo único)" });
+            return res.status(409).json({ error: "Conflicto de unicidad (email u otro campo único)" });
         }
         console.error("[solicitantes.update] error:", err);
         return res.status(500).json({ error: "No se pudo actualizar el solicitante" });
@@ -503,9 +511,7 @@ export const deleteSolicitante = async (req, res) => {
         const id = toInt(req.params.id);
         if (id <= 0)
             return res.status(400).json({ error: "ID inválido" });
-        const transferToId = req.query.transferToId
-            ? toInt(req.query.transferToId)
-            : undefined;
+        const transferToId = req.query.transferToId ? toInt(req.query.transferToId) : undefined;
         if (transferToId !== undefined) {
             if (transferToId <= 0) {
                 return res.status(400).json({ error: "transferToId debe ser entero > 0" });
@@ -548,41 +554,17 @@ export const deleteSolicitante = async (req, res) => {
             // 1️⃣ TRANSFERENCIAS PRINCIPALES
             // ======================================
             if (transferToId) {
-                await tx.equipo.updateMany({
-                    where: { idSolicitante: id },
-                    data: { idSolicitante: transferToId },
-                });
-                await tx.historial.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: transferToId },
-                });
-                await tx.freshdeskRequesterMap.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: transferToId },
-                });
-                await tx.freshdeskTicket.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: transferToId },
-                });
-                await tx.visita.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: transferToId },
-                });
+                await tx.equipo.updateMany({ where: { idSolicitante: id }, data: { idSolicitante: transferToId } });
+                await tx.historial.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
+                await tx.freshdeskRequesterMap.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
+                await tx.freshdeskTicket.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
+                await tx.visita.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: transferToId } });
             }
             else {
                 const saId = await ensureSaSolicitante(source.empresaId);
-                await tx.equipo.updateMany({
-                    where: { idSolicitante: id },
-                    data: { idSolicitante: saId },
-                });
-                await tx.historial.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: saId },
-                });
-                await tx.freshdeskRequesterMap.updateMany({
-                    where: { solicitanteId: id },
-                    data: { solicitanteId: saId },
-                });
+                await tx.equipo.updateMany({ where: { idSolicitante: id }, data: { idSolicitante: saId } });
+                await tx.historial.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: saId } });
+                await tx.freshdeskRequesterMap.updateMany({ where: { solicitanteId: id }, data: { solicitanteId: saId } });
                 await tx.freshdeskTicket.updateMany({
                     where: { solicitanteId: id },
                     data: { solicitanteId: fallback === "sa" ? saId : null },
@@ -595,15 +577,9 @@ export const deleteSolicitante = async (req, res) => {
             // ======================================
             // 2️⃣ LIMPIEZA DE RELACIONES DIRECTAS
             // ======================================
-            await tx.solicitanteMsLicense.deleteMany({
-                where: { solicitanteId: id },
-            });
-            await tx.firma.deleteMany({
-                where: { solicitanteId: id },
-            });
-            await tx.servidorUsuario.deleteMany({
-                where: { solicitanteId: id },
-            });
+            await tx.solicitanteMsLicense.deleteMany({ where: { solicitanteId: id } });
+            await tx.firma.deleteMany({ where: { solicitanteId: id } });
+            await tx.servidorUsuario.deleteMany({ where: { solicitanteId: id } });
             await tx.ticket.updateMany({
                 where: { requesterId: id },
                 data: { requesterId: null },
@@ -611,18 +587,12 @@ export const deleteSolicitante = async (req, res) => {
             // ======================================
             // 3️⃣ DELETE FINAL
             // ======================================
-            await tx.solicitante.delete({
-                where: { id_solicitante: id },
-            });
-        }, {
-            timeout: 15000, // 15 segundos
-        });
+            await tx.solicitante.delete({ where: { id_solicitante: id } });
+        }, { timeout: 15000 });
         return res.json({
             ok: true,
             deletedId: id,
-            strategy: transferToId
-                ? { type: "transfer", transferToId }
-                : { type: "fallback-SA", fallback },
+            strategy: transferToId ? { type: "transfer", transferToId } : { type: "fallback-SA", fallback },
         });
     }
     catch (err) {
