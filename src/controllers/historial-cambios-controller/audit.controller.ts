@@ -83,7 +83,7 @@ export const listAuditByEmpresa = async (req: Request, res: Response) => {
         const skip = (pageNumber - 1) * pageSize;
 
         // 1️⃣ Buscar IDs relacionados
-        const [equipos, servidores] = await Promise.all([
+        const [equipos, servidores, solicitantes] = await Promise.all([
             prisma.equipo.findMany({
                 where: { solicitante: { empresaId: empresaIdNum } },
                 select: { id_equipo: true },
@@ -92,18 +92,29 @@ export const listAuditByEmpresa = async (req: Request, res: Response) => {
                 where: { empresaId: empresaIdNum },
                 select: { id: true },
             }),
+            prisma.solicitante.findMany({
+                where: { empresaId: empresaIdNum },
+                select: { id_solicitante: true },
+            }),
         ]);
 
         const equipoIds = equipos.map(e => String(e.id_equipo));
         const servidorIds = servidores.map(s => String(s.id));
+        const solicitanteIds = solicitantes.map(s => String(s.id_solicitante));
 
         // 2️⃣ Armar filtro OR consolidado
         const where: any = {
             OR: [
                 { entity: "Empresa", entityId: String(empresaIdNum) },
+
+                ...(solicitanteIds.length
+                    ? [{ entity: "Solicitante", entityId: { in: solicitanteIds } }]
+                    : []),
+
                 ...(equipoIds.length
                     ? [{ entity: "Equipo", entityId: { in: equipoIds } }]
                     : []),
+
                 ...(servidorIds.length
                     ? [{ entity: "Servidor", entityId: { in: servidorIds } }]
                     : []),

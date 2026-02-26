@@ -147,9 +147,17 @@ export async function buildReporteEmpresaData(empresaId, ym) {
                     createdAt: { gte: start, lt: end },
                 },
                 select: {
-                    createdAt: true,
+                    id: true,
+                    subject: true,
                     type: true,
                     status: true,
+                    createdAt: true,
+                    ticketRequester: {
+                        select: {
+                            name: true,
+                            email: true,
+                        },
+                    },
                 },
                 orderBy: { createdAt: "asc" },
             });
@@ -161,6 +169,64 @@ export async function buildReporteEmpresaData(empresaId, ym) {
     const narrativa = {
         resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${Math.round(avgMs / 60000)} minutos por visita. Se registraron ${equipos.length} equipos y ${ticketsDetalle.length} tickets asociados a la empresa.`,
     };
+    /* =====================
+   MANTENCIONES REMOTAS
+===================== */
+    const mantenciones = await prisma.mantencionRemota.findMany({
+        where: {
+            empresaId,
+            inicio: { gte: start, lt: end },
+        },
+        select: {
+            id_mantencion: true,
+            inicio: true,
+            fin: true,
+            status: true,
+            solicitante: true,
+            tecnico: { select: { nombre: true } },
+        },
+        orderBy: { inicio: "asc" },
+    });
+    /* =====================
+   MANTENCIONES POR STATUS
+===================== */
+    const mantStatusMap = {};
+    for (const m of mantenciones) {
+        const status = m.status ?? "SIN ESTADO";
+        mantStatusMap[status] = (mantStatusMap[status] ?? 0) + 1;
+    }
+    const porStatus = Object.entries(mantStatusMap).map(([status, cantidad]) => ({ status, cantidad }));
+    /* =====================
+   SOLICITANTES CRM
+===================== */
+    const usuariosCRM = await prisma.solicitante.findMany({
+        where: { empresaId },
+        select: {
+            nombre: true,
+            email: true,
+        },
+        orderBy: { nombre: "asc" },
+    });
+    /* =====================
+   TOP USUARIOS TICKETS
+===================== */
+    const usuarioMap = {};
+    for (const t of ticketsDetalle) {
+        const nombre = t.ticketRequester?.name ?? "Sin nombre";
+        const email = t.ticketRequester?.email ?? null;
+        if (!usuarioMap[nombre]) {
+            usuarioMap[nombre] = {
+                usuario: nombre,
+                email,
+                cantidad: 0,
+            };
+        }
+        usuarioMap[nombre].cantidad++;
+    }
+    const usuariosListado = Object.values(usuarioMap);
+    const topUsuarios = usuariosListado
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, 5);
     /* =====================
        RETURN FINAL
     ===================== */
@@ -179,6 +245,9 @@ export async function buildReporteEmpresaData(empresaId, ym) {
             tickets: {
                 total: ticketsDetalle.length,
             },
+            mantenciones: {
+                total: mantenciones.length,
+            },
         },
         visitasPorTipo,
         visitasDetalle,
@@ -190,7 +259,18 @@ export async function buildReporteEmpresaData(empresaId, ym) {
         tickets: {
             detalle: ticketsDetalle,
             total: ticketsDetalle.length,
+            usuariosListado,
+            topUsuarios,
         },
+        mantenciones: {
+            total: mantenciones.length,
+            detalle: mantenciones,
+            porStatus,
+        },
+        usuariosCRM: usuariosCRM.map(u => ({
+            usuario: u.nombre,
+            email: u.email ?? null,
+        })),
         narrativa,
     };
 }

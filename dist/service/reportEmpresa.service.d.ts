@@ -20,6 +20,9 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         tickets: {
             total: number;
         };
+        mantenciones: {
+            total: number;
+        };
     };
     visitasPorTipo: {
         tipo: string;
@@ -57,13 +60,40 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         total: number;
     };
     tickets: {
-        detalle: {
-            createdAt: Date;
-            type: string | null;
-            status: number;
-        }[];
+        detalle: any[];
         total: number;
+        usuariosListado: {
+            usuario: string;
+            email?: string;
+            cantidad: number;
+        }[];
+        topUsuarios: {
+            usuario: string;
+            email?: string;
+            cantidad: number;
+        }[];
     };
+    mantenciones: {
+        total: number;
+        detalle: {
+            solicitante: string;
+            tecnico: {
+                nombre: string;
+            } | null;
+            inicio: Date;
+            fin: Date | null;
+            status: string;
+            id_mantencion: number;
+        }[];
+        porStatus: {
+            status: string;
+            cantidad: number;
+        }[];
+    };
+    usuariosCRM: {
+        usuario: string;
+        email: string | null;
+    }[];
     narrativa: {
         resumen: string;
     };

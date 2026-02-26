@@ -10,26 +10,27 @@ datasource db {
 }
 
 model Empresa {
-  id_empresa          Int                   @id @default(autoincrement())
-  nombre              String                @unique
-  tieneSucursales     Boolean               @default(false)
-  razonSocial         String?
-  dominios            String[]              @default([])
-  solicitantes        Solicitante[]
-  visitas             Visita[]              @relation("Empresa_Visita")
-  tickets             FreshdeskTicket[]
-  companyMaps         FreshdeskCompanyMap[]
-  detalleEmpresa      DetalleEmpresa?
-  sucursales          Sucursal[]
-  contactoEmpresas    ContactoEmpresa[]
-  fichaEmpresa        FichaEmpresa?
-  fichaTecnicaEmpresa FichaTecnicaEmpresa?
-  historials          Historial[]
-  ticketsRids         Ticket[]
-  empresaISP          EmpresaISP[]
-  servidors           Servidor[]
-  tecnicos            Tecnico[]
-  mantencionesRemotas MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
+  id_empresa           Int                   @id @default(autoincrement())
+  nombre               String                @unique
+  tieneSucursales      Boolean               @default(false)
+  razonSocial          String?
+  dominios             String[]              @default([])
+  solicitantes         Solicitante[]
+  visitas              Visita[]              @relation("Empresa_Visita")
+  tickets              FreshdeskTicket[]
+  companyMaps          FreshdeskCompanyMap[]
+  detalleEmpresa       DetalleEmpresa?
+  sucursales           Sucursal[]
+  contactoEmpresas     ContactoEmpresa[]
+  fichaEmpresa         FichaEmpresa?
+  fichaTecnicaEmpresa  FichaTecnicaEmpresa?
+  historials           Historial[]
+  ticketsRids          Ticket[]
+  empresaISP           EmpresaISP[]
+  servidors            Servidor[]
+  tecnicos             Tecnico[]
+  mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
+  teamViewerDeviceMaps TeamViewerDeviceMap[]
 }
 
 model Sucursal {
@@ -241,27 +242,28 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante      Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre              String
-  email               String?
-  telefono            String?
-  empresaId           Int
-  clienteId           Int?                    @unique
-  googleUserId        String?                 @unique
-  isActive            Boolean                 @default(true)
-  microsoftUserId     String?                 @unique
-  accountType         AccountType?
-  empresa             Empresa                 @relation(fields: [empresaId], references: [id_empresa])
-  equipos             Equipo[]
-  visitas             Visita[]                @relation("Solicitante_Visita")
-  historiales         Historial[]             @relation("Solicitante_Historial")
-  tickets             FreshdeskTicket[]
-  requesterMaps       FreshdeskRequesterMap[]
-  msLicenses          SolicitanteMsLicense[]
-  ticketsRids         Ticket[]
-  firma               Firma?
-  servidorUsuarios    ServidorUsuario[]
-  mantencionesRemotas MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
+  id_solicitante       Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre               String
+  email                String?
+  telefono             String?
+  empresaId            Int
+  clienteId            Int?                    @unique
+  googleUserId         String?                 @unique
+  isActive             Boolean                 @default(true)
+  microsoftUserId      String?                 @unique
+  accountType          AccountType?
+  empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
+  equipos              Equipo[]
+  visitas              Visita[]                @relation("Solicitante_Visita")
+  historiales          Historial[]             @relation("Solicitante_Historial")
+  tickets              FreshdeskTicket[]
+  requesterMaps        FreshdeskRequesterMap[]
+  msLicenses           SolicitanteMsLicense[]
+  ticketsRids          Ticket[]
+  firma                Firma?
+  servidorUsuarios     ServidorUsuario[]
+  mantencionesRemotas  MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
+  teamViewerDeviceMaps TeamViewerDeviceMap[]
 
   @@index([empresaId])
   @@index([isActive])
@@ -587,6 +589,23 @@ model MantencionRemota {
   @@index([empresaId])
   @@index([tecnicoId])
   @@index([inicio])
+}
+
+model TeamViewerDeviceMap {
+  id            Int     @id @default(autoincrement())
+  deviceId      String  @unique
+  deviceNombre  String?
+  empresaId     Int?
+  solicitanteId Int?
+
+  empresa     Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([empresaId])
+  @@index([solicitanteId])
 }
 
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets

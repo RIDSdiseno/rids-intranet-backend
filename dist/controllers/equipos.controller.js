@@ -1,4 +1,4 @@
-import { TipoEquipo } from "@prisma/client";
+import { TipoEquipo, AuditAction } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 /* ================== Schemas ================== */
@@ -317,15 +317,47 @@ export async function createEquipo(req, res) {
 export async function getEquipoById(req, res) {
     try {
         const id = Number(req.params.id);
-        if (isNaN(id))
+        if (!Number.isFinite(id) || id <= 0) {
             return res.status(400).json({ error: "ID inválido" });
+        }
+        const user = req.user;
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: { solicitante: { include: { empresa: true } }, detalle: true },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
-        return res.status(200).json(equipo);
+        // ✅ Si es CLIENTE, valida que el equipo sea de su empresa
+        if (user?.rol === "CLIENTE") {
+            const empresaEquipoId = equipo.solicitante?.empresaId ?? null;
+            if (!empresaEquipoId || empresaEquipoId !== user.empresaId) {
+                return res.status(403).json({ error: "No autorizado" });
+            }
+        }
+        // ✅ Busca el log CREATE (primero en el tiempo)
+        const createLog = await prisma.auditLog.findFirst({
+            where: {
+                entity: "Equipo",
+                entityId: String(id),
+                action: AuditAction.CREATE,
+                ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+            },
+            include: {
+                actor: { select: { id_tecnico: true, nombre: true, email: true } },
+            },
+            orderBy: { createdAt: "asc" },
+        });
+        return res.status(200).json({
+            ...equipo,
+            creadoPor: createLog?.actor
+                ? {
+                    id_tecnico: createLog.actor.id_tecnico,
+                    nombre: createLog.actor.nombre,
+                    email: createLog.actor.email,
+                }
+                : null,
+            creadoEn: createLog?.createdAt ?? null,
+        });
     }
     catch (err) {
         console.error("getEquipoById error:", err);
