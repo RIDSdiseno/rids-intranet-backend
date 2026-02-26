@@ -424,16 +424,17 @@ model Equipo {
 }
 
 model DetalleEquipo {
-  id         Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo   Int     @unique
-  macWifi    String?
-  so         String?
-  tipoDd     String?
-  estadoAlm  String?
-  office     String?
-  teamViewer String?
-  claveTv    String?
-  revisado   String?
+  id          Int     @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo    Int     @unique
+  macWifi     String?
+  redEthernet String?
+  so          String?
+  tipoDd      String?
+  estadoAlm   String?
+  office      String?
+  teamViewer  String?
+  claveTv     String?
+  revisado    String?
 
   adminRidsUsuario  String?
   adminRidsPassword String?
@@ -587,8 +588,8 @@ model MantencionRemota {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  empresa        Empresa?      @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
-  tecnico        Tecnico?      @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
+  empresa        Empresa?     @relation("EmpresaMantencionesRemotas", fields: [empresaId], references: [id_empresa])
+  tecnico        Tecnico?     @relation("TecnicoMantencionesRemotas", fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef Solicitante? @relation("SolicitanteMantencionesRemotas", fields: [solicitanteId], references: [id_solicitante])
 
   @@index([empresaId])

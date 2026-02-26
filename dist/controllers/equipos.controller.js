@@ -28,7 +28,7 @@ const listQuerySchema = z.object({
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 const createEquipoSchema = z.object({
-    empresaId: z.coerce.number().int().positive(), // 👈 AHORA OBLIGATORIO
+    empresaId: z.coerce.number().int().positive(),
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
     tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
     serial: z.string().trim().min(1),
@@ -38,6 +38,22 @@ const createEquipoSchema = z.object({
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
+    // 🔥 NUEVOS CAMPOS DETALLE
+    macWifi: z.string().optional(),
+    redEthernet: z.string().optional(),
+    so: z.string().optional(),
+    tipoDd: z.string().optional(),
+    estadoAlm: z.string().optional(),
+    office: z.string().optional(),
+    teamViewer: z.string().optional(),
+    claveTv: z.string().optional(),
+    revisado: z.string().optional(),
+    adminRidsUsuario: z.string().optional(),
+    adminRidsPassword: z.string().optional(),
+    usuarioEmpresa: z.string().optional(),
+    passwordEmpresa: z.string().optional(),
+    usuarioPersonal: z.string().optional(),
+    passwordPersonal: z.string().optional(),
 });
 // 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
@@ -59,6 +75,7 @@ const equipoUpdateSchema = z.object({
     propiedad: z.string().trim().min(1).optional(),
     // 🔥 NUEVOS
     macWifi: z.string().optional(),
+    redEthernet: z.string().optional(),
     so: z.string().optional(),
     tipoDd: z.string().optional(),
     estadoAlm: z.string().optional(),
@@ -116,6 +133,7 @@ function flattenRow(e) {
         empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
         macWifi: detalle?.macWifi ?? null,
+        redEthernet: detalle?.redEthernet ?? null,
         so: detalle?.so ?? null,
         tipoDd: detalle?.tipoDd ?? null,
         estadoAlm: detalle?.estadoAlm ?? null,
@@ -252,10 +270,11 @@ export async function createEquipo(req, res) {
                     continue;
                 }
                 let idSolicitanteFinal = data.idSolicitante === undefined ? null : data.idSolicitante;
-                // ✅ Si viene null / undefined => asignamos placeholder de la empresa elegida
                 if (!idSolicitanteFinal) {
                     idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
                 }
+                // 🔥 AQUÍ EXTRAEMOS LOS CAMPOS DETALLE
+                const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, } = data;
                 const equipo = await prisma.equipo.create({
                     data: {
                         tipo: data.tipo,
@@ -266,7 +285,29 @@ export async function createEquipo(req, res) {
                         ram: data.ram,
                         disco: data.disco,
                         propiedad: data.propiedad,
-                        idSolicitante: idSolicitanteFinal, // ✅ ya no queda null
+                        idSolicitante: idSolicitanteFinal,
+                        detalle: {
+                            create: {
+                                macWifi: macWifi ?? null,
+                                redEthernet: data.redEthernet ?? null,
+                                so: so ?? null,
+                                tipoDd: tipoDd ?? null,
+                                estadoAlm: estadoAlm ?? null,
+                                office: office ?? null,
+                                teamViewer: teamViewer ?? null,
+                                claveTv: claveTv ?? null,
+                                revisado: revisado ?? null,
+                                adminRidsUsuario: adminRidsUsuario ?? null,
+                                adminRidsPassword: adminRidsPassword ?? null,
+                                usuarioEmpresa: usuarioEmpresa ?? null,
+                                passwordEmpresa: passwordEmpresa ?? null,
+                                usuarioPersonal: usuarioPersonal ?? null,
+                                passwordPersonal: passwordPersonal ?? null,
+                            },
+                        },
+                    },
+                    include: {
+                        detalle: true,
                     },
                 });
                 created.push(equipo);
@@ -325,7 +366,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        const { macWifi, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
+        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: {
@@ -374,6 +415,7 @@ export async function updateEquipo(req, res) {
                     upsert: {
                         create: {
                             macWifi: macWifi ?? null,
+                            redEthernet: redEthernet ?? null,
                             so: so ?? null,
                             tipoDd: tipoDd ?? null,
                             estadoAlm: estadoAlm ?? null,
@@ -390,6 +432,7 @@ export async function updateEquipo(req, res) {
                         },
                         update: {
                             macWifi: macWifi ?? null,
+                            redEthernet: redEthernet ?? null,
                             so: so ?? null,
                             tipoDd: tipoDd ?? null,
                             estadoAlm: estadoAlm ?? null,

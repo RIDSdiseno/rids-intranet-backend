@@ -38,7 +38,7 @@ const listQuerySchema = z.object({
 });
 
 const createEquipoSchema = z.object({
-  empresaId: z.coerce.number().int().positive(), // 👈 AHORA OBLIGATORIO
+  empresaId: z.coerce.number().int().positive(),
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
 
   tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
@@ -50,6 +50,26 @@ const createEquipoSchema = z.object({
   ram: z.string().trim().min(1),
   disco: z.string().trim().min(1),
   propiedad: z.string().trim().min(1),
+
+  // 🔥 NUEVOS CAMPOS DETALLE
+  macWifi: z.string().optional(),
+  redEthernet: z.string().optional(),
+  so: z.string().optional(),
+  tipoDd: z.string().optional(),
+  estadoAlm: z.string().optional(),
+  office: z.string().optional(),
+  teamViewer: z.string().optional(),
+  claveTv: z.string().optional(),
+  revisado: z.string().optional(),
+
+  adminRidsUsuario: z.string().optional(),
+  adminRidsPassword: z.string().optional(),
+
+  usuarioEmpresa: z.string().optional(),
+  passwordEmpresa: z.string().optional(),
+
+  usuarioPersonal: z.string().optional(),
+  passwordPersonal: z.string().optional(),
 });
 
 // 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
@@ -74,6 +94,7 @@ const equipoUpdateSchema = z.object({
 
   // 🔥 NUEVOS
   macWifi: z.string().optional(),
+  redEthernet: z.string().optional(),
   so: z.string().optional(),
   tipoDd: z.string().optional(),
   estadoAlm: z.string().optional(),
@@ -148,6 +169,7 @@ function flattenRow(e: any) {
     idSolicitante: e.idSolicitante,
 
     macWifi: detalle?.macWifi ?? null,
+    redEthernet: detalle?.redEthernet ?? null,
     so: detalle?.so ?? null,
     tipoDd: detalle?.tipoDd ?? null,
     estadoAlm: detalle?.estadoAlm ?? null,
@@ -290,6 +312,7 @@ export async function createEquipo(req: Request, res: Response) {
     // 🔥 transacción para que sea más estable
     for (const data of equiposToCreate) {
       try {
+
         const existe = await prisma.equipo.findUnique({
           where: { serial: data.serial },
         });
@@ -305,10 +328,28 @@ export async function createEquipo(req: Request, res: Response) {
         let idSolicitanteFinal: number | null =
           data.idSolicitante === undefined ? null : data.idSolicitante;
 
-        // ✅ Si viene null / undefined => asignamos placeholder de la empresa elegida
         if (!idSolicitanteFinal) {
           idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
         }
+
+        // 🔥 AQUÍ EXTRAEMOS LOS CAMPOS DETALLE
+        const {
+          macWifi,
+          redEthernet,
+          so,
+          tipoDd,
+          estadoAlm,
+          office,
+          teamViewer,
+          claveTv,
+          revisado,
+          adminRidsUsuario,
+          adminRidsPassword,
+          usuarioEmpresa,
+          passwordEmpresa,
+          usuarioPersonal,
+          passwordPersonal,
+        } = data;
 
         const equipo = await prisma.equipo.create({
           data: {
@@ -320,11 +361,35 @@ export async function createEquipo(req: Request, res: Response) {
             ram: data.ram,
             disco: data.disco,
             propiedad: data.propiedad,
-            idSolicitante: idSolicitanteFinal, // ✅ ya no queda null
+            idSolicitante: idSolicitanteFinal,
+
+            detalle: {
+              create: {
+                macWifi: macWifi ?? null,
+                redEthernet: data.redEthernet ?? null,
+                so: so ?? null,
+                tipoDd: tipoDd ?? null,
+                estadoAlm: estadoAlm ?? null,
+                office: office ?? null,
+                teamViewer: teamViewer ?? null,
+                claveTv: claveTv ?? null,
+                revisado: revisado ?? null,
+                adminRidsUsuario: adminRidsUsuario ?? null,
+                adminRidsPassword: adminRidsPassword ?? null,
+                usuarioEmpresa: usuarioEmpresa ?? null,
+                passwordEmpresa: passwordEmpresa ?? null,
+                usuarioPersonal: usuarioPersonal ?? null,
+                passwordPersonal: passwordPersonal ?? null,
+              },
+            },
+          },
+          include: {
+            detalle: true,
           },
         });
 
         created.push(equipo);
+
       } catch (e: any) {
         errors.push({
           serial: data.serial,
@@ -390,6 +455,7 @@ export async function updateEquipo(req: Request, res: Response) {
 
     const {
       macWifi,
+      redEthernet,
       so,
       tipoDd,
       estadoAlm,
@@ -461,6 +527,7 @@ export async function updateEquipo(req: Request, res: Response) {
           upsert: {
             create: {
               macWifi: macWifi ?? null,
+              redEthernet: redEthernet ?? null,
               so: so ?? null,
               tipoDd: tipoDd ?? null,
               estadoAlm: estadoAlm ?? null,
@@ -477,6 +544,7 @@ export async function updateEquipo(req: Request, res: Response) {
             },
             update: {
               macWifi: macWifi ?? null,
+              redEthernet: redEthernet ?? null,
               so: so ?? null,
               tipoDd: tipoDd ?? null,
               estadoAlm: estadoAlm ?? null,
