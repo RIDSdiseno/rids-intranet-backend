@@ -437,9 +437,12 @@ export const refresh = async (req: Request, res: Response) => {
       accessToken: newAccess,
       refreshToken: newRefreshRaw,
     });
-  } catch (error) {
-    console.error("Error en refresh:", error);
-    return res.status(401).json({ error: "Refresh inválido o expirado" });
+  } catch (err: any) {
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "REFRESH_EXPIRED" });
+    }
+
+    return res.status(401).json({ error: "REFRESH_INVALID" });
   }
 };
 

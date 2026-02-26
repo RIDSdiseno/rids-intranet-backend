@@ -1,7 +1,6 @@
 // src/middlewares/auth.ts
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-
 import { asyncLocalStorage } from "../lib/request-context.js";
 
 interface JwtPayloadCustom {
@@ -30,19 +29,25 @@ export function auth(required = true): RequestHandler {
         id: Number(payload.sub),
         rol: payload.rol ?? "TECNICO",
         empresaId: payload.empresaId ?? null,
-        email: payload.email ?? null, // ✅ CLAVE
+        email: payload.email ?? null,
       };
 
-      // 🔥 Guardar usuario en contexto global para auditoría
-      const store = asyncLocalStorage.getStore();
-      if (store) {
-        store.userId = Number(payload.sub);
+      asyncLocalStorage.run({ userId: Number(payload.sub) }, () => {
+        next();
+      });
+      return;
+    } catch (err: any) {
+      if (!required) {
+        asyncLocalStorage.run({ userId: null }, () => next());
+        return;
       }
 
-      return next();
-    } catch {
-      if (!required) return next();
-      res.status(401).json({ error: "Invalid token" });
+      if (err?.name === "TokenExpiredError") {
+        res.status(401).json({ error: "TOKEN_EXPIRED" });
+        return;
+      }
+
+      res.status(401).json({ error: "INVALID_TOKEN" });
       return;
     }
   };

@@ -42,6 +42,8 @@ import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
 import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
 import auditRouter from "./routes/historial-cambios-routes/audit.routes.js";
+/* ===================== TEAMVIEWER ===================== */
+import teamviewerRouter from "./routes/teamviewer-routes/teamviewer.routes.js";
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 export const api = Router();
@@ -94,6 +96,8 @@ api.use(whatchimpRouter);
 api.use("/upload-imagenes", uploadRoutes);
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
 api.use("/audit", auditRouter);
+/* ===================== TEAMVIEWER ===================== */
+api.use("/teamviewer", teamviewerRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

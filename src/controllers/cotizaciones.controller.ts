@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import type { Request, Response } from "express";
 
+import { EstadoCotizacionGestioo } from "@prisma/client";
+
 const prisma = new PrismaClient();
 
 function generarSKU(): string {
@@ -38,59 +40,140 @@ async function generarNumeroOrdenOT(): Promise<string> {
 ===================================================== */
 export async function getCotizacionesPaginadas(req: Request, res: Response) {
     try {
-        const page = Number(req.query.page) || 1;
-        const limit = Number(req.query.limit) || 10;
-
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limitRaw = Number(req.query.limit) || 15;
+        const limit = Math.min(Math.max(1, limitRaw), 100);
         const skip = (page - 1) * limit;
 
-        // 1. Obtener cotizaciones paginadas
+        const {
+            fechaDesde,
+            fechaHasta,
+            search,
+            estado,
+            tipo,
+            origen
+        } = req.query;
+
+        const AND: any[] = [];
+
+        /* ==========================
+           FILTRO POR FECHAS
+        ========================== */
+        if (fechaDesde || fechaHasta) {
+            const fechaFilter: any = {};
+            if (fechaDesde) fechaFilter.gte = new Date(String(fechaDesde));
+            if (fechaHasta) fechaFilter.lte = new Date(String(fechaHasta));
+
+            AND.push({ fecha: fechaFilter });
+        }
+
+        /* ==========================
+           FILTRO POR ESTADO
+        ========================== */
+        if (estado) {
+            AND.push({ estado: String(estado) });
+        }
+
+        /* ==========================
+           FILTRO POR TIPO
+        ========================== */
+        if (tipo) {
+            AND.push({ tipo: String(tipo) });
+        }
+
+        /* ==========================
+           FILTRO POR ORIGEN
+        ========================== */
+        if (origen) {
+            AND.push({
+                entidad: {
+                    origen: String(origen)
+                }
+            });
+        }
+
+        /* ==========================
+           BUSCADOR GLOBAL
+        ========================== */
+        if (search) {
+            const searchValue = String(search);
+            const searchUpper = searchValue.toUpperCase();
+
+            const OR: any[] = [];
+
+            // Buscar por ID si es número
+            if (!isNaN(Number(searchValue))) {
+                OR.push({ id: Number(searchValue) });
+            }
+
+            // Buscar por estado (enum exact match)
+            const estadosMatch = Object.values(EstadoCotizacionGestioo).filter(e =>
+                e.toLowerCase().includes(searchValue.toLowerCase())
+            );
+
+            if (estadosMatch.length > 0) {
+                OR.push({
+                    estado: { in: estadosMatch }
+                });
+            }
+
+            // Buscar por nombre entidad (string)
+            OR.push({
+                entidad: {
+                    nombre: {
+                        contains: searchValue,
+                        mode: "insensitive"
+                    }
+                }
+            });
+
+            AND.push({ OR });
+        }
+
+        const where = AND.length > 0 ? { AND } : {};
+
+        /* ==========================
+           QUERY PAGINADA
+        ========================== */
         const [rows, total] = await Promise.all([
             prisma.cotizacionGestioo.findMany({
+                where,
                 skip,
                 take: limit,
-                orderBy: { id: "desc" },
+                orderBy: { fecha: "desc" },
                 include: {
                     entidad: true,
                     tecnico: {
-                        select: {
-                            id_tecnico: true,
-                            nombre: true,
-                            email: true,
-                        },
+                        select: { id_tecnico: true, nombre: true }
                     },
-                    items: {
-                        orderBy: { id: "asc" },
-                    },
-                    facturas: true,
-                    trabajos: {                     // 👈 AGREGAR ESTO
+                    _count: {
                         select: {
-                            id: true,
-                            numeroOrden: true
+                            items: true,
+                            facturas: true
                         }
                     }
-                },
+                }
             }),
-
-            prisma.cotizacionGestioo.count()
+            prisma.cotizacionGestioo.count({ where })
         ]);
 
-        // 2. Asegurar que todas tengan items y formato consistente
-        const rowsConItems = rows.map(cot => ({
-            ...cot,
-            imagen: cot.imagen ?? null,
-            items: cot.items || []
-        }));
+        const pages = Math.ceil(total / limit);
 
         return res.json({
-            data: rowsConItems,
+            data: rows,
             total,
             page,
-            pages: Math.ceil(total / limit)
+            pages,
+            hasNext: page < pages,
+            hasPrev: page > 1
         });
 
-    } catch (error) {
-        console.error("❌ Error getCotizacionesPaginadas:", error);
-        return res.status(500).json({ error: "Error al obtener cotizaciones paginadas" });
+    } catch (error: any) {
+        console.error("🔥 ERROR REAL:", error);
+        return res.status(500).json({
+            error: error.message,
+            stack: error.stack
+        });
     }
 }
 

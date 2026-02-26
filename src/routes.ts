@@ -59,6 +59,9 @@ import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
 import auditRouter from "./routes/historial-cambios-routes/audit.routes.js";
 
+/* ===================== TEAMVIEWER ===================== */
+import teamviewerRouter from "./routes/teamviewer-routes/teamviewer.routes.js";
+
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 
@@ -131,6 +134,9 @@ api.use("/upload-imagenes", uploadRoutes);
 
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
 api.use("/audit", auditRouter);
+
+/* ===================== TEAMVIEWER ===================== */
+api.use("/teamviewer", teamviewerRouter);
 
 /* ===================== Export ===================== */
 export default api;

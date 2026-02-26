@@ -16,19 +16,23 @@ export function auth(required = true) {
                 id: Number(payload.sub),
                 rol: payload.rol ?? "TECNICO",
                 empresaId: payload.empresaId ?? null,
-                email: payload.email ?? null, // ✅ CLAVE
+                email: payload.email ?? null,
             };
-            // 🔥 Guardar usuario en contexto global para auditoría
-            const store = asyncLocalStorage.getStore();
-            if (store) {
-                store.userId = Number(payload.sub);
-            }
-            return next();
+            asyncLocalStorage.run({ userId: Number(payload.sub) }, () => {
+                next();
+            });
+            return;
         }
-        catch {
-            if (!required)
-                return next();
-            res.status(401).json({ error: "Invalid token" });
+        catch (err) {
+            if (!required) {
+                asyncLocalStorage.run({ userId: null }, () => next());
+                return;
+            }
+            if (err?.name === "TokenExpiredError") {
+                res.status(401).json({ error: "TOKEN_EXPIRED" });
+                return;
+            }
+            res.status(401).json({ error: "INVALID_TOKEN" });
             return;
         }
     };

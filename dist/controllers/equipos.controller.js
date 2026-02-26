@@ -38,6 +38,22 @@ const createEquipoSchema = z.object({
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
+    // 🔥 NUEVOS CAMPOS DETALLE
+    macWifi: z.string().optional(),
+    redEthernet: z.string().optional(),
+    so: z.string().optional(),
+    tipoDd: z.string().optional(),
+    estadoAlm: z.string().optional(),
+    office: z.string().optional(),
+    teamViewer: z.string().optional(),
+    claveTv: z.string().optional(),
+    revisado: z.string().optional(),
+    adminRidsUsuario: z.string().optional(),
+    adminRidsPassword: z.string().optional(),
+    usuarioEmpresa: z.string().optional(),
+    passwordEmpresa: z.string().optional(),
+    usuarioPersonal: z.string().optional(),
+    passwordPersonal: z.string().optional(),
 });
 // 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
@@ -59,6 +75,7 @@ const equipoUpdateSchema = z.object({
     propiedad: z.string().trim().min(1).optional(),
     // 🔥 NUEVOS
     macWifi: z.string().optional(),
+    redEthernet: z.string().optional(),
     so: z.string().optional(),
     tipoDd: z.string().optional(),
     estadoAlm: z.string().optional(),
@@ -66,6 +83,12 @@ const equipoUpdateSchema = z.object({
     teamViewer: z.string().optional(),
     claveTv: z.string().optional(),
     revisado: z.string().optional(),
+    adminRidsUsuario: z.string().optional(),
+    adminRidsPassword: z.string().optional(),
+    usuarioEmpresa: z.string().optional(),
+    passwordEmpresa: z.string().optional(),
+    usuarioPersonal: z.string().optional(),
+    passwordPersonal: z.string().optional(),
     empresaId: z.coerce.number().int().positive().optional(),
 });
 /* ================== CACHE SIMPLE ================== */
@@ -110,6 +133,7 @@ function flattenRow(e) {
         empresaId: e.solicitante?.empresa?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
         macWifi: detalle?.macWifi ?? null,
+        redEthernet: detalle?.redEthernet ?? null,
         so: detalle?.so ?? null,
         tipoDd: detalle?.tipoDd ?? null,
         estadoAlm: detalle?.estadoAlm ?? null,
@@ -117,6 +141,12 @@ function flattenRow(e) {
         teamViewer: detalle?.teamViewer ?? null,
         claveTv: detalle?.claveTv ?? null,
         revisado: detalle?.revisado ?? null,
+        adminRidsUsuario: detalle?.adminRidsUsuario ?? null,
+        adminRidsPassword: detalle?.adminRidsPassword ?? null,
+        usuarioEmpresa: detalle?.usuarioEmpresa ?? null,
+        passwordEmpresa: detalle?.passwordEmpresa ?? null,
+        usuarioPersonal: detalle?.usuarioPersonal ?? null,
+        passwordPersonal: detalle?.passwordPersonal ?? null,
     };
 }
 async function ensurePlaceholderSolicitante(empresaId) {
@@ -309,7 +339,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        const { macWifi, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, ...equipoData } = data;
+        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: { solicitante: { select: { empresaId: true } } },
@@ -349,6 +379,7 @@ export async function updateEquipo(req, res) {
                     upsert: {
                         create: {
                             macWifi: macWifi ?? null,
+                            redEthernet: redEthernet ?? null,
                             so: so ?? null,
                             tipoDd: tipoDd ?? null,
                             estadoAlm: estadoAlm ?? null,
@@ -356,9 +387,16 @@ export async function updateEquipo(req, res) {
                             teamViewer: teamViewer ?? null,
                             claveTv: claveTv ?? null,
                             revisado: revisado ?? null,
+                            adminRidsUsuario: adminRidsUsuario ?? null,
+                            adminRidsPassword: adminRidsPassword ?? null,
+                            usuarioEmpresa: usuarioEmpresa ?? null,
+                            passwordEmpresa: passwordEmpresa ?? null,
+                            usuarioPersonal: usuarioPersonal ?? null,
+                            passwordPersonal: passwordPersonal ?? null,
                         },
                         update: {
                             macWifi: macWifi ?? null,
+                            redEthernet: redEthernet ?? null,
                             so: so ?? null,
                             tipoDd: tipoDd ?? null,
                             estadoAlm: estadoAlm ?? null,
@@ -366,6 +404,12 @@ export async function updateEquipo(req, res) {
                             teamViewer: teamViewer ?? null,
                             claveTv: claveTv ?? null,
                             revisado: revisado ?? null,
+                            adminRidsUsuario: adminRidsUsuario ?? null,
+                            adminRidsPassword: adminRidsPassword ?? null,
+                            usuarioEmpresa: usuarioEmpresa ?? null,
+                            passwordEmpresa: passwordEmpresa ?? null,
+                            usuarioPersonal: usuarioPersonal ?? null,
+                            passwordPersonal: passwordPersonal ?? null,
                         },
                     },
                 },
