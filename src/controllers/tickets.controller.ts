@@ -1,82 +1,77 @@
-// src/controllers/tickets.controller.ts - VERSIÓN CORREGIDA
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { runAI } from "../utils/ai.js";
+import { sendTicketCreatedEmail } from "../service/email.service.js";
 
 export async function listTickets(req: Request, res: Response) {
   try {
-    // Si envías ?all=true, ignoramos la paginación
-    const all = req.query.all === "true";
-
-    const search = (req.query.search as string)?.trim();
-    const statusParam = req.query.status;
-    const year = req.query.year ? Number(req.query.year) : undefined;
-    const month = req.query.month ? Number(req.query.month) : undefined;
-    const empresa = (req.query.empresa as string)?.trim(); // NUEVO: parámetro para filtrar por empresa
-
-    const where: any = {};
-    
-
-    if (typeof statusParam !== "undefined") {
-      const s = Number(statusParam);
-      if (!Number.isNaN(s)) where.status = s;
-    }
-
-    if (year && year >= 1970 && year <= 2100) {
-      const start = new Date(Date.UTC(year, (month ? month - 1 : 0), 1));
-      const end =
-        month && month >= 1 && month <= 12
-          ? new Date(Date.UTC(year, month, 1))
-          : new Date(Date.UTC(year + 1, 0, 1));
-      where.createdAt = { gte: start, lt: end };
-    }
-
-    if (search && search.length > 0) {
-      where.OR = [
-        { subject: { contains: search, mode: "insensitive" } },
-        { requesterEmail: { contains: search, mode: "insensitive" } },
-        { ticketRequester: { email: { contains: search, mode: "insensitive" } } },
-        { ticketOrg: { name: { contains: search, mode: "insensitive" } } },
-      ];
-    }
-
-    // NUEVO: Filtro por empresa
-    if (empresa && empresa.length > 0) {
-      where.ticketOrg = {
-        name: {
-          contains: empresa,
-          mode: "insensitive"
-        }
-      };
-    }
-
-    // Si all=true, traemos todos los tickets sin paginar
-    const rows = await prisma.freshdeskTicket.findMany({
-      where,
+    const tickets = await prisma.freshdeskTicket.findMany({
       orderBy: { createdAt: "desc" },
-      ...(all ? {} : { skip: 0, take: 3000 }),
-      select: {
-        id: true,
-        subject: true,
-        type: true,
-        createdAt: true,
-        requesterEmail: true,
-        ticketRequester: { select: { email: true } },
-        ticketOrg: { select: { name: true } },
+    });
+
+    // Convertir BigInt a string para que JSON.stringify no falle
+    const data = tickets.map((t) => ({
+      ...t,
+      id: t.id.toString(),
+    }));
+
+    return res.json({ ok: true, data });
+  } catch (e: any) {
+    console.error("Error listing tickets:", e);
+    return res.status(500).json({ ok: false, error: e?.message ?? "error" });
+  }
+}
+
+export async function createTicket(req: Request, res: Response) {
+  try {
+    const { subject, description, email, priority, status } = req.body;
+
+    if (!subject || !email) {
+      return res.status(400).json({ success: false, error: "Faltan campos requeridos (subject, email)" });
+    }
+
+    // Generar ID temporal (en producción esto vendría de la respuesta de Freshdesk)
+    const id = BigInt(Date.now());
+
+    // Crear ticket en BD local
+    const ticket = await prisma.freshdeskTicket.create({
+      data: {
+        id,
+        subject,
+        requesterEmail: email,
+        status: Number(status) || 2, // 2: Open
+        priority: Number(priority) || 1, // 1: Low
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
     });
 
-    const data = rows.map((r) => ({
-      ticket_id: r.id.toString(),
-      solicitante_email: r.ticketRequester?.email ?? r.requesterEmail ?? null,
-      empresa: r.ticketOrg?.name ?? null,
-      subject: r.subject,
-      type: r.type ?? null,
-      fecha: r.createdAt.toISOString(),
-    }));
+    // Generar contexto con IA
+    let aiContext = "Hemos recibido tu solicitud.";
+    try {
+      const prompt = `El usuario ha reportado el siguiente problema: "${description || subject}". Genera un resumen muy breve, amable y profesional (máximo 30 palabras) confirmando que entendimos su problema, dirigido directamente al usuario (usando "tú").`;
+      
+      const aiResponse = await runAI({
+        userText: prompt,
+        context: {
+          from: "system",
+          phone: "system",
+          turns: 1,
+          transcript: []
+        }
+      });
+      if (aiResponse) aiContext = aiResponse;
+    } catch (e) {
+      console.error("Error generando contexto IA:", e);
+    }
 
-    res.json({ total: data.length, rows: data });
-  } catch (e: any) {
-    console.error("[tickets.controller] listTickets error:", e?.message || e);
-    res.status(500).json({ ok: false, error: e?.message ?? "error" });
+    // Enviar correo en segundo plano (no bloqueante pero capturando error)
+    sendTicketCreatedEmail(email, id.toString(), aiContext)
+      .catch(e => console.error("Error enviando correo de ticket:", e));
+
+    return res.status(201).json({ success: true, data: { ...ticket, id: ticket.id.toString() } });
+  } catch (error: any) {
+    console.error("Error creating ticket:", error);
+    return res.status(500).json({ success: false, error: "Error interno al crear ticket" });
   }
 }
