@@ -61,6 +61,16 @@ function sanitizeForAudit(obj) {
     }
     return clean;
 }
+// --- Helper reutilizable ---
+async function getNombreSolicitante(id) {
+    if (!id)
+        return null;
+    const sol = await prismaBase.solicitante.findUnique({
+        where: { id_solicitante: Number(id) },
+        select: { nombre: true }
+    });
+    return sol?.nombre || null;
+}
 /* =========================
    EXTENSION GLOBAL AUTOMÁTICA
 ========================= */
@@ -72,6 +82,20 @@ export const prisma = prismaBase.$extends({
                 if (!model || model === "AuditLog")
                     return result;
                 const r = result;
+                // 1. Preparamos los datos básicos con sanitizeForAudit
+                let auditChanges = sanitizeForAudit(r);
+                // 2. ENRIQUECIMIENTO: Si es Historial, buscamos el nombre del solicitante
+                // Esto inyecta el nombre en el log sin tocar el frontend
+                if (model === "Historial" && r.solicitanteId) {
+                    const nombre = await getNombreSolicitante(r.solicitanteId);
+                    if (nombre)
+                        auditChanges.nombreSolicitante = nombre;
+                }
+                // NUEVA LÓGICA: Si estás creando un Solicitante, captura su nombre directamente
+                if (model?.toLowerCase() === "solicitante" && r.nombre) {
+                    auditChanges.nombreSolicitante = r.nombre;
+                }
+                // 3. Lógica original para obtener empresaId
                 let empresaId = null;
                 if (model === "Equipo") {
                     const equipoFull = await prismaBase.equipo.findUnique({
@@ -80,19 +104,20 @@ export const prisma = prismaBase.$extends({
                     });
                     empresaId = equipoFull?.solicitante?.empresaId ?? null;
                 }
-                if (model === "Solicitante") {
+                else if (model?.toLowerCase() === "solicitante") {
                     empresaId = r.empresaId ?? null;
                 }
-                if (model === "Empresa") {
+                else if (model === "Empresa") {
                     empresaId = r.id_empresa ?? null;
                 }
+                // 4. Guardamos el log con los cambios ya enriquecidos
                 await prismaBase.auditLog.create({
                     data: {
                         entity: model,
                         entityId: extractId(r),
                         empresaId,
                         action: "CREATE",
-                        changes: sanitizeForAudit(r),
+                        changes: auditChanges, // Usamos el objeto modificado
                         actorId: getCurrentUserId(),
                     },
                 });
@@ -112,6 +137,22 @@ export const prisma = prismaBase.$extends({
                 const result = await query(args);
                 const r = result;
                 const changes = diffObjects(sanitizeForAudit(before), sanitizeForAudit(r));
+                if (model === "Historial") {
+                    const oldId = before?.solicitanteId;
+                    const newId = r?.solicitanteId;
+                    // Solo procesamos si hay IDs involucrados
+                    if (oldId || newId) {
+                        const oldName = await getNombreSolicitante(oldId);
+                        const newName = await getNombreSolicitante(newId);
+                        // Solo agregamos al log si el nombre cambió o si se está creando/vinculando por primera vez
+                        if (oldName !== newName) {
+                            changes.nombreSolicitante = {
+                                before: oldName,
+                                after: newName,
+                            };
+                        }
+                    }
+                }
                 let empresaId = null;
                 if (model === "Equipo" && before?.idSolicitante) {
                     const solicitante = await prismaBase.solicitante.findUnique({
@@ -119,12 +160,13 @@ export const prisma = prismaBase.$extends({
                     });
                     empresaId = solicitante?.empresaId ?? null;
                 }
-                if (model === "Solicitante") {
+                if (model?.toLowerCase() === "solicitante") {
                     empresaId = before?.empresaId ?? null;
                 }
                 if (model === "Empresa") {
                     empresaId = before?.id_empresa ?? null;
                 }
+                console.log("🔍 [DEBUG PRISMA] Estructura de cambios antes de guardar:", JSON.stringify(changes, null, 2));
                 await prismaBase.auditLog.create({
                     data: {
                         entity: model,
@@ -141,6 +183,25 @@ export const prisma = prismaBase.$extends({
                 if (!model || model === "AuditLog") {
                     return query(args);
                 }
+                if (model?.toLowerCase() === "solicitante") {
+                    const before = await prismaBase.solicitante.findUnique({
+                        where: args.where,
+                    });
+                    const result = await prismaBase.solicitante.update({
+                        where: args.where,
+                        data: { isActive: false },
+                    });
+                    await prismaBase.auditLog.create({
+                        data: { entity: model,
+                            entityId: before ? extractId(before) : "unknown",
+                            empresaId: before?.empresaId ?? null,
+                            action: "DELETE",
+                            changes: sanitizeForAudit(before),
+                            actorId: getCurrentUserId(),
+                        },
+                    });
+                    return result;
+                }
                 const delegate = prismaBase[model.charAt(0).toLowerCase() + model.slice(1)];
                 let before = null;
                 if (args?.where) {
@@ -149,17 +210,25 @@ export const prisma = prismaBase.$extends({
                     });
                 }
                 const result = await query(args);
+                // --- ESTO ES LO QUE CAMBIA: Enriquecimiento para el DELETE ---
+                let auditChanges = sanitizeForAudit(before);
+                if (model === "Historial" && before?.solicitanteId) {
+                    const nombre = await getNombreSolicitante(before.solicitanteId);
+                    if (nombre)
+                        auditChanges.nombreSolicitante = nombre;
+                }
+                // -------------------------------------------------------------
                 let empresaId = null;
-                if (model === "Equipo" && before?.idSolicitante) {
+                if (model === "Equipo" && before?.solicitanteId) {
                     const solicitante = await prismaBase.solicitante.findUnique({
-                        where: { id_solicitante: before.idSolicitante },
+                        where: { id_solicitante: before.solicitanteId },
                     });
                     empresaId = solicitante?.empresaId ?? null;
                 }
-                if (model === "Solicitante") {
+                else if (model?.toLowerCase() === "solicitante") {
                     empresaId = before?.empresaId ?? null;
                 }
-                if (model === "Empresa") {
+                else if (model === "Empresa") {
                     empresaId = before?.id_empresa ?? null;
                 }
                 await prismaBase.auditLog.create({
@@ -168,7 +237,9 @@ export const prisma = prismaBase.$extends({
                         entityId: before ? extractId(before) : "unknown",
                         empresaId,
                         action: "DELETE",
-                        changes: sanitizeForAudit(before),
+                        // --- USAMOS LA VARIABLE ENRIQUECIDA ---
+                        changes: auditChanges,
+                        // -------------------------------------
                         actorId: getCurrentUserId(),
                     },
                 });
