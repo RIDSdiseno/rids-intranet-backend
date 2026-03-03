@@ -1,6 +1,6 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
-import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket } from "../../controllers/tickets-rids/ticketera.controller.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
@@ -44,5 +44,6 @@ ticketeraRouter.post("/:id/reply", uploadTicketAttachments.array("attachments"),
     }
     return next();
 }, replyTicketAsAgent);
+ticketeraRouter.delete("/:id", deleteTicket);
 export default ticketeraRouter;
 //# sourceMappingURL=ticketera.routes.js.map

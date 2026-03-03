@@ -1,1 +1,1 @@
-{"version":3,"file":"teamviewer.service.d.ts","sourceRoot":"","sources":["../../../src/service/teamviewer/teamviewer.service.ts"],"names":[],"mappings":"AAWA,wBAAsB,cAAc,CAAC,QAAQ,CAAC,EAAE,MAAM,gBAarD;AAED,wBAAsB,SAAS,CAAC,QAAQ,EAAE,MAAM,gBAW/C"}
+{"version":3,"file":"teamviewer.service.d.ts","sourceRoot":"","sources":["../../../src/service/teamviewer/teamviewer.service.ts"],"names":[],"mappings":"AAaA,wBAAsB,cAAc,CAAC,QAAQ,CAAC,EAAE,MAAM,gBAarD;AAGD,wBAAsB,SAAS,CAAC,QAAQ,EAAE,MAAM,gBAW/C"}

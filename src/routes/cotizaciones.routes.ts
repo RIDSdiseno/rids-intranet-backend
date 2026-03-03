@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { auth } from "../middlewares/auth.js"; // 🔥 IMPORTANTE
+import { auth } from "../middlewares/auth.js"; //  IMPORTANTE
 
 import {
     getCotizaciones,
@@ -11,7 +11,11 @@ import {
     facturarCotizacion,
     anularFactura,
     pagarFactura,
-    generarOrdenDesdeCotizacion
+    consultarEstadoSII,
+    vincularFacturaSII,
+    consultarEnvioSII,
+    emitirFacturaSII,
+    cambiarEstadoFactura
 } from "../controllers/cotizaciones.controller.js";
 
 const cotizacionesRouter = Router();
@@ -28,11 +32,14 @@ cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);
 cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
 cotizacionesRouter.post("/:id/anular", anularFactura);
 cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);
-cotizacionesRouter.post("/:id/generar-orden", generarOrdenDesdeCotizacion);
 cotizacionesRouter.get("/:id", getCotizacionById);
 cotizacionesRouter.post("/", createCotizacion);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
-
+cotizacionesRouter.post("/:id/emitir-sii", emitirFacturaSII);
+cotizacionesRouter.post("/facturas/:id/consultar-envio", consultarEnvioSII);
+cotizacionesRouter.post("/:id/vincular-factura-sii", vincularFacturaSII);
+cotizacionesRouter.post("/facturas/:id/consultar-sii", consultarEstadoSII);
+cotizacionesRouter.patch("/facturas/:id/estado", cambiarEstadoFactura);
 
 export default cotizacionesRouter;

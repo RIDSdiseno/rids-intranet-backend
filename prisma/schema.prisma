@@ -727,15 +727,31 @@ model CotizacionGestioo {
 }
 
 model Factura {
-  id_factura    Int               @id @default(autoincrement())
-  numeroFactura String            @unique
-  fechaEmision  DateTime          @default(now())
+  id_factura Int @id @default(autoincrement())
+
+  numeroFactura String    @unique
+  fechaEmision  DateTime  @default(now())
   fechaPago     DateTime?
   total         Float
-  cotizacionId  Int
-  estado        EstadoFactura     @default(PENDIENTE)
-  createdAt     DateTime          @default(now())
-  cotizacion    CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
+
+  cotizacionId Int
+  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
+
+  estado EstadoFactura @default(PENDIENTE)
+
+  // --- Integración SII ---
+  tipoDTE       Int?
+  folioSII      String?
+  rutEmisor     String?
+  rutReceptor   String?
+  estadoSII     EstadoDTE?
+  fechaEnvioSII DateTime?
+  trackId       String?
+  rawResponse   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([folioSII])
 }
 
 model CotizacionItemGestioo {
@@ -906,6 +922,15 @@ model AuditLog {
   @@index([entityId])
   @@index([createdAt])
   @@index([empresaId])
+}
+
+enum EstadoDTE {
+  EMITIDO
+  RECIBIDO
+  ACEPTADO
+  RECHAZADO
+  OBSERVADO
+  ANULADO
 }
 
 enum AuditAction {

@@ -13,6 +13,7 @@ import {
     proxyExternalImage,
     bulkUpdateTickets,
     bulkMergeTickets,
+    deleteTicket
 } from "../../controllers/tickets-rids/ticketera.controller.js";
 
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
@@ -72,5 +73,7 @@ ticketeraRouter.post("/:id/reply",uploadTicketAttachments.array("attachments"),(
     },
     replyTicketAsAgent
 );
+
+ticketeraRouter.delete("/:id", deleteTicket);
 
 export default ticketeraRouter;

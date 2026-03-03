@@ -233,8 +233,8 @@ export async function buildReporteEmpresaData(
     });
 
     /* =====================
-   MANTENCIONES POR STATUS
-===================== */
+       MANTENCIONES POR STATUS
+    ===================== */
     const mantStatusMap: Record<string, number> = {};
 
     for (const m of mantenciones) {
@@ -245,6 +245,50 @@ export async function buildReporteEmpresaData(
     const porStatus = Object.entries(mantStatusMap).map(
         ([status, cantidad]) => ({ status, cantidad })
     );
+
+    /* =====================
+       MANTENCIONES POR TÉCNICO
+    ===================== */
+    const mantPorTecnicoMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+        const tecnico = m.tecnico?.nombre ?? "SIN TÉCNICO";
+        mantPorTecnicoMap[tecnico] = (mantPorTecnicoMap[tecnico] ?? 0) + 1;
+    }
+
+    const porTecnico = Object.entries(mantPorTecnicoMap)
+        .map(([tecnico, cantidad]) => ({ tecnico, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+
+    /* =====================
+       MANTENCIONES POR DÍA
+    ===================== */
+    const mantPorDiaMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+        const fecha = new Date(m.inicio).toISOString().slice(0, 10);
+        mantPorDiaMap[fecha] = (mantPorDiaMap[fecha] ?? 0) + 1;
+    }
+
+    const porDia = Object.entries(mantPorDiaMap)
+        .map(([fecha, cantidad]) => ({ fecha, cantidad }))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+    /* =====================
+       TOP SOLICITANTES MANTENCIONES
+    ===================== */
+    const mantPorSolicitanteMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+        const solicitante = m.solicitante ?? "Sin nombre";
+        mantPorSolicitanteMap[solicitante] =
+            (mantPorSolicitanteMap[solicitante] ?? 0) + 1;
+    }
+
+    const topSolicitantes = Object.entries(mantPorSolicitanteMap)
+        .map(([solicitante, cantidad]) => ({ solicitante, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, 5);
 
     /* =====================
    SOLICITANTES CRM
@@ -328,6 +372,9 @@ export async function buildReporteEmpresaData(
             total: mantenciones.length,
             detalle: mantenciones,
             porStatus,
+            porTecnico,
+            porDia,
+            topSolicitantes,
         },
 
         usuariosCRM: usuariosCRM.map(u => ({

@@ -826,3 +826,56 @@ export async function bulkMergeTickets(req: Request, res: Response) {
         });
     }
 }
+
+export async function deleteTicket(req: Request, res: Response) {
+    try {
+        const ticketId = Number(req.params.id);
+
+        if (!ticketId) {
+            return res.status(400).json({
+                ok: false,
+                message: "Ticket inválido",
+            });
+        }
+
+        await prisma.$transaction(async (tx) => {
+
+            // 1️⃣ Adjuntos
+            await tx.ticketAttachment.deleteMany({
+                where: {
+                    message: {
+                        ticketId,
+                    },
+                },
+            });
+
+            // 2️⃣ Mensajes
+            await tx.ticketMessage.deleteMany({
+                where: { ticketId },
+            });
+
+            // 3️⃣ Eventos
+            await tx.ticketEvent.deleteMany({
+                where: { ticketId },
+            });
+
+            // 4️⃣ Ticket
+            await tx.ticket.delete({
+                where: { id: ticketId },
+            });
+
+        });
+
+        return res.json({
+            ok: true,
+            message: "Ticket eliminado correctamente",
+        });
+
+    } catch (error) {
+        console.error("[helpdesk] deleteTicket error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al eliminar ticket",
+        });
+    }
+}

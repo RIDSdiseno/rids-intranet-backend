@@ -88,9 +88,19 @@ export const listSolicitantes = async (req: Request, res: Response) => {
       String(req.query.onlyGMS ?? "").toLowerCase() === "true";
 
     // default true
-    const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-    // ✅ override para clínicas cuando se filtra por empresa
-    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
+    const user = (req as any).user;
+
+    // 👇 Si viene explícitamente en query → usarlo
+    // 👇 Si NO viene → default depende del rol
+    const onlyWithAccountRaw =
+      req.query.onlyWithAccount !== undefined
+        ? parseOnlyWithAccount(req.query.onlyWithAccount)
+        : user?.rol === "CLIENTE"; // true para cliente, false para admin
+
+    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
+      empresaId,
+      onlyWithAccountRaw
+    );
 
     const includeMsDetails =
       String(req.query.includeMsDetails ?? "").toLowerCase() === "1" ||
@@ -102,7 +112,6 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const orderDir = parseOrderDir(req.query.orderDir);
 
     const INS: Prisma.QueryMode = "insensitive";
-    const user = (req as any).user;
 
     const where: Prisma.SolicitanteWhereInput = {
       ...(user?.rol === "CLIENTE"
@@ -112,12 +121,12 @@ export const listSolicitantes = async (req: Request, res: Response) => {
           : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
       ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] as any } } : {}),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
@@ -244,10 +253,18 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
     const empresaId = toInt(req.query.empresaId);
     const q = (req.query.q as string | undefined)?.trim();
 
-    const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
-
     const user = (req as any).user;
+
+    const onlyWithAccountRaw =
+      req.query.onlyWithAccount !== undefined
+        ? parseOnlyWithAccount(req.query.onlyWithAccount)
+        : user?.rol === "CLIENTE";
+
+    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
+      empresaId,
+      onlyWithAccountRaw
+    );
+
     if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
       return res.status(403).json({ error: "No autorizado" });
     }
@@ -289,10 +306,17 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
     const orderDir = parseOrderDir(req.query.orderDir);
     const empresaId = toInt(req.query.empresaId);
 
-    const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
-
     const user = (req as any).user;
+
+    const onlyWithAccountRaw =
+      req.query.onlyWithAccount !== undefined
+        ? parseOnlyWithAccount(req.query.onlyWithAccount)
+        : user?.rol === "CLIENTE";
+
+    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
+      empresaId,
+      onlyWithAccountRaw
+    );
 
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
     const includeEmpresa = String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
@@ -307,12 +331,12 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
       ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
@@ -355,10 +379,17 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     const q = (req.query.q as string | undefined)?.trim();
     const empresaId = toInt(req.query.empresaId);
 
-    const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
-
     const user = (req as any).user;
+
+    const onlyWithAccountRaw =
+      req.query.onlyWithAccount !== undefined
+        ? parseOnlyWithAccount(req.query.onlyWithAccount)
+        : user?.rol === "CLIENTE";
+
+    const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
+      empresaId,
+      onlyWithAccountRaw
+    );
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
 
     const INS: Prisma.QueryMode = "insensitive";
@@ -366,12 +397,12 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
       ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q, mode: INS } },
-              { email: { contains: q, mode: INS } },
-              { empresa: { nombre: { contains: q, mode: INS } } },
-            ],
-          }
+          OR: [
+            { nombre: { contains: q, mode: INS } },
+            { email: { contains: q, mode: INS } },
+            { empresa: { nombre: { contains: q, mode: INS } } },
+          ],
+        }
         : {}),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
@@ -395,8 +426,8 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
       idList.length === 0
         ? 0
         : await prisma.equipo.count({
-            where: { idSolicitante: { in: idList } },
-          });
+          where: { idSolicitante: { in: idList } },
+        });
 
     return res.json({
       solicitantes,

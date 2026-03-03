@@ -327,6 +327,10 @@ export async function createEquipo(req: Request, res: Response) {
 
         let idSolicitanteFinal: number | null = data.idSolicitante ?? null;
 
+        if (!idSolicitanteFinal && data.empresaId) {
+          idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
+        }
+
         const equipo = await prisma.equipo.create({
           data: {
             tipo: data.tipo,
@@ -338,6 +342,34 @@ export async function createEquipo(req: Request, res: Response) {
             disco: data.disco,
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
+
+            // 🔥 AQUÍ VA EL DETALLE
+            detalle: {
+              create: {
+                macWifi: data.macWifi ?? null,
+                redEthernet: data.redEthernet ?? null,
+                so: data.so ?? null,
+                tipoDd: data.tipoDd ?? null,
+                estadoAlm: data.estadoAlm ?? null,
+                office: data.office ?? null,
+                teamViewer: data.teamViewer ?? null,
+                claveTv: data.claveTv ?? null,
+                revisado: data.revisado ?? null,
+
+                adminRidsUsuario: data.adminRidsUsuario ?? null,
+                adminRidsPassword: data.adminRidsPassword ?? null,
+
+                usuarioEmpresa: data.usuarioEmpresa ?? null,
+                passwordEmpresa: data.passwordEmpresa ?? null,
+
+                usuarioPersonal: data.usuarioPersonal ?? null,
+                passwordPersonal: data.passwordPersonal ?? null,
+              },
+            },
+          },
+          include: {
+            solicitante: { include: { empresa: true } },
+            detalle: true,
           },
         });
 

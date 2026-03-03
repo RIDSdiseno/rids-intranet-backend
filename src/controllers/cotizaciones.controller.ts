@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import type { Request, Response } from "express";
 
-import { EstadoCotizacionGestioo } from "@prisma/client";
+import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
+
+import { getSimpleAPIConfig, generarDTE, generarSobre, enviarAlSII, consultarEstadoEnvio } from "../service/simple-api/simpleapi.service.js";
 
 const prisma = new PrismaClient();
 
@@ -10,29 +12,30 @@ function generarSKU(): string {
     return `SKU-${random}`;
 }
 
-async function generarNumeroOrdenOT(): Promise<string> {
-    const year = new Date().getFullYear();
+function mapEstadoSimpleAPIToEnum(estado: string): EstadoDTE {
+    const normalized = estado.toUpperCase();
 
-    const ultimaOrden = await prisma.detalleTrabajoGestioo.findFirst({
-        where: {
-            numeroOrden: {
-                startsWith: `OT-${year}-`
-            }
-        },
-        orderBy: {
-            id: "desc"
-        }
-    });
+    switch (normalized) {
+        case "ACEPTADO":
+        case "APROBADO":
+            return EstadoDTE.ACEPTADO;
 
-    let nuevoNumero = 1;
+        case "RECHAZADO":
+            return EstadoDTE.RECHAZADO;
 
-    if (ultimaOrden?.numeroOrden) {
-        const partes = ultimaOrden.numeroOrden.split("-");
-        const numeroActual = Number(partes[2]);
-        nuevoNumero = numeroActual + 1;
+        case "OBSERVADO":
+            return EstadoDTE.OBSERVADO;
+
+        case "ANULADO":
+            return EstadoDTE.ANULADO;
+
+        case "EMITIDO":
+        case "ENVIADO":
+            return EstadoDTE.EMITIDO;
+
+        default:
+            return EstadoDTE.EMITIDO; // fallback seguro
     }
-
-    return `OT-${year}-${String(nuevoNumero).padStart(4, "0")}`;
 }
 
 /* =====================================================
@@ -51,7 +54,8 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
             search,
             estado,
             tipo,
-            origen
+            origen,
+            tecnico
         } = req.query;
 
         const AND: any[] = [];
@@ -89,6 +93,15 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                 entidad: {
                     origen: String(origen)
                 }
+            });
+        }
+
+        /* ==========================
+   FILTRO POR TÉCNICO
+========================== */
+        if (tecnico) {
+            AND.push({
+                tecnicoId: Number(tecnico)
             });
         }
 
@@ -146,6 +159,17 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                     tecnico: {
                         select: { id_tecnico: true, nombre: true }
                     },
+                    facturas: {
+                        select: {
+                            id_factura: true,
+                            folioSII: true,
+                            tipoDTE: true,
+                            numeroFactura: true,
+                            estado: true,
+                            fechaEmision: true,
+                            total: true
+                        }
+                    },
                     _count: {
                         select: {
                             items: true,
@@ -169,7 +193,7 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
         });
 
     } catch (error: any) {
-        console.error("🔥 ERROR REAL:", error);
+        console.error(" ERROR REAL:", error);
         return res.status(500).json({
             error: error.message,
             stack: error.stack
@@ -516,6 +540,9 @@ export async function deleteCotizacion(req: Request, res: Response) {
     } return
 }
 
+// =====================================================
+//      FACTURAR COTIZACIÓN - CREAR FACTURA + CAMBIAR ESTADO
+// =====================================================
 export async function facturarCotizacion(req: Request, res: Response) {
     const { id } = req.params;
 
@@ -596,6 +623,9 @@ export async function facturarCotizacion(req: Request, res: Response) {
     } return
 }
 
+// =====================================================
+//      PAGAR FACTURA - SOLO SI NO ESTÁ ANULADA
+// =====================================================
 export async function anularFactura(req: Request, res: Response) {
     const { id } = req.params;
 
@@ -631,6 +661,9 @@ export async function anularFactura(req: Request, res: Response) {
     } return
 }
 
+// =====================================================
+//      PAGAR FACTURA - SOLO CAMBIAR ESTADO A PAGADA
+// =====================================================
 export async function pagarFactura(req: Request, res: Response) {
     const { id } = req.params;
 
@@ -661,78 +694,288 @@ export async function pagarFactura(req: Request, res: Response) {
     } return
 }
 
-export async function generarOrdenDesdeCotizacion(req: Request, res: Response) {
-    try {
-        const cotizacionId = Number(req.params.id);
+// =====================================================
+//      EDICIÓN NÚMERO FACTURA - SOLO PENDIENTES
+// =====================================================
+/*
+export async function editarNumeroFactura(req: Request, res: Response) {
+    const { id } = req.params;
+    const { numeroFactura } = req.body;
 
+    try {
+        if (!numeroFactura || numeroFactura.trim() === "") {
+            return res.status(400).json({ error: "Número de factura inválido" });
+        }
+
+        const factura = await prisma.factura.findUnique({
+            where: { id_factura: Number(id) },
+        });
+
+        if (!factura)
+            return res.status(404).json({ error: "Factura no encontrada" });
+
+        // 🔥 REGLA DE SEGURIDAD
+        if (factura.estado !== "PENDIENTE") {
+            return res.status(400).json({
+                error: "Solo se puede editar el número de facturas pendientes"
+            });
+        }
+
+        // 🔥 Validar que no exista otro número igual
+        const existeNumero = await prisma.factura.findFirst({
+            where: {
+                numeroFactura,
+                NOT: { id_factura: factura.id_factura }
+            }
+        });
+
+        if (existeNumero) {
+            return res.status(400).json({
+                error: "Ya existe una factura con ese número"
+            });
+        }
+
+        const actualizada = await prisma.factura.update({
+            where: { id_factura: factura.id_factura },
+            data: { numeroFactura }
+        });
+
+        res.json({ message: "Número actualizado", factura: actualizada });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Error al actualizar número de factura" });
+    }
+} */
+
+// =====================================================
+//      CAMBIAR ESTADO FACTURA (PENDIENTE, PAGADA, ANULADA)
+// =====================================================
+export async function cambiarEstadoFactura(req: Request, res: Response) {
+    const { id } = req.params;
+    const { estado } = req.body;
+
+    try {
+        const factura = await prisma.factura.update({
+            where: { id_factura: Number(id) },
+            data: { estadoSII: estado }
+        });
+
+        res.json(factura);
+
+    } catch (error) {
+        res.status(500).json({ error: "Error actualizando estado" });
+    }
+}
+
+// =====================================================
+//      INTEGRACIÓN SII - SIMPLE API
+// =====================================================
+
+// =====================================================
+//      EMITIR FACTURA AL SII - SOLO PARA COTIZACIONES APROBADAS
+// =====================================================
+export async function emitirFacturaSII(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
         const cotizacion = await prisma.cotizacionGestioo.findUnique({
-            where: { id: cotizacionId },
-            include: { items: true }
+            where: { id: Number(id) },
+            include: {
+                entidad: true,
+                items: true
+            }
         });
 
         if (!cotizacion)
             return res.status(404).json({ error: "Cotización no encontrada" });
 
         if (cotizacion.estado !== "APROBADA")
-            return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden generar orden" });
+            return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
 
-        if (cotizacion.ordenGenerada)
-            return res.status(400).json({ error: "Esta cotización ya generó una orden" });
+        const config = getSimpleAPIConfig();
 
-        let numeroOrdenGenerado = "";
-
-        await prisma.$transaction(async (tx) => {
-
-            numeroOrdenGenerado = await generarNumeroOrdenOT();
-
-            const entrada = await tx.detalleTrabajoGestioo.create({
-                data: {
-                    numeroOrden: numeroOrdenGenerado,
-                    origenTrabajo: "DESDE_COTIZACION",
-                    cotizacionId: cotizacion.id,
-                    tipoTrabajo: "INGRESO DESDE COTIZACIÓN",
-                    descripcion: "Orden generada desde cotización aprobada",
-                    entidadId: cotizacion.entidadId,
-                    estado: "PENDIENTE",
-                    area: "ENTRADA"
-                }
+        if (!cotizacion.entidad) {
+            return res.status(400).json({
+                error: "La cotización no tiene entidad asociada"
             });
+        }
 
-            await tx.detalleTrabajoGestioo.update({
-                where: { id: entrada.id },
-                data: { ordenGrupoId: entrada.id }
+        if (!cotizacion.entidad.rut) {
+            return res.status(400).json({
+                error: "La entidad no tiene RUT"
             });
+        }
 
-            for (const item of cotizacion.items) {
-                await tx.detalleTrabajoGestioo.create({
-                    data: {
-                        numeroOrden: numeroOrdenGenerado,
-                        ordenGrupoId: entrada.id,
-                        origenTrabajo: "DESDE_COTIZACION",
-                        cotizacionId: cotizacion.id,
-                        tipoTrabajo: item.tipo,
-                        descripcion: item.descripcion || item.nombre,
-                        entidadId: cotizacion.entidadId,
-                        estado: "PENDIENTE",
-                        area: "REPARACION"
-                    }
-                });
+        const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
+
+        // 1️⃣ Generar DTE
+        const dte = await generarDTE(config, { cotizacion });
+
+        // 2️⃣ Generar sobre
+        await generarSobre(config, dte);
+
+        // 3️⃣ Enviar al SII
+        const envio = await enviarAlSII(config);
+
+        // 4️⃣ Crear factura
+        const factura = await prisma.factura.create({
+            data: {
+                numeroFactura: `INT-${dte.folio}`,
+                total: cotizacion.total,
+                cotizacionId: cotizacion.id,
+                tipoDTE: 33,
+                folioSII: String(dte.folio),
+                rutEmisor: config.rutEmpresa,
+                rutReceptor: rutReceptor,
+                estadoSII: EstadoDTE.EMITIDO,
+                trackId: envio.trackId
             }
+        });
 
-            await tx.cotizacionGestioo.update({
-                where: { id: cotizacion.id },
-                data: { ordenGenerada: true }
-            });
-
+        // 5️⃣ Ahora sí cambiar estado
+        await prisma.cotizacionGestioo.update({
+            where: { id: cotizacion.id },
+            data: { estado: "FACTURADA" }
         });
 
         return res.json({
-            message: "Orden generada correctamente",
-            numeroOrden: numeroOrdenGenerado
+            message: "Factura emitida correctamente",
+            folio: dte.folio,
+            trackId: envio.trackId
         });
 
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "Error al generar orden" });
+    } catch (error: any) {
+        console.error(" Error emitirFacturaSII:", error);
+        return res.status(500).json({ error: error.message });
+    }
+}
+
+// =====================================================
+//      CONSULTAR ESTADO ENVÍO SII - ACTUALIZAR ESTADO LOCAL
+// =====================================================
+export async function consultarEnvioSII(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
+        const factura = await prisma.factura.findUnique({
+            where: { id_factura: Number(id) }
+        });
+
+        if (!factura?.trackId)
+            return res.status(400).json({
+                error: "Factura no fue emitida desde el sistema"
+            });
+
+        const config = getSimpleAPIConfig();
+
+        const result = await consultarEstadoEnvio(
+            config,
+            factura.trackId
+        );
+
+        await prisma.factura.update({
+            where: { id_factura: factura.id_factura },
+            data: {
+                estadoSII: mapEstadoSimpleAPIToEnum(result.estado),
+                fechaEnvioSII: new Date()
+            }
+        });
+
+        return res.json({
+            message: "Estado actualizado",
+            estado: result.estado
+        });
+
+    } catch (error: any) {
+        console.error("❌ Error consultarEnvioSII:", error.message);
+        return res.status(500).json({ error: error.message });
+    }
+}
+
+// =====================================================
+//      VINCULAR FACTURA SII EXISTENTE - SOLO PARA COTIZACIONES APROBADAS
+// =====================================================
+export async function vincularFacturaSII(req: Request, res: Response) {
+    const { id } = req.params;  // 🔥 CAMBIAR ESTO
+    const { tipoDTE, folioSII, rutEmisor } = req.body;
+
+    try {
+        const cotizacion = await prisma.cotizacionGestioo.findUnique({
+            where: { id: Number(id) },  // 🔥 USAR PARAM
+            include: { entidad: true }
+        });
+
+        if (!cotizacion)
+            return res.status(404).json({ error: "Cotización no encontrada" });
+
+        const factura = await prisma.factura.create({
+            data: {
+                numeroFactura: `EXT-${folioSII}`,
+                total: cotizacion.total,
+                cotizacionId: cotizacion.id,
+                tipoDTE: Number(tipoDTE),
+                folioSII: String(folioSII),
+                rutEmisor,
+                rutReceptor: cotizacion.entidad?.rut ?? null,
+                estadoSII: EstadoDTE.RECIBIDO
+            }
+        });
+
+        return res.json({ message: "Factura vinculada correctamente", factura });
+
+    } catch (error: any) {
+        console.error("🔥 ERROR REAL:", error);
+        return res.status(500).json({ error: error.message });
+    }
+}
+
+// =====================================================
+//      CONSULTAR ESTADO SII - ACTUALIZAR ESTADO LOCAL
+// =====================================================
+export async function consultarEstadoSII(req: Request, res: Response) {
+    const { id } = req.params;
+
+    try {
+        const factura = await prisma.factura.findUnique({
+            where: { id_factura: Number(id) }
+        });
+
+        if (!factura?.trackId) {
+            return res.status(400).json({
+                error: "Factura no fue emitida desde el sistema"
+            });
+        }
+
+        const config = getSimpleAPIConfig();
+
+        console.log("🔎 CONSULTA ENVIO:", {
+            trackId: factura.trackId,
+            ambiente: config.ambiente
+        });
+
+        const result = await consultarEstadoEnvio(
+            config,
+            factura.trackId
+        );
+
+        await prisma.factura.update({
+            where: { id_factura: factura.id_factura },
+            data: {
+                estadoSII: mapEstadoSimpleAPIToEnum(result.estado),
+                fechaEnvioSII: new Date()
+            }
+        });
+
+        return res.json({
+            message: "Estado actualizado",
+            estado: result.estado
+        });
+
+    } catch (error: any) {
+        console.error("❌ Error consultarEstadoSII:", error.message);
+        return res.status(500).json({
+            error: error.message ?? "Error consultando SII"
+        });
     }
 }
