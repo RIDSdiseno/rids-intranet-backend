@@ -72,8 +72,12 @@ export const listSolicitantes = async (req, res) => {
         const onlyGMS = String(req.query.onlyGMS ?? "").toLowerCase() === "1" ||
             String(req.query.onlyGMS ?? "").toLowerCase() === "true";
         // default true
-        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-        // ✅ override para clínicas cuando se filtra por empresa
+        const user = req.user;
+        // 👇 Si viene explícitamente en query → usarlo
+        // 👇 Si NO viene → default depende del rol
+        const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
+            ? parseOnlyWithAccount(req.query.onlyWithAccount)
+            : user?.rol === "CLIENTE"; // true para cliente, false para admin
         const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const includeMsDetails = String(req.query.includeMsDetails ?? "").toLowerCase() === "1" ||
             String(req.query.includeMsDetails ?? "").toLowerCase() === "true";
@@ -81,7 +85,6 @@ export const listSolicitantes = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const INS = "insensitive";
-        const user = req.user;
         const where = {
             ...(user?.rol === "CLIENTE"
                 ? { empresaId: Number(user.empresaId) }
@@ -210,9 +213,11 @@ export const listSolicitantesByEmpresa = async (req, res) => {
     try {
         const empresaId = toInt(req.query.empresaId);
         const q = req.query.q?.trim();
-        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
+        const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
+            ? parseOnlyWithAccount(req.query.onlyWithAccount)
+            : user?.rol === "CLIENTE";
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
             return res.status(403).json({ error: "No autorizado" });
         }
@@ -248,9 +253,11 @@ export const listSolicitantesForSelect = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const empresaId = toInt(req.query.empresaId);
-        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
+        const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
+            ? parseOnlyWithAccount(req.query.onlyWithAccount)
+            : user?.rol === "CLIENTE";
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const includeEmpresa = String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
         const q = req.query.q?.trim();
@@ -305,9 +312,11 @@ export const solicitantesMetrics = async (req, res) => {
     try {
         const q = req.query.q?.trim();
         const empresaId = toInt(req.query.empresaId);
-        const onlyWithAccountRaw = parseOnlyWithAccount(req.query.onlyWithAccount);
-        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const user = req.user;
+        const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
+            ? parseOnlyWithAccount(req.query.onlyWithAccount)
+            : user?.rol === "CLIENTE";
+        const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const INS = "insensitive";
         const where = {

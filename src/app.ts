@@ -13,6 +13,8 @@ import { UPLOADS_DIR } from "./config/paths.js";
 
 import { asyncLocalStorage } from "./lib/request-context.js";
 
+import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
+
 /* ========= Helpers ========= */
 function normalizeOrigin(origin: string): string {
   return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final

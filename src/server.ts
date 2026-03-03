@@ -7,6 +7,7 @@ import { Server as IOServer } from "socket.io";
 /* ==== Puente de eventos → sockets (tiempo real) ==== */
 import { bus } from "./lib/events.js";
 import { startEmailReaderJob } from "./jobs/email-reader.job.js";
+import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
 
 function parseOrigins(raw?: string) {
   if (!raw || !raw.trim()) return ["http://localhost:5173"];
@@ -81,6 +82,8 @@ const PORT = Number(process.env.PORT ?? 3000);
 server.listen(PORT, () => {
   console.log(`🚀 API escuchando en http://localhost:${PORT}`);
   console.log(`[ws] Socket.IO path=${SOCKET_PATH} origins=${ORIGINS.join(", ")}`);
+
+  startTeamViewerCron();
 
   // 🆕 Iniciar job de emails
   if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {

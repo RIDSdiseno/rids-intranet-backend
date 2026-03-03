@@ -2,6 +2,7 @@ import axios from "axios";
 
 const TEAMVIEWER_API = "https://webapi.teamviewer.com/api/v1";
 
+// Configuración de Axios para TeamViewer
 const api = axios.create({
   baseURL: TEAMVIEWER_API,
   headers: {
@@ -9,6 +10,7 @@ const api = axios.create({
   },
 });
 
+// Función para obtener conexiones desde TeamViewer
 export async function getConnections(fromDate?: string) {
   try {
     const response = await api.get("/reports/connections", {
@@ -24,6 +26,7 @@ export async function getConnections(fromDate?: string) {
   }
 }
 
+// Función para obtener detalles de un dispositivo específico
 export async function getDevice(deviceId: string) {
   try {
     const response = await api.get(`/devices/${deviceId}`);

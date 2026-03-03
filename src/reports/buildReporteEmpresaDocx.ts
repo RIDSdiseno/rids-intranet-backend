@@ -57,17 +57,24 @@ export async function buildReporteEmpresaDocx(data: any): Promise<Buffer> {
     ===================== */
     children.push(
         new Paragraph({
-            text: "INFORME MENSUAL DE SOPORTE TI",
+            text: "Informe Operativo",
             heading: HeadingLevel.TITLE,
             alignment: AlignmentType.CENTER,
         }),
         new Paragraph({
-            text: data.empresa.nombre,
-            heading: HeadingLevel.HEADING_1,
+            text: "Asesorías RIDS — Reporte operativo",
             alignment: AlignmentType.CENTER,
         }),
         new Paragraph({
-            text: `Periodo evaluado: ${data.month}`,
+            text: `${data.empresa.nombre} · ${data.month}`,
+            alignment: AlignmentType.CENTER,
+        }),
+        new Paragraph({
+            text: `Folio: ${data.empresa.nombre}-${data.month.replace("-", "")}`,
+            alignment: AlignmentType.CENTER,
+        }),
+        new Paragraph({
+            text: "soporte@rids.cl",
             alignment: AlignmentType.CENTER,
             spacing: { after: 800 },
         })
@@ -86,6 +93,37 @@ export async function buildReporteEmpresaDocx(data: any): Promise<Buffer> {
                 data.kpis.visitas.avgMs / 60000
             )} minutos por visita. Actualmente se encuentran registrados ${data.kpis.equipos.count} equipos asociados a la empresa y se generaron ${data.kpis.tickets.total} tickets de soporte durante el mes.`,
             spacing: { after: 400 },
+        })
+    );
+
+    children.push(
+        new Paragraph({
+            text: "Contexto y Alcance",
+            heading: HeadingLevel.HEADING_2,
+        }),
+        new Paragraph({ text: "Antecedentes", heading: HeadingLevel.HEADING_3 }),
+        new Paragraph({
+            text: "El presente informe resume solicitudes, tickets y actividades del periodo indicado.",
+        }),
+        new Paragraph({ text: "Objetivos", heading: HeadingLevel.HEADING_3 }),
+        new Paragraph({
+            text: "Prestar soporte informático externo asegurando continuidad operacional y cumplimiento de SLA.",
+        }),
+        new Paragraph({ text: "Métodos", heading: HeadingLevel.HEADING_3 }),
+        new Paragraph({ text: "• Atención de incidencias vía HelpDesk." }),
+        new Paragraph({ text: "• Mantenimientos preventivos a equipos." }),
+        new Paragraph({ text: "• Emisión de informes mensuales." }),
+    );
+
+    children.push(
+        new Paragraph({
+            text: "Análisis Operacional",
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 600 },
+        }),
+        new Paragraph({
+            text: "A continuación se presenta un análisis basado en la actividad operacional del periodo. Se incluyen gráficos de solicitudes, actividades de mantenimiento y equipamiento.",
+            spacing: { after: 300 },
         })
     );
 

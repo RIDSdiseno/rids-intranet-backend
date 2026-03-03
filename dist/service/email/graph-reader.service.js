@@ -173,7 +173,7 @@ class GraphReaderService {
             subject: message.subject || 'Sin asunto',
             bodyText,
             bodyHtml,
-            messageId: message.internetMessageId || '',
+            messageId: graphMessageId,
             conversationId: message.conversationId || '',
             cc: ccAddresses,
             graphMessageId,
@@ -349,8 +349,16 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     async addMessageToTicket(ticketId, data) {
-        await prisma.$transaction(async (tx) => {
-            const msg = await tx.ticketMessage.create({
+        // 1) DB rápido (sin adjuntos)
+        const msg = await prisma.$transaction(async (tx) => {
+            // ✅ DEDUPE primero para que no duplique nada
+            const exists = await tx.ticketMessage.findUnique({
+                where: { sourceMessageId: data.messageId },
+                select: { id: true },
+            });
+            if (exists)
+                return null;
+            const created = await tx.ticketMessage.create({
                 data: {
                     ticketId,
                     direction: MessageDirection.INBOUND,
@@ -365,7 +373,6 @@ class GraphReaderService {
                     sourceReferences: data.graphMessageId,
                 },
             });
-            await this.saveAttachments(ticketId, msg.id, data);
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },
@@ -377,15 +384,26 @@ class GraphReaderService {
                     actorType: TicketActorType.REQUESTER,
                 },
             });
+            return created;
         });
-        // Emitir eventos para frontend
+        // si ya estaba procesado, no seguimos
+        if (!msg)
+            return;
+        // 2) Adjuntos FUERA de la transacción (lento)
+        try {
+            await this.saveAttachments(ticketId, msg.id, data);
+        }
+        catch (e) {
+            console.error("⚠️ Error guardando adjuntos:", e);
+            // opcional: registrar evento/flag para reintentar luego
+        }
+        // 3) Emitir eventos
         bus.emit("ticket.message", {
             ticketId,
             direction: "INBOUND",
             from: data.fromEmail,
             subject: data.subject,
         });
-        // Opcional: también emitir actualización de ticket (si quieres que el frontend refresque estado, prioridad, etc.)
         bus.emit("ticket.updated", {
             ticketId,
             lastActivityAt: new Date(),

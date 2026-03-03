@@ -89,6 +89,18 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
             status: string;
             cantidad: number;
         }[];
+        porTecnico: {
+            tecnico: string;
+            cantidad: number;
+        }[];
+        porDia: {
+            fecha: string;
+            cantidad: number;
+        }[];
+        topSolicitantes: {
+            solicitante: string;
+            cantidad: number;
+        }[];
     };
     usuariosCRM: {
         usuario: string;
