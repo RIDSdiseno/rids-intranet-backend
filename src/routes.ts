@@ -62,6 +62,9 @@ import auditRouter from "./routes/historial-cambios-routes/audit.routes.js";
 /* ===================== TEAMVIEWER ===================== */
 import teamviewerRouter from "./routes/teamviewer-routes/teamviewer.routes.js";
 
+/* ===================== IA INVENTARIO ===================== */
+import iaInventarioRouter from "./routes/ia-intranet-routes/ia-inventario.routes.js";
+import iaReportesRouter from "./routes/ia-intranet-routes/ia-reportes.routes.js";
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 
@@ -137,6 +140,10 @@ api.use("/audit", auditRouter);
 
 /* ===================== TEAMVIEWER ===================== */
 api.use("/teamviewer", teamviewerRouter);
+
+/* ===================== IA INVENTARIO ===================== */
+api.use("/ia-inventario", iaInventarioRouter);
+api.use("/ia-reportes", iaReportesRouter);
 
 /* ===================== Export ===================== */
 export default api;

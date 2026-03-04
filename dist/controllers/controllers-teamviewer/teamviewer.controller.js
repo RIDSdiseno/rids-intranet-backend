@@ -15,7 +15,6 @@ export async function syncTeamViewer(req, res) {
         return res.json(result);
     }
     catch (error) {
-        console.error("🔥 ERROR REAL:", error);
         return res.status(500).json({ error: "Error sincronizando TeamViewer" });
     }
 }
@@ -31,9 +30,8 @@ export async function runTeamViewerSyncInternal() {
             .replace(/\.\d{3}Z$/, "Z")
         : undefined;
     console.log("Última fecha sync:", fromDate ?? "Primera ejecución");
-    const data = await getConnections(undefined);
+    const data = await getConnections(fromDate);
     const sessions = data?.records ?? [];
-    console.log("GROUPNAMES DETECTADOS:", [...new Set(sessions.map(s => s.groupname))]);
     if (!sessions.length) {
         return { ok: true, totalRecibidas: 0 };
     }
@@ -175,10 +173,6 @@ export async function runTeamViewerSyncInternal() {
                 const deviceInfo = await getDevice(deviceId.startsWith("d") ? deviceId : `d${deviceId}`);
                 const alias = deviceInfo.alias?.toLowerCase() ?? "";
                 const group = deviceInfo.groupname?.toLowerCase() ?? "";
-                console.log("🔎 DEVICE INFO:", {
-                    alias,
-                    group,
-                });
                 // 🔹 Intentar match por alias
                 const solAlias = solicitantes.find(s => alias.includes(s.nombre.toLowerCase()));
                 if (solAlias) {
@@ -214,11 +208,9 @@ export async function runTeamViewerSyncInternal() {
                 }
             }
             catch (err) {
-                console.log("⚠ No se pudo consultar device API");
             }
         }
         if (!empresaId) {
-            console.log("❌ SESSION SIN EMPRESA (FINAL):", session);
             sinEmpresa++;
             continue;
         }
