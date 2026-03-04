@@ -3,11 +3,11 @@ export declare function getInventarioByEmpresa(params: {
     empresaNombre?: string;
 }): Promise<({
     solicitante: {
+        nombre: string;
+        email: string | null;
         empresa: {
             nombre: string;
         };
-        nombre: string;
-        email: string | null;
     } | null;
     detalle: {
         macWifi: string | null;

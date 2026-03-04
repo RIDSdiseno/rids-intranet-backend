@@ -84,6 +84,7 @@ export const listAuditByEmpresa = async (req, res) => {
         // 2️⃣ Armar filtro OR consolidado
         const where = {
             OR: [
+                { empresaId: empresaIdNum },
                 { entity: "Empresa", entityId: String(empresaIdNum) },
                 ...(solicitanteIds.length
                     ? [{ entity: "Solicitante", entityId: { in: solicitanteIds } }]

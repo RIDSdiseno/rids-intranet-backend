@@ -29,10 +29,10 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         cantidad: number;
     }[];
     visitasDetalle: {
+        solicitante: string;
         sucursal: {
             nombre: string;
         } | null;
-        solicitante: string;
         tecnico: {
             nombre: string;
         };
