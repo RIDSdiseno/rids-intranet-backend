@@ -65,6 +65,8 @@ import teamviewerRouter from "./routes/teamviewer-routes/teamviewer.routes.js";
 /* ===================== IA INVENTARIO ===================== */
 import iaInventarioRouter from "./routes/ia-intranet-routes/ia-inventario.routes.js";
 import iaReportesRouter from "./routes/ia-intranet-routes/ia-reportes.routes.js";
+import iaRecomendacionesRouter from "./routes/ia-intranet-routes/ia-recomendaciones.routes.js";
+
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 
@@ -144,6 +146,7 @@ api.use("/teamviewer", teamviewerRouter);
 /* ===================== IA INVENTARIO ===================== */
 api.use("/ia-inventario", iaInventarioRouter);
 api.use("/ia-reportes", iaReportesRouter);
+api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 
 /* ===================== Export ===================== */
 export default api;

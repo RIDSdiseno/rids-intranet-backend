@@ -4,6 +4,6 @@ import { analizarInventarioEmpresa } from "../../controllers/ia-intranet-control
 const iaInventarioRouter = Router();
 
 // GET /api/ai/analisis-inventario/:empresaId
-iaInventarioRouter.get("/analisis-inventario/:empresaId", analizarInventarioEmpresa);
+iaInventarioRouter.get("/:empresaId", analizarInventarioEmpresa);
 
 export default iaInventarioRouter;

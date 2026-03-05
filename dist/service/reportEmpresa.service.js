@@ -34,6 +34,17 @@ function clasificarTipoVisita(v) {
     return "ADICIONAL";
 }
 /* ======================================================
+   ⏱️ Formatear duración en ms → minutos/horas
+====================================================== */
+function formatMs(ms) {
+    const minutes = Math.round(ms / 60000);
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h > 0
+        ? `${h}h ${m}m`
+        : `${m} minutos`;
+}
+/* ======================================================
    📊 SERVICE FINAL – REPORTE EMPRESA
 ====================================================== */
 export async function buildReporteEmpresaData(empresaId, ym) {
@@ -167,7 +178,7 @@ export async function buildReporteEmpresaData(empresaId, ym) {
        NARRATIVA AUTOMÁTICA
     ===================== */
     const narrativa = {
-        resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${Math.round(avgMs / 60000)} minutos por visita. Se registraron ${equipos.length} equipos y ${ticketsDetalle.length} tickets asociados a la empresa.`,
+        resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${formatMs(avgMs)} por visita.`
     };
     /* =====================
    MANTENCIONES REMOTAS

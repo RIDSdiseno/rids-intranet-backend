@@ -533,6 +533,7 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.ram ? { ram: equipoData.ram } : {}),
         ...(equipoData.disco ? { disco: equipoData.disco } : {}),
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
+        ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
 
         // 🔥 AQUI VA EL DETALLE
         detalle: {

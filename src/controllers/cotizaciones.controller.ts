@@ -897,17 +897,48 @@ export async function consultarEnvioSII(req: Request, res: Response) {
 //      VINCULAR FACTURA SII EXISTENTE - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
 export async function vincularFacturaSII(req: Request, res: Response) {
-    const { id } = req.params;  // 🔥 CAMBIAR ESTO
+    const { id } = req.params;  //  CAMBIAR ESTO
     const { tipoDTE, folioSII, rutEmisor } = req.body;
 
     try {
         const cotizacion = await prisma.cotizacionGestioo.findUnique({
-            where: { id: Number(id) },  // 🔥 USAR PARAM
+            where: { id: Number(id) },  //  USAR PARAM
             include: { entidad: true }
         });
 
         if (!cotizacion)
             return res.status(404).json({ error: "Cotización no encontrada" });
+
+        // =====================================================
+        // VALIDAR ESTADO DE COTIZACIÓN
+        // =====================================================
+
+        if (cotizacion.estado !== "APROBADA") {
+            return res.status(400).json({
+                error: "Solo se pueden vincular facturas a cotizaciones aprobadas"
+            });
+        }
+
+        // =====================================================
+        // VALIDAR QUE EL FOLIO NO ESTÉ REGISTRADO
+        // =====================================================
+
+        const existe = await prisma.factura.findFirst({
+            where: {
+                folioSII: String(folioSII),
+                tipoDTE: Number(tipoDTE)
+            }
+        });
+
+        if (existe) {
+            return res.status(400).json({
+                error: `El folio ${folioSII} ya está registrado en el sistema`
+            });
+        }
+
+        // =====================================================
+        // CREAR FACTURA VINCULADA A LA COTIZACIÓN
+        // =====================================================
 
         const factura = await prisma.factura.create({
             data: {
