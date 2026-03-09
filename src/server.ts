@@ -6,6 +6,7 @@ import ticketRoutes from "./routes/tickets.routes.js"; // Importado correctament
 /* ==== Puente de eventos → sockets (tiempo real) ==== */
 import { bus } from "./lib/events.js";
 import { startEmailReaderJob } from "./jobs/email-reader.job.js";
+import { emailSenderService } from "./service/email/email-sender.service.js";
 
 // --- CONFIGURACIÓN DE RUTAS ---
 // Esto faltaba para que http://localhost:4000/api/tickets funcione
@@ -42,8 +43,16 @@ io.on("connection", (socket) => {
 bus.on("solicitante.created", (payload) => io.emit("solicitante.created", payload));
 bus.on("solicitante.updated", (payload) => io.emit("solicitante.updated", payload));
 
-bus.on("ticket.created", (payload) => {
+bus.on("ticket.created", async (payload) => {
   io.emit("ticket.created", payload);
+  try {
+    if (payload.from && payload.aiSummary) {
+    await emailSenderService.sendTicketCreatedEmail(payload.from, payload.id, payload.aiSummary);
+  }
+  } catch (error) {
+    console.error("Error al enviar email:", error);
+  }
+  
 });
 
 bus.on("ticket.updated", (payload) => {

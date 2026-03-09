@@ -56,6 +56,18 @@ class EmailSenderService {
             throw error;
         }
     }
+    async sendTicketCreatedEmail(to: string, id: string, summary: string) {
+  try {
+    await this.transporter.sendMail({
+      from: `"RIDS" <${process.env.SMTP_USER}>`,
+      to,
+      subject: `Ticket #${id} Registrado`,
+      html: `<p>${summary}</p><hr><p>Ticket #${id}</p>`,
+    });
+  } catch (e) {
+    console.error("Error de correo:", e);
+  }
+}
 
     /**
      * Template HTML para respuesta

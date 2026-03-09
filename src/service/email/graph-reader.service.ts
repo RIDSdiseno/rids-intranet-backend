@@ -1,6 +1,8 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
+import { runAI } from "../../utils/ai.js";
+import { detectArea } from "../../controllers/tickets-rids/ticket-area.utils.js";
 
 import { prisma } from '../../lib/prisma.js';
 import crypto from 'crypto';
@@ -378,19 +380,22 @@ class GraphReaderService {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
 
-        // CREAR TICKET (con o sin solicitante)
+        // 1. Preparar variables
+        const mockTicket = { subject: data.subject, messages: [{ bodyText: data.bodyText }] } as any;
+        const area = detectArea(mockTicket) || "SOPORTE";
+        const conf = await (prisma as any).areaConfig.findUnique({ where: { nombre: area } });
+        let aiSummary = conf?.mensajeBase || "Revisaremos tu caso.";
+
+        // 2. Ejecutar IA
+        try {
+            const resAI = await runAI({ userText: `Área: ${area}. Reporte: "${data.bodyText}". Respuesta (máx 30 palabras).`, context: { from: "system", transcript: [], email: data.fromEmail } });
+            if (resAI) aiSummary = resAI.replace(/^"|"$/g, '');
+        } catch (e) {}
+
+        // 3. Crear Ticket
         const ticket = await prisma.ticket.create({
             data: {
-                publicId: crypto.randomUUID(),
-                subject: data.subject,
-                status: TicketStatus.OPEN,
-                priority: this.detectPriority(data.subject, data.bodyText),
-                channel: TicketChannel.EMAIL,
-                empresaId: empresa.id_empresa,
-                requesterId: requester?.id_solicitante ?? null,
-                fromEmail: data.fromEmail,
-                inboxEmail: this.supportEmail,
-                lastActivityAt: new Date(),
+                publicId: crypto.randomUUID(), subject: data.subject, status: TicketStatus.OPEN, priority: this.detectPriority(data.subject, data.bodyText), channel: TicketChannel.EMAIL, empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: data.fromEmail, inboxEmail: this.supportEmail, lastActivityAt: new Date(), aiSummary,
             },
         });
 
@@ -421,7 +426,10 @@ class GraphReaderService {
             priority: ticket.priority,
             channel: TicketChannel.EMAIL,
             from: data.fromEmail,
+            aiSummary,
         });
+
+
 
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
     }
