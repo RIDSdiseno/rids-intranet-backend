@@ -525,6 +525,7 @@ export async function inboundEmail(req, res) {
                 priority: TicketPriority.NORMAL,
                 channel: "EMAIL",
                 empresaId: empresa.id_empresa,
+                rolAsignado: detectRole(subject || "Sin asunto", text),
                 requesterId: requester?.id_solicitante ?? null,
                 fromEmail: from,
                 lastActivityAt: new Date(),

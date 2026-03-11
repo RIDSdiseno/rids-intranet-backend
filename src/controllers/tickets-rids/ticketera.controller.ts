@@ -45,6 +45,7 @@ export async function createTicket(req: Request, res: Response) {
                     priority: priority ?? TicketPriority.NORMAL,
                     channel: "WEB",
                     lastActivityAt: new Date(),
+                    rolAsignado: detectRole(subject || "", message || ""),
 
                     // ✅ RELACIONES CORRECTAS
                     empresa: {
@@ -107,6 +108,13 @@ export async function createTicket(req: Request, res: Response) {
             message: "Error al crear ticket",
         });
     }
+}
+
+     function detectRole(subject: string, body: string): string {
+        const text = `${subject} ${body}`.toLowerCase();
+        if (['factura', 'cotizacion', 'pago'].some(k => text.includes(k))) return 'VENTAS';
+        if (['impresora', 'clave', 'internet'].some(k => text.includes(k))) return 'SOPORTE';
+        return 'TECNICO'; // Rol por defecto
 }
 
 // Responder ticket como agente
@@ -568,6 +576,8 @@ export async function updateTicket(req: Request, res: Response) {
                 assigneeId,
             },
         });
+        bus.emit("ticket.statusChanged", ticket);
+        
 
         return res.json({
             ok: true,

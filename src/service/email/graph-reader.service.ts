@@ -395,6 +395,7 @@ class GraphReaderService {
         // 3. Crear Ticket
         const ticket = await prisma.ticket.create({
             data: {
+                rolAsignado: this.detectRole(data.subject, data.bodyText),
                 publicId: crypto.randomUUID(), subject: data.subject, status: TicketStatus.OPEN, priority: this.detectPriority(data.subject, data.bodyText), channel: TicketChannel.EMAIL, empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: data.fromEmail, inboxEmail: this.supportEmail, lastActivityAt: new Date(), aiSummary,
             },
         });
@@ -480,54 +481,17 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     private async addMessageToTicket(ticketId: number, data: ParsedEmail) {
-        await prisma.$transaction(async (tx) => {
-            const msg = await tx.ticketMessage.create({
-                data: {
-                    ticketId,
-                    direction: MessageDirection.INBOUND,
-                    bodyText: data.bodyText,
-                    bodyHtml: data.bodyHtml,
-                    isInternal: false,
-                    fromEmail: data.fromEmail,
-                    toEmail: this.supportEmail,
-                    cc: data.cc.length ? data.cc.join(",") : null,
-                    sourceMessageId: data.messageId,
-                    sourceInReplyTo: data.conversationId || null,
-                    sourceReferences: data.graphMessageId,
-                },
-            });
+        const msg = await prisma.$transaction(async (tx) => {
+            const newMessage = await tx.ticketMessage.create({ data: { ticketId, direction: MessageDirection.INBOUND, bodyText: data.bodyText, bodyHtml: data.bodyHtml, isInternal: false, fromEmail: data.fromEmail, toEmail: this.supportEmail, cc: data.cc.length ? data.cc.join(",") : null, sourceMessageId: data.messageId, sourceInReplyTo: data.conversationId || null, sourceReferences: data.graphMessageId } });
+            await tx.ticket.update({ where: { id: ticketId }, data: { status: "OPEN", lastActivityAt: new Date() } });
+            await tx.ticketEvent.create({ data: { ticketId, type: TicketEventType.MESSAGE_SENT, actorType: TicketActorType.REQUESTER } });
+            return newMessage;
+    });
 
-            await this.saveAttachments(ticketId, msg.id, data);
-
-            await tx.ticket.update({
-                where: { id: ticketId },
-                data: { lastActivityAt: new Date() },
-            });
-
-            await tx.ticketEvent.create({
-                data: {
-                    ticketId,
-                    type: TicketEventType.MESSAGE_SENT,
-                    actorType: TicketActorType.REQUESTER,
-                },
-            });
-        });
-
-        // Emitir eventos para frontend
-        bus.emit("ticket.message", {
-            ticketId,
-            direction: "INBOUND",
-            from: data.fromEmail,
-            subject: data.subject,
-        });
-
-        // Opcional: también emitir actualización de ticket (si quieres que el frontend refresque estado, prioridad, etc.)
-        bus.emit("ticket.updated", {
-            ticketId,
-            lastActivityAt: new Date(),
-        });
-    }
-
+  await this.saveAttachments(ticketId, msg.id, data);
+  bus.emit("ticket.message", { ticketId, direction: "INBOUND", from: data.fromEmail, subject: data.subject });
+  bus.emit("ticket.updated", { ticketId, changes: { status: "OPEN" } });
+}
     /* ======================================================
        Prioridad
     ====================================================== */
@@ -544,6 +508,12 @@ class GraphReaderService {
 
         return TicketPriority.NORMAL;
     }
+     detectRole(subject: string, body: string): string {
+        const text = `${subject} ${body}`.toLowerCase();
+        if (['factura', 'cotizacion', 'pago'].some(k => text.includes(k))) return 'VENTAS';
+        if (['impresora', 'clave', 'internet'].some(k => text.includes(k))) return 'SOPORTE';
+        return 'TECNICO'; // Rol por defecto
+}
 
     // ... otros métodos como translateStatus, escapeHtml, etc. ...
 

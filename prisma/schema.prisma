@@ -2,13 +2,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
-/// * ===================== shadowDatabaseUrl = env("SHADOW_DATABASE_URL") =====================
 datasource db {
   provider     = "postgresql"
   url          = env("DATABASE_URL")
   relationMode = "prisma"
 }
 
+/// * ===================== shadowDatabaseUrl = env("SHADOW_DATABASE_URL") =====================
 model Empresa {
   id_empresa           Int                   @id @default(autoincrement())
   nombre               String                @unique
@@ -252,6 +252,7 @@ model Solicitante {
   isActive             Boolean                 @default(true)
   microsoftUserId      String?                 @unique
   accountType          AccountType?
+  deletedAt            DateTime?
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")
@@ -268,6 +269,7 @@ model Solicitante {
   @@index([empresaId])
   @@index([isActive])
   @@index([accountType])
+  @@index([deletedAt])
 }
 
 model MsSku {
@@ -418,11 +420,13 @@ model Equipo {
   tipo                   TipoEquipo              @default(GENERICO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
+  deletedAt              DateTime?
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
+  @@index([deletedAt])
 }
 
 model DetalleEquipo {
@@ -804,7 +808,6 @@ model Ticket {
   channel         TicketChannel   @default(WEB)
   fromEmail       String?
   inboxEmail      String?
-  aiSummary       String?
   firstResponseAt DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
@@ -812,6 +815,8 @@ model Ticket {
   updatedAt       DateTime        @updatedAt
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
+  aiSummary       String?
+  rolAsignado     String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -900,11 +905,11 @@ model ChatLog {
 }
 
 model AreaConfig {
-  id              Int      @id @default(autoincrement())
-  nombre          String   @unique // "SOPORTE", "INFORMATICA", "VENTAS", "ADMIN"
-  mensajeBase     String   // El mensaje que el usuario de esa área editó
-  firmaArea       String?  // Ej: "Atentamente, Equipo de TI"
-  updatedAt       DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  mensajeBase String
+  firmaArea   String?
+  updatedAt   DateTime @updatedAt
 
   @@map("area_configs")
 }
@@ -925,6 +930,34 @@ model AuditLog {
   @@index([entityId])
   @@index([createdAt])
   @@index([empresaId])
+}
+
+model AgendaTecnico {
+  id        Int @id @default(autoincrement())
+  agendaId  Int
+  tecnicoId Int
+
+  @@unique([agendaId, tecnicoId])
+  @@index([agendaId])
+  @@index([tecnicoId])
+}
+
+model AgendaVisita {
+  id                  Int          @id @default(autoincrement())
+  fecha               DateTime     @db.Date
+  empresaId           Int?
+  tipo                TipoAgenda   @default(SEMANA)
+  estado              EstadoAgenda @default(PROGRAMADA)
+  notificacionEnviada Boolean      @default(false)
+  notas               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime
+
+  @@index([empresaId])
+  @@index([estado])
+  @@index([fecha])
+  @@index([notificacionEnviada])
+  @@index([tipo])
 }
 
 enum AuditAction {
@@ -1100,4 +1133,16 @@ enum EstadoDTE {
   RECHAZADO
   OBSERVADO
   ANULADO
+}
+
+enum EstadoAgenda {
+  PROGRAMADA
+  NOTIFICADA
+  COMPLETADA
+  CANCELADA
+}
+
+enum TipoAgenda {
+  SEMANA
+  SABADO
 }

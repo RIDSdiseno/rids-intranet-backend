@@ -2,6 +2,7 @@ import http from "http";
 import app from "./app.js"; 
 import { Server as IOServer } from "socket.io";
 import ticketRoutes from "./routes/tickets.routes.js"; // Importado correctamente
+import { prisma } from "./lib/prisma.js";
 
 /* ==== Puente de eventos → sockets (tiempo real) ==== */
 import { bus } from "./lib/events.js";
@@ -47,7 +48,7 @@ bus.on("ticket.created", async (payload) => {
   io.emit("ticket.created", payload);
   try {
     if (payload.from && payload.aiSummary) {
-    await emailSenderService.sendTicketCreatedEmail(payload.from, payload.id, payload.aiSummary);
+    await emailSenderService.sendTicketCreatedEmail(payload.from, String(payload.id), payload.aiSummary);
   }
   } catch (error) {
     console.error("Error al enviar email:", error);
@@ -55,9 +56,25 @@ bus.on("ticket.created", async (payload) => {
   
 });
 
-bus.on("ticket.updated", (payload) => {
-  io.emit("ticket.updated", payload);
-});
+bus.on("ticket.updated", async (data) => {
+  if (data.changes && data.changes.status) {
+    const nuevoEstado = data.changes.status;
+    if (nuevoEstado === "CLOSED" || nuevoEstado === "RESOLVED") {
+      const t = await prisma.ticket.findUnique({ where: { id: data.ticketId } });
+      if (t?.fromEmail) {
+        await emailSenderService.sendStatusEmail(t.id, nuevoEstado, t.fromEmail);
+      }
+      if (t?.rolAsignado) {
+        const tecnicos = await prisma.tecnico.findMany({
+          where: { rol: t.rolAsignado, status: true }
+        });
+        for (const tec of tecnicos) {
+          await emailSenderService.sendStatusEmail(t.id, nuevoEstado, tec.email);
+        }
+      }
+    }
+  }
+});/*  */
 
 bus.on("ticket.message", (payload) => {
   io.emit("ticket.message", payload);
