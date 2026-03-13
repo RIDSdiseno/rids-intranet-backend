@@ -267,13 +267,8 @@ export async function listTickets(req: Request, res: Response) {
 
         const whereActual: Prisma.TicketWhereInput = {};
 
-        if (status) {
-            whereActual.status = status as TicketStatus;
-        } else {
-            whereActual.status = {
-                not: TicketStatus.CLOSED,
-            };
-        }
+        if (status) { whereActual.status = status === "5" ? "CLOSED" : status as TicketStatus; }
+        else { whereActual.status = { not: "CLOSED" as TicketStatus }; }
 
         if (priority) whereActual.priority = priority as TicketPriority;
         if (assigneeId) whereActual.assigneeId = Number(assigneeId);
@@ -652,8 +647,12 @@ export async function inboundEmail(req: Request, res: Response) {
             if (resAI) aiSummary = resAI.replace(/^"|"$/g, '');
         } catch (e) {}
 
+
+        console.log("Rol calculado:", detectRole(subject || "", text || ""));
+       
         const ticket = await prisma.ticket.create({
             data: {
+                rolAsignado: detectRole(subject || "", text || ""),
                 publicId: crypto.randomUUID(), subject: subject || "Sin asunto", status: TicketStatus.NEW, priority: TicketPriority.NORMAL, channel: "EMAIL", empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: from, aiSummary, lastActivityAt: new Date(),
             },
         });
@@ -685,6 +684,7 @@ export async function inboundEmail(req: Request, res: Response) {
             empresaId: ticket.empresaId,
             priority: ticket.priority,
             channel: "EMAIL",
+            
             from,
         });
 
