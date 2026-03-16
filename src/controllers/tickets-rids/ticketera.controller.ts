@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import { runAI } from "../../utils/ai.js";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { emailSenderService } from '../../service/email/email-sender.service.js';
@@ -107,6 +108,7 @@ export async function createTicket(req: Request, res: Response) {
         });
     }
 }
+
 
 // Responder ticket como agente
 export async function replyTicketAsAgent(req: Request, res: Response) {
@@ -258,13 +260,8 @@ export async function listTickets(req: Request, res: Response) {
 
         const whereActual: Prisma.TicketWhereInput = {};
 
-        if (status) {
-            whereActual.status = status as TicketStatus;
-        } else {
-            whereActual.status = {
-                not: TicketStatus.CLOSED,
-            };
-        }
+        if (status) { whereActual.status = status === "5" ? "CLOSED" : status as TicketStatus; }
+        else { whereActual.status = { not: "CLOSED" as TicketStatus }; }
 
         if (priority) whereActual.priority = priority as TicketPriority;
         if (assigneeId) whereActual.assigneeId = Number(assigneeId);
@@ -567,6 +564,8 @@ export async function updateTicket(req: Request, res: Response) {
                 assigneeId,
             },
         });
+        bus.emit("ticket.statusChanged", ticket);
+        
 
         return res.json({
             ok: true,
@@ -628,21 +627,24 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 4️⃣ Crear ticket (con o sin requester)
+        // 4️⃣ Clasificación IA y Crear ticket
+        const mockTicket = { subject: subject || "", messages: [{ bodyText: text }] } as any;
+        const area = detectArea(mockTicket) || "SOPORTE";
+
+        const conf = await (prisma as any).areaConfig.findUnique({ where: { nombre: area } });
+        let aiSummary = conf?.mensajeBase || "Revisaremos tu caso a la brevedad.";
+
+        try {
+            const prompt = `Área: ${area}. Instrucción: "${aiSummary}". Reporte: "${text}". Respuesta breve (máx 30 palabras).`;
+            const resAI = await runAI({ userText: prompt, context: { from: "system", transcript: [], email: from } });
+            if (resAI) aiSummary = resAI.replace(/^"|"$/g, '');
+        } catch (e) {}
+
+
+       
         const ticket = await prisma.ticket.create({
             data: {
-                publicId: crypto.randomUUID(),
-                subject: subject || "Sin asunto",
-                status: TicketStatus.NEW,
-                priority: TicketPriority.NORMAL,
-                channel: "EMAIL",
-
-                empresaId: empresa.id_empresa,
-
-                requesterId: requester?.id_solicitante ?? null,
-                fromEmail: from,
-
-                lastActivityAt: new Date(),
+                publicId: crypto.randomUUID(), subject: subject || "Sin asunto", status: TicketStatus.NEW, priority: TicketPriority.NORMAL, channel: "EMAIL", empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: from, aiSummary, lastActivityAt: new Date(),
             },
         });
 
@@ -673,6 +675,7 @@ export async function inboundEmail(req: Request, res: Response) {
             empresaId: ticket.empresaId,
             priority: ticket.priority,
             channel: "EMAIL",
+            
             from,
         });
 

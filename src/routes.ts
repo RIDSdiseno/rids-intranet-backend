@@ -3,6 +3,7 @@ import { Router } from "express";
 
 /* ===================== Core de la app ===================== */
 import { authRouter } from "./routes/auth.routes.js";
+// Ejemplo en tu archivo de rutas
 import { solicitantesRouter } from "./routes/solicitantes.routes.js";
 import { visitasRouter } from "./routes/visitas.routes.js";
 import { equiposRouter } from "./routes/equipos.routes.js";
