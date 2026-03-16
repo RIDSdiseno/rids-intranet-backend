@@ -45,7 +45,6 @@ export async function createTicket(req: Request, res: Response) {
                     priority: priority ?? TicketPriority.NORMAL,
                     channel: "WEB",
                     lastActivityAt: new Date(),
-                    rolAsignado: detectRole(subject || "", message || ""),
 
                     // ✅ RELACIONES CORRECTAS
                     empresa: {
@@ -110,12 +109,6 @@ export async function createTicket(req: Request, res: Response) {
     }
 }
 
-     function detectRole(subject: string, body: string): string {
-        const text = `${subject} ${body}`.toLowerCase();
-        if (['factura', 'cotizacion', 'pago'].some(k => text.includes(k))) return 'VENTAS';
-        if (['impresora', 'clave', 'internet'].some(k => text.includes(k))) return 'SOPORTE';
-        return 'TECNICO'; // Rol por defecto
-}
 
 // Responder ticket como agente
 export async function replyTicketAsAgent(req: Request, res: Response) {
@@ -648,11 +641,9 @@ export async function inboundEmail(req: Request, res: Response) {
         } catch (e) {}
 
 
-        console.log("Rol calculado:", detectRole(subject || "", text || ""));
        
         const ticket = await prisma.ticket.create({
             data: {
-                rolAsignado: detectRole(subject || "", text || ""),
                 publicId: crypto.randomUUID(), subject: subject || "Sin asunto", status: TicketStatus.NEW, priority: TicketPriority.NORMAL, channel: "EMAIL", empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: from, aiSummary, lastActivityAt: new Date(),
             },
         });

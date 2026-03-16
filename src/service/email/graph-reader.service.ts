@@ -3,6 +3,7 @@ import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
 import { runAI } from "../../utils/ai.js";
 import { detectArea } from "../../controllers/tickets-rids/ticket-area.utils.js";
+import { type TicketArea } from '../../controllers/tickets-rids/ticket-area.keywords.js';
 
 import { prisma } from '../../lib/prisma.js';
 import crypto from 'crypto';
@@ -394,11 +395,21 @@ class GraphReaderService {
 
         // 3. Crear Ticket
         const ticket = await prisma.ticket.create({
-            data: {
-                rolAsignado: this.detectRole(data.subject, data.bodyText),
-                publicId: crypto.randomUUID(), subject: data.subject, status: TicketStatus.OPEN, priority: this.detectPriority(data.subject, data.bodyText), channel: TicketChannel.EMAIL, empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: data.fromEmail, inboxEmail: this.supportEmail, lastActivityAt: new Date(), aiSummary,
-            },
-        });
+    data: {
+        publicId: crypto.randomUUID(),
+        subject: data.subject,
+        status: TicketStatus.OPEN,
+        priority: this.detectPriority(data.subject, data.bodyText),
+        channel: TicketChannel.EMAIL,
+        empresaId: empresa.id_empresa,
+        requesterId: requester?.id_solicitante ?? null,
+        fromEmail: data.fromEmail,
+        inboxEmail: this.supportEmail,
+        lastActivityAt: new Date(),
+        aiSummary,
+        area: area
+    },
+});
 
         // Agregar primer mensaje
         const msg = await prisma.ticketMessage.create({
@@ -508,13 +519,6 @@ class GraphReaderService {
 
         return TicketPriority.NORMAL;
     }
-     detectRole(subject: string, body: string): string {
-        const text = `${subject} ${body}`.toLowerCase();
-        if (['factura', 'cotizacion', 'pago'].some(k => text.includes(k))) return 'VENTAS';
-        if (['impresora', 'clave', 'internet'].some(k => text.includes(k))) return 'SOPORTE';
-        return 'TECNICO'; // Rol por defecto
-}
-
     // ... otros métodos como translateStatus, escapeHtml, etc. ...
 
     /* ======================================================

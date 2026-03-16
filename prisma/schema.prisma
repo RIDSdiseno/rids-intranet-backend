@@ -421,12 +421,18 @@ model Equipo {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
   deletedAt              DateTime?
+  empresaId              Int?
+  origenCotizacionId     Int?
+  productoId             Int?                    @unique
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
   @@index([deletedAt])
+  @@index([empresaId])
+  @@index([origenCotizacionId])
+  @@index([productoId])
 }
 
 model DetalleEquipo {
@@ -497,6 +503,7 @@ model RefreshToken {
 
   @@index([rtHash])
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 model Tecnico {
@@ -767,7 +774,10 @@ model CotizacionItemGestioo {
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
+  equipoId          Int?              @unique
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+
+  @@index([equipoId])
 }
 
 model Entrega {
@@ -808,6 +818,7 @@ model Ticket {
   channel         TicketChannel   @default(WEB)
   fromEmail       String?
   inboxEmail      String?
+  /// * area            TicketArea? 
   firstResponseAt DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
@@ -816,7 +827,8 @@ model Ticket {
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
   aiSummary       String?
-  rolAsignado     String?
+  area            String?   
+  TicketArea      String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -952,12 +964,26 @@ model AgendaVisita {
   notas               String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime
+  horaFin             String?
+  horaInicio          String?
+  mensaje             String?
+  recordatorioEnviado Boolean      @default(false)
 
   @@index([empresaId])
   @@index([estado])
   @@index([fecha])
   @@index([notificacionEnviada])
   @@index([tipo])
+}
+
+model ReporteIA {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  periodo   String
+  contenido Json
+  createdAt DateTime @default(now())
+
+  @@unique([empresaId, periodo])
 }
 
 enum AuditAction {

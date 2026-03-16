@@ -1,4 +1,4 @@
-export type TicketArea = "SOPORTE" | "INFORMATICA" | "VENTAS" | "ADMIN";
+export type TicketArea = "SOPORTE" | "INFORMATICA" | "VENTAS" | "ADMIN" | "OFERTAS";
 
 export const AREA_KEYWORDS: Record<TicketArea, string[]> = {
     INFORMATICA: [
@@ -178,5 +178,14 @@ export const AREA_KEYWORDS: Record<TicketArea, string[]> = {
         "jefatura", 
         "recursos humanos", 
         "rrhh"
+    ],
+    OFERTAS: [
+        "oferta",
+        "promocion",
+        "evento",
+        "descuento",
+        "webinar",
+        "lanzamiento",
+        "newsletter"
     ],
 };
