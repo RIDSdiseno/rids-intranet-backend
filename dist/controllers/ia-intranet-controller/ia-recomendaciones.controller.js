@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { buildReporteEmpresaData } from "../../service/reportEmpresa.service.js";
+import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
@@ -23,8 +23,6 @@ export async function generarRecomendacionesOperativasIA(req, res) {
             kpis: reporte.kpis,
             visitas: {
                 total: reporte.kpis.visitas.count,
-                porTipo: reporte.visitasPorTipo,
-                porTecnico: reporte.visitasPorTecnico
             },
             tickets: {
                 total: reporte.tickets.total,

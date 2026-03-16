@@ -748,20 +748,45 @@ export async function getEquipoHistorial(req: Request, res: Response) {
 
     const user = (req as any).user;
 
-    // Trae logs del equipo + actor
-    const logs = await prisma.auditLog.findMany({
-      where: {
-        entity: "Equipo",
-        entityId: String(id),
-        ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
-      },
-      include: {
-        actor: { select: { id_tecnico: true, nombre: true, email: true } },
-      },
-      orderBy: { createdAt: "desc" },
+    // ✅ Busca el id del detalle para cruzar sus logs
+    const detalle = await prisma.detalleEquipo.findUnique({
+      where: { idEquipo: id },
+      select: { id: true },
     });
 
-    return res.json({ total: logs.length, items: logs });
+    const [logsEquipo, logsDetalle] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: {
+          entity: "Equipo",
+          entityId: String(id),
+          ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+        },
+        include: {
+          actor: { select: { id_tecnico: true, nombre: true, email: true } },
+        },
+      }),
+
+      // ✅ También trae logs de DetalleEquipo
+      detalle
+        ? prisma.auditLog.findMany({
+            where: {
+              entity: "DetalleEquipo",
+              entityId: String(detalle.id),
+              ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+            },
+            include: {
+              actor: { select: { id_tecnico: true, nombre: true, email: true } },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // ✅ Fusiona y ordena por fecha desc
+    const merged = [...logsEquipo, ...logsDetalle].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return res.json({ total: merged.length, items: merged });
   } catch (err) {
     console.error("getEquipoHistorial error:", err);
     return res.status(500).json({ error: "Error al obtener historial del equipo" });

@@ -10,6 +10,8 @@ const visitaSelect = {
     solicitante: true,
     inicio: true,
     fin: true,
+    direccion_visita: true,
+    sucursalId: true,
     confImpresoras: true,
     confTelefonos: true,
     confPiePagina: true,
@@ -28,6 +30,12 @@ const visitaSelect = {
     empresa: { select: { id_empresa: true, nombre: true } },
     tecnico: { select: { id_tecnico: true, nombre: true } },
     solicitanteRef: { select: { id_solicitante: true, nombre: true } },
+    sucursal: {
+        select: {
+            id_sucursal: true,
+            nombre: true
+        }
+    }
 };
 const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
 const baseFlags = z.object({
@@ -60,6 +68,8 @@ const CreateVisitaSchema = z
     .object({
     empresaId: z.number().int().positive(),
     tecnicoId: z.number().int().positive(),
+    direccion_visita: z.string().trim().optional().nullable(),
+    sucursalId: z.number().int().positive().optional(),
     // MODO "UNO"
     solicitanteId: z.number().int().positive().optional(),
     solicitante: z.string().trim().optional(),
@@ -87,6 +97,8 @@ const UpdateVisitaSchema = z
     .object({
     empresaId: z.number().int().positive().optional(),
     tecnicoId: z.number().int().positive().optional(),
+    direccion_visita: z.string().trim().optional().nullable(),
+    sucursalId: z.number().int().positive().optional(),
     solicitanteId: z.number().int().positive().optional(),
     solicitante: z.string().trim().optional(),
     inicio: z.coerce.date().optional(),
@@ -190,6 +202,8 @@ export const createVisita = async (req, res) => {
         const commonData = {
             empresaId: payload.empresaId,
             tecnicoId: payload.tecnicoId,
+            direccion_visita: payload.direccion_visita ?? null, // ✅
+            sucursalId: payload.sucursalId ?? null,
             inicio: payload.inicio,
             fin: payload.fin ?? null,
             status: payload.status ?? "PENDIENTE",
@@ -311,6 +325,8 @@ export const updateVisita = async (req, res) => {
             data: {
                 ...(payload.empresaId !== undefined ? { empresaId: payload.empresaId } : {}),
                 ...(payload.tecnicoId !== undefined ? { tecnicoId: payload.tecnicoId } : {}),
+                ...(payload.direccion_visita !== undefined ? { direccion_visita: payload.direccion_visita } : {}),
+                ...(payload.sucursalId !== undefined ? { sucursalId: payload.sucursalId } : {}),
                 ...(payload.solicitanteId !== undefined ? { solicitanteId: payload.solicitanteId } : {}),
                 ...(solicitanteToSet !== undefined ? { solicitante: solicitanteToSet } : {}),
                 ...(payload.inicio !== undefined ? { inicio: payload.inicio } : {}),

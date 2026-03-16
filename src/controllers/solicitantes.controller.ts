@@ -114,6 +114,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const INS: Prisma.QueryMode = "insensitive";
 
     const where: Prisma.SolicitanteWhereInput = {
+      isActive: true,
       ...(user?.rol === "CLIENTE"
         ? { empresaId: Number(user.empresaId) }
         : empresaId > 0
@@ -277,6 +278,7 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
     const orderDir = parseOrderDir(req.query.orderDir);
 
     const where: Prisma.SolicitanteWhereInput = {
+      isActive: true,
       empresaId,
       ...(q ? { nombre: { contains: q, mode: "insensitive" } } : {}),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
@@ -328,6 +330,7 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
     const effectiveEmpresaId = userEmpresaId ?? (empresaId > 0 ? empresaId : null);
 
     const where: Prisma.SolicitanteWhereInput = {
+      isActive: true,
       ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
       ...(q
         ? {
@@ -394,6 +397,7 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
 
     const INS: Prisma.QueryMode = "insensitive";
     const where: Prisma.SolicitanteWhereInput = {
+      isActive: true,
       ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
       ...(q
         ? {

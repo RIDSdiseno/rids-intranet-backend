@@ -252,6 +252,7 @@ model Solicitante {
   isActive             Boolean                 @default(true)
   microsoftUserId      String?                 @unique
   accountType          AccountType?
+  deletedAt            DateTime?
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")
@@ -268,6 +269,7 @@ model Solicitante {
   @@index([empresaId])
   @@index([isActive])
   @@index([accountType])
+  @@index([deletedAt])
 }
 
 model MsSku {
@@ -418,11 +420,13 @@ model Equipo {
   tipo                   TipoEquipo              @default(GENERICO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
+  deletedAt              DateTime?
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
+  @@index([deletedAt])
 }
 
 model DetalleEquipo {
@@ -493,6 +497,7 @@ model RefreshToken {
 
   @@index([rtHash])
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 model Tecnico {
@@ -592,17 +597,15 @@ model MantencionRemota {
 }
 
 model TeamViewerDeviceMap {
-  id            Int     @id @default(autoincrement())
-  deviceId      String  @unique
+  id            Int          @id @default(autoincrement())
+  deviceId      String       @unique
   deviceNombre  String?
   empresaId     Int?
   solicitanteId Int?
-
-  empresa     Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  empresa       Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante   Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
 
   @@index([empresaId])
   @@index([solicitanteId])
@@ -727,29 +730,23 @@ model CotizacionGestioo {
 }
 
 model Factura {
-  id_factura Int @id @default(autoincrement())
-
-  numeroFactura String    @unique
-  fechaEmision  DateTime  @default(now())
+  id_factura    Int               @id @default(autoincrement())
+  numeroFactura String            @unique
+  fechaEmision  DateTime          @default(now())
   fechaPago     DateTime?
   total         Float
-
-  cotizacionId Int
-  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
-
-  estado EstadoFactura @default(PENDIENTE)
-
-  // --- Integración SII ---
-  tipoDTE       Int?
-  folioSII      String?
-  rutEmisor     String?
-  rutReceptor   String?
-  estadoSII     EstadoDTE?
+  cotizacionId  Int
+  estado        EstadoFactura     @default(PENDIENTE)
+  createdAt     DateTime          @default(now())
   fechaEnvioSII DateTime?
-  trackId       String?
+  folioSII      String?
   rawResponse   Json?
-
-  createdAt DateTime @default(now())
+  rutEmisor     String?
+  tipoDTE       Int?
+  trackId       String?
+  estadoSII     EstadoDTE?
+  rutReceptor   String?
+  cotizacion    CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
 
   @@index([folioSII])
 }
@@ -819,6 +816,8 @@ model Ticket {
   updatedAt       DateTime        @updatedAt
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
+  aiSummary       String?
+  rolAsignado     String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -922,6 +921,55 @@ model AuditLog {
   @@index([entityId])
   @@index([createdAt])
   @@index([empresaId])
+}
+
+model AgendaTecnico {
+  id        Int @id @default(autoincrement())
+  agendaId  Int
+  tecnicoId Int
+
+  @@unique([agendaId, tecnicoId])
+  @@index([agendaId])
+  @@index([tecnicoId])
+}
+
+model AgendaVisita {
+  id                  Int          @id @default(autoincrement())
+  fecha               DateTime     @db.Date
+  empresaId           Int?
+  tipo                TipoAgenda   @default(SEMANA)
+  estado              EstadoAgenda @default(PROGRAMADA)
+  notificacionEnviada Boolean      @default(false)
+  notas               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime
+  horaFin             String?
+  horaInicio          String?
+  mensaje             String?
+
+  @@index([empresaId])
+  @@index([estado])
+  @@index([fecha])
+  @@index([notificacionEnviada])
+  @@index([tipo])
+}
+
+model ReporteIA {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  periodo   String
+  contenido Json
+  createdAt DateTime @default(now())
+
+  @@unique([empresaId, periodo])
+}
+
+model area_configs {
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  mensajeBase String
+  firmaArea   String?
+  updatedAt   DateTime
 }
 
 enum EstadoDTE {
@@ -1097,4 +1145,16 @@ enum TipoEquipo {
 enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
+}
+
+enum EstadoAgenda {
+  PROGRAMADA
+  NOTIFICADA
+  COMPLETADA
+  CANCELADA
+}
+
+enum TipoAgenda {
+  SEMANA
+  SABADO
 }

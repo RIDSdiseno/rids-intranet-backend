@@ -18,6 +18,7 @@ export declare function getInventarioByEmpresa(params: {
     } | null;
 } & {
     updatedAt: Date;
+    deletedAt: Date | null;
     createdAt: Date;
     tipo: import("@prisma/client").$Enums.TipoEquipo;
     marca: string;
