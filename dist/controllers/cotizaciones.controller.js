@@ -82,22 +82,55 @@ export async function getCotizacionesPaginadas(req, res) {
         ========================== */
         if (search) {
             const searchValue = String(search);
-            const searchUpper = searchValue.toUpperCase();
             const OR = [];
-            // Buscar por ID si es número
             if (!isNaN(Number(searchValue))) {
                 OR.push({ id: Number(searchValue) });
             }
-            // Buscar por estado (enum exact match)
             const estadosMatch = Object.values(EstadoCotizacionGestioo).filter(e => e.toLowerCase().includes(searchValue.toLowerCase()));
             if (estadosMatch.length > 0) {
                 OR.push({
                     estado: { in: estadosMatch }
                 });
             }
-            // Buscar por nombre entidad (string)
             OR.push({
                 entidad: {
+                    nombre: {
+                        contains: searchValue,
+                        mode: "insensitive"
+                    }
+                }
+            }, {
+                entidad: {
+                    rut: {
+                        contains: searchValue,
+                        mode: "insensitive"
+                    }
+                }
+            }, {
+                comentariosCotizacion: {
+                    contains: searchValue,
+                    mode: "insensitive"
+                }
+            }, {
+                items: {
+                    some: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive"
+                        }
+                    }
+                }
+            }, {
+                items: {
+                    some: {
+                        sku: {
+                            contains: searchValue,
+                            mode: "insensitive"
+                        }
+                    }
+                }
+            }, {
+                tecnico: {
                     nombre: {
                         contains: searchValue,
                         mode: "insensitive"
@@ -667,25 +700,18 @@ export async function emitirFacturaSII(req, res) {
             return res.status(404).json({ error: "Cotización no encontrada" });
         if (cotizacion.estado !== "APROBADA")
             return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
+        if (!cotizacion.items.length)
+            return res.status(400).json({ error: "La cotización no tiene items" });
         const config = getSimpleAPIConfig();
-        if (!cotizacion.entidad) {
-            return res.status(400).json({
-                error: "La cotización no tiene entidad asociada"
-            });
-        }
-        if (!cotizacion.entidad.rut) {
-            return res.status(400).json({
-                error: "La entidad no tiene RUT"
-            });
-        }
+        if (!cotizacion.entidad?.rut)
+            return res.status(400).json({ error: "La entidad no tiene RUT" });
         const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
-        // 1️⃣ Generar DTE
+        // Emitir DTE
         const dte = await generarDTE(config, { cotizacion });
-        // 2️⃣ Generar sobre
-        await generarSobre(config, dte);
-        // 3️⃣ Enviar al SII
-        const envio = await enviarAlSII(config);
-        // 4️⃣ Crear factura
+        const envio = {
+            trackId: dte.trackId ?? null
+        };
+        // Crear factura
         const factura = await prisma.factura.create({
             data: {
                 numeroFactura: `INT-${dte.folio}`,
@@ -699,7 +725,6 @@ export async function emitirFacturaSII(req, res) {
                 trackId: envio.trackId
             }
         });
-        // 5️⃣ Ahora sí cambiar estado
         await prisma.cotizacionGestioo.update({
             where: { id: cotizacion.id },
             data: { estado: "FACTURADA" }
@@ -711,8 +736,10 @@ export async function emitirFacturaSII(req, res) {
         });
     }
     catch (error) {
-        console.error(" Error emitirFacturaSII:", error);
-        return res.status(500).json({ error: error.message });
+        console.error("Error emitirFacturaSII:", error);
+        return res.status(500).json({
+            error: error.message
+        });
     }
 }
 // =====================================================

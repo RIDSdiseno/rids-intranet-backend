@@ -2,6 +2,19 @@
 import nodemailer from 'nodemailer';
 class EmailSenderService {
     transporter;
+    async sendStatusEmail(ticketId, nuevoEstado, toEmail) {
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to: toEmail,
+                subject: `Actualización Ticket #${ticketId}`,
+                html: `<p>El estado de tu ticket es ahora: <strong>${this.translateStatus(nuevoEstado)}</strong>.</p>`,
+            });
+        }
+        catch (e) {
+            console.error("Error al enviar estado:", e);
+        }
+    }
     constructor() {
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.office365.com',
@@ -39,6 +52,19 @@ class EmailSenderService {
         catch (error) {
             console.error('❌ Error enviando email:', error);
             throw error;
+        }
+    }
+    async sendTicketCreatedEmail(to, id, summary) {
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to,
+                subject: `Ticket #${id} Registrado`,
+                html: `<p>${summary}</p><hr><p>Ticket #${id}</p>`,
+            });
+        }
+        catch (e) {
+            console.error("Error de correo:", e);
         }
     }
     /**

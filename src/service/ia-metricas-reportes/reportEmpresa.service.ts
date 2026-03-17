@@ -1,82 +1,73 @@
-import { prisma } from "../lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
+
+import {
+    contarMantenimientos,
+    contarExtras,
+    contarTiposVisita,
+    obtenerTopUsuariosGeneral
+} from "./reportes.metrics.js";
 
 /* ======================================================
-   📅 YYYY-MM -> rango [start, end) en UTC
+   📅 YYYY-MM -> rango [start, end)
 ====================================================== */
 export function monthRange(ym: string) {
+
     const [y, m] = ym.split("-").map(Number);
+
     if (!y || !m) throw new Error("month inválido (usa YYYY-MM)");
 
     const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));
-    const end = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 0, 0, 0));
+
+    const end = new Date(
+        Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1, 0, 0, 0)
+    );
 
     return { start, end };
+
 }
 
 /* ======================================================
    🔄 Empresa -> TicketOrg
 ====================================================== */
 function normalizeOrgName(nombre?: string | null): string | null {
+
     const key = (nombre ?? "").trim();
+
     return key ? key.toUpperCase() : null;
+
 }
 
 /* ======================================================
-   🧠 Clasificación del tipo de visita (DERIVADO)
+   ⏱️ Formatear duración
 ====================================================== */
-function clasificarTipoVisita(v: {
-    actualizaciones: boolean;
-    antivirus: boolean;
-    ccleaner: boolean;
-    estadoDisco: boolean;
-    mantenimientoReloj: boolean;
-    rendimientoEquipo: boolean;
-    otros: boolean;
-    otrosDetalle: string | null;
-}): "PROGRAMADA" | "ADICIONAL" {
-    if (
-        v.actualizaciones ||
-        v.antivirus ||
-        v.ccleaner ||
-        v.estadoDisco ||
-        v.mantenimientoReloj ||
-        v.rendimientoEquipo
-    ) return "PROGRAMADA";
-
-    if ((v.otrosDetalle ?? "").toLowerCase().includes("program")) {
-        return "PROGRAMADA";
-    }
-
-    return "ADICIONAL";
-}
-
-/* ======================================================
-   ⏱️ Formatear duración en ms → minutos/horas
-====================================================== */
-
 function formatMs(ms: number) {
+
     const minutes = Math.round(ms / 60000);
+
     const h = Math.floor(minutes / 60);
+
     const m = minutes % 60;
 
     return h > 0
         ? `${h}h ${m}m`
         : `${m} minutos`;
+
 }
 
 /* ======================================================
-   📊 SERVICE FINAL – REPORTE EMPRESA
+   📊 SERVICE – REPORTE EMPRESA
 ====================================================== */
 export async function buildReporteEmpresaData(
     empresaId: number,
     ym: string
 ) {
+
     /* =====================
        Empresa
     ===================== */
     const empresa = await prisma.empresa.findUnique({
         where: { id_empresa: empresaId },
-        select: { id_empresa: true, nombre: true },
+        select: { id_empresa: true, nombre: true }
     });
 
     if (!empresa) throw new Error("Empresa no encontrada");
@@ -84,93 +75,98 @@ export async function buildReporteEmpresaData(
     const { start, end } = monthRange(ym);
 
     /* =====================
-       VISITAS – KPIs
+       VISITAS (única query)
     ===================== */
-    const visitasBase = await prisma.visita.findMany({
-        where: { empresaId, inicio: { gte: start, lt: end } },
+    const visitas = await prisma.visita.findMany({
+
+        where: {
+            empresaId,
+            inicio: { gte: start, lt: end }
+        },
+
+        orderBy: { inicio: "asc" },
+
         select: {
+
             inicio: true,
             fin: true,
-        },
-    });
 
-    const visitasCount = visitasBase.length;
+            solicitante: true,
+            otrosDetalle: true,
 
-    const duracionesMs = visitasBase
-        .filter(v => v.fin)
-        .map(v => new Date(v.fin!).getTime() - new Date(v.inicio!).getTime())
-        .filter(ms => ms > 0);
+            tecnico: { select: { nombre: true } },
+            sucursal: { select: { nombre: true } },
 
-    const totalMs = duracionesMs.reduce((a, b) => a + b, 0);
-    const avgMs = duracionesMs.length ? Math.round(totalMs / duracionesMs.length) : 0;
-
-    /* =====================
-       VISITAS – CLASIFICACIÓN
-    ===================== */
-    const visitasClasificables = await prisma.visita.findMany({
-        where: { empresaId, inicio: { gte: start, lt: end } },
-        select: {
             actualizaciones: true,
             antivirus: true,
             ccleaner: true,
             estadoDisco: true,
             mantenimientoReloj: true,
             rendimientoEquipo: true,
-            otros: true,
-            otrosDetalle: true,
-        },
+            licenciaOffice: true,
+            licenciaWindows: true,
+
+            confImpresoras: true,
+            confTelefonos: true,
+            confPiePagina: true,
+            otros: true
+
+        }
+
     });
 
-    const visitasPorTipoMap: Record<"PROGRAMADA" | "ADICIONAL", number> = {
-        PROGRAMADA: 0,
-        ADICIONAL: 0,
-    };
+    const visitasCount = visitas.length;
 
-    for (const v of visitasClasificables) {
-        const tipo = clasificarTipoVisita(v);
-        visitasPorTipoMap[tipo]++;
-    }
+    const duracionesMs = visitas
+        .filter(v => v.fin)
+        .map(v =>
+            new Date(v.fin!).getTime() - new Date(v.inicio!).getTime()
+        )
+        .filter(ms => ms > 0);
 
-    const visitasPorTipo = Object.entries(visitasPorTipoMap).map(
-        ([tipo, cantidad]) => ({ tipo, cantidad })
-    );
+    const totalMs = duracionesMs.reduce((a, b) => a + b, 0);
+
+    const avgMs = duracionesMs.length
+        ? Math.round(totalMs / duracionesMs.length)
+        : 0;
 
     /* =====================
-       VISITAS – DETALLE (IGUAL A LA WEB)
+       MÉTRICAS
     ===================== */
-    const visitasDetalle = await prisma.visita.findMany({
-        where: { empresaId, inicio: { gte: start, lt: end } },
-        orderBy: { inicio: "asc" },
-        select: {
-            inicio: true,
-            fin: true,
-            solicitante: true,
-            tecnico: { select: { nombre: true } },
-            sucursal: { select: { nombre: true } },
-            otrosDetalle: true,
-        },
-    });
+    const mantenimientos = contarMantenimientos(visitas);
+
+    const extras = contarExtras(visitas);
+
+    const visitasPorTipo = contarTiposVisita(visitas);
 
     /* =====================
-       VISITAS – POR TÉCNICO
+       VISITAS POR TÉCNICO
     ===================== */
     const visitasPorTecnicoMap: Record<string, number> = {};
-    for (const v of visitasDetalle) {
+
+    for (const v of visitas) {
+
         const tecnico = v.tecnico?.nombre ?? "SIN TÉCNICO";
-        visitasPorTecnicoMap[tecnico] = (visitasPorTecnicoMap[tecnico] ?? 0) + 1;
+
+        visitasPorTecnicoMap[tecnico] =
+            (visitasPorTecnicoMap[tecnico] ?? 0) + 1;
+
     }
 
-    const visitasPorTecnico = Object.entries(visitasPorTecnicoMap).map(
-        ([tecnico, cantidad]) => ({ tecnico, cantidad })
-    );
+    const visitasPorTecnico = Object
+        .entries(visitasPorTecnicoMap)
+        .map(([tecnico, cantidad]) => ({ tecnico, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad);
 
     /* =====================
-       EQUIPOS / INVENTARIO
+       INVENTARIO
     ===================== */
     const equipos = await prisma.equipo.findMany({
+
         where: {
-            solicitante: { empresaId },
+            solicitante: { empresaId }
         },
+
         select: {
             serial: true,
             marca: true,
@@ -179,27 +175,33 @@ export async function buildReporteEmpresaData(
             ram: true,
             disco: true,
             propiedad: true,
-            solicitante: { select: { nombre: true } },
-        },
+            solicitante: { select: { nombre: true } }
+        }
+
     });
 
     /* =====================
        TICKETS
     ===================== */
     const orgName = normalizeOrgName(empresa.nombre);
+
     let ticketsDetalle: any[] = [];
 
     if (orgName) {
+
         const org = await prisma.ticketOrg.findUnique({
-            where: { name: orgName },
+            where: { name: orgName }
         });
 
         if (org) {
+
             ticketsDetalle = await prisma.freshdeskTicket.findMany({
+
                 where: {
                     ticketOrgId: org.id,
-                    createdAt: { gte: start, lt: end },
+                    createdAt: { gte: start, lt: end }
                 },
+
                 select: {
                     id: true,
                     subject: true,
@@ -209,129 +211,48 @@ export async function buildReporteEmpresaData(
                     ticketRequester: {
                         select: {
                             name: true,
-                            email: true,
-                        },
-                    },
+                            email: true
+                        }
+                    }
                 },
-                orderBy: { createdAt: "asc" },
+
+                orderBy: { createdAt: "asc" }
+
             });
+
         }
+
     }
 
+    const topUsuariosGeneral =
+        obtenerTopUsuariosGeneral(visitas, ticketsDetalle);
+
     /* =====================
-       NARRATIVA AUTOMÁTICA
+       TOP USUARIOS TICKETS
     ===================== */
-    const narrativa = {
-        resumen: `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas, con una duración promedio de ${formatMs(avgMs)} por visita.`
-    };
-
-    /* =====================
-   MANTENCIONES REMOTAS
-===================== */
-    const mantenciones = await prisma.mantencionRemota.findMany({
-        where: {
-            empresaId,
-            inicio: { gte: start, lt: end },
-        },
-        select: {
-            id_mantencion: true,
-            inicio: true,
-            fin: true,
-            status: true,
-            solicitante: true,
-            tecnico: { select: { nombre: true } },
-        },
-        orderBy: { inicio: "asc" },
-    });
-
-    /* =====================
-       MANTENCIONES POR STATUS
-    ===================== */
-    const mantStatusMap: Record<string, number> = {};
-
-    for (const m of mantenciones) {
-        const status = m.status ?? "SIN ESTADO";
-        mantStatusMap[status] = (mantStatusMap[status] ?? 0) + 1;
-    }
-
-    const porStatus = Object.entries(mantStatusMap).map(
-        ([status, cantidad]) => ({ status, cantidad })
-    );
-
-    /* =====================
-       MANTENCIONES POR TÉCNICO
-    ===================== */
-    const mantPorTecnicoMap: Record<string, number> = {};
-
-    for (const m of mantenciones) {
-        const tecnico = m.tecnico?.nombre ?? "SIN TÉCNICO";
-        mantPorTecnicoMap[tecnico] = (mantPorTecnicoMap[tecnico] ?? 0) + 1;
-    }
-
-    const porTecnico = Object.entries(mantPorTecnicoMap)
-        .map(([tecnico, cantidad]) => ({ tecnico, cantidad }))
-        .sort((a, b) => b.cantidad - a.cantidad);
-
-    /* =====================
-       MANTENCIONES POR DÍA
-    ===================== */
-    const mantPorDiaMap: Record<string, number> = {};
-
-    for (const m of mantenciones) {
-        const fecha = new Date(m.inicio).toISOString().slice(0, 10);
-        mantPorDiaMap[fecha] = (mantPorDiaMap[fecha] ?? 0) + 1;
-    }
-
-    const porDia = Object.entries(mantPorDiaMap)
-        .map(([fecha, cantidad]) => ({ fecha, cantidad }))
-        .sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-    /* =====================
-       TOP SOLICITANTES MANTENCIONES
-    ===================== */
-    const mantPorSolicitanteMap: Record<string, number> = {};
-
-    for (const m of mantenciones) {
-        const solicitante = m.solicitante ?? "Sin nombre";
-        mantPorSolicitanteMap[solicitante] =
-            (mantPorSolicitanteMap[solicitante] ?? 0) + 1;
-    }
-
-    const topSolicitantes = Object.entries(mantPorSolicitanteMap)
-        .map(([solicitante, cantidad]) => ({ solicitante, cantidad }))
-        .sort((a, b) => b.cantidad - a.cantidad)
-        .slice(0, 5);
-
-    /* =====================
-   SOLICITANTES CRM
-===================== */
-    const usuariosCRM = await prisma.solicitante.findMany({
-        where: { empresaId },
-        select: {
-            nombre: true,
-            email: true,
-        },
-        orderBy: { nombre: "asc" },
-    });
-
-    /* =====================
-   TOP USUARIOS TICKETS
-===================== */
-    const usuarioMap: Record<string, { usuario: string; email?: string; cantidad: number }> = {};
+    const usuarioMap: Record<
+        string,
+        { usuario: string; email?: string; cantidad: number }
+    > = {};
 
     for (const t of ticketsDetalle) {
+
         const nombre = t.ticketRequester?.name ?? "Sin nombre";
+
         const email = t.ticketRequester?.email ?? null;
 
         if (!usuarioMap[nombre]) {
+
             usuarioMap[nombre] = {
                 usuario: nombre,
                 email,
-                cantidad: 0,
+                cantidad: 0
             };
+
         }
 
         usuarioMap[nombre].cantidad++;
+
     }
 
     const usuariosListado = Object.values(usuarioMap);
@@ -341,43 +262,180 @@ export async function buildReporteEmpresaData(
         .slice(0, 5);
 
     /* =====================
+       MANTENCIONES REMOTAS
+    ===================== */
+    const mantenciones = await prisma.mantencionRemota.findMany({
+
+        where: {
+            empresaId,
+            inicio: { gte: start, lt: end }
+        },
+
+        select: {
+            id_mantencion: true,
+            inicio: true,
+            fin: true,
+            status: true,
+            solicitante: true,
+            tecnico: { select: { nombre: true } }
+        },
+
+        orderBy: { inicio: "asc" }
+
+    });
+
+    /* =====================
+       MANTENCIONES POR STATUS
+    ===================== */
+    const mantStatusMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+
+        const status = m.status ?? "SIN ESTADO";
+
+        mantStatusMap[status] =
+            (mantStatusMap[status] ?? 0) + 1;
+
+    }
+
+    const porStatus = Object
+        .entries(mantStatusMap)
+        .map(([status, cantidad]) => ({ status, cantidad }));
+
+    /* =====================
+       MANTENCIONES POR TÉCNICO
+    ===================== */
+    const mantPorTecnicoMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+
+        const tecnico = m.tecnico?.nombre ?? "SIN TÉCNICO";
+
+        mantPorTecnicoMap[tecnico] =
+            (mantPorTecnicoMap[tecnico] ?? 0) + 1;
+
+    }
+
+    const porTecnico = Object
+        .entries(mantPorTecnicoMap)
+        .map(([tecnico, cantidad]) => ({ tecnico, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+
+    /* =====================
+       MANTENCIONES POR DÍA
+    ===================== */
+    const mantPorDiaMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+
+        const fecha =
+            new Date(m.inicio).toISOString().slice(0, 10);
+
+        mantPorDiaMap[fecha] =
+            (mantPorDiaMap[fecha] ?? 0) + 1;
+
+    }
+
+    const porDia = Object
+        .entries(mantPorDiaMap)
+        .map(([fecha, cantidad]) => ({ fecha, cantidad }))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+    /* =====================
+       TOP SOLICITANTES
+    ===================== */
+    const mantPorSolicitanteMap: Record<string, number> = {};
+
+    for (const m of mantenciones) {
+
+        const solicitante = m.solicitante ?? "Sin nombre";
+
+        mantPorSolicitanteMap[solicitante] =
+            (mantPorSolicitanteMap[solicitante] ?? 0) + 1;
+
+    }
+
+    const topSolicitantes = Object
+        .entries(mantPorSolicitanteMap)
+        .map(([solicitante, cantidad]) => ({ solicitante, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, 5);
+
+    /* =====================
+       USUARIOS CRM
+    ===================== */
+    const usuariosCRM = await prisma.solicitante.findMany({
+
+        where: { empresaId },
+
+        select: {
+            nombre: true,
+            email: true
+        },
+
+        orderBy: { nombre: "asc" }
+
+    });
+
+    /* =====================
+       NARRATIVA
+    ===================== */
+    const narrativa = {
+
+        resumen:
+            `Durante el periodo ${ym}, se realizaron ${visitasCount} visitas técnicas con una duración promedio de ${formatMs(avgMs)} por intervención.`
+
+    };
+
+    /* =====================
        RETURN FINAL
     ===================== */
     return {
+
         empresa,
         month: ym,
 
         kpis: {
+
             visitas: {
                 count: visitasCount,
                 totalMs,
-                avgMs,
+                avgMs
             },
+
             equipos: {
-                count: equipos.length,
+                count: equipos.length
             },
+
             tickets: {
-                total: ticketsDetalle.length,
+                total: ticketsDetalle.length
             },
+
             mantenciones: {
-                total: mantenciones.length,
-            },
+                total: mantenciones.length
+            }
+
         },
 
-        visitasPorTipo,
-        visitasDetalle,
-        visitasPorTecnico,
+        visitas: {
+            detalle: visitas,
+            porTipo: visitasPorTipo,
+            porTecnico: visitasPorTecnico
+        },
+
+        mantenimientos,
+        extras,
 
         inventario: {
             equipos,
-            total: equipos.length,
+            total: equipos.length
         },
 
         tickets: {
             detalle: ticketsDetalle,
             total: ticketsDetalle.length,
-            usuariosListado,
             topUsuarios,
+            topUsuariosGeneral
         },
 
         mantenciones: {
@@ -386,14 +444,16 @@ export async function buildReporteEmpresaData(
             porStatus,
             porTecnico,
             porDia,
-            topSolicitantes,
+            topSolicitantes
         },
 
         usuariosCRM: usuariosCRM.map(u => ({
             usuario: u.nombre,
-            email: u.email ?? null,
+            email: u.email ?? null
         })),
 
-        narrativa,
+        narrativa
+
     };
+
 }

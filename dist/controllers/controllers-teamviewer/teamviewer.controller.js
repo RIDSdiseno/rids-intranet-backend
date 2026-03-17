@@ -117,8 +117,16 @@ export async function runTeamViewerSyncInternal() {
         const deviceId = String(session.deviceid ?? "").trim();
         const deviceNombre = norm(session.devicename);
         const inicio = new Date(session.start_date);
-        const fin = session.end_date ? new Date(session.end_date) : null;
-        const duracionMinutos = fin ? Math.round((fin.getTime() - inicio.getTime()) / 60000) : null;
+        let fin = null;
+        if (session.end_date) {
+            fin = new Date(session.end_date);
+        }
+        else if (session.duration) {
+            fin = new Date(inicio.getTime() + session.duration * 1000);
+        }
+        const duracionMinutos = fin
+            ? Math.round((fin.getTime() - inicio.getTime()) / 60000)
+            : null;
         let empresaId = null;
         let solicitanteId = null;
         let solicitanteNombreFinal = deviceNombre || "Desconocido";
@@ -226,7 +234,7 @@ export async function runTeamViewerSyncInternal() {
                 fin,
                 duracionMinutos,
                 soporteRemoto: true,
-                status: "COMPLETADA",
+                status: fin ? "COMPLETADA" : "EN_CURSO",
                 deviceId: deviceId || null,
                 deviceNombre: deviceNombre || null,
             },

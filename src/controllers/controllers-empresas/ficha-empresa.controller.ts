@@ -146,6 +146,7 @@ export async function actualizarFichaEmpresa(req: Request, res: Response) {
     ===================================================== */
     await prisma.detalleEmpresa.upsert({
       where: { empresa_id: empresaId },
+
       update: {
         rut: rut ?? null,
         direccion: direccion ?? null,
@@ -156,8 +157,8 @@ export async function actualizarFichaEmpresa(req: Request, res: Response) {
         telefono: telefono ?? null,
         email: email ?? null,
       },
+
       create: {
-        empresa_id: empresaId,
         rut: rut ?? null,
         direccion: direccion ?? null,
         direcciones:
@@ -166,6 +167,10 @@ export async function actualizarFichaEmpresa(req: Request, res: Response) {
             : Prisma.JsonNull,
         telefono: telefono ?? null,
         email: email ?? null,
+
+        empresa: {
+          connect: { id_empresa: empresaId },
+        },
       },
     });
 

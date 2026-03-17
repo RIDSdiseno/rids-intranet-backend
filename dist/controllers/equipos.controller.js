@@ -1,6 +1,14 @@
-import { TipoEquipo, AuditAction } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
+// Importa solo lo que Prisma sí está exportando correctamente
+import { Prisma, TipoEquipo } from "@prisma/client";
+// Define AuditAction manualmente aquí para que no rompa el código de abajo
+var AuditAction;
+(function (AuditAction) {
+    AuditAction["CREATE"] = "CREATE";
+    AuditAction["UPDATE"] = "UPDATE";
+    AuditAction["DELETE"] = "DELETE";
+})(AuditAction || (AuditAction = {}));
 /* ================== Schemas ================== */
 const listQuerySchema = z.object({
     page: z.coerce.number().int().positive().default(1),
@@ -620,19 +628,39 @@ export async function getEquipoHistorial(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         }
         const user = req.user;
-        // Trae logs del equipo + actor
-        const logs = await prisma.auditLog.findMany({
-            where: {
-                entity: "Equipo",
-                entityId: String(id),
-                ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
-            },
-            include: {
-                actor: { select: { id_tecnico: true, nombre: true, email: true } },
-            },
-            orderBy: { createdAt: "desc" },
+        // ✅ Busca el id del detalle para cruzar sus logs
+        const detalle = await prisma.detalleEquipo.findUnique({
+            where: { idEquipo: id },
+            select: { id: true },
         });
-        return res.json({ total: logs.length, items: logs });
+        const [logsEquipo, logsDetalle] = await Promise.all([
+            prisma.auditLog.findMany({
+                where: {
+                    entity: "Equipo",
+                    entityId: String(id),
+                    ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+                },
+                include: {
+                    actor: { select: { id_tecnico: true, nombre: true, email: true } },
+                },
+            }),
+            // ✅ También trae logs de DetalleEquipo
+            detalle
+                ? prisma.auditLog.findMany({
+                    where: {
+                        entity: "DetalleEquipo",
+                        entityId: String(detalle.id),
+                        ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+                    },
+                    include: {
+                        actor: { select: { id_tecnico: true, nombre: true, email: true } },
+                    },
+                })
+                : Promise.resolve([]),
+        ]);
+        // ✅ Fusiona y ordena por fecha desc
+        const merged = [...logsEquipo, ...logsDetalle].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return res.json({ total: merged.length, items: merged });
     }
     catch (err) {
         console.error("getEquipoHistorial error:", err);

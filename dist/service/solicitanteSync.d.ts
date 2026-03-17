@@ -20,6 +20,7 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
     empresaId: number;
     isActive: boolean;
     accountType: import("@prisma/client").$Enums.AccountType | null;
+    deletedAt: Date | null;
 } | null>;
 /** Alias para compatibilidad */
 export { upsertSolicitanteFromGoogle_min as upsertSolicitanteFromGoogle };
@@ -34,5 +35,6 @@ export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empre
     empresaId: number;
     isActive: boolean;
     accountType: import("@prisma/client").$Enums.AccountType | null;
+    deletedAt: Date | null;
 }>;
 //# sourceMappingURL=solicitanteSync.d.ts.map

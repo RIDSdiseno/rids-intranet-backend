@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
+import { runAI } from "../../utils/ai.js";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 import crypto from "crypto";
@@ -190,12 +191,10 @@ export async function listTickets(req, res) {
         const skip = (pageNum - 1) * take;
         const whereActual = {};
         if (status) {
-            whereActual.status = status;
+            whereActual.status = status === "5" ? "CLOSED" : status;
         }
         else {
-            whereActual.status = {
-                not: TicketStatus.CLOSED,
-            };
+            whereActual.status = { not: "CLOSED" };
         }
         if (priority)
             whereActual.priority = priority;
@@ -462,6 +461,7 @@ export async function updateTicket(req, res) {
                 assigneeId,
             },
         });
+        bus.emit("ticket.statusChanged", ticket);
         return res.json({
             ok: true,
             message: "Ticket actualizado correctamente",
@@ -516,18 +516,21 @@ export async function inboundEmail(req, res) {
                 isActive: true,
             },
         });
-        // 4️⃣ Crear ticket (con o sin requester)
+        // 4️⃣ Clasificación IA y Crear ticket
+        const mockTicket = { subject: subject || "", messages: [{ bodyText: text }] };
+        const area = detectArea(mockTicket) || "SOPORTE";
+        const conf = await prisma.areaConfig.findUnique({ where: { nombre: area } });
+        let aiSummary = conf?.mensajeBase || "Revisaremos tu caso a la brevedad.";
+        try {
+            const prompt = `Área: ${area}. Instrucción: "${aiSummary}". Reporte: "${text}". Respuesta breve (máx 30 palabras).`;
+            const resAI = await runAI({ userText: prompt, context: { from: "system", transcript: [], email: from } });
+            if (resAI)
+                aiSummary = resAI.replace(/^"|"$/g, '');
+        }
+        catch (e) { }
         const ticket = await prisma.ticket.create({
             data: {
-                publicId: crypto.randomUUID(),
-                subject: subject || "Sin asunto",
-                status: TicketStatus.NEW,
-                priority: TicketPriority.NORMAL,
-                channel: "EMAIL",
-                empresaId: empresa.id_empresa,
-                requesterId: requester?.id_solicitante ?? null,
-                fromEmail: from,
-                lastActivityAt: new Date(),
+                publicId: crypto.randomUUID(), subject: subject || "Sin asunto", status: TicketStatus.NEW, priority: TicketPriority.NORMAL, channel: "EMAIL", empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: from, aiSummary, lastActivityAt: new Date(),
             },
         });
         // 5️⃣ Mensaje inicial

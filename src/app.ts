@@ -113,16 +113,6 @@ app.use(
   })
 );
 
-/* ========= Contexto global por request ========= */
-app.use((req, _res, next) => {
-  asyncLocalStorage.run({ userId: null }, () => next());
-});
-
-/* ========= Jobs ========= */
-if (process.env.NODE_ENV === "production") {
-  startTeamViewerCron();
-}
-
 /* ========= Rutas ========= */
 app.use("/api", api);
 

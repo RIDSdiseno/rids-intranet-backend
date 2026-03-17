@@ -1,8 +1,10 @@
 // routes/solicitantes.routes.ts
 import { Router } from "express";
 import { listSolicitantes, listSolicitantesByEmpresa, solicitantesMetrics, createSolicitante, getSolicitanteById, updateSolicitante, deleteSolicitante, } from "../controllers/solicitantes.controller.js"; // <-- PLURAL y .js en runtime
+import { auth } from "../middlewares/auth.js";
 export const solicitantesRouter = Router();
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+solicitantesRouter.use(auth());
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));

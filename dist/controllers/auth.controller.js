@@ -279,10 +279,9 @@ export const refresh = async (req, res) => {
         const candidates = await prisma.refreshToken.findMany({
             where: {
                 userId,
-                revokedAt: null,
                 expiresAt: { gt: new Date() },
             },
-            select: { id: true, rtHash: true },
+            select: { id: true, rtHash: true, revokedAt: true, replacedByTokenId: true },
             orderBy: { id: "desc" },
             take: 10,
         });
@@ -290,7 +289,7 @@ export const refresh = async (req, res) => {
         let matchedToken = null;
         for (const rt of candidates) {
             if (await argon2.verify(rt.rtHash, token)) {
-                matchedToken = { id: rt.id };
+                matchedToken = rt;
                 break;
             }
         }
@@ -352,7 +351,18 @@ export const refresh = async (req, res) => {
         return res.status(401).json({ error: "REFRESH_INVALID" });
     }
 };
-export const logout = async (_req, res) => {
+export const logout = async (req, res) => {
+    const token = getRefreshFromRequest(req);
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, getRefreshSecret());
+            await prisma.refreshToken.updateMany({
+                where: { userId: Number(decoded.sub), revokedAt: null },
+                data: { revokedAt: new Date() },
+            });
+        }
+        catch { /* token inválido, no importa */ }
+    }
     res.clearCookie("rt", { path: "/" });
     return res.json({ ok: true });
 };

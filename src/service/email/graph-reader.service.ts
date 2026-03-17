@@ -1,6 +1,9 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
+import { runAI } from "../../utils/ai.js";
+import { detectArea } from "../../controllers/tickets-rids/ticket-area.utils.js";
+import { type TicketArea } from '../../controllers/tickets-rids/ticket-area.keywords.js';
 
 import { prisma } from '../../lib/prisma.js';
 import crypto from 'crypto';
@@ -378,21 +381,35 @@ class GraphReaderService {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
 
-        // CREAR TICKET (con o sin solicitante)
+        // 1. Preparar variables
+        const mockTicket = { subject: data.subject, messages: [{ bodyText: data.bodyText }] } as any;
+        const area = detectArea(mockTicket) || "SOPORTE";
+        const conf = await (prisma as any).areaConfig.findUnique({ where: { nombre: area } });
+        let aiSummary = conf?.mensajeBase || "Revisaremos tu caso.";
+
+        // 2. Ejecutar IA
+        try {
+            const resAI = await runAI({ userText: `Área: ${area}. Reporte: "${data.bodyText}". Respuesta (máx 30 palabras).`, context: { from: "system", transcript: [], email: data.fromEmail } });
+            if (resAI) aiSummary = resAI.replace(/^"|"$/g, '');
+        } catch (e) {}
+
+        // 3. Crear Ticket
         const ticket = await prisma.ticket.create({
-            data: {
-                publicId: crypto.randomUUID(),
-                subject: data.subject,
-                status: TicketStatus.OPEN,
-                priority: this.detectPriority(data.subject, data.bodyText),
-                channel: TicketChannel.EMAIL,
-                empresaId: empresa.id_empresa,
-                requesterId: requester?.id_solicitante ?? null,
-                fromEmail: data.fromEmail,
-                inboxEmail: this.supportEmail,
-                lastActivityAt: new Date(),
-            },
-        });
+    data: {
+        publicId: crypto.randomUUID(),
+        subject: data.subject,
+        status: TicketStatus.OPEN,
+        priority: this.detectPriority(data.subject, data.bodyText),
+        channel: TicketChannel.EMAIL,
+        empresaId: empresa.id_empresa,
+        requesterId: requester?.id_solicitante ?? null,
+        fromEmail: data.fromEmail,
+        inboxEmail: this.supportEmail,
+        lastActivityAt: new Date(),
+        aiSummary,
+        area: area
+    },
+});
 
         // Agregar primer mensaje
         const msg = await prisma.ticketMessage.create({
@@ -421,7 +438,10 @@ class GraphReaderService {
             priority: ticket.priority,
             channel: TicketChannel.EMAIL,
             from: data.fromEmail,
+            aiSummary,
         });
+
+
 
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
     }
@@ -472,16 +492,8 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     private async addMessageToTicket(ticketId: number, data: ParsedEmail) {
-        // 1) DB rápido (sin adjuntos)
-        const msg = await prisma.$transaction(async (tx) => {
-            // ✅ DEDUPE primero para que no duplique nada
-            const exists = await tx.ticketMessage.findUnique({
-                where: { sourceMessageId: data.messageId },
-                select: { id: true },
-            });
-            if (exists) return null;
-
-            const created = await tx.ticketMessage.create({
+        await prisma.$transaction(async (tx) => {
+            const msg = await tx.ticketMessage.create({
                 data: {
                     ticketId,
                     direction: MessageDirection.INBOUND,
@@ -497,6 +509,8 @@ class GraphReaderService {
                 },
             });
 
+            await this.saveAttachments(ticketId, msg.id, data);
+
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },
@@ -509,22 +523,9 @@ class GraphReaderService {
                     actorType: TicketActorType.REQUESTER,
                 },
             });
-
-            return created;
         });
 
-        // si ya estaba procesado, no seguimos
-        if (!msg) return;
-
-        // 2) Adjuntos FUERA de la transacción (lento)
-        try {
-            await this.saveAttachments(ticketId, msg.id, data);
-        } catch (e) {
-            console.error("⚠️ Error guardando adjuntos:", e);
-            // opcional: registrar evento/flag para reintentar luego
-        }
-
-        // 3) Emitir eventos
+        // Emitir eventos para frontend
         bus.emit("ticket.message", {
             ticketId,
             direction: "INBOUND",
@@ -532,6 +533,7 @@ class GraphReaderService {
             subject: data.subject,
         });
 
+        // Opcional: también emitir actualización de ticket (si quieres que el frontend refresque estado, prioridad, etc.)
         bus.emit("ticket.updated", {
             ticketId,
             lastActivityAt: new Date(),
@@ -554,7 +556,6 @@ class GraphReaderService {
 
         return TicketPriority.NORMAL;
     }
-
     // ... otros métodos como translateStatus, escapeHtml, etc. ...
 
     /* ======================================================

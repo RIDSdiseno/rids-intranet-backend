@@ -110,16 +110,13 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
         ========================== */
         if (search) {
             const searchValue = String(search);
-            const searchUpper = searchValue.toUpperCase();
 
             const OR: any[] = [];
 
-            // Buscar por ID si es número
             if (!isNaN(Number(searchValue))) {
                 OR.push({ id: Number(searchValue) });
             }
 
-            // Buscar por estado (enum exact match)
             const estadosMatch = Object.values(EstadoCotizacionGestioo).filter(e =>
                 e.toLowerCase().includes(searchValue.toLowerCase())
             );
@@ -130,15 +127,58 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                 });
             }
 
-            // Buscar por nombre entidad (string)
-            OR.push({
-                entidad: {
-                    nombre: {
+            OR.push(
+                {
+                    entidad: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive"
+                        }
+                    }
+                },
+                {
+                    entidad: {
+                        rut: {
+                            contains: searchValue,
+                            mode: "insensitive"
+                        }
+                    }
+                },
+                {
+                    comentariosCotizacion: {
                         contains: searchValue,
                         mode: "insensitive"
                     }
+                },
+                {
+                    items: {
+                        some: {
+                            nombre: {
+                                contains: searchValue,
+                                mode: "insensitive"
+                            }
+                        }
+                    }
+                },
+                {
+                    items: {
+                        some: {
+                            sku: {
+                                contains: searchValue,
+                                mode: "insensitive"
+                            }
+                        }
+                    }
+                },
+                {
+                    tecnico: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive"
+                        }
+                    }
                 }
-            });
+            );
 
             AND.push({ OR });
         }
@@ -776,9 +816,11 @@ export async function cambiarEstadoFactura(req: Request, res: Response) {
 //      EMITIR FACTURA AL SII - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
 export async function emitirFacturaSII(req: Request, res: Response) {
+
     const { id } = req.params;
 
     try {
+
         const cotizacion = await prisma.cotizacionGestioo.findUnique({
             where: { id: Number(id) },
             include: {
@@ -793,32 +835,24 @@ export async function emitirFacturaSII(req: Request, res: Response) {
         if (cotizacion.estado !== "APROBADA")
             return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
 
+        if (!cotizacion.items.length)
+            return res.status(400).json({ error: "La cotización no tiene items" });
+
         const config = getSimpleAPIConfig();
 
-        if (!cotizacion.entidad) {
-            return res.status(400).json({
-                error: "La cotización no tiene entidad asociada"
-            });
-        }
-
-        if (!cotizacion.entidad.rut) {
-            return res.status(400).json({
-                error: "La entidad no tiene RUT"
-            });
-        }
+        if (!cotizacion.entidad?.rut)
+            return res.status(400).json({ error: "La entidad no tiene RUT" });
 
         const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
 
-        // 1️⃣ Generar DTE
+        // Emitir DTE
         const dte = await generarDTE(config, { cotizacion });
 
-        // 2️⃣ Generar sobre
-        await generarSobre(config, dte);
+        const envio = {
+            trackId: dte.trackId ?? null
+        };
 
-        // 3️⃣ Enviar al SII
-        const envio = await enviarAlSII(config);
-
-        // 4️⃣ Crear factura
+        // Crear factura
         const factura = await prisma.factura.create({
             data: {
                 numeroFactura: `INT-${dte.folio}`,
@@ -833,7 +867,6 @@ export async function emitirFacturaSII(req: Request, res: Response) {
             }
         });
 
-        // 5️⃣ Ahora sí cambiar estado
         await prisma.cotizacionGestioo.update({
             where: { id: cotizacion.id },
             data: { estado: "FACTURADA" }
@@ -846,8 +879,13 @@ export async function emitirFacturaSII(req: Request, res: Response) {
         });
 
     } catch (error: any) {
-        console.error(" Error emitirFacturaSII:", error);
-        return res.status(500).json({ error: error.message });
+
+        console.error("Error emitirFacturaSII:", error);
+
+        return res.status(500).json({
+            error: error.message
+        });
+
     }
 }
 
