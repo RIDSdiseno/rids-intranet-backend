@@ -12,56 +12,9 @@ import { asyncLocalStorage } from "./lib/request-context.js";
 
 import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
 
-/* ========= Helpers ========= */
-function normalizeOrigin(origin: string): string {
-  return origin
-    .trim()
-    .replace(/^['"]|['"]$/g, "")
-    .replace(/\/+$/, "");
-}
-
-function normalizeOriginList(raw?: string): string[] {
-  if (!raw || raw.trim() === "") {
-    console.warn("[CORS] CORS_ORIGIN no definido");
-    return [];
-  }
-
-  return raw
-    .split(",")
-    .map(normalizeOrigin)
-    .filter(Boolean);
-}
-
-function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] {
-  const allowedNormalized = allowed.map(normalizeOrigin);
-
-  console.log("[ENV] CORS_ORIGIN raw =", process.env.CORS_ORIGIN);
-  console.log("[CORS] allowedOrigins =", allowedNormalized);
-
-  return (origin, cb) => {
-    console.log("[CORS] incoming origin =", origin);
-
-    // Permite requests sin Origin, como healthchecks o herramientas de servidor
-    if (!origin) {
-      return cb(null, true);
-    }
-
-    const norm = normalizeOrigin(origin);
-    console.log("[CORS] normalized incoming =", norm);
-
-    if (allowedNormalized.includes(norm)) {
-      console.log("[CORS] allowed");
-      return cb(null, true);
-    }
-
-    console.warn("[CORS] blocked:", origin, "->", norm);
-    return cb(null, false);
-  };
-}
-
-const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
-
 const app = express();
+
+console.log("[ENV] CORS_ORIGIN raw =", process.env.CORS_ORIGIN);
 
 app.set("prisma", prisma);
 
@@ -87,14 +40,41 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser());
 
 /* ========= CORS ========= */
+const allowedOrigins = [
+  "https://rids-intranet.netlify.app",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:8100",
+  "capacitor://localhost",
+  "ionic://localhost",
+  "https://localhost",
+];
+
+console.log("[CORS] allowedOrigins =", allowedOrigins);
+
 const corsOptions: cors.CorsOptions = {
-  origin: makeCorsOriginValidator(allowedOrigins),
+  origin: (origin, callback) => {
+    console.log("[CORS] incoming origin =", origin);
+
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn("[CORS] blocked origin =", origin);
+    return callback(null, false);
+  },
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  maxAge: 600,
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 /* ========= Logs ========= */
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
