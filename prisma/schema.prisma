@@ -923,6 +923,7 @@ model AreaConfig {
   mensajeBase String
   firmaArea   String?
   updatedAt   DateTime @updatedAt
+  
 
   @@map("area_configs")
 }
@@ -985,14 +986,6 @@ model ReporteIA {
   createdAt DateTime @default(now())
 
   @@unique([empresaId, periodo])
-}
-
-model area_configs {
-  id          Int      @id @default(autoincrement())
-  nombre      String   @unique
-  mensajeBase String
-  firmaArea   String?
-  updatedAt   DateTime
 }
 
 enum EstadoDTE {

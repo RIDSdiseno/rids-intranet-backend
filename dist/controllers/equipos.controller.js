@@ -1,6 +1,14 @@
-import { TipoEquipo, AuditAction } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
+// Importa solo lo que Prisma sí está exportando correctamente
+import { Prisma, TipoEquipo } from "@prisma/client";
+// Define AuditAction manualmente aquí para que no rompa el código de abajo
+var AuditAction;
+(function (AuditAction) {
+    AuditAction["CREATE"] = "CREATE";
+    AuditAction["UPDATE"] = "UPDATE";
+    AuditAction["DELETE"] = "DELETE";
+})(AuditAction || (AuditAction = {}));
 /* ================== Schemas ================== */
 const listQuerySchema = z.object({
     page: z.coerce.number().int().positive().default(1),

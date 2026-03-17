@@ -3,10 +3,14 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 // Importa solo lo que Prisma sí está exportando correctamente
-import { TipoEquipo } from "@prisma/client"; 
+import { Prisma, TipoEquipo } from "@prisma/client"; 
 
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
-type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
+enum AuditAction {
+    CREATE = 'CREATE',
+    UPDATE = 'UPDATE',
+    DELETE = 'DELETE'
+}
 
 /* ================== Schemas ================== */
 
