@@ -31,6 +31,7 @@ model Empresa {
   tecnicos             Tecnico[]
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
+  equipos              Equipo[]
 }
 
 model Sucursal {
@@ -331,6 +332,7 @@ model ProductoGestioo {
   modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
+  equipo        Equipo?
 
   @@index([marcaId])
   @@index([modeloId])
@@ -424,7 +426,18 @@ model Equipo {
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
+  empresaId              Int?
+  productoId             Int?                    @unique
+  origenCotizacionId     Int?
 
+  empresa          Empresa?               @relation(fields: [empresaId], references: [id_empresa])
+  producto         ProductoGestioo?       @relation(fields: [productoId], references: [id])
+  origenCotizacion CotizacionGestioo?     @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
+  cotizacionItem   CotizacionItemGestioo? @relation("ItemEquipoGenerado")
+
+  @@index([empresaId])
+  @@index([productoId])
+  @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
 }
@@ -725,6 +738,7 @@ model CotizacionGestioo {
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   facturas              Factura[]
   trabajos              DetalleTrabajoGestioo[]
+  equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
 
   @@index([entidadId])
 }
@@ -769,6 +783,11 @@ model CotizacionItemGestioo {
   nombre            String?
   precioOriginalCLP Float?
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+
+  equipoId Int?    @unique
+  equipo   Equipo? @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+
+  @@index([equipoId])
 }
 
 model Entrega {

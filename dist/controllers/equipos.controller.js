@@ -11,6 +11,7 @@ const listQuerySchema = z.object({
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
+    mode: z.enum(["full", "selector"]).default("full").optional(),
     sortBy: z
         .enum([
         "id_equipo",
@@ -211,21 +212,45 @@ export async function listEquipos(req, res) {
                                 },
                             },
                         },
+                        ...(Number.isFinite(Number(q.search))
+                            ? [{ id_equipo: Number(q.search) }]
+                            : []),
                     ],
                 }
                 : {}),
         };
         const orderBy = mapOrderBy(q.sortBy, q.sortDir);
-        const [total, rows] = await Promise.all([
-            prisma.equipo.count({ where }),
-            prisma.equipo.findMany({
+        const skip = (q.page - 1) * q.pageSize;
+        const total = await prisma.equipo.count({ where });
+        if (q.mode === "selector") {
+            const items = await prisma.equipo.findMany({
                 where,
-                include: { solicitante: { include: { empresa: true } }, detalle: true },
+                select: {
+                    id_equipo: true,
+                    serial: true,
+                    marca: true,
+                    modelo: true,
+                    tipo: true,
+                },
                 orderBy,
-                skip: (q.page - 1) * q.pageSize,
+                skip,
                 take: q.pageSize,
-            }),
-        ]);
+            });
+            return res.json({
+                page: q.page,
+                pageSize: q.pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+                items,
+            });
+        }
+        const rows = await prisma.equipo.findMany({
+            where,
+            include: { solicitante: { include: { empresa: true } }, detalle: true },
+            orderBy,
+            skip,
+            take: q.pageSize,
+        });
         return res.json({
             page: q.page,
             pageSize: q.pageSize,

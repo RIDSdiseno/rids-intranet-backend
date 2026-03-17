@@ -18,11 +18,13 @@ export declare function getInventarioByEmpresa(params: {
     } | null;
 } & {
     updatedAt: Date;
+    empresaId: number | null;
     deletedAt: Date | null;
     createdAt: Date;
     tipo: import("@prisma/client").$Enums.TipoEquipo;
     marca: string;
     modelo: string;
+    productoId: number | null;
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
@@ -30,5 +32,6 @@ export declare function getInventarioByEmpresa(params: {
     ram: string | null;
     disco: string | null;
     propiedad: string;
+    origenCotizacionId: number | null;
 })[]>;
 //# sourceMappingURL=inventario.service.d.ts.map
