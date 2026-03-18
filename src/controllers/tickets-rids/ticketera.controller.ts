@@ -24,7 +24,7 @@ declare global {
 // Crear ticket
 export async function createTicket(req: Request, res: Response) {
     try {
-        const { empresaId, requesterId, subject, message, priority, assigneeId } = req.body;
+        const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail } = req.body;
 
         if (!empresaId || !subject) {
             return res.status(400).json({
@@ -95,6 +95,30 @@ export async function createTicket(req: Request, res: Response) {
             channel: ticket.channel,
         });
 
+        // 🆕 Auto-reply si el ticket tiene email de origen
+        const fromEmail =
+            bodyFromEmail ||           // 1️⃣ email ingresado manualmente por el agente
+            ticket.fromEmail ||        // 2️⃣ email de origen si vino de email entrante
+            (requesterId
+                ? (await prisma.solicitante.findUnique({
+                    where: { id_solicitante: requesterId },
+                    select: { email: true },
+                }))?.email
+                : null);               // 3️⃣ email del solicitante registrado
+
+        if (fromEmail && fromEmail !== process.env.SMTP_USER) {
+            try {
+                await emailSenderService.sendAgentReply(
+                    { id: ticket.id, subject: ticket.subject, status: ticket.status },
+                    `Hemos recibido tu solicitud. Ticket asignado: #${ticket.id}.\n\nNuestro equipo te responderá a la brevedad.`,
+                    [fromEmail],
+                    [],
+                );
+            } catch (err) {
+                console.error("⚠️ Error enviando auto-reply:", err);
+            }
+        }
+
         return res.status(201).json({
             ok: true,
             ticketId: ticket.id,
@@ -113,6 +137,8 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
     try {
         const ticketId = Number(req.params.id);
         const { message } = req.body;
+        const to = JSON.parse(req.body.to || "[]");
+        const cc = JSON.parse(req.body.cc || "[]");
         const isInternal = req.body.isInternal === "true";
 
         const agentId = req.user?.id;
@@ -137,10 +163,11 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
 
-        const toEmail =
-            ticket.requester?.email ||
-            ticket.fromEmail ||
-            null;
+        const toEmails = to.length
+            ? to
+            : [ticket.requester?.email || ticket.fromEmail].filter(Boolean);
+
+        const ccEmails = cc || [];
 
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
@@ -153,7 +180,8 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                     bodyText: message,
                     isInternal: Boolean(isInternal),
                     fromEmail,
-                    toEmail,
+                    toEmail: toEmails.join(","), // 👈 también mejoramos esto
+                    cc: ccEmails.length ? ccEmails.join(",") : null,
                 },
             });
 
@@ -209,11 +237,12 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         });
 
         // 🆕 Enviar email al cliente (solo si no es nota interna)
-        if (!isInternal && toEmail) {
+        if (!isInternal && toEmails.length > 0) {
             await emailSenderService.sendAgentReply(
                 ticket,
                 message,
-                toEmail,
+                toEmails,
+                ccEmails,
                 files?.filter(f => !f.mimetype.includes("internal"))
             );
         }
@@ -594,8 +623,12 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 1️⃣ Extraer dominio
-        const domain = from.split("@")[1]?.toLowerCase();
+        // 1️⃣ Extraer dominio limpio
+        const domain = from
+            ?.split("@")[1]
+            ?.replace(/[>"\s]/g, "")
+            ?.toLowerCase();
+
         if (!domain) {
             return res.status(400).json({
                 ok: false,
@@ -603,27 +636,36 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 2️⃣ Buscar empresa por dominio
-        const empresa = await prisma.empresa.findFirst({
-            where: {
-                dominios: {
-                    has: domain,
-                },
-            },
+        // 2️⃣ Buscar mapping
+        const mapping = await prisma.fdSourceMap.findFirst({
+            where: { domain }
         });
 
-        if (!empresa) {
-            return res.status(200).json({
-                ok: false,
-                message: "Empresa no registrada, email ignorado",
+        let empresa: { nombre: string; id_empresa: number; tieneSucursales: boolean; razonSocial: string | null; dominios: string[] } | null = null;
+
+        if (mapping?.ticketOrgId) {
+            const org = await prisma.ticketOrg.findUnique({
+                where: { id: mapping.ticketOrgId }
             });
+
+            if (org) {
+                empresa = await prisma.empresa.findFirst({
+                    where: { nombre: org.name }
+                });
+            }
+        }
+
+        if (!empresa) {
+            console.warn("⚠ Empresa no encontrada para dominio:", domain);
         }
 
         // 3️⃣ Buscar solicitante EXISTENTE (NO crear)
         const requester = await prisma.solicitante.findFirst({
             where: {
                 email: from,
-                empresaId: empresa.id_empresa,
+                ...(empresa?.id_empresa && {
+                    empresaId: empresa.id_empresa
+                }),
                 isActive: true,
             },
         });
@@ -637,7 +679,9 @@ export async function inboundEmail(req: Request, res: Response) {
                 priority: TicketPriority.NORMAL,
                 channel: "EMAIL",
 
-                empresaId: empresa.id_empresa,
+                ...(empresa?.id_empresa && {
+                    empresaId: empresa.id_empresa
+                }),
 
                 requesterId: requester?.id_solicitante ?? null,
                 fromEmail: from,

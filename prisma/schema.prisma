@@ -816,31 +816,36 @@ model EvidenciaEntrega {
 }
 
 model Ticket {
-  id              Int             @id @default(autoincrement())
+  id              Int            @id @default(autoincrement())
   empresaId       Int
   requesterId     Int?
   assigneeId      Int?
   subject         String
-  status          TicketStatus    @default(NEW)
-  priority        TicketPriority  @default(NORMAL)
-  channel         TicketChannel   @default(WEB)
+  status          TicketStatus   @default(NEW)
+  priority        TicketPriority @default(NORMAL)
+  channel         TicketChannel  @default(WEB)
   fromEmail       String?
   inboxEmail      String?
   firstResponseAt DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  lastActivityAt  DateTime        @default(now())
-  publicId        String          @unique
-  aiSummary       String?
-  TicketArea      String?
-  area            String?
-  empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
-  requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
-  assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
-  messages        TicketMessage[]
-  events          TicketEvent[]
+
+  slaFirstResponseAt DateTime?
+  slaResolveAt       DateTime?
+  slaStatus          String?
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  lastActivityAt DateTime        @default(now())
+  publicId       String          @unique
+  aiSummary      String?
+  TicketArea     String?
+  area           String?
+  empresa        Empresa         @relation(fields: [empresaId], references: [id_empresa])
+  requester      Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
+  assignee       Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
+  messages       TicketMessage[]
+  events         TicketEvent[]
 
   @@index([empresaId])
   @@index([status])

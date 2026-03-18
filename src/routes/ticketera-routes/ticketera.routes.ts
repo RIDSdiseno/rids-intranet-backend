@@ -29,6 +29,8 @@ import {
 import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
 import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.controller.js";
 
+import { buscarContactos } from "@/src/controllers/tickets-rids/contactos.controller.js";
+
 const ticketeraRouter = Router();
 
 // =======================
@@ -48,6 +50,11 @@ ticketeraRouter.get("/dashboard", getAgentDashboard);
 ticketeraRouter.get("/queues", getTicketQueues);
 ticketeraRouter.patch("/bulk", bulkUpdateTickets);
 ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
+
+// =======================
+// CONTACTOS
+// =======================
+ticketeraRouter.get("/contactos", buscarContactos)
 
 // =======================
 // EMAIL ENDPOINTS

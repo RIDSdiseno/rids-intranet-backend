@@ -8,6 +8,71 @@ import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 import { emailSenderService } from '../email/email-sender.service.js';
+function buildAutoReplyTemplate(params) {
+    return `
+<!DOCTYPE html>
+<html>
+<body style="margin:0; padding:0; background:#f5f5f5; font-family: Arial, sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; padding:20px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:8px; overflow:hidden;">
+
+      <!-- HEADER -->
+      <tr>
+        <td style="background:#0f172a; padding:16px 24px;">
+          <strong style="color:white; font-size:16px;">Soluciones RIDS — Soporte Técnico</strong>
+        </td>
+      </tr>
+
+      <!-- BODY -->
+      <tr>
+        <td style="padding:24px; font-size:14px; color:#333; line-height:1.6;">
+          <p>Estimado(a) <strong>${params.nombre}</strong>,</p>
+          <p>Hemos recibido tu solicitud. Te asignamos el siguiente número de ticket:</p>
+
+          <div style="text-align:center; margin:20px 0;">
+            <span style="
+              display:inline-block;
+              background:#0ea5e9;
+              color:white;
+              font-size:22px;
+              font-weight:bold;
+              padding:10px 28px;
+              border-radius:6px;
+              letter-spacing:1px;
+            ">
+              Ticket #${params.ticketId}
+            </span>
+          </div>
+
+          <p><strong>Asunto:</strong> ${params.subject}</p>
+          <p>Nuestro equipo revisará tu caso a la brevedad. Puedes responder directamente a este correo para agregar más información.</p>
+        </td>
+      </tr>
+
+      <!-- MENSAJE ORIGINAL -->
+      <tr>
+        <td style="padding:0 24px 24px;">
+          <div style="border-left:3px solid #e2e8f0; padding-left:12px; color:#64748b; font-size:13px;">
+            <p style="margin:0 0 8px; font-weight:bold;">Tu mensaje:</p>
+            <div>${params.bodyOriginal}</div>
+          </div>
+        </td>
+      </tr>
+
+      <!-- FOOTER -->
+      <tr>
+        <td style="background:#f8fafc; padding:16px 24px; font-size:12px; color:#94a3b8; border-top:1px solid #e2e8f0;">
+          Soporte Técnico · Soluciones RIDS · soporte@rids.cl
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
 /* ======================================================
    Servicio Graph Reader
 ====================================================== */
@@ -308,17 +373,35 @@ class GraphReaderService {
         /* =============================
            2️⃣ VALIDAR EMPRESA
         ============================= */
-        const domain = data.fromEmail.split('@')[1];
+        const domain = data.fromEmail
+            .split("@")[1]
+            ?.replace(/[>"\s]/g, "")
+            ?.toLowerCase();
         if (!domain)
             return;
-        let empresa = await prisma.empresa.findFirst({
-            where: { dominios: { has: domain } },
+        let empresa = null;
+        const mapping = await prisma.fdSourceMap.findFirst({
+            where: { domain }
         });
+        if (mapping?.ticketOrgId) {
+            const org = await prisma.ticketOrg.findUnique({
+                where: { id: mapping.ticketOrgId }
+            });
+            if (org) {
+                empresa = await prisma.empresa.findFirst({
+                    where: { nombre: org.name }
+                });
+            }
+        }
         if (!empresa) {
+            console.warn(`⚠️ Dominio ${domain} no reconocido`);
             empresa = await prisma.empresa.findFirst({
                 where: { nombre: 'SIN CLASIFICAR' },
             });
-            console.log(`⚠️ Dominio ${domain} no reconocido → SIN CLASIFICAR`);
+            if (!empresa) {
+                throw new Error('Empresa SIN CLASIFICAR no existe');
+            }
+            console.log(`⚠️ Dominio ${domain} → SIN CLASIFICAR`);
         }
         if (!empresa) {
             throw new Error('Empresa SIN CLASIFICAR no existe');
@@ -397,29 +480,26 @@ class GraphReaderService {
             channel: TicketChannel.EMAIL,
             from: data.fromEmail,
         });
-        console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
         /* =============================
-           8️⃣ ENVIAR EMAIL (AL FINAL)
-        ============================= */
+   8️⃣ AUTO-REPLY (GRAPH CORRECTO)
+============================= */
         try {
             if (data.fromEmail !== this.supportEmail) {
-                /*
-                await emailSenderService.sendAgentReply(
-                    {
-                        id: ticket.id,
-                        subject: ticket.subject,
-                        status: ticket.status,
-                    },
-                    `Hola ${data.fromName || ''},
-
-Hemos recibido tu solicitud correctamente.
-
-Nuestro equipo de soporte revisará tu caso a la brevedad.
-
-Gracias por contactarnos.`,
-                    data.fromEmail
-                ); */
-                // 🧠 Registrar en historial
+                const html = buildAutoReplyTemplate({
+                    nombre: data.fromName || "Cliente",
+                    ticketId: ticket.id,
+                    subject: ticket.subject,
+                    bodyOriginal: data.bodyHtml || data.bodyText,
+                });
+                await this.sendReplyEmail({
+                    to: data.fromEmail,
+                    subject: `Re: ${ticket.subject}`,
+                    bodyHtml: html,
+                    // 🔥 CLAVE PARA THREADING REAL
+                    inReplyTo: data.messageId,
+                    references: data.references || data.messageId,
+                });
+                // 🧠 Registrar en historial (esto está perfecto, déjalo)
                 await prisma.ticketMessage.create({
                     data: {
                         ticketId: ticket.id,
@@ -430,11 +510,13 @@ Gracias por contactarnos.`,
                         toEmail: data.fromEmail,
                     },
                 });
+                console.log(`📨 Auto-reply enviado (Graph) a ${data.fromEmail}`);
             }
         }
         catch (err) {
             console.error('⚠️ Error enviando confirmación automática:', err);
         }
+        console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
     }
     /* ======================================================
        Buscar ticket existente
@@ -446,15 +528,16 @@ Gracias por contactarnos.`,
         const orConditions = [];
         if (data.inReplyTo) {
             orConditions.push({
-                sourceMessageId: data.inReplyTo
+                sourceMessageId: data.inReplyTo.trim()
             });
         }
         if (data.references) {
-            orConditions.push({
-                sourceReferences: {
-                    contains: data.references
-                }
-            });
+            const refs = data.references.split(" ");
+            for (const ref of refs) {
+                orConditions.push({
+                    sourceMessageId: ref.trim()
+                });
+            }
         }
         if (orConditions.length > 0) {
             const ticket = await prisma.ticket.findFirst({
@@ -490,17 +573,22 @@ Gracias por contactarnos.`,
         /* =============================
            3️⃣ FALLBACK POR SUBJECT (#ID)
         ============================= */
-        const match = data.subject.match(/#(\d+)/);
+        const match = data.subject.match(/Ticket\s+#(\d+)/i);
         if (match?.[1]) {
             const ticketId = Number(match[1]);
-            if (Number.isInteger(ticketId)) {
-                return prisma.ticket.findFirst({
-                    where: {
-                        id: ticketId,
-                        status: { not: TicketStatus.CLOSED }
-                    }
-                });
+            // 🔥 VALIDACIÓN CRÍTICA
+            if (!Number.isInteger(ticketId) ||
+                ticketId <= 0 ||
+                ticketId > 2147483647) {
+                console.warn(`⚠️ ID inválido detectado en subject: ${match[1]}`);
+                return null;
             }
+            return prisma.ticket.findFirst({
+                where: {
+                    id: ticketId,
+                    status: { not: TicketStatus.CLOSED }
+                }
+            });
         }
         return null;
     }
