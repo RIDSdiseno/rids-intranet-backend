@@ -19,6 +19,7 @@ import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 
+import { emailSenderService } from '../email/email-sender.service.js';
 
 /* ======================================================
    Tipos
@@ -33,6 +34,8 @@ interface ParsedEmail {
     conversationId: string;
     cc: string[];
     graphMessageId: string;
+    references?: string; // 🆕
+    inReplyTo?: string;
     attachmentsMeta: Array<{
         graphAttachmentId: string;
         filename: string;
@@ -42,6 +45,11 @@ interface ParsedEmail {
         isInline: boolean;   // ✅ Añadir
     }>;
 }
+
+type GraphHeader = {
+    name: string;
+    value: string;
+};
 
 /* ======================================================
    Servicio Graph Reader
@@ -97,13 +105,17 @@ class GraphReaderService {
 
             const client = await this.getClient();
 
+            const now = new Date();
+            const minutes = 10;
+            const since = new Date(Date.now() - minutes * 60 * 1000);
+
             const response = await client
                 .api(`/users/${this.supportEmail}/messages`)
-                .filter('isRead eq false')
+                .filter(`receivedDateTime ge ${since.toISOString()}`)
                 .select(
-                    'id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId,hasAttachments'
+                    'id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId,hasAttachments,internetMessageHeaders'
                 )
-                .top(50)
+                .top(100)
                 .orderby('receivedDateTime desc')
                 .get();
 
@@ -114,15 +126,11 @@ class GraphReaderService {
                 return;
             }
 
-            console.log(`📧 Encontrados ${messages.length} emails sin leer`);
+            console.log(`📧 Encontrados ${messages.length} emails recientes`);
 
             for (const message of messages) {
                 try {
                     await this.processMessage(message);
-
-                    await client
-                        .api(`/users/${this.supportEmail}/messages/${message.id}`)
-                        .patch({ isRead: true });
 
                 } catch (err) {
                     console.error('❌ Error procesando mensaje:', err);
@@ -193,6 +201,27 @@ class GraphReaderService {
        Procesar mensaje individual
     ====================================================== */
     private async processMessage(message: any): Promise<void> {
+        const graphMessageId = message.id;
+
+        // 🔥 ID REAL DEL EMAIL (CLAVE)
+        const internetMessageId = message.internetMessageId;
+
+        /* =============================
+           1️⃣ DEDUPE (PRIMERO DE TODO)
+        ============================= */
+        const existingMsg = await prisma.ticketMessage.findUnique({
+            where: { sourceMessageId: internetMessageId },
+            select: { id: true },
+        });
+
+        if (existingMsg) {
+            console.log(`⏭️ Ignorado: email ya procesado (${graphMessageId})`);
+            return;
+        }
+
+        /* =============================
+           2️⃣ DATOS BÁSICOS
+        ============================= */
         const fromEmail =
             message.from?.emailAddress?.address?.toLowerCase() || '';
 
@@ -201,22 +230,19 @@ class GraphReaderService {
             fromEmail.split('@')[0] ||
             'Desconocido';
 
-        const graphMessageId = message.id; // ESTE ES CLAVE
+        const subject = message.subject || 'Sin asunto';
 
-        const attachmentsMeta =
-            message.hasAttachments ? await this.fetchAttachmentsMeta(graphMessageId) : [];
+        /* =============================
+   🔥 HEADERS (THREADING REAL)
+============================= */
+        const headers = message.internetMessageHeaders as GraphHeader[] | undefined;
 
-        /* ------------------------------
-           1️⃣ Ignorar correos internos
-        ------------------------------ */
-        if (fromEmail.endsWith('@rids.cl')) {
-            console.log('⏭️ Ignorado: correo interno');
-            return;
-        }
+        const references = headers?.find((h: GraphHeader) => h.name === "References")?.value;
+        const inReplyTo = headers?.find((h: GraphHeader) => h.name === "In-Reply-To")?.value;
 
-        /* ------------------------------
-           2️⃣ Validar que vaya a soporte
-        ------------------------------ */
+        /* =============================
+           3️⃣ VALIDAR DESTINATARIO
+        ============================= */
         const toAddresses =
             message.toRecipients?.map((r: any) =>
                 r.emailAddress.address.toLowerCase()
@@ -236,9 +262,9 @@ class GraphReaderService {
             return;
         }
 
-        /* ------------------------------
-           3️⃣ Ignorar automáticos / spam
-        ------------------------------ */
+        /* =============================
+           4️⃣ FILTRO SPAM / SISTEMA (SENDER)
+        ============================= */
         const blockedSenders = [
             'postmaster@',
             'mailer-daemon',
@@ -248,13 +274,13 @@ class GraphReaderService {
         ];
 
         if (blockedSenders.some(b => fromEmail.includes(b))) {
-            console.log('⏭️ Ignorado: correo automático');
+            console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
             return;
         }
 
-        /* ------------------------------
-           4️⃣ Extraer cuerpo
-        ------------------------------ */
+        /* =============================
+           5️⃣ CUERPO
+        ============================= */
         const bodyHtml = message.body?.content || '';
 
         const bodyText =
@@ -262,22 +288,84 @@ class GraphReaderService {
                 ? message.body.content
                 : this.stripHtml(bodyHtml);
 
+        /* =============================
+           6️⃣ FILTRO AUTOMÁTICOS (CONTENIDO)
+        ============================= */
+        const autoPatterns = [
+            'a new ticket has been assigned',
+            'please follow the link below',
+            'freshdesk',
+            'helpdesk',
+        ];
+
+        const bodyLower = bodyText.toLowerCase();
+        const subjectLower = subject.toLowerCase();
+
+        if (
+            autoPatterns.some(p => bodyLower.includes(p)) ||
+            subjectLower.includes('assigned to your group') ||
+            subjectLower.includes('ticket has been assigned')
+        ) {
+            console.log(`⏭️ Ignorado: notificación automática (${fromEmail})`);
+            return;
+        }
+
+        /* =============================
+           7️⃣ DETECTAR INTERNOS (MULTI DOMINIO)
+        ============================= */
+        const internalDomains = ['rids.cl'];
+
+        const isInternal = internalDomains.some(d =>
+            fromEmail.endsWith(`@${d}`)
+        );
+
+        /* =============================
+           8️⃣ CONSTRUIR DATA
+        ============================= */
         const emailData: ParsedEmail = {
             fromEmail,
             fromName,
-            subject: message.subject || 'Sin asunto',
+            subject,
             bodyText,
             bodyHtml,
-            messageId: graphMessageId,
-            conversationId: message.conversationId || '',
-            cc: ccAddresses,
+            messageId: internetMessageId, // 🔥 ESTE ES EL CAMBIO MÁS IMPORTANTE
             graphMessageId,
-            attachmentsMeta,
+            conversationId: message.conversationId || '',
+            ...(references && { references }),
+            ...(inReplyTo && { inReplyTo }),
+            cc: ccAddresses,
+            attachmentsMeta: [],
         };
 
-        console.log(`📨 Procesando: ${emailData.fromEmail} - ${emailData.subject}`);
+        /* =============================
+           9️⃣ BUSCAR TICKET
+        ============================= */
+        const existingTicket = await this.findExistingTicket(emailData);
 
-        await this.createOrUpdateTicket(emailData);
+        if (isInternal && !existingTicket) {
+            console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
+            return;
+        }
+
+        /* =============================
+           🔟 ADJUNTOS
+        ============================= */
+        if (message.hasAttachments) {
+            try {
+                emailData.attachmentsMeta =
+                    await this.fetchAttachmentsMeta(graphMessageId);
+            } catch (err) {
+                console.error('⚠️ Error obteniendo adjuntos:', err);
+                emailData.attachmentsMeta = [];
+            }
+        }
+
+        /* =============================
+           1️⃣1️⃣ PROCESAR
+        ============================= */
+        console.log(`📨 Procesando: ${fromEmail} - ${subject}`);
+
+        await this.createOrUpdateTicket(emailData, existingTicket);
     }
 
     /* ======================================================
@@ -334,19 +422,23 @@ class GraphReaderService {
     /* ======================================================
        Crear o actualizar ticket
     ====================================================== */
-    private async createOrUpdateTicket(data: ParsedEmail): Promise<void> {
-        // buscar ticket existente (reply)
-        const existingTicket = await this.findExistingTicket(data);
+    private async createOrUpdateTicket(
+        data: ParsedEmail,
+        existingTicket?: any
+    ): Promise<void> {
 
+        /* =============================
+           1️⃣ SI YA EXISTE → REPLY
+        ============================= */
         if (existingTicket) {
             await this.addMessageToTicket(existingTicket.id, data);
             console.log(`✅ Mensaje agregado al ticket #${existingTicket.id}`);
             return;
         }
 
-        /* ------------------------------
-           Crear ticket nuevo
-        ------------------------------ */
+        /* =============================
+           2️⃣ VALIDAR EMPRESA
+        ============================= */
         const domain = data.fromEmail.split('@')[1];
         if (!domain) return;
 
@@ -365,7 +457,9 @@ class GraphReaderService {
             throw new Error('Empresa SIN CLASIFICAR no existe');
         }
 
-        // 🔍 Buscar solicitante EXISTENTE (NO crear)
+        /* =============================
+           3️⃣ SOLICITANTE
+        ============================= */
         const requester = await prisma.solicitante.findFirst({
             where: {
                 email: data.fromEmail,
@@ -373,12 +467,13 @@ class GraphReaderService {
             },
         });
 
-        // ⚠️ Solo log, NO crear
         if (!requester) {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
 
-        // CREAR TICKET (con o sin solicitante)
+        /* =============================
+           4️⃣ CREAR TICKET
+        ============================= */
         const ticket = await prisma.ticket.create({
             data: {
                 publicId: crypto.randomUUID(),
@@ -394,25 +489,44 @@ class GraphReaderService {
             },
         });
 
-        // Agregar primer mensaje
-        const msg = await prisma.ticketMessage.create({
-            data: {
-                ticketId: ticket.id,
-                direction: MessageDirection.INBOUND,
-                bodyText: data.bodyText,
-                bodyHtml: data.bodyHtml,
-                isInternal: false,
-                fromEmail: data.fromEmail,
-                cc: data.cc.length ? data.cc.join(",") : null,
-                toEmail: this.supportEmail,
-                sourceMessageId: data.messageId,
-                sourceInReplyTo: data.conversationId || null,
-                sourceReferences: data.graphMessageId,
-            },
-        });
+        /* =============================
+           5️⃣ CREAR PRIMER MENSAJE (DEDUP SAFE)
+        ============================= */
+        let msg;
 
+        try {
+            msg = await prisma.ticketMessage.create({
+                data: {
+                    ticketId: ticket.id,
+                    direction: MessageDirection.INBOUND,
+                    bodyText: data.bodyText,
+                    bodyHtml: data.bodyHtml,
+                    isInternal: false,
+                    fromEmail: data.fromEmail,
+                    cc: data.cc.length ? data.cc.join(",") : null,
+                    toEmail: this.supportEmail,
+                    sourceMessageId: data.messageId, // internetMessageId
+                    sourceInReplyTo: data.inReplyTo || null,
+                    sourceReferences: data.references || null,
+                },
+            });
+        } catch (err: any) {
+            // 🔥 PROTECCIÓN CRÍTICA CONTRA DUPLICADOS
+            if (err.code === 'P2002') {
+                console.log(`⏭️ Mensaje ya existe (sourceMessageId duplicado)`);
+                return;
+            }
+            throw err;
+        }
+
+        /* =============================
+           6️⃣ ADJUNTOS
+        ============================= */
         await this.saveAttachments(ticket.id, msg.id, data);
 
+        /* =============================
+           7️⃣ EVENTOS
+        ============================= */
         bus.emit("ticket.created", {
             id: ticket.id,
             publicId: ticket.publicId,
@@ -424,44 +538,118 @@ class GraphReaderService {
         });
 
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
+
+        /* =============================
+           8️⃣ ENVIAR EMAIL (AL FINAL)
+        ============================= */
+        try {
+            if (data.fromEmail !== this.supportEmail) {
+                /* 
+                await emailSenderService.sendAgentReply(
+                    {
+                        id: ticket.id,
+                        subject: ticket.subject,
+                        status: ticket.status,
+                    },
+                    `Hola ${data.fromName || ''},
+
+Hemos recibido tu solicitud correctamente.
+
+Nuestro equipo de soporte revisará tu caso a la brevedad.
+
+Gracias por contactarnos.`,
+                    data.fromEmail
+                ); */
+
+                // 🧠 Registrar en historial
+                await prisma.ticketMessage.create({
+                    data: {
+                        ticketId: ticket.id,
+                        direction: MessageDirection.OUTBOUND,
+                        bodyText: 'Correo automático de confirmación enviado',
+                        isInternal: true,
+                        fromEmail: this.supportEmail,
+                        toEmail: data.fromEmail,
+                    },
+                });
+            }
+        } catch (err) {
+            console.error('⚠️ Error enviando confirmación automática:', err);
+        }
     }
 
     /* ======================================================
        Buscar ticket existente
     ====================================================== */
     private async findExistingTicket(data: ParsedEmail): Promise<any> {
-        if (data.conversationId) {
+
+        /* =============================
+           1️⃣ POR HEADERS (REAL THREADING)
+        ============================= */
+        const orConditions: any[] = [];
+
+        if (data.inReplyTo) {
+            orConditions.push({
+                sourceMessageId: data.inReplyTo
+            });
+        }
+
+        if (data.references) {
+            orConditions.push({
+                sourceReferences: {
+                    contains: data.references
+                }
+            });
+        }
+
+        if (orConditions.length > 0) {
             const ticket = await prisma.ticket.findFirst({
                 where: {
-                    messages: { some: { sourceInReplyTo: data.conversationId } },
-                    status: { not: TicketStatus.CLOSED },
-                },
+                    messages: {
+                        some: {
+                            OR: orConditions
+                        }
+                    },
+                    status: { not: TicketStatus.CLOSED }
+                }
             });
+
             if (ticket) return ticket;
         }
 
+        /* =============================
+           2️⃣ FALLBACK POR MESSAGE ID
+        ============================= */
+        if (data.messageId) {
+            const ticket = await prisma.ticket.findFirst({
+                where: {
+                    messages: {
+                        some: {
+                            sourceMessageId: data.messageId
+                        }
+                    },
+                    status: { not: TicketStatus.CLOSED }
+                }
+            });
+
+            if (ticket) return ticket;
+        }
+
+        /* =============================
+           3️⃣ FALLBACK POR SUBJECT (#ID)
+        ============================= */
         const match = data.subject.match(/#(\d+)/);
 
         if (match?.[1]) {
             const ticketId = Number(match[1]);
 
-            // 🔐 Protección crítica ANTES de tocar Prisma
-            if (
-                Number.isInteger(ticketId) &&
-                ticketId > 0 &&
-                ticketId <= 2_147_483_647 // límite INT4
-            ) {
+            if (Number.isInteger(ticketId)) {
                 return prisma.ticket.findFirst({
                     where: {
                         id: ticketId,
-                        fromEmail: data.fromEmail,
-                        status: { not: TicketStatus.CLOSED },
-                    },
+                        status: { not: TicketStatus.CLOSED }
+                    }
                 });
-            } else {
-                console.warn(
-                    `⚠️ ID ignorado por tamaño inválido: ${match[1]}`
-                );
             }
         }
 
@@ -492,8 +680,8 @@ class GraphReaderService {
                     toEmail: this.supportEmail,
                     cc: data.cc.length ? data.cc.join(",") : null,
                     sourceMessageId: data.messageId,
-                    sourceInReplyTo: data.conversationId || null,
-                    sourceReferences: data.graphMessageId,
+                    sourceInReplyTo: data.inReplyTo || null,
+                    sourceReferences: data.references || null,
                 },
             });
 

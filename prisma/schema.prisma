@@ -423,17 +423,16 @@ model Equipo {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
   deletedAt              DateTime?
+  empresaId              Int?
+  origenCotizacionId     Int?
+  productoId             Int?                    @unique
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
-  empresaId              Int?
-  productoId             Int?                    @unique
-  origenCotizacionId     Int?
-
-  empresa          Empresa?               @relation(fields: [empresaId], references: [id_empresa])
-  producto         ProductoGestioo?       @relation(fields: [productoId], references: [id])
-  origenCotizacion CotizacionGestioo?     @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
-  cotizacionItem   CotizacionItemGestioo? @relation("ItemEquipoGenerado")
+  empresa                Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  producto               ProductoGestioo?        @relation(fields: [productoId], references: [id])
+  origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
+  cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
 
   @@index([empresaId])
   @@index([productoId])
@@ -782,10 +781,9 @@ model CotizacionItemGestioo {
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
+  equipoId          Int?              @unique
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-
-  equipoId Int?    @unique
-  equipo   Equipo? @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+  equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
 
   @@index([equipoId])
 }
@@ -836,7 +834,8 @@ model Ticket {
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
   aiSummary       String?
-  rolAsignado     String?
+  TicketArea      String?
+  area            String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -953,18 +952,21 @@ model AgendaTecnico {
 }
 
 model AgendaVisita {
-  id                  Int          @id @default(autoincrement())
-  fecha               DateTime     @db.Date
-  empresaId           Int?
-  tipo                TipoAgenda   @default(SEMANA)
-  estado              EstadoAgenda @default(PROGRAMADA)
-  notificacionEnviada Boolean      @default(false)
-  notas               String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime
-  horaFin             String?
-  horaInicio          String?
-  mensaje             String?
+  id                   Int          @id @default(autoincrement())
+  fecha                DateTime     @db.Date
+  empresaId            Int?
+  tipo                 TipoAgenda   @default(SEMANA)
+  estado               EstadoAgenda @default(PROGRAMADA)
+  notificacionEnviada  Boolean      @default(false)
+  notas                String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime
+  horaFin              String?
+  horaInicio           String?
+  mensaje              String?
+  recordatorioEnviado  Boolean      @default(false)
+  outlook_event_id     String?
+  empresaExternaNombre String?
 
   @@index([empresaId])
   @@index([estado])
