@@ -8,7 +8,7 @@ declare class EmailSenderService {
         id: number;
         subject: string;
         status: string;
-    }, message: string, toEmail: string, files?: Express.Multer.File[]): Promise<void>;
+    }, message: string, to: string[], cc: string[], files?: Express.Multer.File[]): Promise<void>;
     /**
      * Template HTML para respuesta
      */

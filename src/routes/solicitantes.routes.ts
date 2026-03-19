@@ -9,12 +9,15 @@ import {
   updateSolicitante,
   deleteSolicitante,
 } from "../controllers/solicitantes.controller.js"; // <-- PLURAL y .js en runtime
+import { auth } from "../middlewares/auth.js";
 
 export const solicitantesRouter = Router();
 const asyncHandler =
   (fn: any): RequestHandler =>
-  (req, res, next) =>
-    Promise.resolve(fn(req, res, next)).catch(next);
+    (req, res, next) =>
+      Promise.resolve(fn(req, res, next)).catch(next);
+
+solicitantesRouter.use(auth());
 
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));

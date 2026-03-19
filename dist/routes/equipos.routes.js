@@ -1,6 +1,7 @@
 // src/routes/equipos.routes.ts
 import { Router, } from "express";
 import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, getEquipoHistorial } from "../controllers/equipos.controller.js";
+import { auth } from "../middlewares/auth.js";
 export const equiposRouter = Router();
 /* ============ Helpers ============ */
 // Async wrapper tipado para capturar rejects sin romper el proceso
@@ -16,6 +17,7 @@ const requireNumericId = (req, res, next) => {
     }
     next();
 };
+equiposRouter.use(auth());
 /* ============ Rutas ============ */
 // Listado (acepta filtros como search, marca, empresaId, empresaName, solicitanteId)
 equiposRouter.get("/", asyncHandler(listEquipos));

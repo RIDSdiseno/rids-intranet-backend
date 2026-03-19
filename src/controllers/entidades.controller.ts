@@ -92,12 +92,42 @@ export async function seedEntidadesECONNET(_req: Request, res: Response) {
 // Crear entidad
 export async function createEntidad(req: Request, res: Response) {
     try {
+
         const data = req.body;
-        const nuevaEntidad = await prisma.entidadGestioo.create({ data });
+
+        // 🔍 verificar si el RUT ya existe
+        const existente = await prisma.entidadGestioo.findUnique({
+            where: { rut: data.rut }
+        });
+
+        if (existente) {
+            return res.status(409).json({
+                error: "Ya existe una entidad con ese RUT"
+            });
+        }
+
+        const nuevaEntidad = await prisma.entidadGestioo.create({
+            data: {
+                nombre: data.nombre,
+                rut: data.rut,
+                correo: data.correo,
+                telefono: data.telefono,
+                direccion: data.direccion,
+                tipo: data.tipo,
+                origen: OrigenGestioo.OTRO
+            }
+        });
 
         return res.status(201).json({ data: nuevaEntidad });
 
     } catch (error: any) {
+
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                error: "El RUT ya está registrado"
+            });
+        }
+
         console.error("❌ Error al crear entidad:", error);
         return res.status(500).json({ error: "Error al crear entidad" });
     }

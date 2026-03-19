@@ -86,6 +86,7 @@ export const listSolicitantes = async (req, res) => {
         const orderDir = parseOrderDir(req.query.orderDir);
         const INS = "insensitive";
         const where = {
+            isActive: true,
             ...(user?.rol === "CLIENTE"
                 ? { empresaId: Number(user.empresaId) }
                 : empresaId > 0
@@ -227,6 +228,7 @@ export const listSolicitantesByEmpresa = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const where = {
+            isActive: true,
             empresaId,
             ...(q ? { nombre: { contains: q, mode: "insensitive" } } : {}),
             ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
@@ -265,6 +267,7 @@ export const listSolicitantesForSelect = async (req, res) => {
         const INS = "insensitive";
         const effectiveEmpresaId = userEmpresaId ?? (empresaId > 0 ? empresaId : null);
         const where = {
+            isActive: true,
             ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
             ...(q
                 ? {
@@ -320,6 +323,7 @@ export const solicitantesMetrics = async (req, res) => {
         const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const INS = "insensitive";
         const where = {
+            isActive: true,
             ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
             ...(q
                 ? {

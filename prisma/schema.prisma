@@ -29,6 +29,7 @@ model Empresa {
   empresaISP           EmpresaISP[]
   servidors            Servidor[]
   tecnicos             Tecnico[]
+  equipos              Equipo[]
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
@@ -332,6 +333,7 @@ model ProductoGestioo {
   modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
   entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   trabajos      DetalleTrabajoGestioo[]
+  equipo        Equipo?
 
   @@index([marcaId])
   @@index([modeloId])
@@ -428,12 +430,16 @@ model Equipo {
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
+  empresa                Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  producto               ProductoGestioo?        @relation(fields: [productoId], references: [id])
+  origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
+  cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
 
+  @@index([empresaId])
+  @@index([productoId])
+  @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
-  @@index([empresaId])
-  @@index([origenCotizacionId])
-  @@index([productoId])
 }
 
 model DetalleEquipo {
@@ -733,6 +739,7 @@ model CotizacionGestioo {
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   facturas              Factura[]
   trabajos              DetalleTrabajoGestioo[]
+  equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
 
   @@index([entidadId])
 }
@@ -778,6 +785,7 @@ model CotizacionItemGestioo {
   precioOriginalCLP Float?
   equipoId          Int?              @unique
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
 
   @@index([equipoId])
 }
@@ -990,6 +998,8 @@ model ReporteIA {
   @@unique([empresaId, periodo])
 }
 
+
+
 model PasswordResetToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
@@ -1188,3 +1198,5 @@ enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
 }
+
+

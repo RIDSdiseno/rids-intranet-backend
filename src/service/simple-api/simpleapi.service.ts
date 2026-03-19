@@ -67,35 +67,139 @@ export function getSimpleAPIConfig(): SimpleAPIConfig {
 }
 
 // ============================================================
-// HELPER: llamada HTTP a SimpleAPI
+// OBTENER TOKEN DE SIMPLEAPI (ejecutar una vez y cachear)
 // ============================================================
-async function callSimpleAPI(config: SimpleAPIConfig, endpoint: string, body: object) {
+let cachedToken: string | null = null;
+let tokenExpiry: number = 0;
+
+async function getSimpleAPIToken(config: SimpleAPIConfig): Promise<string> {
+    const ahora = Date.now();
+
+    // Reusar token si aún es válido (cachear por 50 minutos)
+    if (cachedToken && ahora < tokenExpiry) {
+        console.log("🔑 Usando token cacheado");
+        return cachedToken;
+    }
+
+    console.log("🔑 Obteniendo nuevo token de SimpleAPI...");
+
+    const response = await fetch(`${config.url}/api/Auth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apikey: config.apiKey }),
+    });
+
+    const rawText = await response.text();
+    console.log("🔑 Auth STATUS:", response.status);
+    console.log("🔑 Auth RAW:", rawText);
+
+    if (!response.ok || !rawText?.trim()) {
+        throw new Error(
+            `SimpleAPI Auth falló (${response.status}): ${rawText || "respuesta vacía"}. ` +
+            `Verifica que SIMPLEAPI_KEY sea válida: ${config.apiKey}`
+        );
+    }
+
+    // El token puede venir como string puro o dentro de un objeto
+    let token: string;
+    try {
+        const data = JSON.parse(rawText);
+        token = typeof data === "string"
+            ? data
+            : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
+    } catch {
+        // Si no es JSON, asumir que es el token directamente como string
+        token = rawText.trim().replace(/^"|"$/g, ""); // quitar comillas si las hay
+    }
+
+    if (!token) {
+        throw new Error(`SimpleAPI Auth no retornó token. Respuesta: ${rawText}`);
+    }
+
+    // Cachear por 50 minutos
+    cachedToken = token;
+    tokenExpiry = ahora + 50 * 60 * 1000;
+
+    console.log("✅ Token obtenido:", token.substring(0, 30) + "...");
+    return token;
+}
+
+// ============================================================
+// HELPER: llamada HTTP a SimpleAPI — CON AUTH TOKEN
+// ============================================================
+async function callSimpleAPI(
+    config: SimpleAPIConfig,
+    endpoint: string,
+    body: object
+) {
+    // 1️⃣ Obtener token primero
+    const token = await getSimpleAPIToken(config);
+
     const url = `${config.url}${endpoint}`;
+    console.log("📡 SimpleAPI URL:", url);
 
     const response = await fetch(url, {
         method: "POST",
         headers: {
-            "Authorization": `Bearer ${config.apiKey}`,
+            // 2️⃣ Usar el JWT obtenido del login
+            "Authorization": `Bearer ${token}`,
             "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
     });
 
     const rawText = await response.text();
-    console.log("🔎 STATUS:", response.status, "RAW:", rawText);
+    console.log("📥 STATUS:", response.status);
+    console.log("📥 RAW:", rawText || "(vacío)");
 
-    console.log("HEADERS:", Object.fromEntries(response.headers.entries()));
+    // 3️⃣ Si el token expiró, limpiar caché y reintentar UNA vez
+    if (response.status === 401) {
+        console.log("⚠️ Token expirado, limpiando caché y reintentando...");
+        cachedToken = null;
+        tokenExpiry = 0;
 
-    if (!rawText) {
-        throw new Error(`SimpleAPI devolvió respuesta vacía en ${endpoint}`);
+        const newToken = await getSimpleAPIToken(config);
+
+        const retry = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${newToken}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+
+        const retryText = await retry.text();
+        console.log("📥 RETRY STATUS:", retry.status);
+        console.log("📥 RETRY RAW:", retryText);
+
+        if (!retry.ok) {
+            throw new Error(
+                `SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ` +
+                retryText
+            );
+        }
+
+        return JSON.parse(retryText);
     }
 
-    let data;
-    try { data = JSON.parse(rawText); }
-    catch { throw new Error(`Respuesta no es JSON válido: ${rawText}`); }
+    if (!rawText?.trim()) {
+        throw new Error(`SimpleAPI respuesta vacía (${response.status}) en ${endpoint}`);
+    }
+
+    let data: any;
+    try {
+        data = JSON.parse(rawText);
+    } catch {
+        throw new Error(
+            `SimpleAPI respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
+        );
+    }
 
     if (!response.ok) {
-        throw new Error(`SimpleAPI error ${response.status}: ${JSON.stringify(data)}`);
+        throw new Error(
+            `SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`
+        );
     }
 
     return data;

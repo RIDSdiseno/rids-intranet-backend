@@ -32,19 +32,21 @@ function normalizeOriginList(raw?: string): string[] {
 
 function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] {
   const allowedNormalized = allowed.map(normalizeOrigin);
-  console.log("[CORS] allowedOrigins =", allowedNormalized);
 
   return (origin, cb) => {
-    // Permite herramientas/healthchecks sin header Origin
     if (!origin) return cb(null, true);
 
     const norm = normalizeOrigin(origin);
-    if (allowedNormalized.includes(norm)) {
+
+    const isAllowed = allowedNormalized.some(a => norm.startsWith(a));
+
+    if (isAllowed) {
       return cb(null, true);
     }
 
-    console.warn("[CORS] Not allowed:", origin, "->", norm);
-    cb(new Error(`Not allowed by CORS: ${origin}`));
+    console.warn("[CORS] Not allowed:", origin);
+
+    return cb(null, false);
   };
 }
 
@@ -109,11 +111,6 @@ app.use(
     },
   })
 );
-
-// 🔥 CONTEXTO GLOBAL POR REQUEST
-app.use((req, res, next) => {
-  asyncLocalStorage.run({ userId: null }, () => next());
-});
 
 /* ========= Rutas ========= */
 // Asegúrate que dentro de routes.js tengas algo como:

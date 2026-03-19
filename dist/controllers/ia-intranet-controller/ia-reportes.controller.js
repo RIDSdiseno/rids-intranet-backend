@@ -1,104 +1,73 @@
 import { prisma } from "../../lib/prisma.js";
-import OpenAI from "openai";
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
-export async function generarInformeMensualIA(req, res) {
+import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
+import { generarAnalisisIA } from "../../service/ia-metricas-reportes/ia-reportes.service.js";
+export async function generarInformeOperativoIA(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);
         const year = Number(req.params.year);
         const month = Number(req.params.month);
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 0);
-        // 1️⃣ Traer datos del sistema
-        const [visitas, tickets, equipos] = await Promise.all([
-            prisma.visita.findMany({
-                where: {
+        if (!empresaId || !year || !month) {
+            return res.status(400).json({
+                error: "Parámetros inválidos"
+            });
+        }
+        const periodo = `${year}-${String(month).padStart(2, "0")}`;
+        /* ========================================
+           1️⃣ Revisar cache
+        ======================================== */
+        const existente = await prisma.reporteIA.findUnique({
+            where: {
+                empresaId_periodo: {
                     empresaId,
-                    inicio: {
-                        gte: start,
-                        lte: end
-                    }
+                    periodo
                 }
-            }),
-            prisma.freshdeskTicket.findMany({
-                where: {
-                    empresaId,
-                    createdAt: {
-                        gte: start,
-                        lte: end
-                    }
-                }
-            }),
-            prisma.equipo.findMany({
-                where: {
-                    solicitante: {
-                        empresaId
-                    }
-                }
-            })
-        ]);
-        // 2️⃣ Estadísticas básicas
-        const stats = {
-            totalVisitas: visitas.length,
-            totalTickets: tickets.length,
-            totalEquipos: equipos.length,
-            visitasPendientes: visitas.filter(v => v.status === "PENDIENTE").length,
-            ticketsAbiertos: tickets.filter(t => t.status !== 5).length
-        };
-        // 3️⃣ Prompt para IA
-        const prompt = `
-Eres un consultor IT especializado en auditorías tecnológicas empresariales.
-
-Debes redactar un informe mensual profesional para un cliente.
-
-Datos del periodo:
-
-Visitas técnicas realizadas: ${stats.totalVisitas}
-Tickets generados: ${stats.totalTickets}
-Equipos registrados en inventario: ${stats.totalEquipos}
-Visitas pendientes: ${stats.visitasPendientes}
-Tickets abiertos: ${stats.ticketsAbiertos}
-
-Contexto:
-- Las visitas corresponden a soporte técnico presencial o remoto.
-- Los tickets corresponden a incidencias reportadas por usuarios.
-- El inventario corresponde a los equipos gestionados por el área TI.
-
-Redacta un informe profesional con estas secciones:
-
-1. Resumen Ejecutivo
-2. Actividades Realizadas durante el mes
-3. Estado del Soporte Técnico
-4. Situación del Inventario Tecnológico
-5. Riesgos detectados
-6. Recomendaciones técnicas
-
-El informe debe ser claro, profesional y orientado a clientes empresariales.
-No uses listas numeradas largas, usa párrafos claros.
-`;
-        // 4️⃣ Llamada a OpenAI
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.4
+            }
         });
-        const texto = completion.choices[0]?.message?.content ?? "";
-        res.json({
+        if (existente) {
+            console.log("⚡ Informe IA obtenido desde cache");
+            return res.json({
+                cached: true,
+                empresaId,
+                periodo,
+                data: existente.contenido
+            });
+        }
+        /* ========================================
+           2️⃣ Construir dataset completo
+        ======================================== */
+        console.log("📊 Construyendo dataset del reporte...");
+        const reporte = await buildReporteEmpresaData(empresaId, periodo);
+        /* ========================================
+           3️⃣ Generar análisis IA
+        ======================================== */
+        console.log("🤖 Generando análisis con IA...");
+        const analisis = await generarAnalisisIA(reporte);
+        /* ========================================
+           4️⃣ Guardar cache
+        ======================================== */
+        await prisma.reporteIA.create({
+            data: {
+                empresaId,
+                periodo,
+                contenido: analisis
+            }
+        });
+        console.log("💾 Informe IA guardado en cache");
+        /* ========================================
+           5️⃣ Respuesta
+        ======================================== */
+        return res.json({
+            cached: false,
             empresaId,
-            year,
-            month,
-            informe: texto
+            periodo,
+            data: analisis
         });
     }
     catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Error generando informe IA" });
+        console.error("❌ generarInformeOperativoIA error:", error);
+        return res.status(500).json({
+            error: "Error generando informe IA"
+        });
     }
 }
 //# sourceMappingURL=ia-reportes.controller.js.map

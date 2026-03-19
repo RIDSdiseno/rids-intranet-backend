@@ -79,6 +79,7 @@ export const prisma = prismaBase.$extends({
     query: {
         $allModels: {
             async create({ model, args, query }) {
+                const actorId = getCurrentUserId();
                 const result = await query(args);
                 if (!model || model === "AuditLog")
                     return result;
@@ -111,6 +112,13 @@ export const prisma = prismaBase.$extends({
                 else if (model === "Empresa") {
                     empresaId = r.id_empresa ?? null;
                 }
+                if (model === "DetalleEquipo") {
+                    const equipo = await prismaBase.equipo.findUnique({
+                        where: { id_equipo: r.idEquipo },
+                        include: { solicitante: true },
+                    });
+                    empresaId = equipo?.solicitante?.empresaId ?? null;
+                }
                 // 4. Guardamos el log con los cambios ya enriquecidos
                 await prismaBase.auditLog.create({
                     data: {
@@ -119,25 +127,61 @@ export const prisma = prismaBase.$extends({
                         empresaId,
                         action: "CREATE",
                         changes: auditChanges, // Usamos el objeto modificado
-                        actorId: getCurrentUserId(),
+                        actorId,
                     },
                 });
                 return result;
             },
             async update({ model, args, query }) {
+                const actorId = getCurrentUserId();
                 if (!model || model === "AuditLog") {
                     return query(args);
                 }
                 const delegate = prismaBase[model.charAt(0).toLowerCase() + model.slice(1)];
                 let before = null;
                 if (args?.where) {
-                    before = await delegate.findUnique({
-                        where: args.where,
-                    });
+                    if (model === "Equipo") {
+                        before = await prismaBase.equipo.findUnique({
+                            where: args.where,
+                            include: { detalle: true },
+                        });
+                    }
+                    else if (model === "DetalleEquipo") {
+                        before = await prismaBase.detalleEquipo.findUnique({
+                            where: args.where,
+                        });
+                    }
+                    else {
+                        before = await delegate.findUnique({
+                            where: args.where,
+                        });
+                    }
                 }
                 const result = await query(args);
                 const r = result;
-                const changes = diffObjects(sanitizeForAudit(before), sanitizeForAudit(r));
+                const after = model === "Equipo"
+                    ? sanitizeForAudit({ ...r, ...(r?.detalle ?? {}) })
+                    : sanitizeForAudit(r);
+                const beforeClean = model === "Equipo"
+                    ? sanitizeForAudit({ ...before, ...(before?.detalle ?? {}) })
+                    : sanitizeForAudit(before);
+                const changes = diffObjects(beforeClean, after);
+                if (model === "Equipo") {
+                    const oldId = before?.idSolicitante;
+                    const newId = r?.idSolicitante;
+                    if (oldId !== newId) {
+                        const [oldName, newName] = await Promise.all([
+                            getNombreSolicitante(oldId),
+                            getNombreSolicitante(newId),
+                        ]);
+                        // Reemplaza el cambio de ID por nombres legibles
+                        delete changes.idSolicitante;
+                        changes["Id Solicitante"] = { before: oldName ?? oldId, after: newName ?? newId };
+                    }
+                }
+                if (Object.keys(changes).length === 0) {
+                    return result;
+                }
                 if (model === "Historial") {
                     const oldId = before?.solicitanteId;
                     const newId = r?.solicitanteId;
@@ -167,7 +211,13 @@ export const prisma = prismaBase.$extends({
                 if (model === "Empresa") {
                     empresaId = before?.id_empresa ?? null;
                 }
-                //console.log("🔍 [DEBUG PRISMA] Estructura de cambios antes de guardar:", JSON.stringify(changes, null, 2));
+                if (model === "DetalleEquipo") {
+                    const equipo = await prismaBase.equipo.findUnique({
+                        where: { id_equipo: before?.idEquipo },
+                        include: { solicitante: true },
+                    });
+                    empresaId = equipo?.solicitante?.empresaId ?? null;
+                }
                 await prismaBase.auditLog.create({
                     data: {
                         entity: model,
@@ -175,12 +225,13 @@ export const prisma = prismaBase.$extends({
                         empresaId,
                         action: "UPDATE",
                         changes: JSON.parse(JSON.stringify(changes)),
-                        actorId: getCurrentUserId(),
+                        actorId,
                     },
                 });
                 return result;
             },
             async delete({ model, args, query }) {
+                const actorId = getCurrentUserId();
                 if (!model || model === "AuditLog") {
                     return query(args);
                 }
@@ -193,12 +244,13 @@ export const prisma = prismaBase.$extends({
                         data: { isActive: false },
                     });
                     await prismaBase.auditLog.create({
-                        data: { entity: model,
+                        data: {
+                            entity: model,
                             entityId: before ? extractId(before) : "unknown",
                             empresaId: before?.empresaId ?? null,
                             action: "DELETE",
                             changes: sanitizeForAudit(before),
-                            actorId: getCurrentUserId(),
+                            actorId,
                         },
                     });
                     return result;
@@ -220,9 +272,9 @@ export const prisma = prismaBase.$extends({
                 }
                 // -------------------------------------------------------------
                 let empresaId = null;
-                if (model === "Equipo" && before?.solicitanteId) {
+                if (model === "Equipo" && before?.idSolicitante) {
                     const solicitante = await prismaBase.solicitante.findUnique({
-                        where: { id_solicitante: before.solicitanteId },
+                        where: { id_solicitante: before.idSolicitante },
                     });
                     empresaId = solicitante?.empresaId ?? null;
                 }
@@ -231,6 +283,13 @@ export const prisma = prismaBase.$extends({
                 }
                 else if (model === "Empresa") {
                     empresaId = before?.id_empresa ?? null;
+                }
+                if (model === "DetalleEquipo") {
+                    const equipo = await prismaBase.equipo.findUnique({
+                        where: { id_equipo: before?.idEquipo }, // ← before sí existe
+                        include: { solicitante: true },
+                    });
+                    empresaId = equipo?.solicitante?.empresaId ?? null;
                 }
                 await prismaBase.auditLog.create({
                     data: {
@@ -241,7 +300,7 @@ export const prisma = prismaBase.$extends({
                         // --- USAMOS LA VARIABLE ENRIQUECIDA ---
                         changes: auditChanges,
                         // -------------------------------------
-                        actorId: getCurrentUserId(),
+                        actorId,
                     },
                 });
                 return result;

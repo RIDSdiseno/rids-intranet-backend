@@ -19,6 +19,8 @@ const listQuerySchema = z.object({
   empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
 
+  mode: z.enum(["full", "selector"]).default("full").optional(),
+
   sortBy: z
     .enum([
       "id_equipo",
@@ -211,7 +213,6 @@ export async function listEquipos(req: Request, res: Response) {
   try {
     const q = listQuerySchema.parse(req.query);
     const INS: Prisma.QueryMode = "insensitive";
-
     const user = (req as any).user;
 
     const where: Prisma.EquipoWhereInput = {
@@ -256,23 +257,50 @@ export async function listEquipos(req: Request, res: Response) {
                 },
               },
             },
+            ...(Number.isFinite(Number(q.search))
+              ? [{ id_equipo: Number(q.search) }]
+              : []),
           ],
         }
         : {}),
     };
 
     const orderBy = mapOrderBy(q.sortBy, q.sortDir as Prisma.SortOrder);
+    const skip = (q.page - 1) * q.pageSize;
 
-    const [total, rows] = await Promise.all([
-      prisma.equipo.count({ where }),
-      prisma.equipo.findMany({
+    const total = await prisma.equipo.count({ where });
+
+    if (q.mode === "selector") {
+      const items = await prisma.equipo.findMany({
         where,
-        include: { solicitante: { include: { empresa: true } }, detalle: true },
+        select: {
+          id_equipo: true,
+          serial: true,
+          marca: true,
+          modelo: true,
+          tipo: true,
+        },
         orderBy,
-        skip: (q.page - 1) * q.pageSize,
+        skip,
         take: q.pageSize,
-      }),
-    ]);
+      });
+
+      return res.json({
+        page: q.page,
+        pageSize: q.pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+        items,
+      });
+    }
+
+    const rows = await prisma.equipo.findMany({
+      where,
+      include: { solicitante: { include: { empresa: true } }, detalle: true },
+      orderBy,
+      skip,
+      take: q.pageSize,
+    });
 
     return res.json({
       page: q.page,
@@ -748,20 +776,45 @@ export async function getEquipoHistorial(req: Request, res: Response) {
 
     const user = (req as any).user;
 
-    // Trae logs del equipo + actor
-    const logs = await prisma.auditLog.findMany({
-      where: {
-        entity: "Equipo",
-        entityId: String(id),
-        ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
-      },
-      include: {
-        actor: { select: { id_tecnico: true, nombre: true, email: true } },
-      },
-      orderBy: { createdAt: "desc" },
+    // ✅ Busca el id del detalle para cruzar sus logs
+    const detalle = await prisma.detalleEquipo.findUnique({
+      where: { idEquipo: id },
+      select: { id: true },
     });
 
-    return res.json({ total: logs.length, items: logs });
+    const [logsEquipo, logsDetalle] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: {
+          entity: "Equipo",
+          entityId: String(id),
+          ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+        },
+        include: {
+          actor: { select: { id_tecnico: true, nombre: true, email: true } },
+        },
+      }),
+
+      // ✅ También trae logs de DetalleEquipo
+      detalle
+        ? prisma.auditLog.findMany({
+          where: {
+            entity: "DetalleEquipo",
+            entityId: String(detalle.id),
+            ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
+          },
+          include: {
+            actor: { select: { id_tecnico: true, nombre: true, email: true } },
+          },
+        })
+        : Promise.resolve([]),
+    ]);
+
+    // ✅ Fusiona y ordena por fecha desc
+    const merged = [...logsEquipo, ...logsDetalle].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return res.json({ total: merged.length, items: merged });
   } catch (err) {
     console.error("getEquipoHistorial error:", err);
     return res.status(500).json({ error: "Error al obtener historial del equipo" });

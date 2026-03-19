@@ -125,7 +125,6 @@ export async function actualizarFichaEmpresa(req, res) {
                 email: email ?? null,
             },
             create: {
-                empresa_id: empresaId,
                 rut: rut ?? null,
                 direccion: direccion ?? null,
                 direcciones: cleanedDirecciones && cleanedDirecciones.length > 0
@@ -133,6 +132,9 @@ export async function actualizarFichaEmpresa(req, res) {
                     : Prisma.JsonNull,
                 telefono: telefono ?? null,
                 email: email ?? null,
+                empresa: {
+                    connect: { id_empresa: empresaId },
+                },
             },
         });
         /* =====================================================

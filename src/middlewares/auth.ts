@@ -1,7 +1,8 @@
 // src/middlewares/auth.ts
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { asyncLocalStorage } from "../lib/request-context.js";
+import { randomUUID } from "crypto";
+import { asyncLocalStorage, setRequestContext, clearRequestContext } from "../lib/request-context.js";
 
 interface JwtPayloadCustom {
   sub: string;
@@ -15,7 +16,15 @@ export function auth(required = true): RequestHandler {
     const header = req.headers.authorization;
 
     if (!header || !header.startsWith("Bearer ")) {
-      if (!required) return next();
+      if (!required) {
+        const requestId = randomUUID();
+        setRequestContext(requestId, null);
+        asyncLocalStorage.run({ userId: null, requestId }, () => {
+          res.on("finish", () => clearRequestContext(requestId));
+          next();
+        });
+        return;
+      }
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -25,20 +34,31 @@ export function auth(required = true): RequestHandler {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayloadCustom;
 
+      const userId = Number(payload.sub);
+      const requestId = randomUUID();
+
       (req as any).user = {
-        id: Number(payload.sub),
+        id: userId,
         rol: payload.rol ?? "TECNICO",
         empresaId: payload.empresaId ?? null,
         email: payload.email ?? null,
       };
 
-      asyncLocalStorage.run({ userId: Number(payload.sub) }, () => {
+      setRequestContext(requestId, userId);
+
+      asyncLocalStorage.run({ userId, requestId }, () => {
+        res.on("finish", () => clearRequestContext(requestId));
         next();
       });
       return;
     } catch (err: any) {
       if (!required) {
-        asyncLocalStorage.run({ userId: null }, () => next());
+        const requestId = randomUUID();
+        setRequestContext(requestId, null);
+        asyncLocalStorage.run({ userId: null, requestId }, () => {
+          res.on("finish", () => clearRequestContext(requestId));
+          next();
+        });
         return;
       }
 

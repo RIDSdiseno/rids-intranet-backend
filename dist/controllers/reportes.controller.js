@@ -1,4 +1,4 @@
-import { buildReporteEmpresaData } from "../service/reportEmpresa.service.js";
+import { buildReporteEmpresaData } from "../service/ia-metricas-reportes/reportEmpresa.service.js";
 export async function getReporteEmpresa(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);
