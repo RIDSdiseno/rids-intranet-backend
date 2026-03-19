@@ -12,62 +12,46 @@ function buildAutoReplyTemplate(params) {
     return `
 <!DOCTYPE html>
 <html>
-<body style="margin:0; padding:0; background:#f5f5f5; font-family: Arial, sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; padding:20px 0;">
-  <tr><td align="center">
-    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; border-radius:8px; overflow:hidden;">
+<body style="margin:0; padding:0; font-family: Arial, sans-serif; font-size:14px; color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:20px;">
+  <tr><td style="max-width:600px;">
 
-      <!-- HEADER -->
-      <tr>
-        <td style="background:#0f172a; padding:16px 24px;">
-          <strong style="color:white; font-size:16px;">Soluciones RIDS — Soporte Técnico</strong>
-        </td>
-      </tr>
+    <p>Hola <strong>${params.nombre}</strong></p>
 
-      <!-- BODY -->
-      <tr>
-        <td style="padding:24px; font-size:14px; color:#333; line-height:1.6;">
-          <p>Estimado(a) <strong>${params.nombre}</strong>,</p>
-          <p>Hemos recibido tu solicitud. Te asignamos el siguiente número de ticket:</p>
+    <p>Estimad@</p>
 
-          <div style="text-align:center; margin:20px 0;">
-            <span style="
-              display:inline-block;
-              background:#0ea5e9;
-              color:white;
-              font-size:22px;
-              font-weight:bold;
-              padding:10px 28px;
-              border-radius:6px;
-              letter-spacing:1px;
-            ">
-              Ticket #${params.ticketId}
-            </span>
-          </div>
+    <p>
+      Hemos recibido correctamente su solicitud de soporte. Su ticket ha sido ingresado 
+      en nuestro sistema y será asignado a un técnico del equipo de Asesorías RIDS Ltda. 
+      para su revisión.
+    </p>
 
-          <p><strong>Asunto:</strong> ${params.subject}</p>
-          <p>Nuestro equipo revisará tu caso a la brevedad. Puedes responder directamente a este correo para agregar más información.</p>
-        </td>
-      </tr>
+    <p>
+      Próximamente recibirá una actualización sobre el estado de su requerimiento. 
+      Le recordamos que puede responder a este correo si desea agregar más información 
+      o antecedentes al caso.
+    </p>
 
-      <!-- MENSAJE ORIGINAL -->
-      <tr>
-        <td style="padding:0 24px 24px;">
-          <div style="border-left:3px solid #e2e8f0; padding-left:12px; color:#64748b; font-size:13px;">
-            <p style="margin:0 0 8px; font-weight:bold;">Tu mensaje:</p>
-            <div>${params.bodyOriginal}</div>
-          </div>
-        </td>
-      </tr>
+    <p><strong>N° de ticket:</strong> #${params.ticketId}<br/>
+    <strong>Asunto:</strong> ${params.subject}<br/>
+    <strong>Área:</strong> Soporte Técnico / Atención al Cliente</p>
 
-      <!-- FOOTER -->
-      <tr>
-        <td style="background:#f8fafc; padding:16px 24px; font-size:12px; color:#94a3b8; border-top:1px solid #e2e8f0;">
-          Soporte Técnico · Soluciones RIDS · soporte@rids.cl
-        </td>
-      </tr>
+    <p>Agradecemos su contacto y confianza.</p>
 
-    </table>
+    <p>
+      Atentamente,<br/>
+      <strong>Equipo de Soporte Técnico</strong><br/>
+      Asesorías RIDS Ltda.<br/>
+      soporte@rids.cl | www.rids.cl
+    </p>
+
+    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
+
+    <p style="color:#666; font-size:13px;">
+      <strong>${params.nombre}</strong> escribió:<br/>
+      <em>${params.bodyOriginal}</em>
+    </p>
+
   </td></tr>
 </table>
 </body>
