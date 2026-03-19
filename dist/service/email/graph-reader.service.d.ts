@@ -23,6 +23,32 @@ declare class GraphReaderService {
         inReplyTo?: string;
         references?: string;
     }): Promise<void>;
+    private toSantiagoDateTime;
+    readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{
+        id: string;
+        subject: string;
+        start: string;
+        end: string;
+        categories: string[];
+        body: string;
+    }>>;
+    createCalendarEvent(params: {
+        subject: string;
+        bodyHtml?: string;
+        startDateTime: string;
+        endDateTime: string;
+        location?: string;
+        categories?: string[];
+    }): Promise<any>;
+    updateCalendarEvent(eventId: string, params: {
+        subject?: string;
+        bodyHtml?: string;
+        startDateTime?: string;
+        endDateTime?: string;
+        location?: string;
+        categories?: string[];
+    }): Promise<any>;
+    deleteCalendarEvent(eventId: string): Promise<void>;
 }
 export declare const graphReaderService: GraphReaderService;
 export {};

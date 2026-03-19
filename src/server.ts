@@ -8,6 +8,10 @@ import { Server as IOServer } from "socket.io";
 import { bus } from "./lib/events.js";
 import { startEmailReaderJob } from "./jobs/email-reader.job.js";
 import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
+import { startAgendaCierreCron } from "./jobs/agenda-jobs/agenda-cierre.cron.js";
+import { startAgendaNotificacionesCron } from "./jobs/agenda-jobs/agenda-notificaciones.cron.js";
+import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordatorios.cron.js";
+import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
 
 function parseOrigins(raw?: string) {
   if (!raw || !raw.trim()) return ["http://localhost:5173"];
@@ -84,6 +88,10 @@ server.listen(PORT, () => {
   console.log(`[ws] Socket.IO path=${SOCKET_PATH} origins=${ORIGINS.join(", ")}`);
 
   startTeamViewerCron();
+  startAgendaCierreCron();
+  startAgendaNotificacionesCron();
+  startAgendaRecordatoriosCron();
+  startAgendaOutlookSyncCron();
 
   // 🆕 Iniciar job de emails
   if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {

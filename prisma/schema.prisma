@@ -31,6 +31,7 @@ model Empresa {
   tecnicos             Tecnico[]
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
+  agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
 }
 
 model Sucursal {
@@ -252,6 +253,7 @@ model Solicitante {
   isActive             Boolean                 @default(true)
   microsoftUserId      String?                 @unique
   accountType          AccountType?
+  deletedAt            DateTime?
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")
@@ -268,6 +270,7 @@ model Solicitante {
   @@index([empresaId])
   @@index([isActive])
   @@index([accountType])
+  @@index([deletedAt])
 }
 
 model MsSku {
@@ -418,11 +421,19 @@ model Equipo {
   tipo                   TipoEquipo              @default(GENERICO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
+  deletedAt              DateTime?
+  empresaId              Int?
+  origenCotizacionId     Int?
+  productoId             Int?                    @unique
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
 
   @@index([idSolicitante])
+  @@index([deletedAt])
+  @@index([empresaId])
+  @@index([origenCotizacionId])
+  @@index([productoId])
 }
 
 model DetalleEquipo {
@@ -493,6 +504,7 @@ model RefreshToken {
 
   @@index([rtHash])
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 model Tecnico {
@@ -515,6 +527,7 @@ model Tecnico {
   cotizaciones        CotizacionGestioo[]
   auditLogs           AuditLog[]
   mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
+  agendasAsignadas    AgendaTecnico[]
 
   @@index([empresaId])
 }
@@ -592,17 +605,15 @@ model MantencionRemota {
 }
 
 model TeamViewerDeviceMap {
-  id            Int     @id @default(autoincrement())
-  deviceId      String  @unique
+  id            Int          @id @default(autoincrement())
+  deviceId      String       @unique
   deviceNombre  String?
   empresaId     Int?
   solicitanteId Int?
-
-  empresa     Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  empresa       Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante   Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
 
   @@index([empresaId])
   @@index([solicitanteId])
@@ -727,29 +738,23 @@ model CotizacionGestioo {
 }
 
 model Factura {
-  id_factura Int @id @default(autoincrement())
-
-  numeroFactura String    @unique
-  fechaEmision  DateTime  @default(now())
+  id_factura    Int               @id @default(autoincrement())
+  numeroFactura String            @unique
+  fechaEmision  DateTime          @default(now())
   fechaPago     DateTime?
   total         Float
-
-  cotizacionId Int
-  cotizacion   CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
-
-  estado EstadoFactura @default(PENDIENTE)
-
-  // --- Integración SII ---
-  tipoDTE       Int?
-  folioSII      String?
-  rutEmisor     String?
-  rutReceptor   String?
-  estadoSII     EstadoDTE?
+  cotizacionId  Int
+  estado        EstadoFactura     @default(PENDIENTE)
+  createdAt     DateTime          @default(now())
   fechaEnvioSII DateTime?
-  trackId       String?
+  folioSII      String?
   rawResponse   Json?
-
-  createdAt DateTime @default(now())
+  rutEmisor     String?
+  tipoDTE       Int?
+  trackId       String?
+  estadoSII     EstadoDTE?
+  rutReceptor   String?
+  cotizacion    CotizacionGestioo @relation(fields: [cotizacionId], references: [id])
 
   @@index([folioSII])
 }
@@ -771,7 +776,10 @@ model CotizacionItemGestioo {
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
+  equipoId          Int?              @unique
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+
+  @@index([equipoId])
 }
 
 model Entrega {
@@ -819,6 +827,8 @@ model Ticket {
   updatedAt       DateTime        @updatedAt
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
+  aiSummary       String?
+  rolAsignado     String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -922,6 +932,86 @@ model AuditLog {
   @@index([entityId])
   @@index([createdAt])
   @@index([empresaId])
+}
+
+model area_configs {
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  mensajeBase String
+  firmaArea   String?
+  updatedAt   DateTime
+}
+
+model AgendaVisita {
+  id                   Int             @id @default(autoincrement())
+  fecha                DateTime        @db.Date
+  empresaId            Int?
+  tipo                 TipoAgenda      @default(SEMANA)
+  estado               EstadoAgenda    @default(PROGRAMADA)
+  notificacionEnviada  Boolean         @default(false)
+  notas                String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  horaFin              String?
+  horaInicio           String?
+  mensaje              String?
+  recordatorioEnviado  Boolean?
+  outlookEventId       String?         @map("outlook_event_id")
+  empresaExternaNombre String?
+  empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
+  tecnicos             AgendaTecnico[]
+
+  @@index([empresaId])
+  @@index([fecha])
+  @@index([tipo])
+  @@index([estado])
+  @@index([notificacionEnviada])
+}
+
+model AgendaTecnico {
+  id        Int          @id @default(autoincrement())
+  agendaId  Int
+  tecnicoId Int
+  agenda    AgendaVisita @relation(fields: [agendaId], references: [id], onDelete: Cascade)
+  tecnico   Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
+
+  @@unique([agendaId, tecnicoId])
+  @@index([agendaId])
+  @@index([tecnicoId])
+}
+
+model ReporteIA {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  periodo   String
+  contenido Json
+  createdAt DateTime @default(now())
+
+  @@unique([empresaId, periodo])
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  tecnicoId Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([tecnicoId])
+  @@index([token])
+}
+
+enum TipoAgenda {
+  SEMANA
+  SABADO
+}
+
+enum EstadoAgenda {
+  PROGRAMADA
+  NOTIFICADA
+  COMPLETADA
+  CANCELADA
 }
 
 enum EstadoDTE {

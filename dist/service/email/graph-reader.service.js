@@ -441,6 +441,10 @@ class GraphReaderService {
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params) {
         const client = await this.getClient();
+        const headers = [
+            ...(params.inReplyTo ? [{ name: "In-Reply-To", value: params.inReplyTo }] : []),
+            ...(params.references ? [{ name: "References", value: params.references }] : []),
+        ];
         await client
             .api(`/users/${this.supportEmail}/sendMail`)
             .post({
@@ -457,17 +461,145 @@ class GraphReaderService {
                         },
                     },
                 ],
-                internetMessageHeaders: [
-                    ...(params.inReplyTo
-                        ? [{ name: "In-Reply-To", value: params.inReplyTo }]
-                        : []),
-                    ...(params.references
-                        ? [{ name: "References", value: params.references }]
-                        : []),
-                ],
+                ...(headers.length > 0 && { internetMessageHeaders: headers }),
             },
             saveToSentItems: true,
         });
+    }
+    toSantiagoDateTime(dateTime, timeZone) {
+        const SANTIAGO_TZ = "America/Santiago";
+        const SANTIAGO_WINDOWS = "Pacific SA Standard Time";
+        if (!dateTime)
+            return "";
+        // Graph devolvió la hora ya en Santiago → usar directo
+        if (timeZone === SANTIAGO_TZ || timeZone === SANTIAGO_WINDOWS) {
+            return dateTime.slice(0, 16);
+        }
+        // Cualquier otro timezone (incluyendo UTC) → convertir a Santiago
+        const utcString = dateTime.endsWith("Z") ? dateTime : `${dateTime}Z`;
+        const date = new Date(utcString);
+        if (isNaN(date.getTime()))
+            return dateTime.slice(0, 16);
+        const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: SANTIAGO_TZ,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).formatToParts(date);
+        const get = (type) => parts.find(p => p.type === type)?.value ?? "00";
+        return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+    }
+    async readCalendarEvents(startDateTime, endDateTime) {
+        try {
+            const client = await this.getClient();
+            const allEvents = [];
+            let response = await client
+                .api(`/users/${this.supportEmail}/calendarView`)
+                .query({ startDateTime, endDateTime })
+                .orderby("start/dateTime asc")
+                .select("id,subject,start,end,categories,body")
+                .header("Prefer", 'outlook.timezone="America/Santiago"')
+                .get();
+            allEvents.push(...(response.value ?? []));
+            while (response['@odata.nextLink']) {
+                response = await client
+                    .api(response['@odata.nextLink'])
+                    .get();
+                allEvents.push(...(response.value ?? []));
+            }
+            return allEvents.map((event) => ({
+                id: event.id || "",
+                subject: event.subject || "",
+                start: this.toSantiagoDateTime(event.start?.dateTime || "", event.start?.timeZone || "UTC"),
+                end: this.toSantiagoDateTime(event.end?.dateTime || "", event.end?.timeZone || "UTC"),
+                categories: event.categories || [],
+                body: event.body?.content || "",
+            }));
+        }
+        catch (err) {
+            console.error("[GRAPH CALENDAR READ] Error leyendo eventos:", err);
+            return [];
+        }
+    }
+    async createCalendarEvent(params) {
+        const client = await this.getClient();
+        const timeZone = "America/Santiago";
+        const payload = {
+            subject: params.subject,
+            body: {
+                contentType: "HTML",
+                content: params.bodyHtml || "",
+            },
+            start: {
+                dateTime: params.startDateTime,
+                timeZone,
+            },
+            end: {
+                dateTime: params.endDateTime,
+                timeZone,
+            },
+            ...(params.location
+                ? {
+                    location: {
+                        displayName: params.location,
+                    },
+                }
+                : {}),
+            ...(params.categories?.length
+                ? { categories: params.categories }
+                : {}),
+        };
+        return client
+            .api(`/users/${this.supportEmail}/events`)
+            .header("Prefer", `outlook.timezone="${timeZone}"`)
+            .post(payload);
+    }
+    async updateCalendarEvent(eventId, params) {
+        const client = await this.getClient();
+        const timeZone = "America/Santiago";
+        const payload = {};
+        if (params.subject !== undefined) {
+            payload.subject = params.subject;
+        }
+        if (params.bodyHtml !== undefined) {
+            payload.body = {
+                contentType: "HTML",
+                content: params.bodyHtml,
+            };
+        }
+        if (params.startDateTime !== undefined) {
+            payload.start = {
+                dateTime: params.startDateTime,
+                timeZone,
+            };
+        }
+        if (params.endDateTime !== undefined) {
+            payload.end = {
+                dateTime: params.endDateTime,
+                timeZone,
+            };
+        }
+        if (params.location !== undefined) {
+            payload.location = {
+                displayName: params.location,
+            };
+        }
+        if (params.categories !== undefined) {
+            payload.categories = params.categories;
+        }
+        return client
+            .api(`/users/${this.supportEmail}/events/${encodeURIComponent(eventId)}`)
+            .header("Prefer", `outlook.timezone="${timeZone}"`)
+            .patch(payload);
+    }
+    async deleteCalendarEvent(eventId) {
+        const client = await this.getClient();
+        await client
+            .api(`/users/${this.supportEmail}/events/${encodeURIComponent(eventId)}`)
+            .delete();
     }
 }
 /* ======================================================

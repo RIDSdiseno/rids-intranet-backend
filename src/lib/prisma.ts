@@ -3,10 +3,10 @@ import { PrismaClient, AuditAction } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 
 const prismaBase = new PrismaClient({
-  log:
-    process.env.NODE_ENV === "development"
-      ? ["query", "error", "warn"]
-      : ["error"],
+  //log:
+    //process.env.NODE_ENV === "development"
+    //  ? ["query", "error", "warn"]
+    //  : ["error"],
 });
 
 /* =========================
@@ -207,7 +207,7 @@ export const prisma = prismaBase.$extends({
         if (model === "Empresa") {
           empresaId = before?.id_empresa ?? null;
         }
-        console.log("🔍 [DEBUG PRISMA] Estructura de cambios antes de guardar:", JSON.stringify(changes, null, 2));
+        //console.log("🔍 [DEBUG PRISMA] Estructura de cambios antes de guardar:", JSON.stringify(changes, null, 2));
 
         await prismaBase.auditLog.create({
           data: {
