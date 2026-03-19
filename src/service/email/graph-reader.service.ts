@@ -530,7 +530,12 @@ class GraphReaderService {
 
             if (org) {
                 empresa = await prisma.empresa.findFirst({
-                    where: { nombre: org.name }
+                    where: {
+                        nombre: {
+                            contains: org.name,
+                            mode: "insensitive"
+                        }
+                    }
                 });
             }
         }
@@ -556,12 +561,21 @@ class GraphReaderService {
         /* =============================
            3️⃣ SOLICITANTE
         ============================= */
-        const requester = await prisma.solicitante.findFirst({
+        let requester = await prisma.solicitante.findFirst({
             where: {
                 email: data.fromEmail,
-                empresaId: empresa.id_empresa,
             },
         });
+
+        // 🔥 SI EXISTE PERO ESTÁ EN OTRA EMPRESA → CORREGIR
+        if (requester && requester.empresaId !== empresa.id_empresa) {
+            console.log("🔁 Corrigiendo empresa del solicitante");
+
+            requester = await prisma.solicitante.update({
+                where: { id_solicitante: requester.id_solicitante },
+                data: { empresaId: empresa.id_empresa },
+            });
+        }
 
         if (!requester) {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
@@ -636,43 +650,59 @@ class GraphReaderService {
         /* =============================
    8️⃣ AUTO-REPLY (GRAPH CORRECTO)
 ============================= */
+        /* =============================
+   8️⃣ AUTO-REPLY (ROBUSTO)
+============================= */
         try {
-            if (data.fromEmail !== this.supportEmail) {
+            console.log("📤 Preparando auto-reply...");
 
-                const html = buildAutoReplyTemplate({
-                    nombre: data.fromName || "Cliente",
-                    ticketId: ticket.id,
-                    subject: ticket.subject,
-                    bodyOriginal: data.bodyHtml || data.bodyText,
-                });
-
-                await this.sendReplyEmail({
-                    to: data.fromEmail,
-                    subject: `Re: ${ticket.subject}`,
-                    bodyHtml: html,
-
-                    // 🔥 CLAVE PARA THREADING REAL
-                    inReplyTo: data.messageId,
-                    references: data.references || data.messageId,
-                });
-
-                // 🧠 Registrar en historial (esto está perfecto, déjalo)
-                await prisma.ticketMessage.create({
-                    data: {
-                        ticketId: ticket.id,
-                        direction: MessageDirection.OUTBOUND,
-                        bodyText: 'Correo automático de confirmación enviado',
-                        isInternal: true,
-                        fromEmail: this.supportEmail,
-                        toEmail: data.fromEmail,
-                    },
-                });
-
-                console.log(`📨 Auto-reply enviado (Graph) a ${data.fromEmail}`);
-
+            // ✅ 1. Validar destinatario
+            if (!data.fromEmail || !data.fromEmail.includes("@")) {
+                console.warn("⚠️ Email inválido, no se envía:", data.fromEmail);
+                return;
             }
-        } catch (err) {
-            console.error('⚠️ Error enviando confirmación automática:', err);
+
+            // ✅ 2. Evitar auto-envío
+            if (data.fromEmail === this.supportEmail) {
+                console.warn("⚠️ Email es el mismo soporte, se omite auto-reply");
+                return;
+            }
+
+            const html = buildAutoReplyTemplate({
+                nombre: data.fromName || "Cliente",
+                ticketId: ticket.id,
+                subject: ticket.subject,
+                bodyOriginal: data.bodyHtml || data.bodyText,
+            });
+
+            console.log("📨 TO:", data.fromEmail);
+            console.log("📨 FROM:", this.supportEmail);
+
+            await this.sendReplyEmail({
+                to: data.fromEmail,
+                subject: `Re: ${ticket.subject}`,
+                bodyHtml: html,
+                inReplyTo: data.messageId,
+                references: data.references || data.messageId,
+            });
+
+            // ✅ Registrar mensaje interno
+            await prisma.ticketMessage.create({
+                data: {
+                    ticketId: ticket.id,
+                    direction: MessageDirection.OUTBOUND,
+                    bodyText: 'Correo automático de confirmación enviado',
+                    isInternal: true,
+                    fromEmail: this.supportEmail,
+                    toEmail: data.fromEmail,
+                },
+            });
+
+            console.log(`✅ Auto-reply enviado correctamente a ${data.fromEmail}`);
+
+        } catch (err: any) {
+            console.error("❌ ERROR REAL GRAPH:");
+            console.error(JSON.stringify(err?.body || err, null, 2));
         }
 
         console.log(`✅ Ticket #${ticket.id} creado (${empresa.nombre})`);
@@ -886,11 +916,12 @@ class GraphReaderService {
         to: string;
         subject: string;
         bodyHtml: string;
-        bodyText?: string;
         inReplyTo?: string;
         references?: string;
     }) {
         const client = await this.getClient();
+
+        console.log("📤 Enviando email vía Graph...");
 
         await client
             .api(`/users/${this.supportEmail}/sendMail`)
@@ -919,6 +950,8 @@ class GraphReaderService {
                 },
                 saveToSentItems: true,
             });
+
+        console.log("✅ Graph sendMail ejecutado");
     }
 
 }

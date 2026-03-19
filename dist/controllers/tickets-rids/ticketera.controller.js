@@ -209,7 +209,9 @@ export async function listTickets(req, res) {
         const pageNum = Math.max(Number(page), 1);
         const take = Math.min(Number(pageSize) || 30, 100);
         const skip = (pageNum - 1) * take;
-        const whereActual = {};
+        const whereActual = {
+            AND: [],
+        };
         if (status) {
             whereActual.status = status;
         }
@@ -225,10 +227,45 @@ export async function listTickets(req, res) {
         if (empresaId)
             whereActual.empresaId = Number(empresaId);
         if (search) {
-            whereActual.subject = {
-                contains: String(search),
-                mode: "insensitive",
-            };
+            const searchValue = String(search).trim();
+            const searchNumber = Number(searchValue);
+            whereActual.OR = [
+                {
+                    subject: {
+                        contains: searchValue,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    fromEmail: {
+                        contains: searchValue,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    empresa: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    requester: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                ...(Number.isInteger(searchNumber)
+                    ? [
+                        {
+                            id: searchNumber,
+                        },
+                    ]
+                    : []),
+            ];
         }
         if (from || to) {
             whereActual.lastActivityAt = {

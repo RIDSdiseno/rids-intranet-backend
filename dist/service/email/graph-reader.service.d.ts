@@ -19,7 +19,6 @@ declare class GraphReaderService {
         to: string;
         subject: string;
         bodyHtml: string;
-        bodyText?: string;
         inReplyTo?: string;
         references?: string;
     }): Promise<void>;
