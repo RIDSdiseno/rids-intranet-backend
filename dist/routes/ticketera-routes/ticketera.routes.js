@@ -7,7 +7,7 @@ import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.contr
 import { getTicketKpis, getTicketKpisByAgent, } from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
 import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
 import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.controller.js";
-import { buscarContactos } from "@/src/controllers/tickets-rids/contactos.controller.js";
+import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
 const ticketeraRouter = Router();
 // =======================
 // CRUD base
