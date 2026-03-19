@@ -205,7 +205,12 @@ class GraphReaderService {
         /* =============================
            2️⃣ DATOS BÁSICOS
         ============================= */
-        const fromEmail = message.from?.emailAddress?.address?.toLowerCase() || '';
+        const fromEmailRaw = message.from?.emailAddress?.address;
+        if (!fromEmailRaw) {
+            console.warn("⚠️ Email sin remitente, se ignora");
+            return;
+        }
+        const fromEmail = fromEmailRaw.toLowerCase();
         const fromName = message.from?.emailAddress?.name ||
             fromEmail.split('@')[0] ||
             'Desconocido';
@@ -493,9 +498,6 @@ class GraphReaderService {
             from: data.fromEmail,
         });
         /* =============================
-   8️⃣ AUTO-REPLY (GRAPH CORRECTO)
-============================= */
-        /* =============================
    8️⃣ AUTO-REPLY (ROBUSTO)
 ============================= */
         try {
@@ -505,9 +507,8 @@ class GraphReaderService {
                 console.warn("⚠️ Email inválido, no se envía:", data.fromEmail);
                 return;
             }
-            // ✅ 2. Evitar auto-envío
             if (data.fromEmail === this.supportEmail) {
-                console.warn("⚠️ Email es el mismo soporte, se omite auto-reply");
+                console.warn("⚠️ Email es soporte, no se envía auto-reply");
                 return;
             }
             const html = buildAutoReplyTemplate({
@@ -731,14 +732,7 @@ class GraphReaderService {
                         },
                     },
                 ],
-                internetMessageHeaders: [
-                    ...(params.inReplyTo
-                        ? [{ name: "In-Reply-To", value: params.inReplyTo }]
-                        : []),
-                    ...(params.references
-                        ? [{ name: "References", value: params.references }]
-                        : []),
-                ],
+                // 🔥 ELIMINAR internetMessageHeaders completamente
             },
             saveToSentItems: true,
         });
