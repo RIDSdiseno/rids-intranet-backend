@@ -19,6 +19,8 @@ declare class GraphReaderService {
         to: string | string[];
         subject: string;
         bodyHtml: string;
+        inReplyTo?: string;
+        references?: string;
     }): Promise<void>;
     private toSantiagoDateTime;
     readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{

@@ -109,10 +109,15 @@ export async function createTicket(req: Request, res: Response) {
 
         if (fromEmail && fromEmail !== process.env.EMAIL_USER) {
             try {
+
                 await graphReaderService.sendReplyEmail({
-                    to: fromEmail,
-                    subject: `Re: ${ticket.subject}`,
-                    bodyHtml: `<p>Hemos recibido tu solicitud. Ticket asignado: <strong>#${ticket.id}</strong>.<br/><br/>Nuestro equipo te responderá a la brevedad.</p>`,
+                    to: fromEmail, // ✅ FIX
+                    subject: `Re: ${ticket.subject}`, // más limpio
+                    bodyHtml: `
+                <p>Hemos recibido tu solicitud.</p>
+                <p><strong>Ticket #${ticket.id}</strong></p>
+                <p>Te responderemos a la brevedad.</p>
+            `,
                 });
             } catch (err) {
                 console.error("⚠️ Error enviando auto-reply:", err);
@@ -289,10 +294,27 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 </body>
 </html>`;
 
+            const lastMessage = await prisma.ticketMessage.findFirst({
+                where: { ticketId },
+                orderBy: { createdAt: "desc" },
+                select: {
+                    sourceMessageId: true,
+                    sourceReferences: true
+                }
+            });
+
+            const inReplyTo = lastMessage?.sourceMessageId?.trim();
+            const references =
+                lastMessage?.sourceReferences?.trim() ||
+                lastMessage?.sourceMessageId?.trim();
+
             await graphReaderService.sendReplyEmail({
                 to: toEmails,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 bodyHtml,
+
+                ...(inReplyTo && { inReplyTo }),
+                ...(references && { references }),
             });
         }
         bus.emit("ticket.updated", {

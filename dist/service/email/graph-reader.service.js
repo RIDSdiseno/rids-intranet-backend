@@ -419,20 +419,6 @@ class GraphReaderService {
         if (!requester) {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
-        // 🔥 Detectar técnico por empresa
-        const tecnicoDetectado = await prisma.tecnico.findFirst({
-            where: {
-                empresaId: empresa.id_empresa,
-                status: true
-            },
-            orderBy: {
-                id_tecnico: "asc" // o random si quieres después
-            }
-        });
-        const tecnicoFinal = tecnicoDetectado ?? await prisma.tecnico.findFirst({
-            where: { status: true },
-            orderBy: { id_tecnico: "asc" }
-        });
         /* =============================
            4️⃣ CREAR TICKET
         ============================= */
@@ -445,7 +431,7 @@ class GraphReaderService {
                 channel: TicketChannel.EMAIL,
                 empresaId: empresa.id_empresa,
                 requesterId: requester?.id_solicitante ?? null,
-                assigneeId: tecnicoFinal?.id_tecnico ?? null, // ✅ FIX
+                assigneeId: null, // ✅ FIX
                 fromEmail: data.fromEmail,
                 inboxEmail: this.supportEmail,
                 lastActivityAt: new Date(),
@@ -511,16 +497,19 @@ class GraphReaderService {
                 return;
             }
             // 🔥 Obtener técnico + firma
-            const tecnico = await prisma.tecnico.findUnique({
-                where: { id_tecnico: ticket.assigneeId ?? 1 },
-                select: {
-                    nombre: true,
-                    email: true, // 👈 agregar email
-                    firma: {
-                        select: { path: true }
+            let tecnico = null;
+            if (ticket.assigneeId) {
+                tecnico = await prisma.tecnico.findUnique({
+                    where: { id_tecnico: ticket.assigneeId },
+                    select: {
+                        nombre: true,
+                        email: true,
+                        firma: {
+                            select: { path: true }
+                        }
                     }
-                }
-            });
+                });
+            }
             const html = buildAutoReplyTemplate({
                 nombre: data.fromName || "Cliente",
                 ticketId: ticket.id,
@@ -569,6 +558,8 @@ class GraphReaderService {
                 to: data.fromEmail,
                 subject: `Re: ${ticket.subject}`,
                 bodyHtml: htmlFinal,
+                inReplyTo: data.messageId, // 🔥 CLAVE
+                references: data.references || data.messageId
             });
             // ✅ Registrar mensaje interno
             await prisma.ticketMessage.create({
@@ -793,8 +784,19 @@ class GraphReaderService {
                     content: params.bodyHtml,
                 },
                 toRecipients: recipients.map(address => ({
-                    emailAddress: { address }, // 👈 cada uno es string, no array
+                    emailAddress: { address },
                 })),
+                // 🔥 CLAVE PARA THREADING
+                internetMessageHeaders: [
+                    {
+                        name: "In-Reply-To",
+                        value: params.inReplyTo || ""
+                    },
+                    {
+                        name: "References",
+                        value: params.references || ""
+                    }
+                ]
             },
             saveToSentItems: true,
         });
