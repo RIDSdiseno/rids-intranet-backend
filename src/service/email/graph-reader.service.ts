@@ -1020,6 +1020,189 @@ class GraphReaderService {
         console.log("✅ Graph sendMail ejecutado");
     }
 
+    private toSantiagoDateTime(dateTime: string, timeZone: string): string {
+        const SANTIAGO_TZ = "America/Santiago";
+        const SANTIAGO_WINDOWS = "Pacific SA Standard Time";
+
+        if (!dateTime) return "";
+
+        // Graph devolvió la hora ya en Santiago → usar directo
+        if (timeZone === SANTIAGO_TZ || timeZone === SANTIAGO_WINDOWS) {
+            return dateTime.slice(0, 16);
+        }
+
+        // Cualquier otro timezone (incluyendo UTC) → convertir a Santiago
+        const utcString = dateTime.endsWith("Z") ? dateTime : `${dateTime}Z`;
+        const date = new Date(utcString);
+
+        if (isNaN(date.getTime())) return dateTime.slice(0, 16);
+
+        const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: SANTIAGO_TZ,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).formatToParts(date);
+
+        const get = (type: string) => parts.find(p => p.type === type)?.value ?? "00";
+        return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+    }
+
+    async readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{
+        id: string;
+        subject: string;
+        start: string;
+        end: string;
+        categories: string[];
+        body: string;
+    }>> {
+        try {
+            const client = await this.getClient();
+
+            const allEvents: any[] = [];
+
+            let response = await client
+                .api(`/users/${this.supportEmail}/calendarView`)
+                .query({ startDateTime, endDateTime })
+                .orderby("start/dateTime asc")
+                .select("id,subject,start,end,categories,body")
+                .header("Prefer", 'outlook.timezone="America/Santiago"')
+                .get();
+
+            allEvents.push(...(response.value ?? []));
+
+            while (response['@odata.nextLink']) {
+                response = await client
+                    .api(response['@odata.nextLink'])
+                    .get();
+                allEvents.push(...(response.value ?? []));
+            }
+
+            return allEvents.map((event: any) => ({
+                id: event.id || "",
+                subject: event.subject || "",
+                start: this.toSantiagoDateTime(event.start?.dateTime || "", event.start?.timeZone || "UTC"),
+                end: this.toSantiagoDateTime(event.end?.dateTime || "", event.end?.timeZone || "UTC"),
+                categories: event.categories || [],
+                body: event.body?.content || "",
+            }));
+        } catch (err) {
+            console.error("[GRAPH CALENDAR READ] Error leyendo eventos:", err);
+            return [];
+        }
+    }
+
+    async createCalendarEvent(params: {
+        subject: string;
+        bodyHtml?: string;
+        startDateTime: string;
+        endDateTime: string;
+        location?: string;
+        categories?: string[];
+    }): Promise<any> {
+        const client = await this.getClient();
+        const timeZone = "America/Santiago";
+
+        const payload = {
+            subject: params.subject,
+            body: {
+                contentType: "HTML",
+                content: params.bodyHtml || "",
+            },
+            start: {
+                dateTime: params.startDateTime,
+                timeZone,
+            },
+            end: {
+                dateTime: params.endDateTime,
+                timeZone,
+            },
+            ...(params.location
+                ? {
+                    location: {
+                        displayName: params.location,
+                    },
+                }
+                : {}),
+            ...(params.categories?.length
+                ? { categories: params.categories }
+                : {}),
+        };
+
+        return client
+            .api(`/users/${this.supportEmail}/events`)
+            .header("Prefer", `outlook.timezone="${timeZone}"`)
+            .post(payload);
+    }
+
+    async updateCalendarEvent(
+        eventId: string,
+        params: {
+            subject?: string;
+            bodyHtml?: string;
+            startDateTime?: string;
+            endDateTime?: string;
+            location?: string;
+            categories?: string[];
+        }
+    ): Promise<any> {
+        const client = await this.getClient();
+        const timeZone = "America/Santiago";
+
+        const payload: any = {};
+
+        if (params.subject !== undefined) {
+            payload.subject = params.subject;
+        }
+
+        if (params.bodyHtml !== undefined) {
+            payload.body = {
+                contentType: "HTML",
+                content: params.bodyHtml,
+            };
+        }
+
+        if (params.startDateTime !== undefined) {
+            payload.start = {
+                dateTime: params.startDateTime,
+                timeZone,
+            };
+        }
+
+        if (params.endDateTime !== undefined) {
+            payload.end = {
+                dateTime: params.endDateTime,
+                timeZone,
+            };
+        }
+
+        if (params.location !== undefined) {
+            payload.location = {
+                displayName: params.location,
+            };
+        }
+
+        if (params.categories !== undefined) {
+            payload.categories = params.categories;
+        }
+
+        return client
+            .api(`/users/${this.supportEmail}/events/${encodeURIComponent(eventId)}`)
+            .header("Prefer", `outlook.timezone="${timeZone}"`)
+            .patch(payload);
+    }
+
+    async deleteCalendarEvent(eventId: string): Promise<void> {
+        const client = await this.getClient();
+
+        await client
+            .api(`/users/${this.supportEmail}/events/${encodeURIComponent(eventId)}`)
+            .delete();
+    }
+
 }
 
 /* ======================================================

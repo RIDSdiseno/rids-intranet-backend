@@ -29,9 +29,10 @@ model Empresa {
   empresaISP           EmpresaISP[]
   servidors            Servidor[]
   tecnicos             Tecnico[]
+  equipos              Equipo[]
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
-  equipos              Equipo[]
+  agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
 }
 
 model Sucursal {
@@ -532,6 +533,7 @@ model Tecnico {
   cotizaciones        CotizacionGestioo[]
   auditLogs           AuditLog[]
   mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
+  agendasAsignadas    AgendaTecnico[]
 
   @@index([empresaId])
 }
@@ -940,38 +942,50 @@ model AuditLog {
   @@index([empresaId])
 }
 
-model AgendaTecnico {
-  id        Int @id @default(autoincrement())
-  agendaId  Int
-  tecnicoId Int
-
-  @@unique([agendaId, tecnicoId])
-  @@index([agendaId])
-  @@index([tecnicoId])
+model area_configs {
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  mensajeBase String
+  firmaArea   String?
+  updatedAt   DateTime
 }
 
 model AgendaVisita {
-  id                   Int          @id @default(autoincrement())
-  fecha                DateTime     @db.Date
+  id                   Int             @id @default(autoincrement())
+  fecha                DateTime        @db.Date
   empresaId            Int?
-  tipo                 TipoAgenda   @default(SEMANA)
-  estado               EstadoAgenda @default(PROGRAMADA)
-  notificacionEnviada  Boolean      @default(false)
+  tipo                 TipoAgenda      @default(SEMANA)
+  estado               EstadoAgenda    @default(PROGRAMADA)
+  notificacionEnviada  Boolean         @default(false)
   notas                String?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
   horaFin              String?
   horaInicio           String?
   mensaje              String?
   recordatorioEnviado  Boolean?
-  outlook_event_id     String?
+  outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
+  empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
+  tecnicos             AgendaTecnico[]
 
   @@index([empresaId])
-  @@index([estado])
   @@index([fecha])
-  @@index([notificacionEnviada])
   @@index([tipo])
+  @@index([estado])
+  @@index([notificacionEnviada])
+}
+
+model AgendaTecnico {
+  id        Int          @id @default(autoincrement())
+  agendaId  Int
+  tecnicoId Int
+  agenda    AgendaVisita @relation(fields: [agendaId], references: [id], onDelete: Cascade)
+  tecnico   Tecnico      @relation(fields: [tecnicoId], references: [id_tecnico])
+
+  @@unique([agendaId, tecnicoId])
+  @@index([agendaId])
+  @@index([tecnicoId])
 }
 
 model ReporteIA {
@@ -984,13 +998,7 @@ model ReporteIA {
   @@unique([empresaId, periodo])
 }
 
-model area_configs {
-  id          Int      @id @default(autoincrement())
-  nombre      String   @unique
-  mensajeBase String
-  firmaArea   String?
-  updatedAt   DateTime
-}
+
 
 model PasswordResetToken {
   id        Int      @id @default(autoincrement())
@@ -1002,6 +1010,18 @@ model PasswordResetToken {
 
   @@index([tecnicoId])
   @@index([token])
+}
+
+enum TipoAgenda {
+  SEMANA
+  SABADO
+}
+
+enum EstadoAgenda {
+  PROGRAMADA
+  NOTIFICADA
+  COMPLETADA
+  CANCELADA
 }
 
 enum EstadoDTE {
@@ -1179,14 +1199,4 @@ enum OrigenTrabajo {
   DESDE_COTIZACION
 }
 
-enum EstadoAgenda {
-  PROGRAMADA
-  NOTIFICADA
-  COMPLETADA
-  CANCELADA
-}
 
-enum TipoAgenda {
-  SEMANA
-  SABADO
-}

@@ -50,6 +50,10 @@ import teamviewerRouter from "./routes/teamviewer-routes/teamviewer.routes.js";
 import iaInventarioRouter from "./routes/ia-intranet-routes/ia-inventario.routes.js";
 import iaReportesRouter from "./routes/ia-intranet-routes/ia-reportes.routes.js";
 import iaRecomendacionesRouter from "./routes/ia-intranet-routes/ia-recomendaciones.routes.js";
+/* ===================== AGENDA AUTOMATIZADA ===================== */
+import { agendaRouter } from "./routes/agenda.routes.js";
+/* ===================== CORREO ===================== */
+import correoRouter from "./routes/correo.routes.js";
 /* ========================================================= */
 import { auth } from "./middlewares/auth.js";
 export const api = Router();
@@ -57,6 +61,7 @@ api.use(auth(false));
 /* ===================== App Core ===================== */
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
+api.use("/agenda", agendaRouter);
 // ✅ Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta
 // Entonces se monta sin prefijo extra para que quede: POST /api/solicitantes/cleanup/no-cuenta
@@ -111,6 +116,8 @@ api.use("/teamviewer", teamviewerRouter);
 api.use("/ia-inventario", iaInventarioRouter);
 api.use("/ia-reportes", iaReportesRouter);
 api.use("/ia-recomendaciones", iaRecomendacionesRouter);
+/* ===================== CORREO ===================== */
+api.use("/correo", correoRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map
