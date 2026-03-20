@@ -1405,8 +1405,11 @@ export async function enviarRecordatoriosPendientes() {
         where: {
             fecha: fechaHoy,
             estado: EstadoAgenda.PROGRAMADA,
-            recordatorioEnviado: false,
             horaInicio: { not: null },
+            OR: [
+                { recordatorioEnviado: false },
+                { recordatorioEnviado: null },
+            ],
         },
         include: {
             empresa: { select: { nombre: true } },
