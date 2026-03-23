@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { emailSenderService } from '../../service/email/email-sender.service.js';
+import { graphReaderService } from '../../service/email/graph-reader.service.js';
 
 import crypto from "crypto";
 
@@ -106,14 +107,18 @@ export async function createTicket(req: Request, res: Response) {
                 }))?.email
                 : null);               // 3️⃣ email del solicitante registrado
 
-        if (fromEmail && fromEmail !== process.env.SMTP_USER) {
+        if (fromEmail && fromEmail !== process.env.EMAIL_USER) {
             try {
-                await emailSenderService.sendAgentReply(
-                    { id: ticket.id, subject: ticket.subject, status: ticket.status },
-                    `Hemos recibido tu solicitud. Ticket asignado: #${ticket.id}.\n\nNuestro equipo te responderá a la brevedad.`,
-                    [fromEmail],
-                    [],
-                );
+
+                await graphReaderService.sendReplyEmail({
+                    to: fromEmail, // ✅ FIX
+                    subject: `Re: ${ticket.subject}`, // más limpio
+                    bodyHtml: `
+                <p>Hemos recibido tu solicitud.</p>
+                <p><strong>Ticket #${ticket.id}</strong></p>
+                <p>Te responderemos a la brevedad.</p>
+            `,
+                });
             } catch (err) {
                 console.error("⚠️ Error enviando auto-reply:", err);
             }
@@ -155,7 +160,12 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
             include: {
-                requester: true, // 🆕 Incluir requester para email
+                requester: true,
+                assignee: {
+                    include: {
+                        firma: true
+                    }
+                }
             },
         });
 
@@ -212,10 +222,6 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 updateData.status = TicketStatus.OPEN;
             }
 
-            if (!ticket.assigneeId) {
-                updateData.assigneeId = agentId;
-            }
-
             if (!ticket.firstResponseAt && !isInternal) {
                 updateData.firstResponseAt = new Date();
             }
@@ -238,15 +244,63 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 
         // 🆕 Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
-            await emailSenderService.sendAgentReply(
-                ticket,
-                message,
-                toEmails,
-                ccEmails,
-                files?.filter(f => !f.mimetype.includes("internal"))
-            );
-        }
 
+            const tecnico = ticket.assignee ?? null;
+
+            // ✅ Fallbacks seguros
+            const nombreTecnico = tecnico?.nombre || "Equipo de Soporte Técnico";
+            const emailTecnico = tecnico?.email || "soporte@rids.cl";
+            const firmaPath = tecnico?.firma?.path || null;
+
+            // ✅ Sanitizar mensaje (ANTI XSS)
+            function escapeHtml(text: string) {
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            // ✅ Firma unificada (sin duplicación)
+            const firmaHtml = `
+<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
+  <tr>
+    <td style="padding-right:16px; vertical-align:middle;">
+      <img src="${firmaPath || "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif"
+                }" width="120" />
+    </td>
+    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
+      <strong>${nombreTecnico}</strong><br/>
+      Soporte Técnico · Asesorías RIDS Ltda.<br/>
+      <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
+      WhatsApp: +56 9 8823 1976<br/>
+      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
+      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
+    </td>
+  </tr>
+</table>`;
+
+            const bodyHtml = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
+    <p>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>
+    ${firmaHtml}
+    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
+    <p style="font-size:12px; color:#666;">
+        <strong>Ticket #${ticket.id}</strong> · ${ticket.subject}<br/>
+        Soporte Técnico · Asesorías RIDS Ltda.<br/>
+        soporte@rids.cl
+    </p>
+</body>
+</html>`;
+
+            await graphReaderService.sendReplyEmail({
+                to: toEmails,
+                cc: ccEmails,
+                subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
+                bodyHtml,
+            });
+        }
         bus.emit("ticket.updated", {
             ticketId,
             source: "agent_reply",

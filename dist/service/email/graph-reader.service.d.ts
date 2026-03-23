@@ -16,11 +16,10 @@ declare class GraphReaderService {
     private detectPriority;
     private downloadAttachment;
     sendReplyEmail(params: {
-        to: string;
+        to: string | string[];
+        cc?: string[];
         subject: string;
         bodyHtml: string;
-        inReplyTo?: string;
-        references?: string;
     }): Promise<void>;
     private toSantiagoDateTime;
     readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{

@@ -40,7 +40,7 @@ function buildAutoReplyTemplate(params) {
 
     <p>
       Atentamente,<br/>
-      <strong>Equipo de Soporte Técnico</strong><br/>
+      <strong>${params.nombreTecnico || "Equipo de Soporte Técnico"}</strong>
       Asesorías RIDS Ltda.<br/>
       soporte@rids.cl | www.rids.cl
     </p>
@@ -420,47 +420,65 @@ class GraphReaderService {
             console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
         }
         /* =============================
-           4️⃣ CREAR TICKET
-        ============================= */
-        const ticket = await prisma.ticket.create({
-            data: {
-                publicId: crypto.randomUUID(),
-                subject: data.subject,
-                status: TicketStatus.OPEN,
-                priority: this.detectPriority(data.subject, data.bodyText),
-                channel: TicketChannel.EMAIL,
+   3️⃣.5 DETECTAR TÉCNICO
+============================= */
+        const tecnicoDetectado = await prisma.tecnico.findFirst({
+            where: {
                 empresaId: empresa.id_empresa,
-                requesterId: requester?.id_solicitante ?? null,
-                fromEmail: data.fromEmail,
-                inboxEmail: this.supportEmail,
-                lastActivityAt: new Date(),
+                status: true
             },
+            orderBy: { id_tecnico: "asc" }
+        });
+        const tecnicoFinal = tecnicoDetectado ?? await prisma.tecnico.findFirst({
+            where: { status: true },
+            orderBy: { id_tecnico: "asc" }
         });
         /* =============================
-           5️⃣ CREAR PRIMER MENSAJE (DEDUP SAFE)
-        ============================= */
+   4️⃣ + 5️⃣ CREAR TICKET + MENSAJE (ATÓMICO)
+============================= */
+        let ticket;
         let msg;
         try {
-            msg = await prisma.ticketMessage.create({
-                data: {
-                    ticketId: ticket.id,
-                    direction: MessageDirection.INBOUND,
-                    bodyText: data.bodyText,
-                    bodyHtml: data.bodyHtml,
-                    isInternal: false,
-                    fromEmail: data.fromEmail,
-                    cc: data.cc.length ? data.cc.join(",") : null,
-                    toEmail: this.supportEmail,
-                    sourceMessageId: data.messageId, // internetMessageId
-                    sourceInReplyTo: data.inReplyTo || null,
-                    sourceReferences: data.references || null,
-                },
+            const result = await prisma.$transaction(async (tx) => {
+                const t = await tx.ticket.create({
+                    data: {
+                        publicId: crypto.randomUUID(),
+                        subject: data.subject,
+                        status: TicketStatus.OPEN,
+                        priority: this.detectPriority(data.subject, data.bodyText),
+                        channel: TicketChannel.EMAIL,
+                        empresaId: empresa.id_empresa,
+                        requesterId: requester?.id_solicitante ?? null,
+                        assigneeId: null,
+                        fromEmail: data.fromEmail,
+                        inboxEmail: this.supportEmail,
+                        lastActivityAt: new Date(),
+                    },
+                });
+                const m = await tx.ticketMessage.create({
+                    data: {
+                        ticketId: t.id,
+                        direction: MessageDirection.INBOUND,
+                        bodyText: data.bodyText,
+                        bodyHtml: data.bodyHtml,
+                        isInternal: false,
+                        fromEmail: data.fromEmail,
+                        cc: data.cc.length ? data.cc.join(",") : null,
+                        toEmail: this.supportEmail,
+                        sourceMessageId: data.messageId, // 🔥 unique → protege contra duplicados
+                        sourceInReplyTo: data.inReplyTo || null,
+                        sourceReferences: data.references || null,
+                    },
+                });
+                return { ticket: t, msg: m };
             });
+            ticket = result.ticket;
+            msg = result.msg;
         }
         catch (err) {
-            // 🔥 PROTECCIÓN CRÍTICA CONTRA DUPLICADOS
+            // 🔥 Si sourceMessageId ya existe → ticket duplicado, ignorar todo
             if (err.code === 'P2002') {
-                console.log(`⏭️ Mensaje ya existe (sourceMessageId duplicado)`);
+                console.log(`⏭️ Ticket ya existe para messageId ${data.messageId}, ignorando`);
                 return;
             }
             throw err;
@@ -495,20 +513,68 @@ class GraphReaderService {
                 console.warn("⚠️ Email es soporte, no se envía auto-reply");
                 return;
             }
+            // 🔥 Obtener técnico + firma
+            let tecnico = null;
+            if (ticket.assigneeId) {
+                tecnico = await prisma.tecnico.findUnique({
+                    where: { id_tecnico: ticket.assigneeId },
+                    select: {
+                        nombre: true,
+                        email: true,
+                        firma: {
+                            select: { path: true }
+                        }
+                    }
+                });
+            }
             const html = buildAutoReplyTemplate({
                 nombre: data.fromName || "Cliente",
                 ticketId: ticket.id,
                 subject: ticket.subject,
                 bodyOriginal: data.bodyHtml || data.bodyText,
+                ...(tecnico?.nombre && { nombreTecnico: tecnico.nombre }) // 🔥 CLAVE
             });
             console.log("📨 TO:", data.fromEmail);
             console.log("📨 FROM:", this.supportEmail);
+            // 🔥 Construir firma HTML
+            const firmaHtml = tecnico?.firma?.path
+                ? `
+<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
+  <tr>
+    <td style="padding-right:16px; vertical-align:middle;">
+      <img src="${tecnico.firma.path}" width="120" />
+    </td>
+    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
+      <strong>${tecnico.nombre}</strong><br/>
+      Soporte Técnico · Asesorías RIDS Ltda.<br/>
+      <a href="mailto:${tecnico.email}" style="color:#0ea5e9;">${tecnico.email}</a><br/>
+      WhatsApp: +56 9 8823 1976<br/>
+      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
+      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
+    </td>
+  </tr>
+</table>`
+                : `
+<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
+  <tr>
+    <td style="padding-right:16px; vertical-align:middle;">
+      <img src="https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif" width="120" />
+    </td>
+    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
+      <strong>Equipo de Soporte Técnico</strong><br/>
+      Asesorías RIDS Ltda.<br/>
+      <a href="mailto:soporte@rids.cl" style="color:#0ea5e9;">soporte@rids.cl</a><br/>
+      WhatsApp: +56 9 8823 1976<br/>
+      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
+      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
+    </td>
+  </tr>
+</table>`;
+            const htmlFinal = `${html}${firmaHtml}`;
             await this.sendReplyEmail({
                 to: data.fromEmail,
                 subject: `Re: ${ticket.subject}`,
-                bodyHtml: html,
-                inReplyTo: data.messageId,
-                references: data.references || data.messageId,
+                bodyHtml: htmlFinal,
             });
             // ✅ Registrar mensaje interno
             await prisma.ticketMessage.create({
@@ -516,7 +582,8 @@ class GraphReaderService {
                     ticketId: ticket.id,
                     direction: MessageDirection.OUTBOUND,
                     bodyText: 'Correo automático de confirmación enviado',
-                    isInternal: true,
+                    bodyHtml: htmlFinal, // 🔥 AQUÍ ESTÁ LA FIRMA
+                    isInternal: false, // 🔥 IMPORTANTE (si no, no aparece como email)
                     fromEmail: this.supportEmail,
                     toEmail: data.fromEmail,
                 },
@@ -558,7 +625,6 @@ class GraphReaderService {
                             OR: orConditions
                         }
                     },
-                    status: { not: TicketStatus.CLOSED }
                 }
             });
             if (ticket)
@@ -575,7 +641,6 @@ class GraphReaderService {
                             sourceMessageId: data.messageId
                         }
                     },
-                    status: { not: TicketStatus.CLOSED }
                 }
             });
             if (ticket)
@@ -597,7 +662,6 @@ class GraphReaderService {
             return prisma.ticket.findFirst({
                 where: {
                     id: ticketId,
-                    status: { not: TicketStatus.CLOSED }
                 }
             });
         }
@@ -635,6 +699,28 @@ class GraphReaderService {
                 where: { id: ticketId },
                 data: { lastActivityAt: new Date() },
             });
+            const ticketActual = await tx.ticket.findUnique({
+                where: { id: ticketId },
+                select: { status: true }
+            });
+            if (ticketActual?.status === TicketStatus.CLOSED) {
+                console.log(`🔄 Reabriendo ticket #${ticketId}`);
+                await tx.ticket.update({
+                    where: { id: ticketId },
+                    data: {
+                        status: TicketStatus.OPEN,
+                        resolvedAt: null,
+                        closedAt: null,
+                    }
+                });
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId,
+                        type: TicketEventType.STATUS_CHANGED,
+                        actorType: TicketActorType.SYSTEM,
+                    }
+                });
+            }
             await tx.ticketEvent.create({
                 data: {
                     ticketId,
@@ -699,11 +785,10 @@ class GraphReaderService {
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params) {
         const client = await this.getClient();
-        const headers = [
-            ...(params.inReplyTo ? [{ name: "In-Reply-To", value: params.inReplyTo }] : []),
-            ...(params.references ? [{ name: "References", value: params.references }] : []),
-        ];
-        console.log("📤 Enviando email vía Graph...");
+        const toRecipients = (Array.isArray(params.to) ? params.to : [params.to])
+            .filter(Boolean);
+        const ccRecipients = (params.cc ?? []).filter(Boolean);
+        console.log("📤 Enviando email vía Graph a:", toRecipients);
         await client
             .api(`/users/${this.supportEmail}/sendMail`)
             .post({
@@ -713,15 +798,12 @@ class GraphReaderService {
                     contentType: "HTML",
                     content: params.bodyHtml,
                 },
-                toRecipients: [
-                    {
-                        emailAddress: {
-                            address: params.to,
-                        },
-                    },
-                ],
-                ...(headers.length > 0 && { internetMessageHeaders: headers }),
-                // 🔥 ELIMINAR internetMessageHeaders completamente
+                toRecipients: toRecipients.map(address => ({
+                    emailAddress: { address },
+                })),
+                ccRecipients: ccRecipients.map(address => ({
+                    emailAddress: { address },
+                })),
             },
             saveToSentItems: true,
         });
