@@ -573,49 +573,71 @@ class GraphReaderService {
         }
 
         /* =============================
-           4️⃣ CREAR TICKET
-        ============================= */
-        const ticket = await prisma.ticket.create({
-            data: {
-                publicId: crypto.randomUUID(),
-                subject: data.subject,
-                status: TicketStatus.OPEN,
-                priority: this.detectPriority(data.subject, data.bodyText),
-                channel: TicketChannel.EMAIL,
+   3️⃣.5 DETECTAR TÉCNICO
+============================= */
+        const tecnicoDetectado = await prisma.tecnico.findFirst({
+            where: {
                 empresaId: empresa.id_empresa,
-                requesterId: requester?.id_solicitante ?? null,
-                assigneeId: null, // ✅ FIX
-                fromEmail: data.fromEmail,
-                inboxEmail: this.supportEmail,
-                lastActivityAt: new Date(),
+                status: true
             },
+            orderBy: { id_tecnico: "asc" }
+        });
+
+        const tecnicoFinal = tecnicoDetectado ?? await prisma.tecnico.findFirst({
+            where: { status: true },
+            orderBy: { id_tecnico: "asc" }
         });
 
         /* =============================
-           5️⃣ CREAR PRIMER MENSAJE (DEDUP SAFE)
-        ============================= */
-        let msg;
+   4️⃣ + 5️⃣ CREAR TICKET + MENSAJE (ATÓMICO)
+============================= */
+        let ticket: any;
+        let msg: any;
 
         try {
-            msg = await prisma.ticketMessage.create({
-                data: {
-                    ticketId: ticket.id,
-                    direction: MessageDirection.INBOUND,
-                    bodyText: data.bodyText,
-                    bodyHtml: data.bodyHtml,
-                    isInternal: false,
-                    fromEmail: data.fromEmail,
-                    cc: data.cc.length ? data.cc.join(",") : null,
-                    toEmail: this.supportEmail,
-                    sourceMessageId: data.messageId, // internetMessageId
-                    sourceInReplyTo: data.inReplyTo || null,
-                    sourceReferences: data.references || null,
-                },
+            const result = await prisma.$transaction(async (tx) => {
+                const t = await tx.ticket.create({
+                    data: {
+                        publicId: crypto.randomUUID(),
+                        subject: data.subject,
+                        status: TicketStatus.OPEN,
+                        priority: this.detectPriority(data.subject, data.bodyText),
+                        channel: TicketChannel.EMAIL,
+                        empresaId: empresa.id_empresa,
+                        requesterId: requester?.id_solicitante ?? null,
+                        assigneeId: null,
+                        fromEmail: data.fromEmail,
+                        inboxEmail: this.supportEmail,
+                        lastActivityAt: new Date(),
+                    },
+                });
+
+                const m = await tx.ticketMessage.create({
+                    data: {
+                        ticketId: t.id,
+                        direction: MessageDirection.INBOUND,
+                        bodyText: data.bodyText,
+                        bodyHtml: data.bodyHtml,
+                        isInternal: false,
+                        fromEmail: data.fromEmail,
+                        cc: data.cc.length ? data.cc.join(",") : null,
+                        toEmail: this.supportEmail,
+                        sourceMessageId: data.messageId, // 🔥 unique → protege contra duplicados
+                        sourceInReplyTo: data.inReplyTo || null,
+                        sourceReferences: data.references || null,
+                    },
+                });
+
+                return { ticket: t, msg: m };
             });
+
+            ticket = result.ticket;
+            msg = result.msg;
+
         } catch (err: any) {
-            // 🔥 PROTECCIÓN CRÍTICA CONTRA DUPLICADOS
+            // 🔥 Si sourceMessageId ya existe → ticket duplicado, ignorar todo
             if (err.code === 'P2002') {
-                console.log(`⏭️ Mensaje ya existe (sourceMessageId duplicado)`);
+                console.log(`⏭️ Ticket ya existe para messageId ${data.messageId}, ignorando`);
                 return;
             }
             throw err;
@@ -728,8 +750,6 @@ class GraphReaderService {
                 to: data.fromEmail,
                 subject: `Re: ${ticket.subject}`,
                 bodyHtml: htmlFinal,
-                inReplyTo: data.messageId,   // 🔥 CLAVE
-                references: data.references || data.messageId
             });
 
             // ✅ Registrar mensaje interno
@@ -983,19 +1003,19 @@ class GraphReaderService {
 
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params: {
-        to: string | string[];  // 👈 acepta ambos
+        to: string | string[];
+        cc?: string[];
         subject: string;
         bodyHtml: string;
-        inReplyTo?: string;     // 🔥 nuevo
-        references?: string;
     }) {
         const client = await this.getClient();
 
-        // 🔥 SIEMPRE convertir a array y mapear correctamente
-        const recipients = (Array.isArray(params.to) ? params.to : [params.to])
-            .filter(Boolean); // eliminar vacíos
+        const toRecipients = (Array.isArray(params.to) ? params.to : [params.to])
+            .filter(Boolean);
 
-        console.log("📤 Enviando email vía Graph a:", recipients);
+        const ccRecipients = (params.cc ?? []).filter(Boolean);
+
+        console.log("📤 Enviando email vía Graph a:", toRecipients);
 
         await client
             .api(`/users/${this.supportEmail}/sendMail`)
@@ -1006,21 +1026,12 @@ class GraphReaderService {
                         contentType: "HTML",
                         content: params.bodyHtml,
                     },
-                    toRecipients: recipients.map(address => ({
+                    toRecipients: toRecipients.map(address => ({
                         emailAddress: { address },
                     })),
-
-                    // 🔥 CLAVE PARA THREADING
-                    internetMessageHeaders: [
-                        {
-                            name: "In-Reply-To",
-                            value: params.inReplyTo || ""
-                        },
-                        {
-                            name: "References",
-                            value: params.references || ""
-                        }
-                    ]
+                    ccRecipients: ccRecipients.map(address => ({
+                        emailAddress: { address },
+                    })),
                 },
                 saveToSentItems: true,
             });

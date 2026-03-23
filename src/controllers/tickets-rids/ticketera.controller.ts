@@ -294,27 +294,11 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 </body>
 </html>`;
 
-            const lastMessage = await prisma.ticketMessage.findFirst({
-                where: { ticketId },
-                orderBy: { createdAt: "desc" },
-                select: {
-                    sourceMessageId: true,
-                    sourceReferences: true
-                }
-            });
-
-            const inReplyTo = lastMessage?.sourceMessageId?.trim();
-            const references =
-                lastMessage?.sourceReferences?.trim() ||
-                lastMessage?.sourceMessageId?.trim();
-
             await graphReaderService.sendReplyEmail({
                 to: toEmails,
+                cc: ccEmails,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 bodyHtml,
-
-                ...(inReplyTo && { inReplyTo }),
-                ...(references && { references }),
             });
         }
         bus.emit("ticket.updated", {
