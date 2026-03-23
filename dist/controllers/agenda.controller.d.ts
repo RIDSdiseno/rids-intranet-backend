@@ -4,7 +4,6 @@ export declare function listarEmpresasAgenda(req: Request, res: Response): Promi
 export declare function getAgenda(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getAgendaDesdeOutlookController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function syncAgendaOutlook(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
-export declare function cleanupAgendaOutlook(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function updateVisita(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function eliminarVisita(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function eliminarMalla(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

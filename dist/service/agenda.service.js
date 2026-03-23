@@ -233,6 +233,22 @@ ${tecnicosHtml}
 </div>
     `.trim();
 }
+function buildAgendaOutlookAttendees(visita) {
+    const seen = new Set();
+    const attendees = [];
+    for (const { tecnico } of visita.tecnicos ?? []) {
+        const email = tecnico?.email?.trim().toLowerCase();
+        if (!email || seen.has(email))
+            continue;
+        seen.add(email);
+        const nombre = tecnico?.nombre?.trim();
+        attendees.push({
+            emailAddress: { address: email, ...(nombre ? { name: nombre } : {}) },
+            type: "required",
+        });
+    }
+    return attendees;
+}
 function buildAgendaOutlookCategory(visita) {
     const tecnicoNombre = visita.tecnicos?.[0]?.tecnico?.nombre?.trim().toLowerCase() || "";
     if (tecnicoNombre.includes("manuel ahumada"))
@@ -752,80 +768,149 @@ async function resolverTecnicoDesdeOutlook(params) {
     }
     return null;
 }
-async function sincronizarTecnicoAgendaOutlook(agendaId, tecnicoId) {
+async function resolverTecnicosDesdeOutlook(params) {
+    const supportEmail = process.env.EMAIL_USER?.trim().toLowerCase() || null;
+    const attendeeEmails = Array.from(new Set((params.attendees ?? [])
+        .map((attendee) => attendee?.emailAddress?.address?.trim().toLowerCase())
+        .filter((email) => Boolean(email) && email !== supportEmail)));
+    if (attendeeEmails.length > 0) {
+        const tecnicosPorEmail = await prisma.tecnico.findMany({
+            where: {
+                OR: attendeeEmails.map((email) => ({
+                    email: {
+                        equals: email,
+                        mode: "insensitive",
+                    },
+                })),
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+            },
+        });
+        const tecnicoPorEmail = new Map(tecnicosPorEmail
+            .filter((tecnico) => Boolean(tecnico.email?.trim()))
+            .map((tecnico) => [
+            tecnico.email.trim().toLowerCase(),
+            { id_tecnico: tecnico.id_tecnico, nombre: tecnico.nombre },
+        ]));
+        const tecnicos = [];
+        const seen = new Set();
+        for (const email of attendeeEmails) {
+            const tecnico = tecnicoPorEmail.get(email);
+            if (!tecnico || seen.has(tecnico.id_tecnico))
+                continue;
+            seen.add(tecnico.id_tecnico);
+            tecnicos.push(tecnico);
+        }
+        if (tecnicos.length > 0) {
+            return tecnicos;
+        }
+    }
+    const tecnicoFallback = await resolverTecnicoDesdeOutlook({
+        ...(params.subject !== undefined && { subject: params.subject }),
+        ...(params.categories !== undefined && { categories: params.categories }),
+    });
+    return tecnicoFallback ? [tecnicoFallback] : [];
+}
+async function sincronizarTecnicosAgendaOutlook(agendaId, tecnicoIds) {
     await prisma.agendaTecnico.deleteMany({
         where: { agendaId },
     });
-    await prisma.agendaTecnico.create({
-        data: {
-            agendaId,
-            tecnicoId,
-        },
+    await prisma.agendaTecnico.createMany({
+        data: tecnicoIds.map((tecnicoId) => ({ agendaId, tecnicoId })),
+        skipDuplicates: true,
     });
 }
-async function buscarAgendaManualCoincidenteDesdeOutlook(params) {
+async function buscarAgendaCoincidenteDesdeOutlook(params) {
+    const tecnicoIdsObjetivo = Array.from(new Set(params.tecnicoIds));
+    if (tecnicoIdsObjetivo.length === 0)
+        return null;
     const baseWhere = {
-        outlookEventId: null,
         fecha: params.fecha,
         horaInicio: params.horaInicio,
         horaFin: params.horaFin,
-        tecnicos: {
-            some: {
-                tecnicoId: params.tecnicoId,
-            },
-        },
+        tipo: params.tipo,
     };
-    if (params.empresaId !== null) {
-        return prisma.agendaVisita.findFirst({
-            where: {
-                ...baseWhere,
-                empresaId: params.empresaId,
-            },
-            select: { id: true },
-        });
-    }
     const empresaExternaNormalizada = normalizarNombreEmpresaOutlook(params.empresaExternaNombre);
-    if (!empresaExternaNormalizada || empresaExternaNormalizada.toLowerCase() === "oficina") {
-        return prisma.agendaVisita.findFirst({
-            where: {
-                ...baseWhere,
-                empresaId: null,
-                OR: [
-                    { empresaExternaNombre: null },
-                    {
-                        empresaExternaNombre: {
-                            equals: "OFICINA",
-                            mode: "insensitive",
-                        },
-                    },
-                ],
-            },
-            select: { id: true },
-        });
+    const esOficina = params.empresaId === null &&
+        (!empresaExternaNormalizada || empresaExternaNormalizada.toLowerCase() === "oficina");
+    let where;
+    if (params.empresaId !== null) {
+        where = {
+            ...baseWhere,
+            empresaId: params.empresaId,
+        };
     }
-    return prisma.agendaVisita.findFirst({
-        where: {
+    else if (esOficina) {
+        where = {
+            ...baseWhere,
+            empresaId: null,
+            OR: [
+                { empresaExternaNombre: null },
+                {
+                    empresaExternaNombre: {
+                        equals: "OFICINA",
+                        mode: "insensitive",
+                    },
+                },
+            ],
+        };
+    }
+    else {
+        where = {
             ...baseWhere,
             empresaId: null,
             empresaExternaNombre: {
                 equals: empresaExternaNormalizada,
                 mode: "insensitive",
             },
-        },
-        select: { id: true },
-    });
-}
-export async function limpiarAgendaSincronizadaOutlook(year, month) {
-    const { inicio, fin } = buildAgendaOutlookMonthRange(year, month);
-    const { count } = await prisma.agendaVisita.deleteMany({
-        where: {
-            fecha: {
-                gte: inicio,
-                lte: fin,
+        };
+    }
+    const candidatas = await prisma.agendaVisita.findMany({
+        where,
+        select: {
+            id: true,
+            outlookEventId: true,
+            tecnicos: {
+                select: {
+                    tecnicoId: true,
+                },
             },
         },
+        orderBy: {
+            id: "asc",
+        },
     });
-    return { eliminadas: count };
+    const tecnicoIdsObjetivoSet = new Set(tecnicoIdsObjetivo);
+    let mejorCoincidencia = null;
+    let mayorCantidadCoincidencias = 0;
+    for (const candidata of candidatas) {
+        const tecnicoIdsCandidata = Array.from(new Set(candidata.tecnicos.map((tecnico) => tecnico.tecnicoId)));
+        const cantidadCoincidencias = tecnicoIdsCandidata.filter((tecnicoId) => tecnicoIdsObjetivoSet.has(tecnicoId)).length;
+        if (cantidadCoincidencias === 0)
+            continue;
+        const esCoincidenciaExacta = cantidadCoincidencias === tecnicoIdsObjetivoSet.size &&
+            tecnicoIdsCandidata.length === tecnicoIdsObjetivoSet.size;
+        if (esCoincidenciaExacta) {
+            return {
+                id: candidata.id,
+                outlookEventId: candidata.outlookEventId,
+            };
+        }
+        if (cantidadCoincidencias > mayorCantidadCoincidencias) {
+            mayorCantidadCoincidencias = cantidadCoincidencias;
+            mejorCoincidencia = {
+                id: candidata.id,
+                outlookEventId: candidata.outlookEventId,
+            };
+        }
+    }
+    if (tecnicoIdsObjetivo.length >= 2 && mayorCantidadCoincidencias < 2) {
+        return null;
+    }
+    return mejorCoincidencia;
 }
 export async function sincronizarAgendaDesdeOutlook(year, month) {
     const { startDateTime, endDateTime } = buildAgendaOutlookMonthRange(year, month);
@@ -845,11 +930,13 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
             if (!fecha) {
                 throw new Error(`Evento ${event.id} sin fecha de inicio válida`);
             }
-            const tecnico = await resolverTecnicoDesdeOutlook({
+            const tecnicos = await resolverTecnicosDesdeOutlook({
                 subject: event.subject,
                 categories: event.categories,
+                attendees: event.attendees,
             });
-            if (!tecnico) {
+            const tecnicoIds = tecnicos.map((tecnico) => tecnico.id_tecnico);
+            if (tecnicoIds.length === 0) {
                 omitidas++;
                 continue;
             }
@@ -863,8 +950,20 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                 },
                 select: {
                     id: true,
+                    outlookEventId: true,
                 },
             });
+            if (!agendaObjetivo) {
+                agendaObjetivo = await buscarAgendaCoincidenteDesdeOutlook({
+                    fecha: fechaUTC,
+                    horaInicio,
+                    horaFin,
+                    tecnicoIds,
+                    empresaId,
+                    empresaExternaNombre,
+                    tipo,
+                });
+            }
             if (agendaObjetivo) {
                 await prisma.agendaVisita.update({
                     where: { id: agendaObjetivo.id },
@@ -879,7 +978,7 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                         outlookEventId: event.id,
                     },
                 });
-                await sincronizarTecnicoAgendaOutlook(agendaObjetivo.id, tecnico.id_tecnico);
+                await sincronizarTecnicosAgendaOutlook(agendaObjetivo.id, tecnicoIds);
                 actualizadas++;
                 continue;
             }
@@ -898,11 +997,9 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                     id: true,
                 },
             });
-            await prisma.agendaTecnico.create({
-                data: {
-                    agendaId: agendaCreada.id,
-                    tecnicoId: tecnico.id_tecnico,
-                },
+            await prisma.agendaTecnico.createMany({
+                data: tecnicoIds.map((tecnicoId) => ({ agendaId: agendaCreada.id, tecnicoId })),
+                skipDuplicates: true,
             });
             creadas++;
         }
@@ -1044,6 +1141,7 @@ export async function actualizarAgendaVisita(id, datos) {
                     startDateTime,
                     endDateTime,
                     categories: [categoriaOutlook],
+                    attendees: buildAgendaOutlookAttendees(visita),
                 };
                 await graphReaderService.updateCalendarEvent(actual.outlookEventId, eventData);
                 visita.outlookEventId = actual.outlookEventId;
@@ -1055,6 +1153,7 @@ export async function actualizarAgendaVisita(id, datos) {
                     startDateTime,
                     endDateTime,
                     categories: [categoriaOutlook],
+                    attendees: buildAgendaOutlookAttendees(visita),
                 };
                 const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
                 if (outlookEvent?.id) {
@@ -1143,13 +1242,15 @@ export async function reasignarTecnicos(agendaId, nuevosTecnicoIds) {
         const endDateTime = buildAgendaDateTime(visitaActualizada.fecha, visitaActualizada.horaFin);
         if (startDateTime && endDateTime) {
             try {
-                await graphReaderService.updateCalendarEvent(visitaActualizada.outlookEventId, {
+                const eventData = {
                     subject: buildAgendaOutlookSubject(visitaActualizada),
                     bodyHtml: buildAgendaOutlookBody(visitaActualizada),
                     startDateTime,
                     endDateTime,
                     categories: [buildAgendaOutlookCategory(visitaActualizada)],
-                });
+                    attendees: buildAgendaOutlookAttendees(visitaActualizada),
+                };
+                await graphReaderService.updateCalendarEvent(visitaActualizada.outlookEventId, eventData);
             }
             catch (error) {
                 console.error(`[AGENDA OUTLOOK] Error sincronizando reasignación agenda #${agendaId}:`, error);
@@ -1171,7 +1272,26 @@ export async function eliminarAgendaVisita(id) {
             await graphReaderService.deleteCalendarEvent(visita.outlookEventId);
         }
         catch (error) {
-            console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${id}:`, error);
+            const errorCode = typeof error === "object" && error !== null
+                ? (("code" in error && typeof error.code === "string" && error.code) ||
+                    ("body" in error &&
+                        typeof error.body === "object" &&
+                        error.body !== null &&
+                        "error" in error.body &&
+                        typeof error.body.error === "object" &&
+                        error.body.error !== null &&
+                        "code" in error.body.error &&
+                        typeof error.body.error.code === "string" &&
+                        error.body.error.code) ||
+                    null)
+                : null;
+            if (errorCode === "ErrorItemNotFound") {
+                console.warn(`[AGENDA OUTLOOK] Evento no encontrado en Outlook para agenda #${id} (${visita.outlookEventId}). Se elimina solo en BD.`);
+            }
+            else {
+                console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${id}:`, error);
+                throw error;
+            }
         }
     }
     return prisma.agendaVisita.delete({ where: { id } });
@@ -1245,6 +1365,7 @@ export async function crearAgendaVisitaManual(data) {
                 startDateTime,
                 endDateTime,
                 categories: [categoriaOutlook],
+                attendees: buildAgendaOutlookAttendees(visita),
             };
             const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
             if (outlookEvent?.id) {

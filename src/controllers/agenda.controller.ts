@@ -6,7 +6,6 @@ import {
   getAgendaMensual,
   getAgendaDesdeOutlook,
   sincronizarAgendaDesdeOutlook,
-  limpiarAgendaSincronizadaOutlook,
   getEmpresasAgenda,
   actualizarAgendaVisita,
   eliminarAgendaVisita,
@@ -173,27 +172,6 @@ export async function syncAgendaOutlook(req: Request, res: Response) {
     return res.status(500).json({
       error: "Error al sincronizar agenda con Outlook"
     });
-  }
-}
-
-export async function cleanupAgendaOutlook(req: Request, res: Response) {
-  try {
-    const parsed = eliminarMallaSchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
-    }
-
-    const { year, month } = parsed.data;
-    const resultado = await limpiarAgendaSincronizadaOutlook(year, month);
-
-    return res.json({
-      message: "Limpieza completada",
-      ...resultado,
-    });
-  } catch (error) {
-    console.error("[AGENDA CLEANUP CONTROLLER ERROR]", error);
-    return res.status(500).json({ error: "Error al limpiar agenda sincronizada de Outlook" });
   }
 }
 

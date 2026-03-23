@@ -1,6 +1,6 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
-import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, cleanupAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
+import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
 const TECNICOS_AGENDA_ADMIN = [5, 6, 27];
 function requireAgendaAdmin(req, res, next) {
     const user = req.user;
@@ -17,9 +17,6 @@ agendaRouter.post("/generar", requireAgendaAdmin, (req, res, next) => {
 });
 agendaRouter.post("/outlook/sync", (req, res, next) => {
     Promise.resolve(syncAgendaOutlook(req, res)).catch(next);
-});
-agendaRouter.post("/outlook/cleanup", (req, res, next) => {
-    Promise.resolve(cleanupAgendaOutlook(req, res)).catch(next);
 });
 // --- Listado ---
 agendaRouter.get("/", (req, res, next) => {

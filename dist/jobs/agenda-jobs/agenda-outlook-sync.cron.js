@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { sincronizarAgendaAutomaticaOutlook } from "../../service/agenda.service.js";
 export function startAgendaOutlookSyncCron() {
-    const EXPRESION_CRON = "*/40 * * * *";
+    const EXPRESION_CRON = "*/10 * * * *";
     let isRunning = false;
     console.log("[AGENDA OUTLOOK AUTO CRON] Ejecutando sync inicial...");
     sincronizarAgendaAutomaticaOutlook()
