@@ -82,9 +82,6 @@ export declare function getAgendaDesdeOutlook(year: number, month: number): Prom
     empresa: string | null;
     categories: string[];
 }>>;
-export declare function limpiarAgendaSincronizadaOutlook(year: number, month: number): Promise<{
-    eliminadas: number;
-}>;
 export declare function sincronizarAgendaDesdeOutlook(year: number, month: number): Promise<{
     creadas: number;
     actualizadas: number;

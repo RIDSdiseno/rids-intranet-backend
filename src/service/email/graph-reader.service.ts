@@ -1142,6 +1142,10 @@ class GraphReaderService {
         end: string;
         categories: string[];
         body: string;
+        attendees: Array<{
+            emailAddress: { address?: string; name?: string };
+            type?: string;
+        }>;
     }>> {
         try {
             const client = await this.getClient();
@@ -1152,7 +1156,7 @@ class GraphReaderService {
                 .api(`/users/${this.supportEmail}/calendarView`)
                 .query({ startDateTime, endDateTime })
                 .orderby("start/dateTime asc")
-                .select("id,subject,start,end,categories,body")
+                .select("id,subject,start,end,categories,body,attendees")
                 .header("Prefer", 'outlook.timezone="America/Santiago"')
                 .get();
 
@@ -1172,6 +1176,7 @@ class GraphReaderService {
                 end: this.toSantiagoDateTime(event.end?.dateTime || "", event.end?.timeZone || "UTC"),
                 categories: event.categories || [],
                 body: event.body?.content || "",
+                attendees: event.attendees || [],
             }));
         } catch (err) {
             console.error("[GRAPH CALENDAR READ] Error leyendo eventos:", err);
@@ -1186,6 +1191,13 @@ class GraphReaderService {
         endDateTime: string;
         location?: string;
         categories?: string[];
+        attendees?: Array<{
+            emailAddress: {
+                address: string;
+                name?: string;
+            };
+            type?: "required" | "optional";
+        }>;
     }): Promise<any> {
         const client = await this.getClient();
         const timeZone = "America/Santiago";
@@ -1214,6 +1226,9 @@ class GraphReaderService {
             ...(params.categories?.length
                 ? { categories: params.categories }
                 : {}),
+            ...(params.attendees?.length
+                ? { attendees: params.attendees }
+                : {}),
         };
 
         return client
@@ -1231,6 +1246,13 @@ class GraphReaderService {
             endDateTime?: string;
             location?: string;
             categories?: string[];
+            attendees?: Array<{
+                emailAddress: {
+                    address: string;
+                    name?: string;
+                };
+                type?: "required" | "optional";
+            }>;
         }
     ): Promise<any> {
         const client = await this.getClient();
@@ -1271,6 +1293,10 @@ class GraphReaderService {
 
         if (params.categories !== undefined) {
             payload.categories = params.categories;
+        }
+
+        if (params.attendees !== undefined) {
+            payload.attendees = params.attendees;
         }
 
         return client

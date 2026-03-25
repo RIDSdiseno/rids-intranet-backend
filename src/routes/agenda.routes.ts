@@ -5,7 +5,6 @@ import {
   getAgenda,
   getAgendaDesdeOutlookController,
   syncAgendaOutlook,
-  cleanupAgendaOutlook,
   listarEmpresasAgenda,
   updateVisita,
   eliminarVisita,
@@ -37,10 +36,6 @@ agendaRouter.post("/generar", requireAgendaAdmin, (req, res, next) => {
 agendaRouter.post("/outlook/sync", (req, res, next) => {
   Promise.resolve(syncAgendaOutlook(req, res)).catch(next);
 });
-agendaRouter.post("/outlook/cleanup", (req, res, next) => {
-  Promise.resolve(cleanupAgendaOutlook(req, res)).catch(next);
-});
-
 // --- Listado ---
 agendaRouter.get("/", (req, res, next) => {
   Promise.resolve(getAgenda(req, res)).catch(next);

@@ -32,6 +32,13 @@ declare class GraphReaderService {
         end: string;
         categories: string[];
         body: string;
+        attendees: Array<{
+            emailAddress: {
+                address?: string;
+                name?: string;
+            };
+            type?: string;
+        }>;
     }>>;
     createCalendarEvent(params: {
         subject: string;
@@ -40,6 +47,13 @@ declare class GraphReaderService {
         endDateTime: string;
         location?: string;
         categories?: string[];
+        attendees?: Array<{
+            emailAddress: {
+                address: string;
+                name?: string;
+            };
+            type?: "required" | "optional";
+        }>;
     }): Promise<any>;
     updateCalendarEvent(eventId: string, params: {
         subject?: string;
@@ -48,6 +62,13 @@ declare class GraphReaderService {
         endDateTime?: string;
         location?: string;
         categories?: string[];
+        attendees?: Array<{
+            emailAddress: {
+                address: string;
+                name?: string;
+            };
+            type?: "required" | "optional";
+        }>;
     }): Promise<any>;
     deleteCalendarEvent(eventId: string): Promise<void>;
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EstadoAgenda } from "@prisma/client";
-import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, limpiarAgendaSincronizadaOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, } from "../service/agenda.service.js";
+import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, } from "../service/agenda.service.js";
 /* ================== Schemas ================== */
 const generarMallaSchema = z.object({
     year: z.number().int().min(2020).max(2100),
@@ -135,24 +135,6 @@ export async function syncAgendaOutlook(req, res) {
         return res.status(500).json({
             error: "Error al sincronizar agenda con Outlook"
         });
-    }
-}
-export async function cleanupAgendaOutlook(req, res) {
-    try {
-        const parsed = eliminarMallaSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
-        }
-        const { year, month } = parsed.data;
-        const resultado = await limpiarAgendaSincronizadaOutlook(year, month);
-        return res.json({
-            message: "Limpieza completada",
-            ...resultado,
-        });
-    }
-    catch (error) {
-        console.error("[AGENDA CLEANUP CONTROLLER ERROR]", error);
-        return res.status(500).json({ error: "Error al limpiar agenda sincronizada de Outlook" });
     }
 }
 // PATCH /agenda/:id

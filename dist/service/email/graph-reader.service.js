@@ -899,7 +899,7 @@ class GraphReaderService {
                 .api(`/users/${this.supportEmail}/calendarView`)
                 .query({ startDateTime, endDateTime })
                 .orderby("start/dateTime asc")
-                .select("id,subject,start,end,categories,body")
+                .select("id,subject,start,end,categories,body,attendees")
                 .header("Prefer", 'outlook.timezone="America/Santiago"')
                 .get();
             allEvents.push(...(response.value ?? []));
@@ -916,6 +916,7 @@ class GraphReaderService {
                 end: this.toSantiagoDateTime(event.end?.dateTime || "", event.end?.timeZone || "UTC"),
                 categories: event.categories || [],
                 body: event.body?.content || "",
+                attendees: event.attendees || [],
             }));
         }
         catch (err) {
@@ -949,6 +950,9 @@ class GraphReaderService {
                 : {}),
             ...(params.categories?.length
                 ? { categories: params.categories }
+                : {}),
+            ...(params.attendees?.length
+                ? { attendees: params.attendees }
                 : {}),
         };
         return client
@@ -988,6 +992,9 @@ class GraphReaderService {
         }
         if (params.categories !== undefined) {
             payload.categories = params.categories;
+        }
+        if (params.attendees !== undefined) {
+            payload.attendees = params.attendees;
         }
         return client
             .api(`/users/${this.supportEmail}/events/${encodeURIComponent(eventId)}`)
