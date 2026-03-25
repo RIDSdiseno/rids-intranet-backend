@@ -136,7 +136,7 @@ async function handleTicketCreation(args: any, context: any): Promise<string> {
   const subject     = `[WhatsApp] ${company} - ${description.slice(0, 60)}`;
 
   // Validaciones
-  const missing = [];
+  const missing: string[] = [];
   if (!name)        missing.push("nombre");
   if (!email)       missing.push("correo electrónico");
   if (!phone)       missing.push("teléfono");
