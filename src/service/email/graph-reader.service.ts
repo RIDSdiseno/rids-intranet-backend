@@ -51,6 +51,8 @@ type GraphHeader = {
     value: string;
 };
 
+
+
 function buildAutoReplyTemplate(params: {
     nombre: string;
     ticketId: number;
@@ -114,6 +116,14 @@ class GraphReaderService {
     private client: Client | null = null;
     private supportEmail: string;
 
+    private normalizeSubject(subject: string): string {
+        return (subject || "")
+            .replace(/^\s*((re|fw|fwd)\s*:\s*)+/i, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
     constructor() {
         this.supportEmail = (process.env.EMAIL_USER || '').toLowerCase();
 
@@ -161,13 +171,12 @@ class GraphReaderService {
 
             const client = await this.getClient();
 
-            const now = new Date();
             const minutes = 10;
             const since = new Date(Date.now() - minutes * 60 * 1000);
 
             const response = await client
-                .api(`/users/${this.supportEmail}/messages`)
-                .filter(`receivedDateTime ge ${since.toISOString()}`)
+                .api(`/users/${this.supportEmail}/mailFolders/inbox/messages`)
+                .filter(`receivedDateTime ge ${since.toISOString()} and isRead eq false`)
                 .select(
                     'id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId,hasAttachments,internetMessageHeaders'
                 )
@@ -182,12 +191,23 @@ class GraphReaderService {
                 return;
             }
 
+            const seen = new Set<string>();
+            const uniqueMessages = messages.filter((msg: any) => {
+                const id = msg.internetMessageId;
+                if (!id) {
+                    console.warn(`⚠️ Mensaje sin internetMessageId ignorado: ${msg.id}`);
+                    return false; // ← ignorar en lugar de dejar pasar
+                }
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
+
             console.log(`📧 Encontrados ${messages.length} emails recientes`);
 
-            for (const message of messages) {
+            for (const message of uniqueMessages) {
                 try {
                     await this.processMessage(message);
-
                 } catch (err) {
                     console.error('❌ Error procesando mensaje:', err);
                 }
@@ -286,6 +306,11 @@ class GraphReaderService {
         }
 
         const fromEmail = fromEmailRaw.toLowerCase();
+
+        if (fromEmail === this.supportEmail) {
+            console.log(`⏭️ Ignorado: mensaje enviado por soporte (${fromEmail})`);
+            return;
+        }
 
         const fromName =
             message.from?.emailAddress?.name ||
@@ -423,11 +448,21 @@ class GraphReaderService {
         }
 
         /* =============================
-           1️⃣1️⃣ PROCESAR
-        ============================= */
+   1️⃣1️⃣ PROCESAR
+============================= */
         console.log(`📨 Procesando: ${fromEmail} - ${subject}`);
 
         await this.createOrUpdateTicket(emailData, existingTicket);
+
+        // 🔥 Marcar como leído para evitar reprocesamiento
+        try {
+            const client = await this.getClient();
+            await client
+                .api(`/users/${this.supportEmail}/messages/${graphMessageId}`)
+                .patch({ isRead: true });
+        } catch (err) {
+            console.warn("⚠️ No se pudo marcar email como leído:", err);
+        }
     }
 
     /* ======================================================
@@ -750,6 +785,10 @@ class GraphReaderService {
                 to: data.fromEmail,
                 subject: `Re: ${ticket.subject}`,
                 bodyHtml: htmlFinal,
+                inReplyTo: data.messageId,           // 🆕 el messageId del email original
+                references: data.references
+                    ? `${data.references} ${data.messageId}`
+                    : data.messageId,                  // 🆕
             });
 
             // ✅ Registrar mensaje interno
@@ -758,10 +797,12 @@ class GraphReaderService {
                     ticketId: ticket.id,
                     direction: MessageDirection.OUTBOUND,
                     bodyText: 'Correo automático de confirmación enviado',
-                    bodyHtml: htmlFinal, // 🔥 AQUÍ ESTÁ LA FIRMA
-                    isInternal: false,   // 🔥 IMPORTANTE (si no, no aparece como email)
+                    bodyHtml: htmlFinal,
+                    isInternal: false,
                     fromEmail: this.supportEmail,
                     toEmail: data.fromEmail,
+                    sourceMessageId: `<auto-reply-${ticket.id}-${Date.now()}@rids.cl>`, // 🆕
+                    sourceInReplyTo: data.messageId,                                     // 🆕
                 },
             });
 
@@ -779,7 +820,6 @@ class GraphReaderService {
        Buscar ticket existente
     ====================================================== */
     private async findExistingTicket(data: ParsedEmail): Promise<any> {
-
         /* =============================
            1️⃣ POR HEADERS (REAL THREADING)
         ============================= */
@@ -795,8 +835,11 @@ class GraphReaderService {
             const refs = data.references.split(" ");
 
             for (const ref of refs) {
+                const cleanRef = ref.trim();
+                if (!cleanRef) continue;
+
                 orConditions.push({
-                    sourceMessageId: ref.trim()
+                    sourceMessageId: cleanRef
                 });
             }
         }
@@ -804,43 +847,27 @@ class GraphReaderService {
         if (orConditions.length > 0) {
             const ticket = await prisma.ticket.findFirst({
                 where: {
+                    status: { not: TicketStatus.CLOSED },
                     messages: {
                         some: {
                             OR: orConditions
                         }
                     },
-                }
+                },
+                orderBy: { lastActivityAt: "desc" }
             });
 
             if (ticket) return ticket;
         }
 
         /* =============================
-           2️⃣ FALLBACK POR MESSAGE ID
-        ============================= */
-        if (data.messageId) {
-            const ticket = await prisma.ticket.findFirst({
-                where: {
-                    messages: {
-                        some: {
-                            sourceMessageId: data.messageId
-                        }
-                    },
-                }
-            });
-
-            if (ticket) return ticket;
-        }
-
-        /* =============================
-           3️⃣ FALLBACK POR SUBJECT (#ID)
+           2️⃣ FALLBACK POR SUBJECT (#ID)
         ============================= */
         const match = data.subject.match(/Ticket\s+#(\d+)/i);
 
         if (match?.[1]) {
             const ticketId = Number(match[1]);
 
-            // 🔥 VALIDACIÓN CRÍTICA
             if (
                 !Number.isInteger(ticketId) ||
                 ticketId <= 0 ||
@@ -850,11 +877,39 @@ class GraphReaderService {
                 return null;
             }
 
-            return prisma.ticket.findFirst({
+            const ticket = await prisma.ticket.findFirst({
                 where: {
                     id: ticketId,
+                    status: { not: TicketStatus.CLOSED },
                 }
             });
+
+            if (ticket) return ticket;
+        }
+
+        /* =============================
+           3️⃣ FALLBACK POR REMITENTE + SUBJECT NORMALIZADO
+        ============================= */
+        const normalizedSubject = this.normalizeSubject(data.subject);
+
+        const recentTickets = await prisma.ticket.findMany({
+            where: {
+                fromEmail: data.fromEmail,
+                status: { not: TicketStatus.CLOSED },
+                createdAt: {
+                    gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+                },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+        });
+
+        for (const ticket of recentTickets) {
+            const normalizedTicketSubject = this.normalizeSubject(ticket.subject);
+
+            if (normalizedTicketSubject === normalizedSubject) {
+                return ticket;
+            }
         }
 
         return null;
@@ -1007,11 +1062,25 @@ class GraphReaderService {
         cc?: string[];
         subject: string;
         bodyHtml: string;
+        inReplyTo?: string;   // 🆕
+        references?: string;
     }) {
         const client = await this.getClient();
 
         const toRecipients = (Array.isArray(params.to) ? params.to : [params.to])
             .filter(Boolean);
+
+        const internetMessageHeaders: { name: string; value: string }[] = [];
+
+        if (params.inReplyTo) {
+            internetMessageHeaders.push({ name: "In-Reply-To", value: params.inReplyTo });
+            internetMessageHeaders.push({
+                name: "References",
+                value: params.references
+                    ? `${params.references} ${params.inReplyTo}`
+                    : params.inReplyTo,
+            });
+        }
 
         const ccRecipients = (params.cc ?? []).filter(Boolean);
 
@@ -1026,12 +1095,8 @@ class GraphReaderService {
                         contentType: "HTML",
                         content: params.bodyHtml,
                     },
-                    toRecipients: toRecipients.map(address => ({
-                        emailAddress: { address },
-                    })),
-                    ccRecipients: ccRecipients.map(address => ({
-                        emailAddress: { address },
-                    })),
+                    toRecipients: toRecipients.map(address => ({ emailAddress: { address } })),
+                    ccRecipients: ccRecipients.map(address => ({ emailAddress: { address } })),
                 },
                 saveToSentItems: true,
             });

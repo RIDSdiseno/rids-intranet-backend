@@ -3,6 +3,7 @@ import 'isomorphic-fetch';
 declare class GraphReaderService {
     private client;
     private supportEmail;
+    private normalizeSubject;
     constructor();
     getClient(): Promise<Client>;
     readUnreadEmails(): Promise<void>;
@@ -20,6 +21,8 @@ declare class GraphReaderService {
         cc?: string[];
         subject: string;
         bodyHtml: string;
+        inReplyTo?: string;
+        references?: string;
     }): Promise<void>;
     private toSantiagoDateTime;
     readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{
