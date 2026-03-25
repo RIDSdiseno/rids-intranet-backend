@@ -1,7 +1,7 @@
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4-turbo";
 const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE ?? 0.2);
-const PA_TICKET_URL = process.env.PA_TICKET_URL || "";
+const POWER_AUTOMATE_URL = process.env.POWER_AUTOMATE_URL || "";
 // --- 2. Herramientas para Freshdesk ---
 const tools = [
     {
@@ -84,9 +84,9 @@ async function handleFreshdeskFlow(args, context) {
     return "Se ha generado tu ticket, gracias por contactarte con RIDSI.";
 }
 async function sendTicketToPowerAutomate(payload) {
-    if (!PA_TICKET_URL)
+    if (!POWER_AUTOMATE_URL)
         return;
-    await fetch(PA_TICKET_URL, {
+    await fetch(POWER_AUTOMATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

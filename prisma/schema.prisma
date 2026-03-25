@@ -828,8 +828,6 @@ model Ticket {
   publicId        String          @unique
   aiSummary       String?
   rolAsignado     String?
-  area            String?
-  TicketArea      String?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -923,7 +921,6 @@ model AreaConfig {
   mensajeBase String
   firmaArea   String?
   updatedAt   DateTime @updatedAt
-  
 
   @@map("area_configs")
 }
@@ -957,19 +954,21 @@ model AgendaTecnico {
 }
 
 model AgendaVisita {
-  id                  Int          @id @default(autoincrement())
-  fecha               DateTime     @db.Date
-  empresaId           Int?
-  tipo                TipoAgenda   @default(SEMANA)
-  estado              EstadoAgenda @default(PROGRAMADA)
-  notificacionEnviada Boolean      @default(false)
-  notas               String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime
-  horaFin             String?
-  horaInicio          String?
-  mensaje             String?
-  recordatorioEnviado Boolean      @default(false)
+  id                   Int          @id @default(autoincrement())
+  fecha                DateTime     @db.Date
+  empresaId            Int?
+  tipo                 TipoAgenda   @default(SEMANA)
+  estado               EstadoAgenda @default(PROGRAMADA)
+  notificacionEnviada  Boolean      @default(false)
+  notas                String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime
+  horaFin              String?
+  horaInicio           String?
+  mensaje              String?
+  recordatorioEnviado  Boolean?
+  outlook_event_id     String?
+  empresaExternaNombre String?
 
   @@index([empresaId])
   @@index([estado])
@@ -988,6 +987,18 @@ model ReporteIA {
   @@unique([empresaId, periodo])
 }
 
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  tecnicoId Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([tecnicoId])
+  @@index([token])
+}
+
 enum EstadoDTE {
   EMITIDO
   RECIBIDO
@@ -996,6 +1007,7 @@ enum EstadoDTE {
   OBSERVADO
   ANULADO
 }
+
 enum AuditAction {
   CREATE
   UPDATE
