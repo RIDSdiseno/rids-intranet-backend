@@ -3,9 +3,7 @@ export declare const prisma: import("@prisma/client/runtime/library").DynamicCli
     model: {};
     query: {};
     client: {};
-}, {}>, import("@prisma/client").Prisma.TypeMapCb<{
-    log: ("query" | "warn" | "error")[];
-}>, {
+}, {}>, import("@prisma/client").Prisma.TypeMapCb<import("@prisma/client").Prisma.PrismaClientOptions>, {
     result: {};
     model: {};
     query: {};

@@ -64,7 +64,7 @@ export async function createProducto(req, res) {
     try {
         const { nombre, descripcion, precio, // puede venir viejo (costo)
         precioCosto, // nuevo campo recomendado
-        categoria, stock, porcGanancia, imagen, serie, } = req.body;
+        categoria, stock, porcGanancia, imagen, serie, conIVA, } = req.body;
         if (!nombre?.trim()) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
@@ -77,7 +77,11 @@ export async function createProducto(req, res) {
         const porcNumero = porcGanancia !== undefined && porcGanancia !== null
             ? Number(porcGanancia)
             : null;
-        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
+        const aplicaIVA = conIVA === true || conIVA === "true";
+        const costoBase = costoReal !== null
+            ? (aplicaIVA ? costoReal / 1.19 : costoReal)
+            : null;
+        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
         // 1️⃣ Crear producto
         const nuevo = await prisma.productoGestioo.create({
             data: {
@@ -166,7 +170,7 @@ export async function updateProducto(req, res) {
         }
         const { nombre, descripcion, precio, // puede venir como antes
         precioCosto, // nuevo campo desde front
-        categoria, stock, serie, porcGanancia, imagen, publicId, } = req.body;
+        categoria, stock, serie, porcGanancia, imagen, publicId, conIVA, } = req.body;
         if (!nombre?.trim()) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
@@ -179,7 +183,9 @@ export async function updateProducto(req, res) {
         const porcNumero = porcGanancia !== undefined && porcGanancia !== null
             ? Number(porcGanancia)
             : existe.porcGanancia;
-        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
+        const aplicaIVA = conIVA === true || conIVA === "true";
+        const costoBase = aplicaIVA ? costoReal / 1.19 : costoReal;
+        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
         const data = {
             nombre: nombre.trim(),
             descripcion: descripcion?.trim() || null,

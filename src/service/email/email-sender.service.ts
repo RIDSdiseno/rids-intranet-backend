@@ -40,7 +40,8 @@ class EmailSenderService {
             status: string;
         },
         message: string,
-        toEmail: string,
+        to: string[],
+        cc: string[],
         files?: Express.Multer.File[]
     ): Promise<void> {
         try {
@@ -53,7 +54,8 @@ class EmailSenderService {
 
             await this.transporter.sendMail({
                 from: `"Soporte RIDS" <${process.env.SMTP_USER}>`,
-                to: toEmail,
+                to: to.join(","),
+                cc: cc?.length ? cc.join(",") : undefined,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 html: this.buildReplyTemplate(ticket, message),
                 attachments, // 👈 AQUÍ SE AGREGAN
@@ -63,7 +65,7 @@ class EmailSenderService {
                 },
             });
 
-            console.log(`✅ Email enviado a ${toEmail} (Ticket #${ticket.id})`);
+            console.log(`✅ Email enviado a ${to.join(",")} (Ticket #${ticket.id})`);
 
         } catch (error) {
             console.error('❌ Error enviando email:', error);
@@ -90,31 +92,53 @@ class EmailSenderService {
         ticket: { id: number; status: string },
         message: string
     ): string {
+        const formattedMessage = this.escapeHtml(message).replace(/\n/g, "<br>");
+
         return `
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="white-space: pre-wrap;">
-                    ${this.escapeHtml(message)}
-                </div>
+    <!DOCTYPE html>
+    <html>
+    <body style="margin:0; padding:0; background:#f5f5f5; font-family: Arial, sans-serif;">
+        
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; padding:20px 0;">
+            <tr>
+                <td align="center">
+                    
+                    <table width="600" cellpadding="20" cellspacing="0" style="background:#ffffff;">
+                        
+                        <!-- HEADER -->
+                        <tr>
+                            <td style="border-bottom:1px solid #ddd;">
+                                <strong style="color:#0ea5e9;">Soporte RIDS</strong>
+                            </td>
+                        </tr>
 
-                <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+                        <!-- BODY -->
+                        <tr>
+                            <td style="font-size:14px; color:#333; line-height:1.6;">
+                                ${formattedMessage}
+                            </td>
+                        </tr>
 
-                <div style="color: #666; font-size: 12px;">
-                    <p>
-                        <strong>Ticket #${ticket.id}</strong> |
-                        Estado: ${this.translateStatus(ticket.status)}
-                    </p>
-                    <p>Para responder, simplemente responde a este email.</p>
-                    <p style="color: #999;">
-                        Este mensaje fue enviado por el sistema de tickets RIDS.
-                    </p>
-                </div>
-            </div>
-        </body>
-        </html>
-        `;
+                        <!-- FOOTER -->
+                        <tr>
+                            <td style="border-top:1px solid #ddd; font-size:12px; color:#666;">
+                                <p>
+                                    <strong>Ticket #${ticket.id}</strong><br/>
+                                    Estado: ${this.translateStatus(ticket.status)}
+                                </p>
+                                <p>Para responder, simplemente responde a este correo.</p>
+                            </td>
+                        </tr>
+
+                    </table>
+
+                </td>
+            </tr>
+        </table>
+
+    </body>
+    </html>
+    `;
     }
 
     private escapeHtml(text: string): string {
@@ -132,7 +156,6 @@ class EmailSenderService {
             NEW: 'Nuevo',
             OPEN: 'Abierto',
             PENDING: 'Pendiente',
-            RESOLVED: 'Resuelto',
             CLOSED: 'Cerrado',
         };
 

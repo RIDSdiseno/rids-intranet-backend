@@ -4,10 +4,10 @@ import { getCurrentUserId } from "../lib/request-context.js";
 
 type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 const prismaBase = new PrismaClient({
-  log:
-    process.env.NODE_ENV === "development"
-      ? ["query", "error", "warn"]
-      : ["error"],
+  //log:
+    //process.env.NODE_ENV === "development"
+    //  ? ["query", "error", "warn"]
+    //  : ["error"],
 });
 
 /* =========================

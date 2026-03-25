@@ -82,6 +82,7 @@ export async function createProducto(req: Request, res: Response) {
             porcGanancia,
             imagen,
             serie,
+            conIVA,
         } = req.body;
 
         if (!nombre?.trim()) {
@@ -100,8 +101,14 @@ export async function createProducto(req: Request, res: Response) {
             porcGanancia !== undefined && porcGanancia !== null
                 ? Number(porcGanancia)
                 : null;
+        const aplicaIVA = conIVA === true || conIVA === "true";
 
-        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
+        const costoBase =
+            costoReal !== null
+            ? (aplicaIVA ? costoReal / 1.19 : costoReal)
+            : null
+
+        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
 
         // 1️⃣ Crear producto
         const nuevo = await prisma.productoGestioo.create({
@@ -210,6 +217,7 @@ export async function updateProducto(req: Request, res: Response) {
             porcGanancia,
             imagen,
             publicId,
+            conIVA, 
         } = req.body;
 
         if (!nombre?.trim()) {
@@ -228,8 +236,11 @@ export async function updateProducto(req: Request, res: Response) {
             porcGanancia !== undefined && porcGanancia !== null
                 ? Number(porcGanancia)
                 : existe.porcGanancia;
+        
+        const aplicaIVA = conIVA === true || conIVA === "true";
+        const  costoBase = aplicaIVA ? costoReal / 1.19 : costoReal;
 
-        const precioTotal = calcularPrecioTotal(costoReal, porcNumero);
+        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
 
         const data = {
             nombre: nombre.trim(),

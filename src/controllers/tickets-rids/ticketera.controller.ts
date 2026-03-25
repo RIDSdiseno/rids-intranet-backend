@@ -3,10 +3,10 @@ import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
-import { runAI } from "../../utils/ai.js";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { emailSenderService } from '../../service/email/email-sender.service.js';
+import { graphReaderService } from '../../service/email/graph-reader.service.js';
 
 import crypto from "crypto";
 
@@ -25,7 +25,7 @@ declare global {
 // Crear ticket
 export async function createTicket(req: Request, res: Response) {
     try {
-        const { empresaId, requesterId, subject, message, priority, assigneeId } = req.body;
+        const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail } = req.body;
 
         if (!empresaId || !subject) {
             return res.status(400).json({
@@ -96,6 +96,34 @@ export async function createTicket(req: Request, res: Response) {
             channel: ticket.channel,
         });
 
+        // 🆕 Auto-reply si el ticket tiene email de origen
+        const fromEmail =
+            bodyFromEmail ||           // 1️⃣ email ingresado manualmente por el agente
+            ticket.fromEmail ||        // 2️⃣ email de origen si vino de email entrante
+            (requesterId
+                ? (await prisma.solicitante.findUnique({
+                    where: { id_solicitante: requesterId },
+                    select: { email: true },
+                }))?.email
+                : null);               // 3️⃣ email del solicitante registrado
+
+        if (fromEmail && fromEmail !== process.env.EMAIL_USER) {
+            try {
+
+                await graphReaderService.sendReplyEmail({
+                    to: fromEmail, // ✅ FIX
+                    subject: `Re: ${ticket.subject}`, // más limpio
+                    bodyHtml: `
+                <p>Hemos recibido tu solicitud.</p>
+                <p><strong>Ticket #${ticket.id}</strong></p>
+                <p>Te responderemos a la brevedad.</p>
+            `,
+                });
+            } catch (err) {
+                console.error("⚠️ Error enviando auto-reply:", err);
+            }
+        }
+
         return res.status(201).json({
             ok: true,
             ticketId: ticket.id,
@@ -109,12 +137,13 @@ export async function createTicket(req: Request, res: Response) {
     }
 }
 
-
 // Responder ticket como agente
 export async function replyTicketAsAgent(req: Request, res: Response) {
     try {
         const ticketId = Number(req.params.id);
         const { message } = req.body;
+        const to = JSON.parse(req.body.to || "[]");
+        const cc = JSON.parse(req.body.cc || "[]");
         const isInternal = req.body.isInternal === "true";
 
         const agentId = req.user?.id;
@@ -131,7 +160,12 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
             include: {
-                requester: true, // 🆕 Incluir requester para email
+                requester: true,
+                assignee: {
+                    include: {
+                        firma: true
+                    }
+                }
             },
         });
 
@@ -139,10 +173,11 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
 
-        const toEmail =
-            ticket.requester?.email ||
-            ticket.fromEmail ||
-            null;
+        const toEmails = to.length
+            ? to
+            : [ticket.requester?.email || ticket.fromEmail].filter(Boolean);
+
+        const ccEmails = cc || [];
 
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
@@ -155,7 +190,8 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                     bodyText: message,
                     isInternal: Boolean(isInternal),
                     fromEmail,
-                    toEmail,
+                    toEmail: toEmails.join(","), // 👈 también mejoramos esto
+                    cc: ccEmails.length ? ccEmails.join(",") : null,
                 },
             });
 
@@ -186,10 +222,6 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 updateData.status = TicketStatus.OPEN;
             }
 
-            if (!ticket.assigneeId) {
-                updateData.assigneeId = agentId;
-            }
-
             if (!ticket.firstResponseAt && !isInternal) {
                 updateData.firstResponseAt = new Date();
             }
@@ -211,15 +243,64 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         });
 
         // 🆕 Enviar email al cliente (solo si no es nota interna)
-        if (!isInternal && toEmail) {
-            await emailSenderService.sendAgentReply(
-                ticket,
-                message,
-                toEmail,
-                files?.filter(f => !f.mimetype.includes("internal"))
-            );
-        }
+        if (!isInternal && toEmails.length > 0) {
 
+            const tecnico = ticket.assignee ?? null;
+
+            // ✅ Fallbacks seguros
+            const nombreTecnico = tecnico?.nombre || "Equipo de Soporte Técnico";
+            const emailTecnico = tecnico?.email || "soporte@rids.cl";
+            const firmaPath = tecnico?.firma?.path || null;
+
+            // ✅ Sanitizar mensaje (ANTI XSS)
+            function escapeHtml(text: string) {
+                return text
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            // ✅ Firma unificada (sin duplicación)
+            const firmaHtml = `
+<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
+  <tr>
+    <td style="padding-right:16px; vertical-align:middle;">
+      <img src="${firmaPath || "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif"
+                }" width="120" />
+    </td>
+    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
+      <strong>${nombreTecnico}</strong><br/>
+      Soporte Técnico · Asesorías RIDS Ltda.<br/>
+      <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
+      WhatsApp: +56 9 8823 1976<br/>
+      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
+      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
+    </td>
+  </tr>
+</table>`;
+
+            const bodyHtml = `
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
+    <p>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>
+    ${firmaHtml}
+    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
+    <p style="font-size:12px; color:#666;">
+        <strong>Ticket #${ticket.id}</strong> · ${ticket.subject}<br/>
+        Soporte Técnico · Asesorías RIDS Ltda.<br/>
+        soporte@rids.cl
+    </p>
+</body>
+</html>`;
+
+            await graphReaderService.sendReplyEmail({
+                to: toEmails,
+                cc: ccEmails,
+                subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
+                bodyHtml,
+            });
+        }
         bus.emit("ticket.updated", {
             ticketId,
             source: "agent_reply",
@@ -258,20 +339,63 @@ export async function listTickets(req: Request, res: Response) {
         const take = Math.min(Number(pageSize) || 30, 100);
         const skip = (pageNum - 1) * take;
 
-        const whereActual: Prisma.TicketWhereInput = {};
+        const whereActual: Prisma.TicketWhereInput = {
+            AND: [],
+        };
 
-        if (status) { whereActual.status = status === "5" ? "CLOSED" : status as TicketStatus; }
-        else { whereActual.status = { not: "CLOSED" as TicketStatus }; }
+        if (status) {
+            whereActual.status = status as TicketStatus;
+        } else {
+            whereActual.status = {
+                not: TicketStatus.CLOSED,
+            };
+        }
 
         if (priority) whereActual.priority = priority as TicketPriority;
         if (assigneeId) whereActual.assigneeId = Number(assigneeId);
         if (empresaId) whereActual.empresaId = Number(empresaId);
 
         if (search) {
-            whereActual.subject = {
-                contains: String(search),
-                mode: "insensitive",
-            };
+            const searchValue = String(search).trim();
+            const searchNumber = Number(searchValue);
+
+            whereActual.OR = [
+                {
+                    subject: {
+                        contains: searchValue,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    fromEmail: {
+                        contains: searchValue,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    empresa: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    requester: {
+                        nombre: {
+                            contains: searchValue,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                ...(Number.isInteger(searchNumber)
+                    ? [
+                        {
+                            id: searchNumber,
+                        },
+                    ]
+                    : []),
+            ];
         }
 
         if (from || to) {
@@ -564,8 +688,6 @@ export async function updateTicket(req: Request, res: Response) {
                 assigneeId,
             },
         });
-        bus.emit("ticket.statusChanged", ticket);
-        
 
         return res.json({
             ok: true,
@@ -593,8 +715,12 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 1️⃣ Extraer dominio
-        const domain = from.split("@")[1]?.toLowerCase();
+        // 1️⃣ Extraer dominio limpio
+        const domain = from
+            ?.split("@")[1]
+            ?.replace(/[>"\s]/g, "")
+            ?.toLowerCase();
+
         if (!domain) {
             return res.status(400).json({
                 ok: false,
@@ -602,49 +728,57 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 2️⃣ Buscar empresa por dominio
-        const empresa = await prisma.empresa.findFirst({
-            where: {
-                dominios: {
-                    has: domain,
-                },
-            },
+        // 2️⃣ Buscar mapping
+        const mapping = await prisma.fdSourceMap.findFirst({
+            where: { domain }
         });
 
-        if (!empresa) {
-            return res.status(200).json({
-                ok: false,
-                message: "Empresa no registrada, email ignorado",
+        let empresa: { nombre: string; id_empresa: number; tieneSucursales: boolean; razonSocial: string | null; dominios: string[] } | null = null;
+
+        if (mapping?.ticketOrgId) {
+            const org = await prisma.ticketOrg.findUnique({
+                where: { id: mapping.ticketOrgId }
             });
+
+            if (org) {
+                empresa = await prisma.empresa.findFirst({
+                    where: { nombre: org.name }
+                });
+            }
+        }
+
+        if (!empresa) {
+            console.warn("⚠ Empresa no encontrada para dominio:", domain);
         }
 
         // 3️⃣ Buscar solicitante EXISTENTE (NO crear)
         const requester = await prisma.solicitante.findFirst({
             where: {
                 email: from,
-                empresaId: empresa.id_empresa,
+                ...(empresa?.id_empresa && {
+                    empresaId: empresa.id_empresa
+                }),
                 isActive: true,
             },
         });
 
-        // 4️⃣ Clasificación IA y Crear ticket
-        const mockTicket = { subject: subject || "", messages: [{ bodyText: text }] } as any;
-        const area = detectArea(mockTicket) || "SOPORTE";
-
-        const conf = await (prisma as any).areaConfig.findUnique({ where: { nombre: area } });
-        let aiSummary = conf?.mensajeBase || "Revisaremos tu caso a la brevedad.";
-
-        try {
-            const prompt = `Área: ${area}. Instrucción: "${aiSummary}". Reporte: "${text}". Respuesta breve (máx 30 palabras).`;
-            const resAI = await runAI({ userText: prompt, context: { from: "system", transcript: [], email: from } });
-            if (resAI) aiSummary = resAI.replace(/^"|"$/g, '');
-        } catch (e) {}
-
-
-       
+        // 4️⃣ Crear ticket (con o sin requester)
         const ticket = await prisma.ticket.create({
             data: {
-                publicId: crypto.randomUUID(), subject: subject || "Sin asunto", status: TicketStatus.NEW, priority: TicketPriority.NORMAL, channel: "EMAIL", empresaId: empresa.id_empresa, requesterId: requester?.id_solicitante ?? null, fromEmail: from, aiSummary, lastActivityAt: new Date(),
+                publicId: crypto.randomUUID(),
+                subject: subject || "Sin asunto",
+                status: TicketStatus.NEW,
+                priority: TicketPriority.NORMAL,
+                channel: "EMAIL",
+
+                ...(empresa?.id_empresa && {
+                    empresaId: empresa.id_empresa
+                }),
+
+                requesterId: requester?.id_solicitante ?? null,
+                fromEmail: from,
+
+                lastActivityAt: new Date(),
             },
         });
 
@@ -675,7 +809,6 @@ export async function inboundEmail(req: Request, res: Response) {
             empresaId: ticket.empresaId,
             priority: ticket.priority,
             channel: "EMAIL",
-            
             from,
         });
 

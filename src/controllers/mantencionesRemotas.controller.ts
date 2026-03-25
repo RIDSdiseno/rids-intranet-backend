@@ -30,9 +30,9 @@ const parsePositiveInt = (raw: unknown) => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
-function parseStatus(raw: unknown): "PENDIENTE" | "COMPLETADA" | "CANCELADA" | null {
+function parseStatus(raw: unknown): "EN_CURSO" | "COMPLETADA" | "CANCELADA" | null {
   const s = String(raw ?? "").trim().toUpperCase();
-  if (s === "PENDIENTE" || s === "COMPLETADA" || s === "CANCELADA") return s;
+  if (s === "EN_CURSO" || s === "COMPLETADA" || s === "CANCELADA") return s;
   return null;
 }
 
@@ -218,7 +218,7 @@ const mantencionSelect = {
   solicitanteRef: { select: { id_solicitante: true, nombre: true } },
 } as const;
 
-const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
+const StatusEnum = z.enum(["EN_CURSO", "COMPLETADA", "CANCELADA"]);
 
 const baseFlags = z.object({
   soporteRemoto: z.boolean().optional(),
@@ -259,7 +259,7 @@ const CreateMantencionSchema = z
 
     inicio: z.coerce.date(),
     fin: z.coerce.date().optional().nullable(),
-    status: StatusEnum.optional().default("PENDIENTE"),
+    status: StatusEnum.optional().default("EN_CURSO"),
   })
   .extend(baseFlags.shape)
   .superRefine((d, ctx) => {
@@ -486,7 +486,7 @@ export const createMantencionRemota = async (req: Request, res: Response) => {
 
       inicio: payload.inicio,
       fin: payload.fin ?? null,
-      status: payload.status ?? "PENDIENTE",
+      status: payload.status ?? "EN_CURSO",
 
       soporteRemoto: !!payload.soporteRemoto,
       actualizaciones: !!payload.actualizaciones,
@@ -606,6 +606,22 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
 
   try {
     const payload = UpdateMantencionSchema.parse(req.body);
+
+    const current = await prisma.mantencionRemota.findUnique({
+      where: { id_mantencion: id },
+      select: { status: true },
+    });
+
+    if (!current) {
+      return res.status(404).json({ error: "Mantención no encontrada" });
+    }
+
+    if (current.status === "EN_CURSO") {
+      return res.status(400).json({
+        error: "No se puede editar una mantención en curso"
+      });
+    }
+
     const user = getUser(req);
 
     // Cliente: validar ownership + bloquear cambio empresa
@@ -680,9 +696,7 @@ export const updateMantencionRemota = async (req: Request, res: Response) => {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
     }
-    if (err?.code === "P2025") {
-      return res.status(404).json({ error: "Mantención no encontrada" });
-    }
+
     console.error("[mantencionesRemotas.update] error:", err);
     return res.status(500).json({ error: "No se pudo actualizar la mantención" });
   }

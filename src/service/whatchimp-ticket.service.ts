@@ -110,7 +110,7 @@ export async function createTicketFromWhatsapp(
       subject: ticket.subject,
       empresaId: ticket.empresaId,
       priority: ticket.priority,
-      channel: "API",
+      channel: "WHATSAPP",
       from: email,
     });
 

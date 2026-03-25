@@ -293,8 +293,17 @@ export async function runTeamViewerSyncInternal() {
             continue;
         }
 
-        await prisma.mantencionRemota.create({
-            data: {
+        await prisma.mantencionRemota.upsert({
+            where: {
+                teamviewerId: session.id,
+            },
+            update: {
+                // opcional: puedes actualizar info si cambia
+                fin,
+                duracionMinutos,
+                deviceNombre: deviceNombre || null,
+            },
+            create: {
                 teamviewerId: session.id,
                 origen: "TEAMVIEWER",
                 empresaId,

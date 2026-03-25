@@ -154,6 +154,19 @@ export async function getCotizacionesPaginadas(req, res) {
                     tecnico: {
                         select: { id_tecnico: true, nombre: true }
                     },
+                    items: {
+                        orderBy: { id: "asc" },
+                        include: {
+                            equipo: {
+                                select: {
+                                    id_equipo: true,
+                                    serial: true,
+                                    marca: true,
+                                    modelo: true,
+                                }
+                            }
+                        }
+                    },
                     facturas: {
                         select: {
                             id_factura: true,
@@ -249,7 +262,19 @@ export async function getCotizaciones(req, res) {
             orderBy: { id: "desc" },
             include: {
                 entidad: true,
-                items: { orderBy: { id: "asc" } },
+                items: {
+                    orderBy: { id: "asc" },
+                    include: {
+                        equipo: {
+                            select: {
+                                id_equipo: true,
+                                serial: true,
+                                marca: true,
+                                modelo: true,
+                            },
+                        },
+                    },
+                },
                 tecnico: {
                     select: {
                         id_tecnico: true,
@@ -259,8 +284,8 @@ export async function getCotizaciones(req, res) {
                 },
                 facturas: true,
                 trabajos: {
-                    select: { id: true, numeroOrden: true }
-                }
+                    select: { id: true, numeroOrden: true },
+                },
             },
         });
         res.json({ data: rows });
@@ -281,7 +306,17 @@ export async function getCotizacionById(req, res) {
             include: {
                 entidad: true,
                 items: {
-                    orderBy: { id: "asc" }
+                    orderBy: { id: "asc" },
+                    include: {
+                        equipo: {
+                            select: {
+                                id_equipo: true,
+                                serial: true,
+                                marca: true,
+                                modelo: true,
+                            }
+                        }
+                    }
                 },
                 tecnico: {
                     select: {
@@ -358,6 +393,7 @@ export async function createCotizacion(req, res) {
                                 ? i.sku
                                 : generarSKU(),
                             imagen: i.imagen ?? null,
+                            equipoId: i.equipoId ? Number(i.equipoId) : null,
                         };
                     }),
                 },
@@ -392,6 +428,9 @@ export async function updateCotizacion(req, res) {
         }
         const existe = await prisma.cotizacionGestioo.findUnique({
             where: { id },
+            include: {
+                items: true,
+            },
         });
         if (!existe) {
             return res.status(404).json({ error: "Cotización no encontrada" });
@@ -403,20 +442,36 @@ export async function updateCotizacion(req, res) {
             }
         }
         const data = normalizeCotizacionData(rest);
-        const updated = await prisma.cotizacionGestioo.update({
-            where: { id },
-            data: {
-                ...data,
-                ...(req.body.comentariosCotizacion !== undefined && {
-                    comentariosCotizacion: req.body.comentariosCotizacion
-                }),
-                ...(req.body.imagen !== undefined && {
-                    imagen: req.body.imagen
-                }),
-                ...(items !== undefined && {
-                    items: {
-                        deleteMany: {},
-                        create: items.map((i) => ({
+        await prisma.$transaction(async (tx) => {
+            await tx.cotizacionGestioo.update({
+                where: { id },
+                data: {
+                    ...data,
+                    ...(req.body.comentariosCotizacion !== undefined && {
+                        comentariosCotizacion: req.body.comentariosCotizacion,
+                    }),
+                    ...(req.body.imagen !== undefined && {
+                        imagen: req.body.imagen,
+                    }),
+                },
+            });
+            if (items !== undefined) {
+                const idsExistentesBD = existe.items.map((item) => item.id);
+                const itemsConIdNumerico = items.filter((i) => typeof i.id === "number" && i.id > 0);
+                const idsQueSiguen = itemsConIdNumerico.map((i) => i.id);
+                const idsAEliminar = idsExistentesBD.filter((itemId) => !idsQueSiguen.includes(itemId));
+                if (idsAEliminar.length > 0) {
+                    await tx.cotizacionItemGestioo.deleteMany({
+                        where: {
+                            id: { in: idsAEliminar },
+                            cotizacionId: id,
+                        },
+                    });
+                }
+                for (const i of itemsConIdNumerico) {
+                    await tx.cotizacionItemGestioo.update({
+                        where: { id: i.id },
+                        data: {
                             tipo: i.tipo,
                             nombre: i.nombre?.trim() ?? "",
                             descripcion: i.descripcion?.trim() ?? "",
@@ -426,23 +481,60 @@ export async function updateCotizacion(req, res) {
                             precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
                             porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
                             tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento ? Number(i.porcentaje ?? 0) : 0,
+                            porcentaje: i.tieneDescuento
+                                ? Number(i.porcentaje ?? 0)
+                                : 0,
                             tieneIVA: Boolean(i.tieneIVA),
                             sku: i.sku?.trim() || generarSKU(),
                             imagen: i.imagen ?? null,
+                            equipoId: i.equipoId ? Number(i.equipoId) : null,
+                        },
+                    });
+                }
+                const itemsNuevos = items.filter((i) => !(typeof i.id === "number" && i.id > 0));
+                if (itemsNuevos.length > 0) {
+                    await tx.cotizacionItemGestioo.createMany({
+                        data: itemsNuevos.map((i) => ({
+                            cotizacionId: id,
+                            tipo: i.tipo,
+                            nombre: i.nombre?.trim() ?? "",
+                            descripcion: i.descripcion?.trim() ?? "",
+                            cantidad: Number(i.cantidad ?? 1),
+                            precio: Number(i.precioOriginalCLP ?? i.precio ?? 0),
+                            precioOriginalCLP: Number(i.precioOriginalCLP ?? i.precio ?? 0),
+                            precioCosto: i.precioCosto != null ? Number(i.precioCosto) : null,
+                            porcGanancia: i.porcGanancia != null ? Number(i.porcGanancia) : null,
+                            tieneDescuento: Boolean(i.tieneDescuento),
+                            porcentaje: i.tieneDescuento
+                                ? Number(i.porcentaje ?? 0)
+                                : 0,
+                            tieneIVA: Boolean(i.tieneIVA),
+                            sku: i.sku?.trim() || generarSKU(),
+                            imagen: i.imagen ?? null,
+                            equipoId: i.equipoId ? Number(i.equipoId) : null,
                         })),
-                    },
-                }),
-            },
+                    });
+                }
+            }
+        });
+        const updated = await prisma.cotizacionGestioo.findUnique({
+            where: { id },
             include: {
                 entidad: true,
-                items: true,
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+                items: {
+                    include: {
+                        equipo: {
+                            select: {
+                                id_equipo: true,
+                                serial: true,
+                                marca: true,
+                                modelo: true,
+                            },
+                        },
                     },
+                },
+                tecnico: {
+                    select: { id_tecnico: true, nombre: true, email: true },
                 },
             },
         });
@@ -480,6 +572,37 @@ export async function deleteCotizacion(req, res) {
         res.status(500).json({ error: "Error al eliminar cotización" });
     }
     return;
+}
+// =====================================================
+//   VINCULAR / DESVINCULAR EQUIPO A ITEM
+// =====================================================
+export async function vincularEquipoAItem(req, res) {
+    const itemId = Number(req.params.itemId);
+    const { equipoId } = req.body;
+    if (isNaN(itemId)) {
+        return res.status(400).json({ error: "itemId inválido" });
+    }
+    try {
+        const updated = await prisma.cotizacionItemGestioo.update({
+            where: { id: itemId },
+            data: { equipoId: equipoId ? Number(equipoId) : null },
+            include: {
+                equipo: {
+                    select: {
+                        id_equipo: true,
+                        serial: true,
+                        marca: true,
+                        modelo: true,
+                    },
+                },
+            },
+        });
+        return res.json({ ok: true, item: updated });
+    }
+    catch (error) {
+        console.error("❌ Error vincularEquipoAItem:", error);
+        return res.status(500).json({ error: "Error al vincular equipo" });
+    }
 }
 // =====================================================
 //      FACTURAR COTIZACIÓN - CREAR FACTURA + CAMBIAR ESTADO
