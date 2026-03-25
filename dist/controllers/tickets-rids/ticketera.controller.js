@@ -3,6 +3,7 @@ import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, Message
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 import { emailSenderService } from '../../service/email/email-sender.service.js';
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
+import { buildTicketSla } from "./ticketera-sla.controller.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 // Crear ticket
@@ -135,10 +136,10 @@ export async function replyTicketAsAgent(req, res) {
         if (!ticket) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
-        const toEmails = to.length
-            ? to
-            : [ticket.requester?.email || ticket.fromEmail].filter(Boolean);
-        const ccEmails = cc || [];
+        const normalizeEmail = (email) => email?.trim().toLowerCase() || null;
+        const uniqueEmails = (emails) => [...new Set(emails.map(normalizeEmail).filter(Boolean))];
+        const toEmails = uniqueEmails(to.length ? to : [ticket.requester?.email || ticket.fromEmail]);
+        const ccEmails = uniqueEmails(cc || []).filter(email => !toEmails.includes(email));
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
             // 1️⃣ Crear mensaje UNA SOLA VEZ
@@ -175,7 +176,7 @@ export async function replyTicketAsAgent(req, res) {
                 ticket.status === TicketStatus.PENDING) {
                 updateData.status = TicketStatus.OPEN;
             }
-            if (!ticket.firstResponseAt && !isInternal) {
+            if (!ticket.firstResponseAt && !isInternal && agentId) {
                 updateData.firstResponseAt = new Date();
             }
             await tx.ticket.update({
@@ -237,11 +238,26 @@ export async function replyTicketAsAgent(req, res) {
     </p>
 </body>
 </html>`;
+            const lastInboundMsg = await prisma.ticketMessage.findFirst({
+                where: {
+                    ticketId,
+                    direction: MessageDirection.INBOUND,
+                    sourceMessageId: { not: null },
+                },
+                orderBy: { createdAt: "desc" },
+                select: { sourceMessageId: true, sourceReferences: true },
+            });
             await graphReaderService.sendReplyEmail({
                 to: toEmails,
                 cc: ccEmails,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 bodyHtml,
+                ...(lastInboundMsg?.sourceMessageId && {
+                    inReplyTo: lastInboundMsg.sourceMessageId,
+                }),
+                ...(lastInboundMsg?.sourceReferences && {
+                    references: lastInboundMsg.sourceReferences,
+                }),
             });
         }
         bus.emit("ticket.updated", {
@@ -405,6 +421,7 @@ export async function listTickets(req, res) {
             counts[s.status] = s._count.status;
         });
         const formattedTickets = tickets.map((ticket) => {
+            const sla = buildTicketSla(ticket);
             const messages = (ticket.messages ?? []).slice(0, 2).map((message) => ({
                 direction: message.direction,
                 isInternal: message.isInternal,
@@ -422,6 +439,7 @@ export async function listTickets(req, res) {
                 ...ticket,
                 messages,
                 lastMessageDirection,
+                sla,
             };
         });
         return res.json({
@@ -473,7 +491,14 @@ export async function getTicketById(req, res) {
                 message: "Ticket no encontrado",
             });
         }
-        return res.json({ ok: true, ticket });
+        const sla = buildTicketSla(ticket);
+        return res.json({
+            ok: true,
+            ticket: {
+                ...ticket,
+                sla,
+            },
+        });
     }
     catch (error) {
         console.error("[helpdesk] getTicketById error:", error);
@@ -512,10 +537,17 @@ export async function updateTicket(req, res) {
         if (status && status !== ticket.status) {
             updateData.status = status;
             if (status === TicketStatus.RESOLVED) {
-                updateData.resolvedAt = new Date();
+                if (!ticket.resolvedAt) {
+                    updateData.resolvedAt = new Date();
+                }
             }
             if (status === TicketStatus.CLOSED) {
-                updateData.closedAt = new Date();
+                if (!ticket.closedAt) {
+                    updateData.closedAt = new Date();
+                }
+                if (!ticket.resolvedAt) {
+                    updateData.resolvedAt = new Date();
+                }
             }
             events.push({
                 ticketId,
@@ -746,6 +778,8 @@ export async function bulkUpdateTickets(req, res) {
             where: { id: { in: ticketIds } },
             data: {
                 ...(status && { status }),
+                ...(status === TicketStatus.CLOSED && { closedAt: new Date() }),
+                ...(status === TicketStatus.CLOSED && { resolvedAt: new Date() }),
                 ...(assigneeId !== undefined && { assigneeId }),
                 lastActivityAt: new Date(),
             },
