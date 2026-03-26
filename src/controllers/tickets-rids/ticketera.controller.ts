@@ -368,7 +368,10 @@ export async function listTickets(req: Request, res: Response) {
             AND: [],
         };
 
-        if (status) {
+        // ✅ Después
+        const validStatuses = Object.values(TicketStatus);
+
+        if (status && validStatuses.includes(status as TicketStatus)) {
             whereActual.status = status as TicketStatus;
         } else {
             whereActual.status = {

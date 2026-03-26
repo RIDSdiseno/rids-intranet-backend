@@ -287,7 +287,9 @@ export async function listTickets(req, res) {
         const whereActual = {
             AND: [],
         };
-        if (status) {
+        // ✅ Después
+        const validStatuses = Object.values(TicketStatus);
+        if (status && validStatuses.includes(status)) {
             whereActual.status = status;
         }
         else {
