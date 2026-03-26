@@ -1,71 +1,104 @@
 import { prisma } from "../lib/prisma.js";
+import { runAI } from "../utils/ai.js";
+import { classifyTicket } from "../utils/classifier.js";
+import { sendTicketCreatedEmail } from "../service/email.service.js";
+export async function createTicket(req, res) {
+    try {
+        const { subject, description, email } = req.body;
+        if (!subject || !email) {
+            return res.status(400).json({ success: false, error: "Faltan campos (subject, email)" });
+        }
+        // 1. Lógica de Empresa
+        const domain = email.split('@')[1];
+        let empresa = await prisma.empresa.findFirst({
+            where: { dominios: { has: domain } }
+        });
+        const empresaId = empresa?.id_empresa || 22;
+        // 2. Clasificación y Carga de Configuración Dinámica
+        const areaDetectada = classifyTicket(`${subject} ${description || ""}`);
+        console.log(`🏷️ Área detectada: ${areaDetectada}`);
+        // Buscamos el mensaje que el usuario de esa área editó en la DB
+        const configArea = await prisma.areaConfig.findUnique({
+            where: { nombre: areaDetectada }
+        });
+        // Mensaje base personalizado (usamos fallback si la tabla está vacía)
+        const mensajePersonalizado = configArea?.mensajeBase || "Estamos revisando tu caso a la brevedad.";
+        const firmaArea = configArea?.firmaArea || `Equipo de ${areaDetectada}`;
+        // 3. IA: Generar resumen integrando la personalización del rol
+        console.log("🤖 Generando resumen con IA...");
+        let aiContext = mensajePersonalizado;
+        try {
+            const prompt = `
+        Actúa como un asistente del área de ${areaDetectada}.
+        Instrucción de tu jefe de área: "${mensajePersonalizado}".
+        Reporte del cliente: "${description || subject}".
+
+        TAREA: Crea una respuesta muy breve (máx 30 palabras), empática y profesional.
+        DEBES integrar la esencia de la instrucción de tu jefe y responder directamente al reporte.
+        Habla de "tú". No incluyas la firma al final.
+      `;
+            const aiResponse = await runAI({
+                userText: prompt,
+                context: { from: "system", transcript: [], email }
+            });
+            if (aiResponse)
+                aiContext = aiResponse.replace(/^"|"$/g, '');
+        }
+        catch (aiErr) {
+            console.error("⚠️ Error IA, usando mensaje base.");
+        }
+        // 4. Guardar en tabla Ticket
+        const newTicket = await prisma.ticket.create({
+            data: {
+                subject,
+                empresaId,
+                fromEmail: email,
+                aiSummary: aiContext,
+                publicId: `RID-${Date.now()}`,
+                status: 'NEW',
+                priority: 'NORMAL',
+                channel: 'WEB',
+                lastActivityAt: new Date(),
+                messages: {
+                    create: {
+                        direction: 'INBOUND',
+                        bodyText: description || subject,
+                        fromEmail: email,
+                        isInternal: false
+                    }
+                }
+            }
+        });
+        // 5. Email: Notificación
+        sendTicketCreatedEmail(email, newTicket.publicId, `${aiContext}\n\n${firmaArea}`)
+            .then(() => console.log("✅ Correo enviado satisfactoriamente"))
+            .catch(err => console.error("❌ Error Email:", err));
+        return res.status(201).json({
+            success: true,
+            data: {
+                id: newTicket.id,
+                public_id: newTicket.publicId,
+                area: areaDetectada,
+                resumen_ia: aiContext
+            }
+        });
+    }
+    catch (error) {
+        console.error("💥 ERROR CRÍTICO 500:", error.message || error);
+        return res.status(500).json({ success: false, error: error.message || "Error interno" });
+    }
+}
 export async function listTickets(req, res) {
     try {
-        // Si envías ?all=true, ignoramos la paginación
-        const all = req.query.all === "true";
-        const search = req.query.search?.trim();
-        const statusParam = req.query.status;
-        const year = req.query.year ? Number(req.query.year) : undefined;
-        const month = req.query.month ? Number(req.query.month) : undefined;
-        const empresa = req.query.empresa?.trim(); // NUEVO: parámetro para filtrar por empresa
-        const where = {};
-        if (typeof statusParam !== "undefined") {
-            const s = Number(statusParam);
-            if (!Number.isNaN(s))
-                where.status = s;
-        }
-        if (year && year >= 1970 && year <= 2100) {
-            const start = new Date(Date.UTC(year, (month ? month - 1 : 0), 1));
-            const end = month && month >= 1 && month <= 12
-                ? new Date(Date.UTC(year, month, 1))
-                : new Date(Date.UTC(year + 1, 0, 1));
-            where.createdAt = { gte: start, lt: end };
-        }
-        if (search && search.length > 0) {
-            where.OR = [
-                { subject: { contains: search, mode: "insensitive" } },
-                { requesterEmail: { contains: search, mode: "insensitive" } },
-                { ticketRequester: { email: { contains: search, mode: "insensitive" } } },
-                { ticketOrg: { name: { contains: search, mode: "insensitive" } } },
-            ];
-        }
-        // NUEVO: Filtro por empresa
-        if (empresa && empresa.length > 0) {
-            where.ticketOrg = {
-                name: {
-                    contains: empresa,
-                    mode: "insensitive"
-                }
-            };
-        }
-        // Si all=true, traemos todos los tickets sin paginar
-        const rows = await prisma.freshdeskTicket.findMany({
-            where,
+        const rows = await prisma.ticket.findMany({
             orderBy: { createdAt: "desc" },
-            ...(all ? {} : { skip: 0, take: 3000 }),
-            select: {
-                id: true,
-                subject: true,
-                type: true,
-                createdAt: true,
-                requesterEmail: true,
-                ticketRequester: { select: { email: true } },
-                ticketOrg: { select: { name: true } },
-            },
+            take: 20,
+            include: { empresa: true }
         });
-        const data = rows.map((r) => ({
-            ticket_id: r.id.toString(),
-            solicitante_email: r.ticketRequester?.email ?? r.requesterEmail ?? null,
-            empresa: r.ticketOrg?.name ?? null,
-            subject: r.subject,
-            type: r.type ?? null,
-            fecha: r.createdAt.toISOString(),
-        }));
-        res.json({ total: data.length, rows: data });
+        return res.json({ ok: true, data: rows });
     }
     catch (e) {
-        console.error("[tickets.controller] listTickets error:", e?.message || e);
-        res.status(500).json({ ok: false, error: e?.message ?? "error" });
+        return res.status(500).json({ ok: false, error: "Error al listar" });
     }
 }
 //# sourceMappingURL=tickets.controller.js.map

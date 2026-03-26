@@ -1,9 +1,16 @@
 // src/controllers/equipos.controller.ts
 import type { Request, Response } from "express";
-import type { Prisma } from "@prisma/client";
-import { TipoEquipo, AuditAction } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
+// Importa solo lo que Prisma sí está exportando correctamente
+import { Prisma, TipoEquipo } from "@prisma/client"; 
+
+// Define AuditAction manualmente aquí para que no rompa el código de abajo
+enum AuditAction {
+    CREATE = 'CREATE',
+    UPDATE = 'UPDATE',
+    DELETE = 'DELETE'
+}
 
 /* ================== Schemas ================== */
 

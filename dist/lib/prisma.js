@@ -1,4 +1,4 @@
-import { PrismaClient, AuditAction } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 const prismaBase = new PrismaClient({
 //log:
