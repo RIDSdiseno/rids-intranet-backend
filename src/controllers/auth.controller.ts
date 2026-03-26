@@ -5,7 +5,7 @@ import argon2 from "argon2";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-
+import { transporter } from "../lib/mailer.js";
 
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
@@ -250,6 +250,7 @@ export const login = async (req: Request, res: Response) => {
         passwordHash: true,
         status: true,
         empresaId: true,
+        rol: true,
       },
     });
 
@@ -273,8 +274,12 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
+    if (!tecnico.status) {
+      return res.status(403).json({ error: "Usuario inactivo, contacte al administrador. "});
+    }
+
     // ✅ Rol fijo
-    const rol = ROL_DEFAULT;
+    const rol = tecnico.rol ?? ROL_DEFAULT;
 
     // Generar tokens
     const accessToken = signAccessToken(
@@ -460,6 +465,81 @@ export const logout = async (req: Request, res: Response) => {
   return res.json({ ok: true });
 };
 
+export const loginMicrosoft = async (req: Request, res: Response) => {
+  console.log("🔥 loginMicrosoft llamado", req.body);
+  try {
+
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({
+        error: "Token de Microsoft requerido"
+      });
+    }
+
+    // Leer el token
+    const decoded: any = jwt.decode(idToken);
+
+    if (!decoded) {
+      return res.status(401).json({
+        error: "Token inválido"
+      });
+    }
+
+    const email = decoded.preferred_username;
+
+    if (!email) {
+      return res.status(401).json({
+        error: "No se pudo obtener el correo del usuario"
+      });
+    }
+
+    //  Validar que sea correo de RIDS
+    if (!email.endsWith("@rids.cl")) {
+      return res.status(403).json({
+        error: "Acceso denegado. Solo usuarios de RIDS pueden ingresar."
+      });
+    }
+
+    //  Buscar usuario en tu base de datos
+    let tecnico = await prisma.tecnico.findUnique({
+      where: { email }
+    });
+
+    if (!tecnico) {
+  tecnico = await prisma.tecnico.create({
+    data: {
+      nombre: decoded.name || email,
+      email: email,
+      status: true,
+      passwordHash: "",
+    }
+  });
+}
+
+    //  Crear JWT de tu sistema
+    const accessToken = jwt.sign(
+      { id: tecnico.id_tecnico },
+      process.env.JWT_SECRET!,
+      { expiresIn: "8h" }
+    );
+
+    return res.json({
+      accessToken,
+      tecnico
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    return res.status(500).json({
+      error: "Error autenticando con Microsoft"
+    });
+
+  }
+};
+
 export const me = async (req: Request, res: Response) => {
   const user = (req as any).user;
 
@@ -467,7 +547,7 @@ export const me = async (req: Request, res: Response) => {
     return res.status(401).json({ error: "No autenticado" });
   }
 
-  // ✅ sin rol en select
+  //  sin rol en select
   const tecnico = await prisma.tecnico.findUnique({
     where: { id_tecnico: user.id },
     select: {
@@ -560,6 +640,102 @@ export const changePassword = async (req: Request, res: Response) => {
     return res.json({ ok: true, message: "Contraseña actualizada" });
   } catch (error) {
     console.error("Error changePassword:", error);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: "Email requerido" });
+    }
+
+    const tecnico = await prisma.tecnico.findUnique({
+      where: { email: email.trim().toLowerCase() },
+    });
+
+    // Siempre responder lo mismo para no revelar si el email existe
+    if (!tecnico) {
+      return res.json({ ok: true, message: "Si el correo existe recibirás un email" });
+    }
+
+    // Generar token único
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 minutos
+
+    await prisma.passwordResetToken.create({
+      data: {
+        token,
+        tecnicoId: tecnico.id_tecnico,
+        expiresAt,
+      },
+    });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+    await transporter.sendMail({
+      from: process.env.MAIL_FROM,
+      to: tecnico.email,
+      subject: "Recuperación de contraseña - RIDS",
+      html: `
+        <h2>Recuperación de contraseña</h2>
+        <p>Hola ${tecnico.nombre},</p>
+        <p>Recibimos una solicitud para restablecer tu contraseña.</p>
+        <p>Haz clic en el siguiente enlace para continuar:</p>
+        <a href="${resetUrl}" style="background:#0891b2;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;">
+          Restablecer contraseña
+        </a>
+        <p>Este enlace expira en 30 minutos.</p>
+        <p>Si no solicitaste esto, ignora este correo.</p>
+      `,
+    });
+
+    return res.json({ ok: true, message: "Si el correo existe recibirás un email" });
+  } catch (error) {
+    console.error("Error forgotPassword:", error);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: "Token y nueva contraseña requeridos" });
+    }
+
+    const resetToken = await prisma.passwordResetToken.findUnique({
+      where: { token },
+      include: { tecnico: true },
+    });
+
+    if (!resetToken || resetToken.used || resetToken.expiresAt < new Date()) {
+      return res.status(400).json({ error: "Token inválido o expirado" });
+    }
+
+    const passwordHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
+      memoryCost: 4096,
+      timeCost: 2,
+      parallelism: 1,
+    });
+
+    await prisma.tecnico.update({
+      where: { id_tecnico: resetToken.tecnicoId },
+      data: { passwordHash },
+    });
+
+    await prisma.passwordResetToken.update({
+      where: { token },
+      data: { used: true },
+    });
+
+    return res.json({ ok: true, message: "Contraseña actualizada correctamente" });
+  } catch (error) {
+    console.error("Error resetPassword:", error);
     return res.status(500).json({ error: "Error interno del servidor" });
   }
 };

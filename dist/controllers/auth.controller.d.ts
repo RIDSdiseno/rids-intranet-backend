@@ -3,6 +3,7 @@ export declare const register: (req: Request, res: Response) => Promise<Response
 export declare const login: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const refresh: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const logout: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const loginMicrosoft: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const me: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const changePassword: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=auth.controller.d.ts.map

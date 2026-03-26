@@ -366,12 +366,62 @@ export const logout = async (req, res) => {
     res.clearCookie("rt", { path: "/" });
     return res.json({ ok: true });
 };
+export const loginMicrosoft = async (req, res) => {
+    try {
+        const { idToken } = req.body;
+        if (!idToken) {
+            return res.status(400).json({
+                error: "Token de Microsoft requerido"
+            });
+        }
+        // Leer el token
+        const decoded = jwt.decode(idToken);
+        if (!decoded) {
+            return res.status(401).json({
+                error: "Token inválido"
+            });
+        }
+        const email = decoded.preferred_username;
+        if (!email) {
+            return res.status(401).json({
+                error: "No se pudo obtener el correo del usuario"
+            });
+        }
+        //  Validar que sea correo de RIDS
+        if (!email.endsWith("@rids.cl")) {
+            return res.status(403).json({
+                error: "Acceso denegado. Solo usuarios de RIDS pueden ingresar."
+            });
+        }
+        //  Buscar usuario en tu base de datos
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { email }
+        });
+        if (!tecnico) {
+            return res.status(404).json({
+                error: "Usuario no registrado en el sistema"
+            });
+        }
+        //  Crear JWT de tu sistema
+        const accessToken = jwt.sign({ id: tecnico.id_tecnico }, process.env.JWT_SECRET, { expiresIn: "8h" });
+        return res.json({
+            accessToken,
+            tecnico
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            error: "Error autenticando con Microsoft"
+        });
+    }
+};
 export const me = async (req, res) => {
     const user = req.user;
     if (!user?.id) {
         return res.status(401).json({ error: "No autenticado" });
     }
-    // ✅ sin rol en select
+    //  sin rol en select
     const tecnico = await prisma.tecnico.findUnique({
         where: { id_tecnico: user.id },
         select: {
