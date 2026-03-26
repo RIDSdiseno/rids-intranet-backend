@@ -11,6 +11,7 @@ interface TeamViewerSession {
     groupname?: string | null;
     start_date: string;
     end_date?: string | null;
+    duration?: number | null;
 }
 
 function normalizeName(name: string) {
@@ -156,9 +157,18 @@ export async function runTeamViewerSyncInternal() {
         const deviceNombre = norm(session.devicename);
 
         const inicio = new Date(session.start_date);
-        const fin = session.end_date ? new Date(session.end_date) : null;
-        const duracionMinutos =
-            fin ? Math.round((fin.getTime() - inicio.getTime()) / 60000) : null;
+
+        let fin: Date | null = null;
+
+        if (session.end_date) {
+            fin = new Date(session.end_date);
+        } else if (session.duration) {
+            fin = new Date(inicio.getTime() + session.duration * 1000);
+        }
+
+        const duracionMinutos = fin
+            ? Math.round((fin.getTime() - inicio.getTime()) / 60000)
+            : null;
 
         let empresaId: number | null = null;
         let solicitanteId: number | null = null;
@@ -283,8 +293,17 @@ export async function runTeamViewerSyncInternal() {
             continue;
         }
 
-        await prisma.mantencionRemota.create({
-            data: {
+        await prisma.mantencionRemota.upsert({
+            where: {
+                teamviewerId: session.id,
+            },
+            update: {
+                // opcional: puedes actualizar info si cambia
+                fin,
+                duracionMinutos,
+                deviceNombre: deviceNombre || null,
+            },
+            create: {
                 teamviewerId: session.id,
                 origen: "TEAMVIEWER",
                 empresaId,
@@ -295,7 +314,7 @@ export async function runTeamViewerSyncInternal() {
                 fin,
                 duracionMinutos,
                 soporteRemoto: true,
-                status: "COMPLETADA",
+                status: fin ? "COMPLETADA" : "EN_CURSO",
                 deviceId: deviceId || null,
                 deviceNombre: deviceNombre || null,
             },

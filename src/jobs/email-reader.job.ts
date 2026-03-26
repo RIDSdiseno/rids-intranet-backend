@@ -2,16 +2,26 @@
 import cron from 'node-cron';
 import { graphReaderService } from '../service/email/graph-reader.service.js';
 
-// Job programado para leer emails cada 1 minuto (puedes ajustar la frecuencia)
+let isRunning = false;
+
 export function startEmailReaderJob() {
-    cron.schedule('* * * * *', async () => {
+    cron.schedule('*/50 * * * * *', async () => {
+        if (isRunning) {
+            console.log('⏭️ [CRON] Lectura omitida: aún hay una ejecución en curso');
+            return;
+        }
+
+        isRunning = true;
         console.log('🔄 [CRON] Leyendo emails...');
+
         try {
-            await graphReaderService.readUnreadEmails();
+            await graphReaderService.readInboxEmails();
         } catch (error: any) {
             console.error('❌ [CRON] Error:', error.message);
+        } finally {
+            isRunning = false;
         }
     });
 
-    console.log('✅ Job de emails iniciado (cada 1 minuto)');
+    console.log('✅ Job de emails iniciado (cada 30 segundos)');
 }

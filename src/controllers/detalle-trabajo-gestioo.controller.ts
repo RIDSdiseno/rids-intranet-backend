@@ -127,7 +127,11 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
-                equipo: true,
+                equipo: {
+                    include: {
+                        solicitante: true
+                    }
+                },
                 tecnico: {
                     select: {
                         id_tecnico: true,
@@ -153,7 +157,11 @@ export async function getDetallesTrabajo(_req: Request, res: Response) {
             orderBy: { fecha: "desc" },
             include: {
                 entidad: true,
-                equipo: true,
+                equipo: {
+                    include: {
+                        solicitante: true
+                    }
+                },
                 tecnico: true,
                 cotizacion: {
                     select: {
@@ -182,7 +190,11 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
-                equipo: true,
+                equipo: {
+                    include: {
+                        solicitante: true
+                    }
+                },
                 tecnico: true,
             },
         });
@@ -282,7 +294,11 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
                 entidad: true,
                 producto: true,
                 servicio: true,
-                equipo: true,
+                equipo: {
+                    include: {
+                        solicitante: true
+                    }
+                },
                 tecnico: true,
             },
         });

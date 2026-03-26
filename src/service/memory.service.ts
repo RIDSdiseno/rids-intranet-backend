@@ -42,7 +42,7 @@ export const getLongTermMemory = async (
       take: limit,
     });
 
-    return logs.reverse().map((log) => ({
+    return logs.reverse().map((log: { role: string; text: string | null}) => ({
       role: log.role as "client" | "bot" | "assistant",
       content: log.text ?? "", // ✅ CAMBIADO
     }));

@@ -1,11 +1,21 @@
 import { Router } from "express";
-import { generarInformeMensualIA } from "../../controllers/ia-intranet-controller/ia-reportes.controller.js";
+import { generarInformeOperativoIA } from "../../controllers/ia-intranet-controller/ia-reportes.controller.js";
 
 const iaReportesRouter = Router();
 
+/**
+ * =====================================================
+ * 🤖 IA REPORTES
+ * =====================================================
+ */
+
+/**
+ * Generar informe operativo con IA
+ * Usa cache si ya existe
+ */
 iaReportesRouter.get(
-  "/informe-mensual/:empresaId/:year/:month",
-  generarInformeMensualIA
+  "/informe-operativo/:empresaId/:year/:month",
+  generarInformeOperativoIA
 );
 
 export default iaReportesRouter;

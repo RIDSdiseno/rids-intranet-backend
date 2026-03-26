@@ -15,7 +15,8 @@ import {
     vincularFacturaSII,
     consultarEnvioSII,
     emitirFacturaSII,
-    cambiarEstadoFactura
+    cambiarEstadoFactura,
+    vincularEquipoAItem
 } from "../controllers/cotizaciones.controller.js";
 
 const cotizacionesRouter = Router();
@@ -28,6 +29,7 @@ const cotizacionesRouter = Router();
 cotizacionesRouter.use(auth());
 
 cotizacionesRouter.get("/", getCotizaciones);
+cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem)
 cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);
 cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
 cotizacionesRouter.post("/:id/anular", anularFactura);

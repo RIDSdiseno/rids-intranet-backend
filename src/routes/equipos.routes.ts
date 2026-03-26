@@ -12,6 +12,7 @@ import {
   reassignEquipos,
   getEquipoHistorial
 } from "../controllers/equipos.controller.js";
+import { auth } from "../middlewares/auth.js";
 
 export const equiposRouter = Router();
 
@@ -32,6 +33,8 @@ const requireNumericId: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
+equiposRouter.use(auth());
 
 /* ============ Rutas ============ */
 // Listado (acepta filtros como search, marca, empresaId, empresaName, solicitanteId)

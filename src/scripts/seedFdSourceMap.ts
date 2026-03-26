@@ -15,27 +15,29 @@ const MAPPINGS: Array<{
   domains?: string[];
   companyIds?: Array<string | number | bigint>;
 }> = [
-  { org: "ALIANZ", domains: ["alianz.cl"] },
-  { org: "ASUR", domains: ["asursa.com"] },
-  { org: "BDK", domains: ["bdk.cl"] },
-  { org: "BODEGAL", domains: ["bodegal.cl"] },
-  { org: "CLINICA NACE", domains: ["clinicanace.cl", "nace.cl"] },
-  { org: "GRUPO COLCHAGUA", domains: ["grupocolchagua.cl"] },
-  { org: "FIJACIONES PROCET", domains: ["procet.cl"] },
-  { org: "INFINITYCONNECT", domains: ["infinityconnect.cl"] },
-  { org: "INFINET", domains: ["infinet.cl"] },
-  { org: "JPL", domains: ["jpl.cl"] },
-  { org: "RWAY", domains: ["rway.cl"] },
-  { org: "T-SALES", domains: ["t-sales.cl", "tsales.cl"] },
-  { org: "VPRIME", domains: ["vprime.cl"] },
-  { org: "PINI", domains: ["pini.cl"] },
-  { org: "RIDS", domains: ["rids.cl"] },
-  { org: "BDK-SPA", domains: ["bdk-spa.cl"] },
-  { org: "BERCIA", domains: ["bercia.cl"] },
-  { org: "SOFTLAND", domains: ["softland.cl"] },
-  { org: "INTCOMEX", domains: ["intcomex.com"] },
-  { org: "CINTAX", domains: ["cintax.cl"],}
-];
+    { org: "ALIANZ", domains: ["alianz.cl"] },
+    { org: "ASUR", domains: ["asursa.com"] },
+    { org: "BDK", domains: ["bdk.cl"] },
+    { org: "BODEGAL", domains: ["bodegal.cl"] },
+    { org: "CLINICA NACE", domains: ["clinicanace.cl", "nace.cl"] },
+    { org: "GRUPO COLCHAGUA", domains: ["grupocolchagua.cl"] },
+    { org: "FIJACIONES PROCET", domains: ["procet.cl"] },
+    { org: "INFINITYCONNECT", domains: ["infinityconnect.cl"] },
+    { org: "INFINET", domains: ["infinet.cl"] },
+    { org: "JPL", domains: ["jpl.cl"] },
+    { org: "RWAY", domains: ["rway.cl"] },
+    { org: "T-SALES", domains: ["t-sales.cl", "tsales.cl"] },
+    { org: "VPRIME", domains: ["vprime.cl"] },
+    { org: "PINI", domains: ["pini.cl"] },
+    { org: "RIDS", domains: ["rids.cl"] },
+    { org: "BDK-SPA", domains: ["bdk-spa.cl"] },
+    { org: "BERCIA", domains: ["bercia.cl"] },
+    { org: "SOFTLAND", domains: ["softland.cl"] },
+    { org: "INTCOMEX", domains: ["intcomex.com"] },
+    { org: "CINTAX", domains: ["cintax.cl"], },
+    { org: "COVASACHILE", domains: ["covasachile.cl"] },
+    { org: "SOS GROUP", domains: ["sosgroup.cl"] },
+  ];
 
 async function main() {
   let domCount = 0;

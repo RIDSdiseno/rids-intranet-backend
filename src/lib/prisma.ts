@@ -1,12 +1,13 @@
-import { PrismaClient, AuditAction } from "@prisma/client";
-
+import { PrismaClient } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 
+
+type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 const prismaBase = new PrismaClient({
-  log:
-    process.env.NODE_ENV === "development"
-      ? ["query", "error", "warn"]
-      : ["error"],
+  //log:
+    //process.env.NODE_ENV === "development"
+    //  ? ["query", "error", "warn"]
+    //  : ["error"],
 });
 
 /* =========================
@@ -79,15 +80,15 @@ function sanitizeForAudit(obj: any) {
 
   return clean;
 }
- // --- Helper reutilizable ---
- async function getNombreSolicitante(id: number | null | undefined) {
+// --- Helper reutilizable ---
+async function getNombreSolicitante(id: number | null | undefined) {
   if (!id) return null;
   const sol = await prismaBase.solicitante.findUnique({
     where: { id_solicitante: Number(id) },
     select: { nombre: true }
   });
   return sol?.nombre || null;
- }
+}
 /* =========================
    EXTENSION GLOBAL AUTOMÁTICA
 ========================= */
@@ -96,58 +97,71 @@ export const prisma = prismaBase.$extends({
   query: {
     $allModels: {
       async create({ model, args, query }) {
-     const result = await query(args);
 
-      if (!model || model === "AuditLog") return result;
+        const actorId = getCurrentUserId();
+        const result = await query(args);
 
-      const r: any = result;
-  
-      // 1. Preparamos los datos básicos con sanitizeForAudit
-      let auditChanges = sanitizeForAudit(r);
+        if (!model || model === "AuditLog") return result;
 
-      // 2. ENRIQUECIMIENTO: Si es Historial, buscamos el nombre del solicitante
-      // Esto inyecta el nombre en el log sin tocar el frontend
-      if (model === "Historial" && r.solicitanteId) {
-      const nombre = await getNombreSolicitante(r.solicitanteId);
-     if (nombre) auditChanges.nombreSolicitante = nombre;
-      }
+        const r: any = result;
 
-      // NUEVA LÓGICA: Si estás creando un Solicitante, captura su nombre directamente
-      if (model?.toLowerCase() === "solicitante" && r.nombre) {
-      auditChanges.nombreSolicitante = r.nombre;
+        // 1. Preparamos los datos básicos con sanitizeForAudit
+        let auditChanges = sanitizeForAudit(r);
 
-    }
+        // 2. ENRIQUECIMIENTO: Si es Historial, buscamos el nombre del solicitante
+        // Esto inyecta el nombre en el log sin tocar el frontend
+        if (model === "Historial" && r.solicitanteId) {
+          const nombre = await getNombreSolicitante(r.solicitanteId);
+          if (nombre) auditChanges.nombreSolicitante = nombre;
+        }
 
-      // 3. Lógica original para obtener empresaId
-      let empresaId: number | null = null;
-      if (model === "Equipo") {
-      const equipoFull = await prismaBase.equipo.findUnique({
-      where: { id_equipo: r.id_equipo },
-      include: { solicitante: true },
-     });
-     empresaId = equipoFull?.solicitante?.empresaId ?? null;
-       } else if (model?.toLowerCase() === "solicitante") {
-       empresaId = r.empresaId ?? null;
+        // NUEVA LÓGICA: Si estás creando un Solicitante, captura su nombre directamente
+        if (model?.toLowerCase() === "solicitante" && r.nombre) {
+          auditChanges.nombreSolicitante = r.nombre;
+
+        }
+
+        // 3. Lógica original para obtener empresaId
+        let empresaId: number | null = null;
+        if (model === "Equipo") {
+          const equipoFull = await prismaBase.equipo.findUnique({
+            where: { id_equipo: r.id_equipo },
+            include: { solicitante: true },
+          });
+          empresaId = equipoFull?.solicitante?.empresaId ?? null;
+        } else if (model?.toLowerCase() === "solicitante") {
+          empresaId = r.empresaId ?? null;
         } else if (model === "Empresa") {
-         empresaId = r.id_empresa ?? null;
-         }
+          empresaId = r.id_empresa ?? null;
+        }
 
-    // 4. Guardamos el log con los cambios ya enriquecidos
-    await prismaBase.auditLog.create({
-      data: {
-      entity: model,
-      entityId: extractId(r),
-      empresaId,
-      action: "CREATE",
-      changes: auditChanges, // Usamos el objeto modificado
-      actorId: getCurrentUserId(),
+        if (model === "DetalleEquipo") {
+          const equipo = await prismaBase.equipo.findUnique({
+            where: { id_equipo: r.idEquipo },
+            include: { solicitante: true },
+          });
+          empresaId = equipo?.solicitante?.empresaId ?? null;
+        }
+
+        // 4. Guardamos el log con los cambios ya enriquecidos
+        await prismaBase.auditLog.create({
+          data: {
+            entity: model,
+            entityId: extractId(r),
+            empresaId,
+            action: "CREATE",
+            changes: auditChanges, // Usamos el objeto modificado
+            actorId,
+          },
+        });
+
+        return result;
       },
-      });
-
-     return result;
-},
 
       async update({ model, args, query }) {
+
+        const actorId = getCurrentUserId();
+
         if (!model || model === "AuditLog") {
           return query(args);
         }
@@ -159,18 +173,56 @@ export const prisma = prismaBase.$extends({
         let before: any = null;
 
         if (args?.where) {
-          before = await delegate.findUnique({
-            where: args.where,
-          });
+
+          if (model === "Equipo") {
+            before = await prismaBase.equipo.findUnique({
+              where: args.where,
+              include: { detalle: true },
+            });
+          } else if (model === "DetalleEquipo") {
+            before = await prismaBase.detalleEquipo.findUnique({
+              where: args.where,
+            });
+          } else {
+            before = await delegate.findUnique({
+              where: args.where,
+            });
+          }
+
         }
 
         const result = await query(args);
         const r: any = result;
 
-        const changes = diffObjects(
-          sanitizeForAudit(before),
-          sanitizeForAudit(r)
-        );
+        const after = model === "Equipo"
+          ? sanitizeForAudit({ ...r, ...(r?.detalle ?? {}) })
+          : sanitizeForAudit(r);
+
+        const beforeClean = model === "Equipo"
+          ? sanitizeForAudit({ ...before, ...(before?.detalle ?? {}) })
+          : sanitizeForAudit(before);
+
+        const changes = diffObjects(beforeClean, after);
+
+        if (model === "Equipo") {
+          const oldId = before?.idSolicitante;
+          const newId = r?.idSolicitante;
+
+          if (oldId !== newId) {
+            const [oldName, newName] = await Promise.all([
+              getNombreSolicitante(oldId),
+              getNombreSolicitante(newId),
+            ]);
+            // Reemplaza el cambio de ID por nombres legibles
+            delete changes.idSolicitante;
+            changes["Id Solicitante"] = { before: oldName ?? oldId, after: newName ?? newId };
+          }
+        }
+
+        if (Object.keys(changes).length === 0) {
+          return result;
+        }
+
         if (model === "Historial") {
           const oldId = before?.solicitanteId;
           const newId = r?.solicitanteId;
@@ -207,7 +259,14 @@ export const prisma = prismaBase.$extends({
         if (model === "Empresa") {
           empresaId = before?.id_empresa ?? null;
         }
-        console.log("🔍 [DEBUG PRISMA] Estructura de cambios antes de guardar:", JSON.stringify(changes, null, 2));
+
+        if (model === "DetalleEquipo") {
+          const equipo = await prismaBase.equipo.findUnique({
+            where: { id_equipo: before?.idEquipo },
+            include: { solicitante: true },
+          });
+          empresaId = equipo?.solicitante?.empresaId ?? null;
+        }
 
         await prismaBase.auditLog.create({
           data: {
@@ -216,7 +275,7 @@ export const prisma = prismaBase.$extends({
             empresaId,
             action: "UPDATE",
             changes: JSON.parse(JSON.stringify(changes)),
-            actorId: getCurrentUserId(),
+            actorId,
           },
         });
 
@@ -224,27 +283,30 @@ export const prisma = prismaBase.$extends({
       },
 
       async delete({ model, args, query }) {
+        const actorId = getCurrentUserId();
+
         if (!model || model === "AuditLog") {
           return query(args);
         }
 
-        if (model?.toLowerCase() === "solicitante"){
-          const before = await prismaBase.solicitante.findUnique({ 
+        if (model?.toLowerCase() === "solicitante") {
+          const before = await prismaBase.solicitante.findUnique({
             where: args.where as any,
           });
-          const result =await prismaBase.solicitante.update({
-            where: args.where as any, 
-            data : {isActive: false},
+          const result = await prismaBase.solicitante.update({
+            where: args.where as any,
+            data: { isActive: false },
           });
-          await prismaBase.auditLog.create ({
-            data :{entity: model,
+          await prismaBase.auditLog.create({
+            data: {
+              entity: model,
               entityId: before ? extractId(before) : "unknown",
               empresaId: before?.empresaId ?? null,
               action: "DELETE",
               changes: sanitizeForAudit(before),
-              actorId: getCurrentUserId(),
+              actorId,
             },
-            
+
           });
           return result;
         }
@@ -265,7 +327,7 @@ export const prisma = prismaBase.$extends({
 
         // --- ESTO ES LO QUE CAMBIA: Enriquecimiento para el DELETE ---
         let auditChanges = sanitizeForAudit(before);
-        
+
         if (model === "Historial" && before?.solicitanteId) {
           const nombre = await getNombreSolicitante(before.solicitanteId);
           if (nombre) auditChanges.nombreSolicitante = nombre;
@@ -274,27 +336,35 @@ export const prisma = prismaBase.$extends({
 
         let empresaId: number | null = null;
 
-        if (model === "Equipo" && before?.solicitanteId) {
+        if (model === "Equipo" && before?.idSolicitante) {
           const solicitante = await prismaBase.solicitante.findUnique({
-            where: { id_solicitante: before.solicitanteId },
+            where: { id_solicitante: before.idSolicitante },
           });
           empresaId = solicitante?.empresaId ?? null;
-          } else if (model?.toLowerCase() === "solicitante") {
+        } else if (model?.toLowerCase() === "solicitante") {
           empresaId = before?.empresaId ?? null;
-          } else if (model === "Empresa") {
+        } else if (model === "Empresa") {
           empresaId = before?.id_empresa ?? null;
-          }
+        }
 
-          await prismaBase.auditLog.create({
+        if (model === "DetalleEquipo") {
+          const equipo = await prismaBase.equipo.findUnique({
+            where: { id_equipo: before?.idEquipo }, // ← before sí existe
+            include: { solicitante: true },
+          });
+          empresaId = equipo?.solicitante?.empresaId ?? null;
+        }
+
+        await prismaBase.auditLog.create({
           data: {
             entity: model,
             entityId: before ? extractId(before) : "unknown",
             empresaId,
             action: "DELETE",
             // --- USAMOS LA VARIABLE ENRIQUECIDA ---
-            changes: auditChanges, 
+            changes: auditChanges,
             // -------------------------------------
-            actorId: getCurrentUserId(),
+            actorId,
           },
         });
         return result;

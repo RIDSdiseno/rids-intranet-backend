@@ -7,10 +7,50 @@ import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
 import { prisma } from "./lib/prisma.js";
 
-import { UPLOADS_DIR } from "./config/paths.js";
-import { asyncLocalStorage } from "./lib/request-context.js";
+//import path from "path";
 
-import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
+import { UPLOADS_DIR } from "./config/paths.js";
+
+//import { asyncLocalStorage } from "./lib/request-context.js";
+
+//import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
+
+/* ========= Helpers ========= */
+function normalizeOrigin(origin: string): string {
+  return origin.trim().replace(/\/+$/, ""); // quita espacios y "/" al final
+}
+
+function normalizeOriginList(raw?: string): string[] {
+  if (!raw || raw.trim() === "") {
+    return ["http://localhost:5173"];
+  }
+  return raw
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean);
+}
+
+function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] {
+  const allowedNormalized = allowed.map(normalizeOrigin);
+
+  return (origin, cb) => {
+    if (!origin) return cb(null, true);
+
+    const norm = normalizeOrigin(origin);
+
+    const isAllowed = allowedNormalized.some(a => norm.startsWith(a));
+
+    if (isAllowed) {
+      return cb(null, true);
+    }
+
+    console.warn("[CORS] Not allowed:", origin);
+
+    return cb(null, false);
+  };
+}
+
+const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
 
 const app = express();
 
@@ -92,16 +132,6 @@ app.use(
     },
   })
 );
-
-/* ========= Contexto global por request ========= */
-app.use((req, _res, next) => {
-  asyncLocalStorage.run({ userId: null }, () => next());
-});
-
-/* ========= Jobs ========= */
-if (process.env.NODE_ENV === "production") {
-  startTeamViewerCron();
-}
 
 /* ========= Rutas ========= */
 app.use("/api", api);
