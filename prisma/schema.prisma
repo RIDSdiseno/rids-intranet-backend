@@ -453,9 +453,6 @@ model Equipo {
   @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
-  @@index([empresaId])
-  @@index([origenCotizacionId])
-  @@index([productoId])
 }
 
 model DetalleEquipo {
