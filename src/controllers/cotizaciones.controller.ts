@@ -776,79 +776,113 @@ export async function cambiarEstadoFactura(req: Request, res: Response) {
 //      EMITIR FACTURA AL SII - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
 export async function emitirFacturaSII(req: Request, res: Response) {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    try {
-        const cotizacion = await prisma.cotizacionGestioo.findUnique({
-            where: { id: Number(id) },
-            include: {
-                entidad: true,
-                items: true
-            }
-        });
+  try {
+    console.log("BODY RECIBIDO EN EMITIR SII:", req.body);
 
-        if (!cotizacion)
-            return res.status(404).json({ error: "Cotización no encontrada" });
+    const cotizacion = await prisma.cotizacionGestioo.findUnique({
+      where: { id: Number(id) },
+      include: {
+        entidad: true,
+        items: true,
+      },
+    });
 
-        if (cotizacion.estado !== "APROBADA")
-            return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
-
-        const config = getSimpleAPIConfig();
-
-        if (!cotizacion.entidad) {
-            return res.status(400).json({
-                error: "La cotización no tiene entidad asociada"
-            });
-        }
-
-        if (!cotizacion.entidad.rut) {
-            return res.status(400).json({
-                error: "La entidad no tiene RUT"
-            });
-        }
-
-        const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
-
-        // 1️⃣ Generar DTE
-        const dte = await generarDTE(config, { cotizacion });
-
-        // 2️⃣ Generar sobre
-        await generarSobre(config, dte);
-
-        // 3️⃣ Enviar al SII
-        const envio = await enviarAlSII(config);
-
-        // 4️⃣ Crear factura
-        const factura = await prisma.factura.create({
-            data: {
-                numeroFactura: `INT-${dte.folio}`,
-                total: cotizacion.total,
-                cotizacionId: cotizacion.id,
-                tipoDTE: 33,
-                folioSII: String(dte.folio),
-                rutEmisor: config.rutEmpresa,
-                rutReceptor: rutReceptor,
-                estadoSII: EstadoDTE.EMITIDO,
-                trackId: envio.trackId
-            }
-        });
-
-        // 5️⃣ Ahora sí cambiar estado
-        await prisma.cotizacionGestioo.update({
-            where: { id: cotizacion.id },
-            data: { estado: "FACTURADA" }
-        });
-
-        return res.json({
-            message: "Factura emitida correctamente",
-            folio: dte.folio,
-            trackId: envio.trackId
-        });
-
-    } catch (error: any) {
-        console.error(" Error emitirFacturaSII:", error);
-        return res.status(500).json({ error: error.message });
+    if (!cotizacion) {
+      return res.status(404).json({ error: "Cotización no encontrada" });
     }
+
+    if (cotizacion.estado !== "APROBADA") {
+      return res
+        .status(400)
+        .json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
+    }
+
+    if (!cotizacion.entidad) {
+      return res.status(400).json({
+        error: "La cotización no tiene entidad asociada",
+      });
+    }
+
+    if (!cotizacion.entidad.rut) {
+      return res.status(400).json({
+        error: "La entidad no tiene RUT",
+      });
+    }
+
+    if (!Array.isArray(cotizacion.items) || cotizacion.items.length === 0) {
+      return res.status(400).json({
+        error: "La cotización no tiene ítems",
+      });
+    }
+
+    const yaFacturada = await prisma.factura.findFirst({
+      where: { cotizacionId: cotizacion.id },
+    });
+
+    if (yaFacturada) {
+      return res.status(400).json({
+        error: "Esta cotización ya tiene una factura registrada",
+      });
+    }
+
+    const config = getSimpleAPIConfig();
+    const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
+
+    const referenciaSet =
+      req.body?.casoSet ||
+      req.body?.numeroAtencion ||
+      null;
+
+    console.log("======================================");
+    console.log("🚀 INICIO EMISIÓN SII");
+    console.log("Cotización ID:", cotizacion.id);
+    console.log("Referencia SET detectada:", referenciaSet);
+    console.log("RUT receptor:", rutReceptor);
+    console.log("Estado cotización:", cotizacion.estado);
+    console.log("======================================");
+
+    const dte = await generarDTE(config, {
+      cotizacion,
+      ...(referenciaSet ? { casoSet: referenciaSet } : {}),
+    });
+
+    const sobre = await generarSobre(config, dte);
+    const envio = await enviarAlSII(config, sobre);
+
+    const factura = await prisma.factura.create({
+      data: {
+        numeroFactura: `INT-${dte.folio}`,
+        total: cotizacion.total,
+        cotizacionId: cotizacion.id,
+        tipoDTE: 33,
+        folioSII: String(dte.folio),
+        rutEmisor: config.rutEmpresa,
+        rutReceptor,
+        estadoSII: EstadoDTE.EMITIDO,
+        trackId: envio.trackId || null,
+      },
+    });
+
+    await prisma.cotizacionGestioo.update({
+      where: { id: cotizacion.id },
+      data: { estado: "FACTURADA" },
+    });
+
+    return res.json({
+      message: "Factura emitida correctamente",
+      facturaId: factura.id_factura,
+      folio: dte.folio,
+      trackId: envio.trackId,
+      estadoEnvio: envio.estado,
+    });
+  } catch (error: any) {
+    console.error("❌ Error emitirFacturaSII:", error);
+    return res.status(500).json({
+      error: error.message ?? "Error emitiendo factura al SII",
+    });
+  }
 }
 
 // =====================================================
