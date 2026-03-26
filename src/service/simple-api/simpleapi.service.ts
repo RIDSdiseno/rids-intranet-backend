@@ -35,6 +35,120 @@ interface CAFInfo {
 }
 
 // ============================================================
+// HELPERS
+// ============================================================
+function truncar(valor: unknown, max: number): string {
+  const texto = String(valor ?? "").trim();
+  return texto.length > max ? texto.slice(0, max) : texto;
+}
+
+function toInt(valor: unknown): number {
+  if (typeof valor === "number") {
+    return Number.isFinite(valor) ? Math.round(valor) : 0;
+  }
+
+  if (typeof valor === "string") {
+    const normalizado = valor
+      .replace(/\./g, "")
+      .replace(/,/g, ".")
+      .replace(/[^\d.-]/g, "");
+
+    const num = Number(normalizado);
+    return Number.isFinite(num) ? Math.round(num) : 0;
+  }
+
+  return 0;
+}
+
+function formatFechaAAAAMMDD(fecha = new Date()): string {
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, "0");
+  const day = String(fecha.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function limpiarRut(rut: string): string {
+  const limpio = String(rut ?? "")
+    .replace(/\./g, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+
+  const match = limpio.match(/^(\d+)-?([\dK])$/i);
+
+  return match ? `${match[1] ?? ""}-${(match[2] ?? "").toUpperCase()}` : limpio;
+}
+
+function safeJsonParse(value: string): any {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function extraerTag(xml: string, tag: string): string | null {
+  const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const match = xml.match(regex);
+  return match?.[1]?.trim() ?? null;
+}
+
+function parseCAF(config: SimpleAPIConfig): CAFInfo {
+  let xml = config.cafXml?.trim();
+
+  if (!xml && config.cafXmlBase64) {
+    xml = Buffer.from(config.cafXmlBase64, "base64").toString("utf-8").trim();
+  }
+
+  if (!xml) {
+    throw new Error("No hay CAF configurado");
+  }
+
+  const tipoDTE = Number(extraerTag(xml, "TD"));
+  const folioDesde = Number(extraerTag(xml, "D"));
+  const folioHasta = Number(extraerTag(xml, "H"));
+
+  return {
+    xml,
+    tipoDTE: Number.isFinite(tipoDTE) ? tipoDTE : null,
+    folioDesde: Number.isFinite(folioDesde) ? folioDesde : null,
+    folioHasta: Number.isFinite(folioHasta) ? folioHasta : null,
+  };
+}
+
+function resolverFolio(factura: any, cafInfo: CAFInfo): number {
+  const candidatos = [
+    factura?.folio,
+    factura?.folioDTE,
+    factura?.numero,
+    factura?.nro,
+  ]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+
+  if (candidatos.length > 0) {
+    const folio = candidatos[0]!;
+
+    if (
+      cafInfo.folioDesde != null &&
+      cafInfo.folioHasta != null &&
+      (folio < cafInfo.folioDesde || folio > cafInfo.folioHasta)
+    ) {
+      throw new Error(
+        `El folio ${folio} está fuera del rango del CAF (${cafInfo.folioDesde}-${cafInfo.folioHasta})`
+      );
+    }
+
+    return folio;
+  }
+
+  if (cafInfo.folioDesde != null) {
+    return cafInfo.folioDesde;
+  }
+
+  throw new Error("No se pudo resolver el folio del DTE");
+}
+
+// ============================================================
 // CONFIG
 // ============================================================
 export function getSimpleAPIConfig(): SimpleAPIConfig {
@@ -82,137 +196,130 @@ export function getSimpleAPIConfig(): SimpleAPIConfig {
 // OBTENER TOKEN DE SIMPLEAPI (ejecutar una vez y cachear)
 // ============================================================
 let cachedToken: string | null = null;
-let tokenExpiry: number = 0;
+let tokenExpiry = 0;
 
 async function getSimpleAPIToken(config: SimpleAPIConfig): Promise<string> {
-    const ahora = Date.now();
+  const ahora = Date.now();
 
-    // Reusar token si aún es válido (cachear por 50 minutos)
-    if (cachedToken && ahora < tokenExpiry) {
-        console.log("🔑 Usando token cacheado");
-        return cachedToken;
-    }
+  if (cachedToken && ahora < tokenExpiry) {
+    console.log("🔑 Usando token cacheado");
+    return cachedToken;
+  }
 
-    console.log("🔑 Obteniendo nuevo token de SimpleAPI...");
+  console.log("🔑 Obteniendo nuevo token de SimpleAPI...");
 
-    const response = await fetch(`${config.url}/api/Auth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apikey: config.apiKey }),
-    });
+  const response = await fetch(`${config.url}/api/Auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apikey: config.apiKey }),
+  });
 
-    const rawText = await response.text();
-    console.log("🔑 Auth STATUS:", response.status);
-    console.log("🔑 Auth RAW:", rawText);
+  const rawText = await response.text();
+  console.log("🔑 Auth STATUS:", response.status);
+  console.log("🔑 Auth RAW:", rawText);
 
-    if (!response.ok || !rawText?.trim()) {
-        throw new Error(
-            `SimpleAPI Auth falló (${response.status}): ${rawText || "respuesta vacía"}. ` +
-            `Verifica que SIMPLEAPI_KEY sea válida: ${config.apiKey}`
-        );
-    }
+  if (!response.ok || !rawText?.trim()) {
+    throw new Error(
+      `SimpleAPI Auth falló (${response.status}): ${rawText || "respuesta vacía"}. ` +
+        `Verifica que SIMPLEAPI_KEY sea válida: ${config.apiKey}`
+    );
+  }
 
-    // El token puede venir como string puro o dentro de un objeto
-    let token: string;
-    try {
-        const data = JSON.parse(rawText);
-        token = typeof data === "string"
-            ? data
-            : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
-    } catch {
-        // Si no es JSON, asumir que es el token directamente como string
-        token = rawText.trim().replace(/^"|"$/g, ""); // quitar comillas si las hay
-    }
+  let token: string;
+  try {
+    const data = JSON.parse(rawText);
+    token =
+      typeof data === "string"
+        ? data
+        : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
+  } catch {
+    token = rawText.trim().replace(/^"|"$/g, "");
+  }
 
-    if (!token) {
-        throw new Error(`SimpleAPI Auth no retornó token. Respuesta: ${rawText}`);
-    }
+  if (!token) {
+    throw new Error(`SimpleAPI Auth no retornó token. Respuesta: ${rawText}`);
+  }
 
-    // Cachear por 50 minutos
-    cachedToken = token;
-    tokenExpiry = ahora + 50 * 60 * 1000;
+  cachedToken = token;
+  tokenExpiry = ahora + 50 * 60 * 1000;
 
-    console.log("✅ Token obtenido:", token.substring(0, 30) + "...");
-    return token;
+  console.log("✅ Token obtenido:", token.substring(0, 30) + "...");
+  return token;
 }
 
 // ============================================================
 // HELPER: llamada HTTP a SimpleAPI — CON AUTH TOKEN
 // ============================================================
 async function callSimpleAPI(
-    config: SimpleAPIConfig,
-    endpoint: string,
-    body: object
+  config: SimpleAPIConfig,
+  endpoint: string,
+  body: object
 ) {
-    // 1️⃣ Obtener token primero
-    const token = await getSimpleAPIToken(config);
+  const token = await getSimpleAPIToken(config);
 
-    const url = `${config.url}${endpoint}`;
-    console.log("📡 SimpleAPI URL:", url);
+  const url = `${config.url}${endpoint}`;
+  console.log("📡 SimpleAPI URL:", url);
 
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            // 2️⃣ Usar el JWT obtenido del login
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await response.text();
+  console.log("📥 STATUS:", response.status);
+  console.log("📥 RAW:", rawText || "(vacío)");
+
+  if (response.status === 401) {
+    console.log("⚠️ Token expirado, limpiando caché y reintentando...");
+    cachedToken = null;
+    tokenExpiry = 0;
+
+    const newToken = await getSimpleAPIToken(config);
+
+    const retry = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${newToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     });
 
-    const rawText = await response.text();
-    console.log("📥 STATUS:", response.status);
-    console.log("📥 RAW:", rawText || "(vacío)");
+    const retryText = await retry.text();
+    console.log("📥 RETRY STATUS:", retry.status);
+    console.log("📥 RETRY RAW:", retryText);
 
-    // 3️⃣ Si el token expiró, limpiar caché y reintentar UNA vez
-    if (response.status === 401) {
-        console.log("⚠️ Token expirado, limpiando caché y reintentando...");
-        cachedToken = null;
-        tokenExpiry = 0;
-
-        const newToken = await getSimpleAPIToken(config);
-
-        const retry = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${newToken}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(body),
-        });
-
-        const retryText = await retry.text();
-        console.log("📥 RETRY STATUS:", retry.status);
-        console.log("📥 RETRY RAW:", retryText);
-
-        if (!retry.ok) {
-            throw new Error(
-                `SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ` +
-                retryText
-            );
-        }
-
-        return JSON.parse(retryText);
+    if (!retry.ok) {
+      throw new Error(
+        `SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ${retryText}`
+      );
     }
 
-    if (!rawText?.trim()) {
-        throw new Error(`SimpleAPI respuesta vacía (${response.status}) en ${endpoint}`);
-    }
+    return JSON.parse(retryText);
+  }
 
-    let data: any;
-    try {
-        data = JSON.parse(rawText);
-    } catch {
-        throw new Error(
-            `SimpleAPI respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
-        );
-    }
+  if (!rawText?.trim()) {
+    throw new Error(`SimpleAPI respuesta vacía (${response.status}) en ${endpoint}`);
+  }
 
-    if (!response.ok) {
-        throw new Error(
-            `SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`
-        );
-    }
+  let data: any;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(
+      `SimpleAPI respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`
+    );
+  }
 
   return data;
 }
@@ -250,19 +357,22 @@ export async function generarDTE(
   console.log("CAF FOLIO HASTA:", cafInfo.folioHasta);
   console.log("CAF CONTIENE AUTORIZACION:", cafInfo.xml.includes("<AUTORIZACION>"));
   console.log("CAF CONTIENE TD33:", cafInfo.xml.includes("<TD>33</TD>"));
-  console.log(Buffer.from(process.env.SII_CAF_XML_BASE64 || "", "base64").toString("utf-8").slice(0, 500));
+  console.log(
+    Buffer.from(process.env.SII_CAF_XML_BASE64 || "", "base64")
+      .toString("utf-8")
+      .slice(0, 500)
+  );
   console.log("==========================");
-
 
   if (cafInfo.tipoDTE == null) {
     throw new Error("No se pudo leer <TD> del CAF. Revisa el base64 o el XML.");
-    }
+  }
 
-    if (cafInfo.tipoDTE !== 33) {
+  if (cafInfo.tipoDTE !== 33) {
     throw new Error(
-        `El CAF configurado no corresponde a Factura Electrónica (33). TD actual: ${cafInfo.tipoDTE}`
+      `El CAF configurado no corresponde a Factura Electrónica (33). TD actual: ${cafInfo.tipoDTE}`
     );
-    }
+  }
 
   const montoNeto = toInt(cotizacion.subtotal);
   const montoIVA = toInt(cotizacion.iva);
@@ -354,10 +464,10 @@ export async function generarDTE(
             : {}),
         },
         totales: {
-          montoNeto: montoNeto,
+          montoNeto,
           tasaIVA: 19,
           iva: montoIVA,
-          montoTotal: montoTotal,
+          montoTotal,
         },
       },
       detalles,
@@ -395,15 +505,23 @@ export async function generarDTE(
 
   const data = await callSimpleAPI(config, "/api/v1/dte/generar", payload);
 
-  const folio =
+  const folioRaw =
     data?.folio ??
     data?.documento?.encabezado?.identificacionDTE?.folio ??
     data?.documento?.encabezado?.identificacionDTE?.folioDTE ??
     folioPrueba;
 
+  const folio = Number(folioRaw);
+
+  if (!Number.isFinite(folio) || folio <= 0) {
+    throw new Error(
+      `No se pudo resolver un folio válido desde SimpleAPI. Valor recibido: ${String(folioRaw)}`
+    );
+  }
+
   return {
     xml: JSON.stringify(data),
-    folio: Number(folio),
+    folio,
     raw: data,
   };
 }
