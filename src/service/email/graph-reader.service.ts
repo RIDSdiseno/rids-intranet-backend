@@ -165,48 +165,57 @@ class GraphReaderService {
     /* ======================================================
        Lectura de correos
     ====================================================== */
-    async readUnreadEmails(): Promise<void> {
+    async readInboxEmails(): Promise<void> {
         try {
             console.log('🔐 Conectando a Microsoft Graph API...');
 
             const client = await this.getClient();
 
-            const minutes = 10;
+            // Lee una ventana más amplia para no perder correos
+            const minutes = 30;
             const since = new Date(Date.now() - minutes * 60 * 1000);
 
             const response = await client
                 .api(`/users/${this.supportEmail}/mailFolders/inbox/messages`)
-                .filter(`receivedDateTime ge ${since.toISOString()} and isRead eq false`)
+                .filter(`receivedDateTime ge ${since.toISOString()}`)
                 .select(
-                    'id,subject,from,toRecipients,ccRecipients,body,receivedDateTime,internetMessageId,conversationId,hasAttachments,internetMessageHeaders'
+                    'id,subject,from,toRecipients,ccRecipients,body,isRead,receivedDateTime,internetMessageId,conversationId,hasAttachments,internetMessageHeaders'
                 )
-                .top(100)
+                .top(200)
                 .orderby('receivedDateTime desc')
                 .get();
 
             const messages = response.value ?? [];
 
+            console.log(`📥 Correos recientes encontrados: ${messages.length}`);
+
             if (messages.length === 0) {
-                console.log('📭 No hay emails sin leer');
+                console.log('📭 No hay correos recientes');
                 return;
             }
 
             const seen = new Set<string>();
             const uniqueMessages = messages.filter((msg: any) => {
-                const id = msg.internetMessageId;
-                if (!id) {
-                    console.warn(`⚠️ Mensaje sin internetMessageId ignorado: ${msg.id}`);
-                    return false; // ← ignorar en lugar de dejar pasar
+                const dedupeId = msg.internetMessageId || msg.id;
+
+                if (seen.has(dedupeId)) return false;
+                seen.add(dedupeId);
+
+                if (!msg.internetMessageId) {
+                    console.warn(`⚠️ Mensaje sin internetMessageId, se usará Graph ID: ${msg.id}`);
                 }
-                if (seen.has(id)) return false;
-                seen.add(id);
+
                 return true;
             });
 
-            console.log(`📧 Encontrados ${messages.length} emails recientes`);
+            console.log(`📥 Correos únicos a procesar: ${uniqueMessages.length}`);
 
             for (const message of uniqueMessages) {
                 try {
+                    console.log(
+                        `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
+                    );
+
                     await this.processMessage(message);
                 } catch (err) {
                     console.error('❌ Error procesando mensaje:', err);
@@ -280,7 +289,7 @@ class GraphReaderService {
         const graphMessageId = message.id;
 
         // 🔥 ID REAL DEL EMAIL (CLAVE)
-        const internetMessageId = message.internetMessageId;
+        const internetMessageId = message.internetMessageId || `<graph-${message.id}@local>`;
 
         /* =============================
            1️⃣ DEDUPE (PRIMERO DE TODO)
@@ -332,21 +341,26 @@ class GraphReaderService {
         ============================= */
         const toAddresses =
             message.toRecipients?.map((r: any) =>
-                r.emailAddress.address.toLowerCase()
+                (r.emailAddress.address || '').toLowerCase()
             ) || [];
 
         const ccAddresses =
             message.ccRecipients?.map((r: any) =>
-                r.emailAddress.address.toLowerCase()
+                (r.emailAddress.address || '').toLowerCase()
             ) || [];
+
+        console.log("📨 To:", toAddresses);
+        console.log("📨 Cc:", ccAddresses);
+        console.log("📨 SupportEmail:", this.supportEmail);
 
         const isToSupport =
             toAddresses.includes(this.supportEmail) ||
             ccAddresses.includes(this.supportEmail);
 
+        // Si el correo ya está en el inbox del buzón de soporte, no lo descartes solo por no venir explícito en To/Cc.
+        // Esto ayuda con alias, redirecciones, shared mailbox y BCC.
         if (!isToSupport) {
-            console.log('⏭️ Ignorado: no dirigido a soporte');
-            return;
+            console.warn(`⚠️ Email recibido en inbox pero no coincide en To/Cc con soporte. Se procesará igual.`);
         }
 
         /* =============================
@@ -1005,8 +1019,18 @@ class GraphReaderService {
             subject: data.subject,
         });
 
+        bus.emit("ticket.customer_replied", {
+            ticketId,
+            subject: data.subject,
+            fromEmail: data.fromEmail,
+            fromName: data.fromName,
+            direction: "INBOUND",
+            lastActivityAt: new Date(),
+        });
+
         bus.emit("ticket.updated", {
             ticketId,
+            source: "customer_reply",
             lastActivityAt: new Date(),
         });
     }

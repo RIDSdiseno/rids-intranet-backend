@@ -605,6 +605,15 @@ export async function updateTicket(req, res) {
                 await tx.ticketEvent.createMany({ data: events });
             }
         });
+        if (status && status !== ticket.status) {
+            bus.emit("ticket.status_changed", {
+                ticketId,
+                subject: ticket.subject,
+                oldStatus: ticket.status,
+                newStatus: status,
+                changedBy: agentId ?? null,
+            });
+        }
         bus.emit("ticket.updated", {
             ticketId,
             changes: {
@@ -786,6 +795,20 @@ export async function bulkUpdateTickets(req, res) {
                 lastActivityAt: new Date(),
             },
         });
+        if (status) {
+            bus.emit("ticket.bulk_status_changed", {
+                ticketIds,
+                newStatus: status,
+            });
+        }
+        bus.emit("ticket.updated", {
+            source: "bulk_update",
+            ticketIds,
+            changes: {
+                status,
+                assigneeId,
+            },
+        });
         return res.json({ ok: true });
     }
     catch (err) {
@@ -840,6 +863,11 @@ export async function bulkMergeTickets(req, res) {
                     lastActivityAt: new Date(),
                 },
             });
+        });
+        bus.emit("ticket.updated", {
+            source: "bulk_merge",
+            mainTicketId,
+            ticketIds,
         });
         return res.json({ ok: true });
     }

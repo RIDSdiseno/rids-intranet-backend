@@ -552,8 +552,11 @@ export async function updateCotizacion(req: Request, res: Response) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
 
                 const itemsConIdNumerico = items.filter(
-                    (i: any) => typeof i.id === "number" && i.id > 0
+                    (i: any) =>
+                        typeof i.id === "number" &&
+                        idsExistentesBD.includes(i.id) // 🔥 SOLO SI EXISTE EN DB
                 );
+                
                 const idsQueSiguen = itemsConIdNumerico.map((i: any) => i.id);
 
                 const idsAEliminar = idsExistentesBD.filter(

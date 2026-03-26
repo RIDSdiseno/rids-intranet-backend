@@ -6,7 +6,7 @@ declare class GraphReaderService {
     private normalizeSubject;
     constructor();
     getClient(): Promise<Client>;
-    readUnreadEmails(): Promise<void>;
+    readInboxEmails(): Promise<void>;
     private saveAttachments;
     private processMessage;
     private fetchAttachmentsMeta;

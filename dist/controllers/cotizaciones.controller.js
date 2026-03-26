@@ -457,7 +457,9 @@ export async function updateCotizacion(req, res) {
             });
             if (items !== undefined) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
-                const itemsConIdNumerico = items.filter((i) => typeof i.id === "number" && i.id > 0);
+                const itemsConIdNumerico = items.filter((i) => typeof i.id === "number" &&
+                    idsExistentesBD.includes(i.id) // 🔥 SOLO SI EXISTE EN DB
+                );
                 const idsQueSiguen = itemsConIdNumerico.map((i) => i.id);
                 const idsAEliminar = idsExistentesBD.filter((itemId) => !idsQueSiguen.includes(itemId));
                 if (idsAEliminar.length > 0) {

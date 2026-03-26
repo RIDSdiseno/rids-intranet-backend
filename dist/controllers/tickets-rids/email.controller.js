@@ -2,7 +2,7 @@ import { graphReaderService } from '../../service/email/graph-reader.service.js'
 export async function processEmails(req, res) {
     try {
         console.log('📧 Procesando emails manualmente...');
-        await graphReaderService.readUnreadEmails();
+        await graphReaderService.readInboxEmails();
         return res.json({
             ok: true,
             message: 'Emails procesados correctamente'

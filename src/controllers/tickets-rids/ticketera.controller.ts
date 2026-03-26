@@ -729,6 +729,16 @@ export async function updateTicket(req: Request, res: Response) {
             }
         });
 
+        if (status && status !== ticket.status) {
+            bus.emit("ticket.status_changed", {
+                ticketId,
+                subject: ticket.subject,
+                oldStatus: ticket.status,
+                newStatus: status,
+                changedBy: agentId ?? null,
+            });
+        }
+
         bus.emit("ticket.updated", {
             ticketId,
             changes: {
@@ -938,6 +948,22 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
             },
         });
 
+        if (status) {
+            bus.emit("ticket.bulk_status_changed", {
+                ticketIds,
+                newStatus: status,
+            });
+        }
+
+        bus.emit("ticket.updated", {
+            source: "bulk_update",
+            ticketIds,
+            changes: {
+                status,
+                assigneeId,
+            },
+        });
+
         return res.json({ ok: true });
     } catch (err) {
         return res.status(500).json({ ok: false });
@@ -1001,6 +1027,12 @@ export async function bulkMergeTickets(req: Request, res: Response) {
                 },
             });
 
+        });
+
+        bus.emit("ticket.updated", {
+            source: "bulk_merge",
+            mainTicketId,
+            ticketIds,
         });
 
         return res.json({ ok: true });
