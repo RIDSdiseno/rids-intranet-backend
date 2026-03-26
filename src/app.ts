@@ -50,7 +50,6 @@ function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] 
   };
 }
 
-const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
 
 const app = express();
 
@@ -109,7 +108,14 @@ const corsOptions: cors.CorsOptions = {
   },
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowedHeaders: [
+  "Content-Type",
+  "Authorization",
+  "X-Requested-With",
+  "Cache-Control",
+  "Pragma",
+  "Expires",
+],
   optionsSuccessStatus: 204,
 };
 
