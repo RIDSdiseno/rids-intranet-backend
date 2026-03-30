@@ -7,13 +7,13 @@ import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
 import { prisma } from "./lib/prisma.js";
 
-import path from "path";
+//import path from "path";
 
 import { UPLOADS_DIR } from "./config/paths.js";
 
-import { asyncLocalStorage } from "./lib/request-context.js";
+//import { asyncLocalStorage } from "./lib/request-context.js";
 
-import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
+//import { startTeamViewerCron } from "./jobs/teamviewer.cron.js";
 
 /* ========= Helpers ========= */
 function normalizeOrigin(origin: string): string {
@@ -50,17 +50,16 @@ function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] 
   };
 }
 
-const allowedOrigins = normalizeOriginList(process.env.CORS_ORIGIN);
 
 const app = express();
+
+console.log("[ENV] CORS_ORIGIN raw =", process.env.CORS_ORIGIN);
 
 app.set("prisma", prisma);
 
 /* ========= Base ========= */
-// si hay proxy (Railway/Render/etc.)
 app.set("trust proxy", 1);
 
-// BigInt -> string en JSON (sin "any")
 app.set("json replacer", (_key: string, value: unknown) =>
   typeof value === "bigint" ? value.toString() : value
 );
@@ -70,8 +69,8 @@ app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
-    crossOriginEmbedderPolicy: false, // evita bloqueos con recursos externos
-    contentSecurityPolicy: false,     // si quieres CSP, la definimos luego
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false,
   })
 );
 
@@ -80,19 +79,48 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(cookieParser());
 
 /* ========= CORS ========= */
+const allowedOrigins = [
+  "https://rids-intranet.netlify.app",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:8100",
+  "capacitor://localhost",
+  "ionic://localhost",
+  "https://localhost",
+];
+
+console.log("[CORS] allowedOrigins =", allowedOrigins);
+
 const corsOptions: cors.CorsOptions = {
-  origin: makeCorsOriginValidator(allowedOrigins),
+  origin: (origin, callback) => {
+    console.log("[CORS] incoming origin =", origin);
+
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn("[CORS] blocked origin =", origin);
+    return callback(null, false);
+  },
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-  // sin allowedHeaders
-  maxAge: 600,
+  allowedHeaders: [
+  "Content-Type",
+  "Authorization",
+  "X-Requested-With",
+  "Cache-Control",
+  "Pragma",
+  "Expires",
+],
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
-
-// Preflight global con respuesta 204 (más limpio que el 200 con body)
-// Delega el preflight al mismo corsOptions (no hagas headers a mano)
-app.options("*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 /* ========= Logs ========= */
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
@@ -101,7 +129,6 @@ app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 /* ========= Archivos estáticos (uploads) ========= */
-// Sirve firmas, adjuntos, etc. desde /uploads
 app.use(
   "/uploads",
   express.static(UPLOADS_DIR, {
@@ -113,17 +140,14 @@ app.use(
 );
 
 /* ========= Rutas ========= */
-// Asegúrate que dentro de routes.js tengas algo como:
-// router.post("/auth/login", ...)
-// router.use("/tickets", ...), etc.
 app.use("/api", api);
 
-/* ========= 404 & Error handler ========= */
+/* ========= 404 ========= */
 app.use((_req, res) => {
   res.status(404).json({ ok: false, error: "Not Found" });
 });
 
-// Manejo centralizado de errores (puedes expandirlo para manejar distintos tipos de errores)
+/* ========= Error handler ========= */
 app.use((
   err: unknown,
   _req: Request,
@@ -132,11 +156,13 @@ app.use((
 ) => {
   const code = (err as { status?: number })?.status ?? 500;
   const msg = (err as { message?: string })?.message ?? "Internal Server Error";
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
-    console.error("[API ERROR]", err);
-  }
-  res.status(code).json({ ok: false, error: msg });
+
+  console.error("[API ERROR]", err);
+
+  res.status(code).json({
+    ok: false,
+    error: msg,
+  });
 });
 
 export default app;

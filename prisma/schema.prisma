@@ -309,6 +309,19 @@ model EntidadGestioo {
   cotizaciones     CotizacionGestioo[]
 }
 
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  tecnicoId Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  tecnico   Tecnico  @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: Cascade)
+
+  @@index([token])
+  @@index([tecnicoId])
+}
+
 model ProductoGestioo {
   id            Int                     @id @default(autoincrement())
   nombre        String
@@ -536,6 +549,7 @@ model Tecnico {
   cotizaciones        CotizacionGestioo[]
   auditLogs           AuditLog[]
   mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
+  passwordResetTokens PasswordResetToken[]
   agendasAsignadas    AgendaTecnico[]
 
   @@index([empresaId])
@@ -790,6 +804,7 @@ model CotizacionItemGestioo {
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
   equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
 
+
   @@index([equipoId])
 }
 
@@ -991,6 +1006,7 @@ model AgendaTecnico {
   @@index([tecnicoId])
 }
 
+
 model ReporteIA {
   id        Int      @id @default(autoincrement())
   empresaId Int
@@ -999,18 +1015,6 @@ model ReporteIA {
   createdAt DateTime @default(now())
 
   @@unique([empresaId, periodo])
-}
-
-model PasswordResetToken {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  tecnicoId Int
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([tecnicoId])
-  @@index([token])
 }
 
 enum TipoAgenda {

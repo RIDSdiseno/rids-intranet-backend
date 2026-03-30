@@ -1,5 +1,95 @@
+// simpleapi.service.ts
 // ============================================================
-// VALIDAR VARIABLES DE ENTORNO
+// HELPERS
+// ============================================================
+function truncar(valor, max) {
+    const texto = String(valor ?? "").trim();
+    return texto.length > max ? texto.slice(0, max) : texto;
+}
+function toInt(valor) {
+    if (typeof valor === "number") {
+        return Number.isFinite(valor) ? Math.round(valor) : 0;
+    }
+    if (typeof valor === "string") {
+        const normalizado = valor
+            .replace(/\./g, "")
+            .replace(/,/g, ".")
+            .replace(/[^\d.-]/g, "");
+        const num = Number(normalizado);
+        return Number.isFinite(num) ? Math.round(num) : 0;
+    }
+    return 0;
+}
+function formatFechaAAAAMMDD(fecha = new Date()) {
+    const year = fecha.getFullYear();
+    const month = String(fecha.getMonth() + 1).padStart(2, "0");
+    const day = String(fecha.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+function limpiarRut(rut) {
+    const limpio = String(rut ?? "")
+        .replace(/\./g, "")
+        .replace(/\s+/g, "")
+        .toUpperCase();
+    const match = limpio.match(/^(\d+)-?([\dK])$/i);
+    return match ? `${match[1] ?? ""}-${(match[2] ?? "").toUpperCase()}` : limpio;
+}
+function safeJsonParse(value) {
+    try {
+        return JSON.parse(value);
+    }
+    catch {
+        return null;
+    }
+}
+function extraerTag(xml, tag) {
+    const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const match = xml.match(regex);
+    return match?.[1]?.trim() ?? null;
+}
+function parseCAF(config) {
+    let xml = config.cafXml?.trim();
+    if (!xml && config.cafXmlBase64) {
+        xml = Buffer.from(config.cafXmlBase64, "base64").toString("utf-8").trim();
+    }
+    if (!xml) {
+        throw new Error("No hay CAF configurado");
+    }
+    const tipoDTE = Number(extraerTag(xml, "TD"));
+    const folioDesde = Number(extraerTag(xml, "D"));
+    const folioHasta = Number(extraerTag(xml, "H"));
+    return {
+        xml,
+        tipoDTE: Number.isFinite(tipoDTE) ? tipoDTE : null,
+        folioDesde: Number.isFinite(folioDesde) ? folioDesde : null,
+        folioHasta: Number.isFinite(folioHasta) ? folioHasta : null,
+    };
+}
+function resolverFolio(factura, cafInfo) {
+    const candidatos = [
+        factura?.folio,
+        factura?.folioDTE,
+        factura?.numero,
+        factura?.nro,
+    ]
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v) && v > 0);
+    if (candidatos.length > 0) {
+        const folio = candidatos[0];
+        if (cafInfo.folioDesde != null &&
+            cafInfo.folioHasta != null &&
+            (folio < cafInfo.folioDesde || folio > cafInfo.folioHasta)) {
+            throw new Error(`El folio ${folio} está fuera del rango del CAF (${cafInfo.folioDesde}-${cafInfo.folioHasta})`);
+        }
+        return folio;
+    }
+    if (cafInfo.folioDesde != null) {
+        return cafInfo.folioDesde;
+    }
+    throw new Error("No se pudo resolver el folio del DTE");
+}
+// ============================================================
+// CONFIG
 // ============================================================
 export function getSimpleAPIConfig() {
     const required = {
@@ -34,6 +124,8 @@ export function getSimpleAPIConfig() {
         certPassword: process.env.SII_CERT_PASSWORD,
         certRut: process.env.RUT_FIRMANTE,
         ambiente: process.env.SII_AMBIENTE === "certificacion" ? 1 : 0,
+        cafXml: process.env.SII_CAF_XML,
+        cafXmlBase64: process.env.SII_CAF_XML_BASE64,
     };
 }
 // ============================================================
@@ -43,7 +135,6 @@ let cachedToken = null;
 let tokenExpiry = 0;
 async function getSimpleAPIToken(config) {
     const ahora = Date.now();
-    // Reusar token si aún es válido (cachear por 50 minutos)
     if (cachedToken && ahora < tokenExpiry) {
         console.log("🔑 Usando token cacheado");
         return cachedToken;
@@ -61,22 +152,20 @@ async function getSimpleAPIToken(config) {
         throw new Error(`SimpleAPI Auth falló (${response.status}): ${rawText || "respuesta vacía"}. ` +
             `Verifica que SIMPLEAPI_KEY sea válida: ${config.apiKey}`);
     }
-    // El token puede venir como string puro o dentro de un objeto
     let token;
     try {
         const data = JSON.parse(rawText);
-        token = typeof data === "string"
-            ? data
-            : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
+        token =
+            typeof data === "string"
+                ? data
+                : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
     }
     catch {
-        // Si no es JSON, asumir que es el token directamente como string
-        token = rawText.trim().replace(/^"|"$/g, ""); // quitar comillas si las hay
+        token = rawText.trim().replace(/^"|"$/g, "");
     }
     if (!token) {
         throw new Error(`SimpleAPI Auth no retornó token. Respuesta: ${rawText}`);
     }
-    // Cachear por 50 minutos
     cachedToken = token;
     tokenExpiry = ahora + 50 * 60 * 1000;
     console.log("✅ Token obtenido:", token.substring(0, 30) + "...");
@@ -86,15 +175,13 @@ async function getSimpleAPIToken(config) {
 // HELPER: llamada HTTP a SimpleAPI — CON AUTH TOKEN
 // ============================================================
 async function callSimpleAPI(config, endpoint, body) {
-    // 1️⃣ Obtener token primero
     const token = await getSimpleAPIToken(config);
     const url = `${config.url}${endpoint}`;
     console.log("📡 SimpleAPI URL:", url);
     const response = await fetch(url, {
         method: "POST",
         headers: {
-            // 2️⃣ Usar el JWT obtenido del login
-            "Authorization": `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -102,7 +189,6 @@ async function callSimpleAPI(config, endpoint, body) {
     const rawText = await response.text();
     console.log("📥 STATUS:", response.status);
     console.log("📥 RAW:", rawText || "(vacío)");
-    // 3️⃣ Si el token expiró, limpiar caché y reintentar UNA vez
     if (response.status === 401) {
         console.log("⚠️ Token expirado, limpiando caché y reintentando...");
         cachedToken = null;
@@ -111,7 +197,7 @@ async function callSimpleAPI(config, endpoint, body) {
         const retry = await fetch(url, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${newToken}`,
+                Authorization: `Bearer ${newToken}`,
                 "Content-Type": "application/json",
             },
             body: JSON.stringify(body),
@@ -120,8 +206,7 @@ async function callSimpleAPI(config, endpoint, body) {
         console.log("📥 RETRY STATUS:", retry.status);
         console.log("📥 RETRY RAW:", retryText);
         if (!retry.ok) {
-            throw new Error(`SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ` +
-                retryText);
+            throw new Error(`SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ${retryText}`);
         }
         return JSON.parse(retryText);
     }
@@ -141,49 +226,121 @@ async function callSimpleAPI(config, endpoint, body) {
     return data;
 }
 // ============================================================
-// PASO 1: GENERAR DTE (genera + timbra + firma el XML)
+// PASO 1: GENERAR DTE
 // ============================================================
-export async function generarDTE(config, factura // objeto con cotizacion, entidad, items incluidos
-) {
-    const cotizacion = factura.cotizacion;
-    const entidad = cotizacion.entidad;
-    // Validaciones de datos del receptor
+export async function generarDTE(config, factura) {
+    const cotizacion = factura?.cotizacion;
+    const entidad = cotizacion?.entidad;
+    if (!cotizacion)
+        throw new Error("No se recibió factura.cotizacion");
+    if (!entidad)
+        throw new Error("La cotización no tiene entidad/receptor");
     if (!entidad?.rut)
         throw new Error("El cliente no tiene RUT registrado");
     if (!entidad?.nombre)
         throw new Error("El cliente no tiene nombre registrado");
-    // Montos en enteros (SII no acepta decimales en facturas CLP)
-    const montoNeto = Math.round(Number(cotizacion.subtotal) || 0);
-    const montoIVA = Math.round(Number(cotizacion.iva) || 0);
-    const montoTotal = Math.round(Number(cotizacion.total) || 0);
-    if (montoNeto <= 0 || montoTotal <= 0) {
-        throw new Error("Los montos de la cotización son inválidos (neto o total <= 0)");
+    if (!Array.isArray(cotizacion?.items) || cotizacion.items.length === 0) {
+        throw new Error("La cotización no tiene ítems para emitir");
     }
-    const fechaHoy = new Date().toISOString().split("T")[0]; // AAAA-MM-DD
-    const rutReceptor = String(entidad.rut).replace(/\./g, "").trim();
+    if (!config.cafXml && !config.cafXmlBase64) {
+        throw new Error("No hay CAF configurado para generar DTE");
+    }
+    const cafInfo = parseCAF(config);
+    console.log("===== VALIDACION CAF =====");
+    console.log("CAF XML LENGTH:", cafInfo.xml.length);
+    console.log("CAF TD:", cafInfo.tipoDTE);
+    console.log("CAF FOLIO DESDE:", cafInfo.folioDesde);
+    console.log("CAF FOLIO HASTA:", cafInfo.folioHasta);
+    console.log("CAF CONTIENE AUTORIZACION:", cafInfo.xml.includes("<AUTORIZACION>"));
+    console.log("CAF CONTIENE TD33:", cafInfo.xml.includes("<TD>33</TD>"));
+    console.log(Buffer.from(process.env.SII_CAF_XML_BASE64 || "", "base64")
+        .toString("utf-8")
+        .slice(0, 500));
+    console.log("==========================");
+    if (cafInfo.tipoDTE == null) {
+        throw new Error("No se pudo leer <TD> del CAF. Revisa el base64 o el XML.");
+    }
+    if (cafInfo.tipoDTE !== 33) {
+        throw new Error(`El CAF configurado no corresponde a Factura Electrónica (33). TD actual: ${cafInfo.tipoDTE}`);
+    }
+    const montoNeto = toInt(cotizacion.subtotal);
+    const montoIVA = toInt(cotizacion.iva);
+    const montoTotal = toInt(cotizacion.total);
+    if (montoNeto <= 0)
+        throw new Error("Monto neto inválido");
+    if (montoTotal <= 0)
+        throw new Error("Monto total inválido");
+    const fechaHoy = formatFechaAAAAMMDD();
+    const rutReceptor = limpiarRut(entidad.rut);
+    const casoSet = factura?.casoSet ||
+        factura?.setCaso ||
+        factura?.numeroAtencion ||
+        cotizacion?.casoSet ||
+        cotizacion?.setCaso ||
+        cotizacion?.numeroAtencion ||
+        null;
+    const folioPrueba = resolverFolio(factura, cafInfo);
+    const detalles = cotizacion.items.map((item, index) => {
+        const precio = toInt(item?.precio);
+        const cantidad = Number(item?.cantidad) || 1;
+        const montoItem = toInt(precio * cantidad);
+        const nombreBase = item?.nombre || item?.descripcion;
+        if (!nombreBase) {
+            throw new Error(`Item ${index + 1} no tiene nombre ni descripción`);
+        }
+        if (precio < 0 || cantidad <= 0 || montoItem < 0) {
+            throw new Error(`Item ${index + 1} tiene valores inválidos`);
+        }
+        return {
+            numeroLinea: index + 1,
+            nombre: truncar(nombreBase, 80),
+            ...(item?.descripcion &&
+                String(item.descripcion).trim() !== String(nombreBase).trim()
+                ? { descripcion: truncar(item.descripcion, 1000) }
+                : {}),
+            cantidad,
+            precio,
+            montoItem,
+        };
+    });
+    const referencias = casoSet
+        ? [
+            {
+                nroLinRef: 1,
+                tpoDocRef: "SET",
+                folioRef: String(casoSet).trim(),
+                fchRef: fechaHoy,
+                rznRef: truncar(`CASO ${String(casoSet).trim()}`, 90),
+            },
+        ]
+        : [];
     const payload = {
         documento: {
+            id: `DTE-33-${folioPrueba}`,
             encabezado: {
                 identificacionDTE: {
-                    tipoDTE: 33, // número entero, no string
-                    fechaEmisionString: fechaHoy, // usar el campo String
+                    tipoDTE: 33,
+                    folio: folioPrueba,
+                    fechaEmisionString: fechaHoy,
                 },
                 emisor: {
-                    rut: config.rutEmpresa,
-                    razonSocial: config.razonSocial,
-                    giro: config.giro,
-                    direccionOrigen: config.direccion,
-                    comunaOrigen: config.comuna,
-                    ciudadOrigen: config.ciudad,
+                    rut: limpiarRut(config.rutEmpresa),
+                    razonSocial: truncar(config.razonSocial, 100),
+                    giro: truncar(config.giro, 80),
+                    direccionOrigen: truncar(config.direccion, 70),
+                    comunaOrigen: truncar(config.comuna, 20),
+                    ciudadOrigen: truncar(config.ciudad, 20),
                 },
                 receptor: {
-                    rut: rutReceptor, // con guión y DV: "12345678-9"
-                    razonSocial: entidad.nombre,
-                    direccion: entidad.direccion ?? "Sin dirección",
-                    comuna: entidad.comuna ?? "Santiago",
-                    ciudad: entidad.ciudad ?? "Santiago",
-                    giro: entidad.giro ?? "Sin giro",
-                    ...(entidad.correo && { correoElectronico: entidad.correo }),
+                    rut: rutReceptor,
+                    razonSocial: truncar(entidad.nombre, 100),
+                    giro: truncar(entidad.giro ?? "Sin giro", 80),
+                    direccion: truncar(entidad.direccion ?? "Sin dirección", 70),
+                    comuna: truncar(entidad.comuna ?? "Santiago", 20),
+                    ciudad: truncar(entidad.ciudad ?? "Santiago", 20),
+                    ...(entidad.correo
+                        ? { correoElectronico: truncar(entidad.correo, 80) }
+                        : {}),
                 },
                 totales: {
                     montoNeto,
@@ -192,98 +349,122 @@ export async function generarDTE(config, factura // objeto con cotizacion, entid
                     montoTotal,
                 },
             },
-            detalles: cotizacion.items.map((item, index) => {
-                const precio = Math.round(Number(item.precio) || 0);
-                const cantidad = Number(item.cantidad) || 1;
-                const montoItem = Math.round(precio * cantidad);
-                if (!item.nombre && !item.descripcion) {
-                    throw new Error(`Item ${index + 1} no tiene nombre ni descripción`);
-                }
-                return {
-                    numeroLinea: index + 1,
-                    nombre: (item.nombre || item.descripcion).substring(0, 80), // máx 80 chars SII
-                    ...(item.descripcion && item.descripcion !== item.nombre && {
-                        descripcion: item.descripcion.substring(0, 1000)
-                    }),
-                    cantidad,
-                    precio,
-                    montoItem,
-                };
-            }),
+            detalles,
+            ...(referencias.length > 0 ? { referencias } : {}),
         },
         certificado: {
             base64: config.certBase64,
             password: config.certPassword,
-            rut: config.certRut,
+            rut: limpiarRut(config.certRut),
         },
+        caf: config.cafXmlBase64
+            ? { base64: config.cafXmlBase64 }
+            : { xml: config.cafXml },
     };
+    console.log("========== PAYLOAD DTE GENERAR ==========");
     console.log(JSON.stringify(payload, null, 2));
-    const data = await callSimpleAPI(config, "/api/v1/DTE/generar", payload);
-    // SimpleAPI retorna el DTE generado con folio asignado
-    if (!data?.folio && !data?.documento?.encabezado?.identificacionDTE?.folio) {
-        throw new Error("SimpleAPI no retornó folio en la respuesta: " + JSON.stringify(data));
+    console.log("=========================================");
+    console.log("===== RESUMEN DTE =====");
+    console.log("Documento ID:", payload.documento.id);
+    console.log("Tipo DTE:", payload.documento.encabezado.identificacionDTE.tipoDTE);
+    console.log("Folio:", payload.documento.encabezado.identificacionDTE.folio);
+    console.log("Fecha emisión:", payload.documento.encabezado.identificacionDTE.fechaEmisionString);
+    console.log("Receptor RUT:", payload.documento.encabezado.receptor.rut);
+    console.log("Receptor Razón Social:", payload.documento.encabezado.receptor.razonSocial);
+    console.log("Neto:", payload.documento.encabezado.totales.montoNeto);
+    console.log("IVA:", payload.documento.encabezado.totales.iva);
+    console.log("Total:", payload.documento.encabezado.totales.montoTotal);
+    console.log("Cantidad detalles:", payload.documento.detalles.length);
+    console.log("Referencias:", JSON.stringify(payload.documento.referencias || [], null, 2));
+    console.log("CAF incluido:", !!payload.caf);
+    console.log("CAF tipo:", payload.caf && "base64" in payload.caf ? "base64" : "xml");
+    console.log("=======================");
+    const data = await callSimpleAPI(config, "/api/v1/dte/generar", payload);
+    const folioRaw = data?.folio ??
+        data?.documento?.encabezado?.identificacionDTE?.folio ??
+        data?.documento?.encabezado?.identificacionDTE?.folioDTE ??
+        folioPrueba;
+    const folio = Number(folioRaw);
+    if (!Number.isFinite(folio) || folio <= 0) {
+        throw new Error(`No se pudo resolver un folio válido desde SimpleAPI. Valor recibido: ${String(folioRaw)}`);
     }
-    const folio = data.folio
-        ?? data.documento?.encabezado?.identificacionDTE?.folio
-        ?? data.documento?.encabezado?.identificacionDTE?.folioDTE;
     return {
-        xml: JSON.stringify(data), // guardar respuesta completa para el sobre
-        folio: Number(folio),
+        xml: JSON.stringify(data),
+        folio,
+        raw: data,
     };
 }
 // ============================================================
 // PASO 2: GENERAR SOBRE DE ENVÍO
 // ============================================================
 export async function generarSobre(config, dteGenerado) {
+    if (!dteGenerado?.xml) {
+        throw new Error("No se recibió el DTE generado para armar el sobre");
+    }
+    const dteRaw = safeJsonParse(dteGenerado.xml);
+    if (!dteRaw || typeof dteRaw === "string") {
+        throw new Error("El XML/JSON del DTE generado es inválido");
+    }
     const payload = {
         certificado: {
             base64: config.certBase64,
             password: config.certPassword,
-            rut: config.certRut,
+            rut: limpiarRut(config.certRut),
         },
-        tipo: 1, // 1 = EnvioDTE (facturas, NC, etc.)
+        tipo: 1,
         ambiente: config.ambiente,
         caratula: {
-            rutEmisor: config.rutEmpresa,
-            rutReceptor: "60803000-K", // SII siempre es este RUT
+            rutEmisor: limpiarRut(config.rutEmpresa),
+            rutReceptor: "60803000-K",
         },
+        documentos: [dteRaw],
     };
-    const data = await callSimpleAPI(config, "/api/v1/Envio/generar", payload);
+    const data = await callSimpleAPI(config, "/api/v1/envio/generar", payload);
     return JSON.stringify(data);
 }
 // ============================================================
 // PASO 3: ENVIAR AL SII
 // ============================================================
-export async function enviarAlSII(config) {
+export async function enviarAlSII(config, sobreGenerado) {
+    const sobreRaw = sobreGenerado ? safeJsonParse(sobreGenerado) : undefined;
     const payload = {
         certificado: {
             base64: config.certBase64,
             password: config.certPassword,
-            rut: config.certRut,
+            rut: limpiarRut(config.certRut),
         },
         tipo: 1,
         ambiente: config.ambiente,
+        ...(sobreRaw && typeof sobreRaw !== "string" ? { sobre: sobreRaw } : {}),
     };
-    const data = await callSimpleAPI(config, "/api/v1/Envio/enviar", payload);
-    const trackId = data?.trackId ?? data?.TrackId ?? data?.track_id ?? String(data);
+    const data = await callSimpleAPI(config, "/api/v1/envio/enviar", payload);
+    const trackId = data?.trackId ??
+        data?.TrackId ??
+        data?.track_id ??
+        data?.respuesta?.trackId ??
+        null;
     return {
-        trackId: String(trackId),
-        estado: data?.estado ?? "ENVIADO",
+        trackId: String(trackId ?? ""),
+        estado: data?.estado ?? data?.status ?? "ENVIADO",
+        raw: data,
     };
 }
 // ============================================================
-// PASO 4 (OPCIONAL): CONSULTAR ESTADO EN SII
+// PASO 4: CONSULTAR ESTADO EN SII
 // ============================================================
 export async function consultarEstadoEnvio(config, trackId) {
+    if (!trackId) {
+        throw new Error("trackId es obligatorio para consultar estado");
+    }
     const payload = {
         certificado: {
             base64: config.certBase64,
             password: config.certPassword,
-            rut: config.certRut,
+            rut: limpiarRut(config.certRut),
         },
         trackId: Number(trackId),
         ambiente: config.ambiente,
     };
-    return callSimpleAPI(config, "/api/v1/Consulta/envio", payload);
+    return callSimpleAPI(config, "/api/v1/consulta/envio", payload);
 }
 //# sourceMappingURL=simpleapi.service.js.map
