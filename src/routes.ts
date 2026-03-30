@@ -110,7 +110,7 @@ api.use("/reportes-upload", reportesUploadRouter);
 api.use("/fd", fdRouter);
 // Webhook de Freshdesk (p.ej. POST /api/fd/webhook)
 api.use("/fd", fdWebhookRouter);
-// API de tickets (/api/tickets/*)
+// API de tickets (/api/tickets/*)      
 api.use("/tickets", ticketsApiRouter);
 
 /* ===================== HELP DESK RIDS ===================== */

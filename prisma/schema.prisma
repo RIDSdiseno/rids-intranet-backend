@@ -519,6 +519,9 @@ model Tecnico {
   email               String                  @unique
   passwordHash        String
   status              Boolean                 @default(true)
+  firmaTexto          String?
+  cargo               String?
+  area                String?
   empresaId           Int?
   rol                 String                  @default("TECNICO")
   teamviewerUserId    String?                 @unique
@@ -998,8 +1001,6 @@ model ReporteIA {
   @@unique([empresaId, periodo])
 }
 
-
-
 model PasswordResetToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
@@ -1198,5 +1199,3 @@ enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
 }
-
-
