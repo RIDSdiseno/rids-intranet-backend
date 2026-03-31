@@ -3,13 +3,13 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 // Importa solo lo que Prisma sí está exportando correctamente
-import { Prisma, TipoEquipo } from "@prisma/client"; 
+import { Prisma, TipoEquipo } from "@prisma/client";
 
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
 enum AuditAction {
-    CREATE = 'CREATE',
-    UPDATE = 'UPDATE',
-    DELETE = 'DELETE'
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE'
 }
 
 /* ================== Schemas ================== */
@@ -21,6 +21,11 @@ const listQuerySchema = z.object({
   search: z.string().trim().optional(),
   marca: z.string().trim().optional(),
   tipo: z.nativeEnum(TipoEquipo).optional(),
+
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
+  updatedFrom: z.coerce.date().optional(),
+  updatedTo: z.coerce.date().optional(),
 
   empresaId: z.coerce.number().int().optional(),
   empresaName: z.string().trim().optional(),
@@ -39,6 +44,8 @@ const listQuerySchema = z.object({
       "ram",
       "disco",
       "propiedad",
+      "createdAt",
+      "updatedAt",
     ])
     .default("id_equipo")
     .optional(),
@@ -146,6 +153,8 @@ function mapOrderBy(
     "ram",
     "disco",
     "propiedad",
+    "createdAt",
+    "updatedAt",
   ];
 
   const key = allowed.includes(sortBy as any)
@@ -236,6 +245,7 @@ export async function listEquipos(req: Request, res: Response) {
             },
           }
           : {}),
+
       ...(q.empresaName
         ? {
           solicitante: {
@@ -247,8 +257,28 @@ export async function listEquipos(req: Request, res: Response) {
           },
         }
         : {}),
+
       ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
       ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
+
+      ...(q.createdFrom || q.createdTo
+        ? {
+          createdAt: {
+            ...(q.createdFrom ? { gte: q.createdFrom } : {}),
+            ...(q.createdTo ? { lte: q.createdTo } : {}),
+          },
+        }
+        : {}),
+
+      ...(q.updatedFrom || q.updatedTo
+        ? {
+          updatedAt: {
+            ...(q.updatedFrom ? { gte: q.updatedFrom } : {}),
+            ...(q.updatedTo ? { lte: q.updatedTo } : {}),
+          },
+        }
+        : {}),
+
       ...(q.search
         ? {
           OR: [

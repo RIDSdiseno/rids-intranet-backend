@@ -31,7 +31,27 @@ import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.con
 
 import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
 
+import {
+    listTicketEmailTemplates,
+    updateTicketEmailTemplate,
+    previewTicketEmailTemplate,
+} from "../../controllers/tickets-rids/reply-templates/ticket-email-template.controller.js";
+
+import multer from "multer";
+import {
+    getTecnicoSignature,
+    updateTecnicoSignatureData,
+    uploadTecnicoSignatureImage,
+    deleteTecnicoSignatureImage,
+} from "../../controllers/tickets-rids/reply-templates/tecnico-signature.controller.js";
+
+import { getTicketEmailSignature, updateTicketEmailSignature } from "../../controllers/tickets-rids/reply-templates/ticket-default-signature.controller.js";
+
+import { getTicketMetricsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
+
 const ticketeraRouter = Router();
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // =======================
 // CRUD base
@@ -57,6 +77,20 @@ ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
 ticketeraRouter.get("/contactos", buscarContactos)
 
 // =======================
+// MÉTRICAS TÉCNICOS
+// =======================
+ticketeraRouter.get("/tecnicos/metrics", getTicketMetricsByTecnico);
+
+// =======================
+// PLANTILLAS DE EMAIL
+// =======================
+ticketeraRouter.get("/email-templates", listTicketEmailTemplates);
+ticketeraRouter.put("/email-templates", updateTicketEmailTemplate);
+ticketeraRouter.post("/email-templates/preview", previewTicketEmailTemplate);
+ticketeraRouter.get("/email-signature", getTicketEmailSignature);
+ticketeraRouter.put("/email-signature", updateTicketEmailSignature);
+
+// =======================
 // EMAIL ENDPOINTS
 // =======================
 ticketeraRouter.post("/inbound-email", inboundEmail);
@@ -68,16 +102,24 @@ ticketeraRouter.post("/process-emails", processEmails);
 ticketeraRouter.get("/attachments/:attachmentId/download", downloadTicketAttachment);
 
 // =======================
+// FIRMAS TÉCNICOS
+// =======================
+ticketeraRouter.get("/tecnicos/:id/signature", getTecnicoSignature);
+ticketeraRouter.put("/tecnicos/:id/signature", updateTecnicoSignatureData);
+ticketeraRouter.post("/tecnicos/:id/signature/image", upload.single("file"), uploadTecnicoSignatureImage);
+ticketeraRouter.delete("/tecnicos/:id/signature/image", deleteTecnicoSignatureImage);
+
+// =======================
 // RUTAS CON ID (AL FINAL)
 // =======================
 ticketeraRouter.get("/:id", getTicketById);
 ticketeraRouter.patch("/:id", updateTicket);
-ticketeraRouter.post("/:id/reply",uploadTicketAttachments.array("attachments"),(err: any, _req: Request, res: Response, next: NextFunction) => {
+ticketeraRouter.post("/:id/reply", uploadTicketAttachments.array("attachments"), (err: any, _req: Request, res: Response, next: NextFunction) => {
     if (err) {
-            return res.status(400).json({ ok: false, message: err.message });
-        }
-        return next();
-    },
+        return res.status(400).json({ ok: false, message: err.message });
+    }
+    return next();
+},
     replyTicketAsAgent
 );
 

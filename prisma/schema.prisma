@@ -532,12 +532,12 @@ model Tecnico {
   email               String                  @unique
   passwordHash        String
   status              Boolean                 @default(true)
-  firmaTexto          String?
-  cargo               String?
-  area                String?
   empresaId           Int?
   rol                 String                  @default("TECNICO")
   teamviewerUserId    String?                 @unique
+  firmaTexto          String?
+  area                String?
+  cargo               String?
   empresa             Empresa?                @relation(fields: [empresaId], references: [id_empresa])
   tokens              RefreshToken[]
   historiales         Historial[]
@@ -642,6 +642,7 @@ model TeamViewerDeviceMap {
   @@index([solicitanteId])
 }
 
+/// FRESHDESK HISTORICO
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskCompanyMap {
   companyId BigInt  @id
@@ -653,6 +654,7 @@ model FreshdeskCompanyMap {
   @@index([domain])
 }
 
+/// FRESHDESK HISTORICO
 /// * LEGADO: ya no lo usa el flujo nuevo de tickets
 model FreshdeskRequesterMap {
   requesterId   BigInt      @id
@@ -664,6 +666,7 @@ model FreshdeskRequesterMap {
   @@index([solicitanteId])
 }
 
+/// FRESHDESK HISTORICO
 /// * CENTRAL: Ticket de Freshdesk (ahora referenciado a TicketOrg y TicketRequester)
 model FreshdeskTicket {
   id                BigInt           @id
@@ -693,6 +696,7 @@ model FreshdeskTicket {
   @@index([createdAt])
 }
 
+/// FRESHDESK HISTORICO
 /// * Agrupación lógica de tickets (no toca tu Empresa)
 model TicketOrg {
   id         Int               @id @default(autoincrement())
@@ -705,6 +709,7 @@ model TicketOrg {
   requesters TicketRequester[]
 }
 
+/// FRESHDESK HISTORICO
 /// * Mapa domain/companyId → TicketOrg
 model FdSourceMap {
   id          Int       @id @default(autoincrement())
@@ -716,7 +721,7 @@ model FdSourceMap {
   @@index([ticketOrgId])
 }
 
-/// * NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId)
+/// FRESHDESK HISTORICO * NUEVO: solicitante “propio” de tickets (se deduplica por email o fdRequesterId)
 model TicketRequester {
   id            Int               @id @default(autoincrement())
   name          String
@@ -803,7 +808,6 @@ model CotizacionItemGestioo {
   equipoId          Int?              @unique
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
   equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
-
 
   @@index([equipoId])
 }
@@ -918,6 +922,32 @@ model TicketEvent {
   @@index([ticketId])
 }
 
+model TicketEmailTemplate {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  name        String
+  subjectTpl  String
+  bodyHtmlTpl String
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TicketEmailSignature {
+  id        Int      @id @default(autoincrement())
+  nombre    String   @default("Equipo de Soporte Técnico")
+  cargo     String   @default("Soporte Técnico")
+  area      String   @default("Asesorías RIDS Ltda.")
+  email     String   @default("soporte@rids.cl")
+  telefono  String?
+  sitioWeb1 String?
+  sitioWeb2 String?
+  imageUrl  String?
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Firma {
   id            Int          @id @default(autoincrement())
   path          String
@@ -1005,7 +1035,6 @@ model AgendaTecnico {
   @@index([agendaId])
   @@index([tecnicoId])
 }
-
 
 model ReporteIA {
   id        Int      @id @default(autoincrement())

@@ -16,6 +16,10 @@ const listQuerySchema = z.object({
     search: z.string().trim().optional(),
     marca: z.string().trim().optional(),
     tipo: z.nativeEnum(TipoEquipo).optional(),
+    createdFrom: z.coerce.date().optional(),
+    createdTo: z.coerce.date().optional(),
+    updatedFrom: z.coerce.date().optional(),
+    updatedTo: z.coerce.date().optional(),
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
@@ -31,6 +35,8 @@ const listQuerySchema = z.object({
         "ram",
         "disco",
         "propiedad",
+        "createdAt",
+        "updatedAt",
     ])
         .default("id_equipo")
         .optional(),
@@ -117,6 +123,8 @@ function mapOrderBy(sortBy, sortDir) {
         "ram",
         "disco",
         "propiedad",
+        "createdAt",
+        "updatedAt",
     ];
     const key = allowed.includes(sortBy)
         ? sortBy
@@ -205,6 +213,22 @@ export async function listEquipos(req, res) {
                 : {}),
             ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
             ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
+            ...(q.createdFrom || q.createdTo
+                ? {
+                    createdAt: {
+                        ...(q.createdFrom ? { gte: q.createdFrom } : {}),
+                        ...(q.createdTo ? { lte: q.createdTo } : {}),
+                    },
+                }
+                : {}),
+            ...(q.updatedFrom || q.updatedTo
+                ? {
+                    updatedAt: {
+                        ...(q.updatedFrom ? { gte: q.updatedFrom } : {}),
+                        ...(q.updatedTo ? { lte: q.updatedTo } : {}),
+                    },
+                }
+                : {}),
             ...(q.search
                 ? {
                     OR: [

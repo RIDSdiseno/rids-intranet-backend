@@ -19,7 +19,7 @@ import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 
-import { emailSenderService } from '../email/email-sender.service.js';
+import { ticketEmailTemplateService } from "../email/reply-templates/ticket-email-template.service.js";
 
 /* ======================================================
    Tipos
@@ -50,62 +50,6 @@ type GraphHeader = {
     name: string;
     value: string;
 };
-
-function buildAutoReplyTemplate(params: {
-    nombre: string;
-    ticketId: number;
-    subject: string;
-    bodyOriginal: string;
-    nombreTecnico?: string;
-}) {
-    return `
-<!DOCTYPE html>
-<html>
-<body style="margin:0; padding:0; font-family: Arial, sans-serif; font-size:14px; color:#333;">
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:20px;">
-  <tr><td style="max-width:600px;">
-
-    <p>Hola <strong>${params.nombre}</strong></p>
-
-    <p>Estimad@</p>
-
-    <p>
-      Hemos recibido correctamente su solicitud de soporte. Su ticket ha sido ingresado 
-      en nuestro sistema y será asignado a un técnico del equipo de Asesorías RIDS Ltda. 
-      para su revisión.
-    </p>
-
-    <p>
-      Próximamente recibirá una actualización sobre el estado de su requerimiento. 
-      Le recordamos que puede responder a este correo si desea agregar más información 
-      o antecedentes al caso.
-    </p>
-
-    <p><strong>N° de ticket:</strong> #${params.ticketId}<br/>
-    <strong>Asunto:</strong> ${params.subject}<br/>
-    <strong>Área:</strong> Soporte Técnico / Atención al Cliente</p>
-
-    <p>Agradecemos su contacto y confianza.</p>
-
-    <p>
-      Atentamente,<br/>
-      <strong>${params.nombreTecnico || "Equipo de Soporte Técnico"}</strong>
-      Asesorías RIDS Ltda.<br/>
-      soporte@rids.cl | www.rids.cl
-    </p>
-
-    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
-
-    <p style="color:#666; font-size:13px;">
-      <strong>${params.nombre}</strong> escribió:<br/>
-      <em>${params.bodyOriginal}</em>
-    </p>
-
-  </td></tr>
-</table>
-</body>
-</html>`;
-}
 
 /* ======================================================
    Servicio Graph Reader
@@ -365,10 +309,7 @@ class GraphReaderService {
            4️⃣ FILTRO SPAM / SISTEMA (SENDER)
         ============================= */
         const blockedSenders = [
-            'postmaster@',
             'mailer-daemon',
-            'no-reply',
-            'noreply',
             'bounce',
         ];
 
@@ -745,74 +686,53 @@ class GraphReaderService {
                 });
             }
 
-            const html = buildAutoReplyTemplate({
-                nombre: data.fromName || "Cliente",
-                ticketId: ticket.id,
-                subject: ticket.subject,
-                bodyOriginal: data.bodyHtml || data.bodyText,
-                ...(tecnico?.nombre && { nombreTecnico: tecnico.nombre }) // 🔥 CLAVE
-            });
+            const tecnicoRender = tecnico
+                ? {
+                    nombre: tecnico.nombre,
+                    email: tecnico.email,
+                    cargo: "Soporte Técnico",
+                    area: "Asesorías RIDS Ltda.",
+                    firmaPath: tecnico.firma?.path ?? null,
+                }
+                : null;
 
-            console.log("📨 TO:", data.fromEmail);
-            console.log("📨 FROM:", this.supportEmail);
-
-            // 🔥 Construir firma HTML
-            const firmaHtml = tecnico?.firma?.path
-                ? `
-<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
-  <tr>
-    <td style="padding-right:16px; vertical-align:middle;">
-      <img src="${tecnico.firma.path}" width="120" />
-    </td>
-    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
-      <strong>${tecnico.nombre}</strong><br/>
-      Soporte Técnico · Asesorías RIDS Ltda.<br/>
-      <a href="mailto:${tecnico.email}" style="color:#0ea5e9;">${tecnico.email}</a><br/>
-      WhatsApp: +56 9 8823 1976<br/>
-      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
-      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
-    </td>
-  </tr>
-</table>`
-                : `
-<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
-  <tr>
-    <td style="padding-right:16px; vertical-align:middle;">
-      <img src="https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif" width="120" />
-    </td>
-    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
-      <strong>Equipo de Soporte Técnico</strong><br/>
-      Asesorías RIDS Ltda.<br/>
-      <a href="mailto:soporte@rids.cl" style="color:#0ea5e9;">soporte@rids.cl</a><br/>
-      WhatsApp: +56 9 8823 1976<br/>
-      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
-      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
-    </td>
-  </tr>
-</table>`;
-
-            const htmlFinal = `${html}${firmaHtml}`;
-
-            await this.sendReplyEmail({
-                to: data.fromEmail,
-                subject: `Re: ${ticket.subject}`,
-                bodyHtml: htmlFinal,
-            });
-
-            // ✅ Registrar mensaje interno
-            await prisma.ticketMessage.create({
-                data: {
+            const rendered = await ticketEmailTemplateService.render({
+                key: "AUTO_REPLY_INBOUND",
+                tecnico: tecnicoRender,
+                vars: {
+                    nombre: data.fromName || "Cliente",
                     ticketId: ticket.id,
-                    direction: MessageDirection.OUTBOUND,
-                    bodyText: 'Correo automático de confirmación enviado',
-                    bodyHtml: htmlFinal,
-                    isInternal: false,
-                    fromEmail: this.supportEmail,
-                    toEmail: data.fromEmail,
-                    sourceMessageId: `<auto-reply-${ticket.id}-${Date.now()}@rids.cl>`, // 🆕
-                    sourceInReplyTo: data.messageId,                                     // 🆕
+                    subject: ticket.subject,
+                    bodyOriginal: ticketEmailTemplateService.textToHtml(data.bodyText || ""),
+                    messageHtml: ticketEmailTemplateService.textToHtml(data.bodyText || ""),
+                    nombreTecnico: tecnico?.nombre || "Equipo de Soporte Técnico",
+                    emailTecnico: tecnico?.email || "soporte@rids.cl",
+                    cargoTecnico: "Soporte Técnico",
+                    areaTecnico: "Asesorías RIDS Ltda.",
                 },
             });
+
+            if (rendered.isEnabled) {
+                await this.sendReplyEmail({
+                    to: data.fromEmail,
+                    subject: rendered.subject,
+                    bodyHtml: rendered.bodyHtml,
+                });
+
+                await prisma.ticketMessage.create({
+                    data: {
+                        ticketId: ticket.id,
+                        direction: MessageDirection.OUTBOUND,
+                        bodyText: "Correo automático de confirmación enviado",
+                        bodyHtml: rendered.bodyHtml,
+                        isInternal: false,
+                        fromEmail: this.supportEmail,
+                        toEmail: data.fromEmail,
+                        sourceMessageId: `<auto-reply-${ticket.id}-${Date.now()}@rids.cl>`,
+                        sourceInReplyTo: data.messageId,
+                    },
+                });
+            }
 
             console.log(`✅ Auto-reply enviado correctamente a ${data.fromEmail}`);
 

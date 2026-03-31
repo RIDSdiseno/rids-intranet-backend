@@ -1,9 +1,9 @@
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
-import { emailSenderService } from '../../service/email/email-sender.service.js';
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
 import { buildTicketSla } from "./ticketera-sla.controller.js";
+import { ticketEmailTemplateService } from "../../service/email/reply-templates/ticket-email-template.service.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 // Agrega esta función helper junto a escapeHtml
@@ -155,75 +155,40 @@ export async function createTicket(req, res) {
                 }
             })
             : null;
-        function escapeHtml(text) {
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-        }
-        const nombreTecnico = toHtmlEntities(tecnico?.nombre ?? "Equipo de Soporte T&eacute;cnico");
-        const emailTecnico = tecnico?.email ?? "soporte@rids.cl";
-        const cargo = toHtmlEntities(tecnico?.cargo ?? "Soporte T&eacute;cnico");
-        const areaRaw = tecnico?.area ?? "Soporte Técnico";
-        const area = toHtmlEntities(tecnico?.area ?? "Soporte T\u00e9cnico");
-        const firmaPath = tecnico?.firma?.path ?? null;
         if (normalizedFromEmail &&
             normalizedFromEmail !== process.env.EMAIL_USER?.trim().toLowerCase()) {
             try {
-                const firmaHtml = `
-<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
-  <tr>
-    <td style="padding-right:16px; vertical-align:middle;">
-      <img src="${firmaPath || "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif"}" width="120" />
-    </td>
-    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
-      <strong style="font-size:14px;">${nombreTecnico}</strong><br/>
-      <span style="color:#555;">${cargo}</span><br/>
-      <span style="color:#555;">${area}</span><br/>
-      <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
-      WhatsApp: +56 9 8823 1976<br/>
-      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> ·
-      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
-    </td>
-  </tr>
-</table>`;
-                const detalleHtml = escapeHtml(message?.trim() || "Sin detalle adicional.")
-                    .replace(/\n/g, "<br/>");
-                const bodyHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta charset="UTF-8"> 
-</head>
-<body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
-
-    <p><strong>Ticket #${ticket.id}</strong></p>
-
-    <p><strong>Asunto:</strong> ${escapeHtml(ticket.subject)}</p>
-
-    <p><strong>Detalle:</strong></p>
-
-    <div style="line-height:1.6;">
-        ${detalleHtml}
-    </div>
-
-    ${firmaHtml}
-
-    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
-
-    <p style="font-size:12px; color:#666;">
-    <strong>Ticket #${ticket.id}</strong> · ${escapeHtml(ticket.subject)}<br/>
-    Soporte T&eacute;cnico · Asesor&iacute;as RIDS Ltda.<br/>
-    soporte@rids.cl
-</p>
-</body>
-</html>`;
-                await graphReaderService.sendReplyEmail({
-                    to: normalizedFromEmail,
-                    subject: `Confirmación de ticket #${ticket.id} - ${ticket.subject}`,
-                    bodyHtml,
+                const tecnicoRender = tecnico
+                    ? {
+                        nombre: tecnico.nombre,
+                        email: tecnico.email,
+                        cargo: tecnico.cargo,
+                        area: tecnico.area,
+                        firmaPath: tecnico.firma?.path ?? null,
+                    }
+                    : null;
+                const rendered = await ticketEmailTemplateService.render({
+                    key: "TICKET_CREATED_WEB",
+                    tecnico: tecnicoRender,
+                    vars: {
+                        nombre: "Cliente",
+                        ticketId: ticket.id,
+                        subject: ticket.subject,
+                        bodyOriginal: "",
+                        messageHtml: ticketEmailTemplateService.textToHtml(message?.trim() || "Sin detalle adicional."),
+                        nombreTecnico: tecnico?.nombre || "Equipo de Soporte Técnico",
+                        emailTecnico: tecnico?.email || "soporte@rids.cl",
+                        cargoTecnico: tecnico?.cargo || "Soporte Técnico",
+                        areaTecnico: tecnico?.area || "Soporte Técnico",
+                    },
                 });
+                if (rendered.isEnabled) {
+                    await graphReaderService.sendReplyEmail({
+                        to: normalizedFromEmail,
+                        subject: rendered.subject,
+                        bodyHtml: rendered.bodyHtml,
+                    });
+                }
             }
             catch (err) {
                 console.error("⚠️ Error enviando auto-reply:", err);
@@ -339,61 +304,38 @@ export async function replyTicketAsAgent(req, res) {
         // 🆕 Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
             const tecnico = ticket.assignee ?? null;
-            // ✅ Fallbacks seguros
-            const nombreTecnico = toHtmlEntities(tecnico?.nombre ?? "Equipo de Soporte T&eacute;cnico");
-            const emailTecnico = tecnico?.email ?? "soporte@rids.cl";
-            const cargo = toHtmlEntities(tecnico?.cargo ?? "Soporte T&eacute;cnico");
-            const area = toHtmlEntities(tecnico?.area ?? "Soporte T\u00e9cnico");
-            const firmaPath = tecnico?.firma?.path ?? null;
-            // ✅ Sanitizar mensaje (ANTI XSS)
-            function escapeHtml(text) {
-                return text
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;");
-            }
-            // ✅ Firma unificada (sin duplicación)
-            const firmaHtml = `
-<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
-  <tr>
-    <td style="padding-right:16px; vertical-align:middle;">
-      <img src="${firmaPath || "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif"}" width="120" />
-    </td>
-    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
-      <strong style="font-size:14px;">${nombreTecnico}</strong><br/>
-      <span style="color:#555;">${cargo}</span><br/>
-      <span style="color:#555;">${area}</span><br/>
-      <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
-      WhatsApp: +56 9 8823 1976<br/>
-      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
-      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
-    </td>
-  </tr>
-</table>`;
-            const bodyHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta charset="UTF-8"> 
-</head>
-<body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
-    <p>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>
-    ${firmaHtml}
-    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
-    <p style="font-size:12px; color:#666;">
-    <strong>Ticket #${ticket.id}</strong> · ${escapeHtml(ticket.subject)}<br/>
-    Soporte T&eacute;cnico · Asesor&iacute;as RIDS Ltda.<br/>
-    soporte@rids.cl
-</p>
-</body>
-</html>`;
-            await graphReaderService.sendReplyEmail({
-                to: toEmails,
-                cc: ccEmails,
-                subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
-                bodyHtml,
+            const tecnicoRender = tecnico
+                ? {
+                    nombre: tecnico.nombre,
+                    email: tecnico.email,
+                    cargo: tecnico.cargo,
+                    area: tecnico.area,
+                    firmaPath: tecnico.firma?.path ?? null,
+                }
+                : null;
+            const rendered = await ticketEmailTemplateService.render({
+                key: "AGENT_REPLY",
+                tecnico: tecnicoRender,
+                vars: {
+                    nombre: ticket.requester?.nombre || "Cliente",
+                    ticketId: ticket.id,
+                    subject: ticket.subject,
+                    bodyOriginal: "",
+                    messageHtml: ticketEmailTemplateService.textToHtml(message || ""),
+                    nombreTecnico: tecnico?.nombre || "Equipo de Soporte Técnico",
+                    emailTecnico: tecnico?.email || "soporte@rids.cl",
+                    cargoTecnico: tecnico?.cargo || "Soporte Técnico",
+                    areaTecnico: tecnico?.area || "Soporte Técnico",
+                },
             });
+            if (rendered.isEnabled) {
+                await graphReaderService.sendReplyEmail({
+                    to: toEmails,
+                    cc: ccEmails,
+                    subject: rendered.subject,
+                    bodyHtml: rendered.bodyHtml,
+                });
+            }
         }
         bus.emit("ticket.updated", {
             ticketId,
