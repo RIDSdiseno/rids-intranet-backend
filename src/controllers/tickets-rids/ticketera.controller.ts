@@ -22,18 +22,74 @@ declare global {
     }
 }
 
+// Agrega esta función helper junto a escapeHtml
+function toHtmlEntities(str: string): string {
+    return str
+        .replace(/á/g, "&aacute;")
+        .replace(/é/g, "&eacute;")
+        .replace(/í/g, "&iacute;")
+        .replace(/ó/g, "&oacute;")
+        .replace(/ú/g, "&uacute;")
+        .replace(/Á/g, "&Aacute;")
+        .replace(/É/g, "&Eacute;")
+        .replace(/Í/g, "&Iacute;")
+        .replace(/Ó/g, "&Oacute;")
+        .replace(/Ú/g, "&Uacute;")
+        .replace(/ñ/g, "&ntilde;")
+        .replace(/Ñ/g, "&Ntilde;")
+        .replace(/ü/g, "&uuml;")
+        .replace(/ü/g, "&uuml;");
+}
+
 // Crear ticket
 export async function createTicket(req: Request, res: Response) {
     try {
-        const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail } = req.body;
+        const {
+            empresaId,
+            requesterId,
+            subject,
+            message,
+            priority,
+            assigneeId,
+            fromEmail: bodyFromEmail,
+        } = req.body;
 
-        if (!empresaId || !subject) {
+        let empresaIdFinal = empresaId;
+
+        if (!empresaIdFinal && bodyFromEmail?.trim()) {
+            const empresaSinClasificar = await prisma.empresa.findFirst({
+                where: {
+                    nombre: {
+                        equals: "SIN CLASIFICAR",
+                        mode: "insensitive",
+                    },
+                },
+                select: { id_empresa: true },
+            });
+
+            if (!empresaSinClasificar) {
+                return res.status(400).json({
+                    ok: false,
+                    message: "No existe la empresa SIN CLASIFICAR",
+                });
+            }
+
+            empresaIdFinal = empresaSinClasificar.id_empresa;
+        }
+
+        if (!empresaIdFinal || !subject) {
             return res.status(400).json({
                 ok: false,
                 message: "empresaId y subject son obligatorios",
             });
         }
 
+        if (!requesterId && !bodyFromEmail?.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: "Debes seleccionar un contacto o ingresar un correo manual",
+            });
+        }
         const publicId = crypto.randomUUID();
 
         const ticket = await prisma.$transaction(async (tx) => {
@@ -45,10 +101,10 @@ export async function createTicket(req: Request, res: Response) {
                     priority: priority ?? TicketPriority.NORMAL,
                     channel: "WEB",
                     lastActivityAt: new Date(),
+                    fromEmail: bodyFromEmail?.trim() || null,
 
-                    // ✅ RELACIONES CORRECTAS
                     empresa: {
-                        connect: { id_empresa: empresaId },
+                        connect: { id_empresa: empresaIdFinal },
                     },
 
                     ...(requesterId && {
@@ -74,18 +130,33 @@ export async function createTicket(req: Request, res: Response) {
             });
 
             if (message?.trim()) {
+                await tx.ticketMessage.create({
+                    data: {
+                        ticketId: ticket.id,
+                        direction: MessageDirection.OUTBOUND,
+                        bodyText: message.trim(),
+                        isInternal: false,
+                        fromEmail: null,
+                        toEmail: bodyFromEmail?.trim() || null,
+                    },
+                });
 
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: ticket.id,
                         type: TicketEventType.MESSAGE_SENT,
-                        actorType: TicketActorType.REQUESTER,
+                        actorType: TicketActorType.AGENT,
                     },
                 });
             }
 
             return ticket;
-        });
+        },
+            {
+                maxWait: 10000,
+                timeout: 15000,
+            }
+        );
 
         bus.emit("ticket.created", {
             id: ticket.id,
@@ -105,19 +176,111 @@ export async function createTicket(req: Request, res: Response) {
                     where: { id_solicitante: requesterId },
                     select: { email: true },
                 }))?.email
-                : null);               // 3️⃣ email del solicitante registrado
+                : null);
 
-        if (fromEmail && fromEmail !== process.env.EMAIL_USER) {
+        const normalizedFromEmail = fromEmail?.trim().toLowerCase() || null;
+
+        if (
+            normalizedFromEmail &&
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedFromEmail)
+        ) {
+            return res.status(400).json({
+                ok: false,
+                message: "El correo manual no tiene un formato válido",
+            });
+        }
+
+        const tecnico = ticket.assigneeId
+            ? await prisma.tecnico.findUnique({
+                where: { id_tecnico: ticket.assigneeId },
+                select: {
+                    nombre: true,
+                    email: true,
+                    cargo: true,    // 🆕
+                    area: true,     // 🆕
+                    firma: {
+                        select: { path: true }
+                    }
+                }
+            })
+            : null;
+
+        function escapeHtml(text: string) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+        }
+
+        const nombreTecnico = toHtmlEntities(tecnico?.nombre ?? "Equipo de Soporte T&eacute;cnico");
+        const emailTecnico = tecnico?.email ?? "soporte@rids.cl";
+        const cargo = toHtmlEntities(tecnico?.cargo ?? "Soporte T&eacute;cnico");
+        const areaRaw = tecnico?.area ?? "Soporte Técnico";
+        const area = toHtmlEntities(tecnico?.area ?? "Soporte T\u00e9cnico");
+        const firmaPath = tecnico?.firma?.path ?? null;
+
+        if (
+            normalizedFromEmail &&
+            normalizedFromEmail !== process.env.EMAIL_USER?.trim().toLowerCase()
+        ) {
             try {
 
+                const firmaHtml = `
+<table cellpadding="0" cellspacing="0" style="margin-top:16px;">
+  <tr>
+    <td style="padding-right:16px; vertical-align:middle;">
+      <img src="${firmaPath || "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif"}" width="120" />
+    </td>
+    <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
+      <strong style="font-size:14px;">${nombreTecnico}</strong><br/>
+      <span style="color:#555;">${cargo}</span><br/>
+      <span style="color:#555;">${area}</span><br/>
+      <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
+      WhatsApp: +56 9 8823 1976<br/>
+      <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> ·
+      <a href="http://www.rids.cl" style="color:#0ea5e9;">www.rids.cl</a>
+    </td>
+  </tr>
+</table>`;
+
+                const detalleHtml = escapeHtml(message?.trim() || "Sin detalle adicional.")
+                    .replace(/\n/g, "<br/>");
+
+                const bodyHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta charset="UTF-8"> 
+</head>
+<body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
+
+    <p><strong>Ticket #${ticket.id}</strong></p>
+
+    <p><strong>Asunto:</strong> ${escapeHtml(ticket.subject)}</p>
+
+    <p><strong>Detalle:</strong></p>
+
+    <div style="line-height:1.6;">
+        ${detalleHtml}
+    </div>
+
+    ${firmaHtml}
+
+    <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
+
+    <p style="font-size:12px; color:#666;">
+    <strong>Ticket #${ticket.id}</strong> · ${escapeHtml(ticket.subject)}<br/>
+    Soporte T&eacute;cnico · Asesor&iacute;as RIDS Ltda.<br/>
+    soporte@rids.cl
+</p>
+</body>
+</html>`;
+
                 await graphReaderService.sendReplyEmail({
-                    to: fromEmail, // ✅ FIX
-                    subject: `Re: ${ticket.subject}`, // más limpio
-                    bodyHtml: `
-                <p>Hemos recibido tu solicitud.</p>
-                <p><strong>Ticket #${ticket.id}</strong></p>
-                <p>Te responderemos a la brevedad.</p>
-            `,
+                    to: normalizedFromEmail,
+                    subject: `Confirmación de ticket #${ticket.id} - ${ticket.subject}`,
+                    bodyHtml,
                 });
             } catch (err) {
                 console.error("⚠️ Error enviando auto-reply:", err);
@@ -162,8 +325,15 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             include: {
                 requester: true,
                 assignee: {
-                    include: {
-                        firma: true
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                        cargo: true,    // 🆕
+                        area: true,     // 🆕
+                        firma: {
+                            select: { path: true }
+                        }
                     }
                 }
             },
@@ -256,10 +426,11 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             const tecnico = ticket.assignee ?? null;
 
             // ✅ Fallbacks seguros
-            const nombreTecnico = tecnico?.nombre || "Equipo de Soporte Técnico";
-            const emailTecnico = tecnico?.email || "soporte@rids.cl";
-            const firmaPath = tecnico?.firma?.path || null;
-
+            const nombreTecnico = toHtmlEntities(tecnico?.nombre ?? "Equipo de Soporte T&eacute;cnico");
+            const emailTecnico = tecnico?.email ?? "soporte@rids.cl";
+            const cargo = toHtmlEntities(tecnico?.cargo ?? "Soporte T&eacute;cnico");
+            const area = toHtmlEntities(tecnico?.area ?? "Soporte T\u00e9cnico");
+            const firmaPath = tecnico?.firma?.path ?? null;
             // ✅ Sanitizar mensaje (ANTI XSS)
             function escapeHtml(text: string) {
                 return text
@@ -277,8 +448,9 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 }" width="120" />
     </td>
     <td style="border-left:2px solid #ddd; padding-left:16px; vertical-align:middle; font-family:Arial, sans-serif; font-size:13px; color:#333; line-height:1.6;">
-      <strong>${nombreTecnico}</strong><br/>
-      Soporte Técnico · Asesorías RIDS Ltda.<br/>
+      <strong style="font-size:14px;">${nombreTecnico}</strong><br/>
+      <span style="color:#555;">${cargo}</span><br/>
+      <span style="color:#555;">${area}</span><br/>
       <a href="mailto:${emailTecnico}" style="color:#0ea5e9;">${emailTecnico}</a><br/>
       WhatsApp: +56 9 8823 1976<br/>
       <a href="http://www.econnet.cl" style="color:#0ea5e9;">www.econnet.cl</a> · 
@@ -290,40 +462,27 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             const bodyHtml = `
 <!DOCTYPE html>
 <html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta charset="UTF-8"> 
+</head>
 <body style="font-family: Arial, sans-serif; font-size:14px; color:#333; padding:20px; max-width:600px;">
     <p>${escapeHtml(message).replace(/\n/g, '<br/>')}</p>
     ${firmaHtml}
     <hr style="border:none; border-top:1px solid #ddd; margin:20px 0;" />
     <p style="font-size:12px; color:#666;">
-        <strong>Ticket #${ticket.id}</strong> · ${ticket.subject}<br/>
-        Soporte Técnico · Asesorías RIDS Ltda.<br/>
-        soporte@rids.cl
-    </p>
+    <strong>Ticket #${ticket.id}</strong> · ${escapeHtml(ticket.subject)}<br/>
+    Soporte T&eacute;cnico · Asesor&iacute;as RIDS Ltda.<br/>
+    soporte@rids.cl
+</p>
 </body>
 </html>`;
-
-            const lastInboundMsg = await prisma.ticketMessage.findFirst({
-                where: {
-                    ticketId,
-                    direction: MessageDirection.INBOUND,
-                    sourceMessageId: { not: null },
-                },
-                orderBy: { createdAt: "desc" },
-                select: { sourceMessageId: true, sourceReferences: true },
-            });
-
 
             await graphReaderService.sendReplyEmail({
                 to: toEmails,
                 cc: ccEmails,
                 subject: `Re: Ticket #${ticket.id} - ${ticket.subject}`,
                 bodyHtml,
-                ...(lastInboundMsg?.sourceMessageId && {
-                    inReplyTo: lastInboundMsg.sourceMessageId,
-                }),
-                ...(lastInboundMsg?.sourceReferences && {
-                    references: lastInboundMsg.sourceReferences,
-                }),
             });
         }
         bus.emit("ticket.updated", {

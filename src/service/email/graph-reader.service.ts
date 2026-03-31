@@ -51,8 +51,6 @@ type GraphHeader = {
     value: string;
 };
 
-
-
 function buildAutoReplyTemplate(params: {
     nombre: string;
     ticketId: number;
@@ -799,10 +797,6 @@ class GraphReaderService {
                 to: data.fromEmail,
                 subject: `Re: ${ticket.subject}`,
                 bodyHtml: htmlFinal,
-                inReplyTo: data.messageId,           // 🆕 el messageId del email original
-                references: data.references
-                    ? `${data.references} ${data.messageId}`
-                    : data.messageId,                  // 🆕
             });
 
             // ✅ Registrar mensaje interno
@@ -933,6 +927,28 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     private async addMessageToTicket(ticketId: number, data: ParsedEmail) {
+
+        const ticketBase = await prisma.ticket.findUnique({
+            where: { id: ticketId },
+            select: {
+                empresaId: true,
+                requesterId: true,
+            },
+        });
+
+        let requester = await prisma.solicitante.findFirst({
+            where: {
+                email: data.fromEmail,
+                isActive: true,
+                ...(ticketBase?.empresaId && { empresaId: ticketBase.empresaId }),
+            },
+            select: {
+                id_solicitante: true,
+                nombre: true,
+                email: true,
+            },
+        });
+
         // 1) DB rápido (sin adjuntos)
         const msg = await prisma.$transaction(async (tx) => {
             // ✅ DEDUPE primero para que no duplique nada
@@ -960,7 +976,13 @@ class GraphReaderService {
 
             await tx.ticket.update({
                 where: { id: ticketId },
-                data: { lastActivityAt: new Date() },
+                data: {
+                    lastActivityAt: new Date(),
+                    fromEmail: data.fromEmail,
+                    ...(requester?.id_solicitante && {
+                        requesterId: requester.id_solicitante,
+                    }),
+                },
             });
 
             const ticketActual = await tx.ticket.findUnique({
@@ -1086,25 +1108,11 @@ class GraphReaderService {
         cc?: string[];
         subject: string;
         bodyHtml: string;
-        inReplyTo?: string;   // 🆕
-        references?: string;
     }) {
         const client = await this.getClient();
 
         const toRecipients = (Array.isArray(params.to) ? params.to : [params.to])
             .filter(Boolean);
-
-        const internetMessageHeaders: { name: string; value: string }[] = [];
-
-        if (params.inReplyTo) {
-            internetMessageHeaders.push({ name: "In-Reply-To", value: params.inReplyTo });
-            internetMessageHeaders.push({
-                name: "References",
-                value: params.references
-                    ? `${params.references} ${params.inReplyTo}`
-                    : params.inReplyTo,
-            });
-        }
 
         const ccRecipients = (params.cc ?? []).filter(Boolean);
 
@@ -1119,8 +1127,12 @@ class GraphReaderService {
                         contentType: "HTML",
                         content: params.bodyHtml,
                     },
-                    toRecipients: toRecipients.map(address => ({ emailAddress: { address } })),
-                    ccRecipients: ccRecipients.map(address => ({ emailAddress: { address } })),
+                    toRecipients: toRecipients.map(address => ({
+                        emailAddress: { address }
+                    })),
+                    ccRecipients: ccRecipients.map(address => ({
+                        emailAddress: { address }
+                    })),
                 },
                 saveToSentItems: true,
             });

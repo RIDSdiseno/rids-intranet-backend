@@ -532,6 +532,9 @@ model Tecnico {
   email               String                  @unique
   passwordHash        String
   status              Boolean                 @default(true)
+  firmaTexto          String?
+  cargo               String?
+  area                String?
   empresaId           Int?
   rol                 String                  @default("TECNICO")
   teamviewerUserId    String?                 @unique
@@ -1014,7 +1017,6 @@ model ReporteIA {
   @@unique([empresaId, periodo])
 }
 
-
 enum TipoAgenda {
   SEMANA
   SABADO
@@ -1201,5 +1203,3 @@ enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
 }
-
-

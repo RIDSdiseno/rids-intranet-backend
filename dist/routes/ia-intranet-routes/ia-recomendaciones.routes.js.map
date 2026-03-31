@@ -1,0 +1,1 @@
+{"version":3,"file":"ia-recomendaciones.routes.js","sourceRoot":"","sources":["../../../src/routes/ia-intranet-routes/ia-recomendaciones.routes.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,EAAE,MAAM,SAAS,CAAC;AACjC,OAAO,EAAE,kCAAkC,EAAE,MAAM,2EAA2E,CAAC;AAE/H,MAAM,uBAAuB,GAAG,MAAM,EAAE,CAAC;AAEzC,uBAAuB,CAAC,GAAG,CACzB,qDAAqD,EACrD,kCAAkC,CACnC,CAAC;AAEF,eAAe,uBAAuB,CAAC"}
