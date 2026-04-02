@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { listAllUsers } from "../google/googleDirectory.js";
-import { upsertSolicitanteFromGoogle } from "../service/solicitanteSync.js";
+import { upsertSolicitanteFromGoogle, deactivateMissingGoogleSolicitantes, } from "../service/solicitanteSync.js";
 import { prisma } from "../lib/prisma.js";
 const router = Router();
 /**
@@ -20,6 +20,13 @@ router.post("/sync/google/users", async (req, res, _next) => {
         }
         // ✅ Usa listAllUsers(domain) — el domain ahora determina el admin correcto
         const users = await listAllUsers(dom);
+        if (!users.length) {
+            res.status(502).json({
+                ok: false,
+                error: "Google devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+            });
+            return;
+        }
         let created = 0, updated = 0, skipped = 0;
         for (const u of users) {
             if (!u.id || !u.primaryEmail) {
@@ -42,6 +49,10 @@ router.post("/sync/google/users", async (req, res, _next) => {
             else
                 created++;
         }
+        const googleIdsVigentes = users
+            .map((u) => u.id?.trim())
+            .filter(Boolean);
+        const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsVigentes);
         res.json({
             ok: true,
             domain: dom,
@@ -50,6 +61,8 @@ router.post("/sync/google/users", async (req, res, _next) => {
             created,
             updated,
             skipped,
+            deactivated: deactivated.count,
+            deactivatedUsers: deactivated.users,
         });
         return;
     }
@@ -107,6 +120,21 @@ router.put("/sync/google/users", async (req, res, _next) => {
             else
                 created++;
         }
+        let deactivatedCount = 0;
+        if (!email) {
+            if (!users.length) {
+                res.status(502).json({
+                    ok: false,
+                    error: "Google devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+                });
+                return;
+            }
+            const googleIdsVigentes = users
+                .map((u) => u.id?.trim())
+                .filter(Boolean);
+            const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsVigentes);
+            deactivatedCount = deactivated.count;
+        }
         res.json({
             ok: true,
             domain: dom,
@@ -116,6 +144,7 @@ router.put("/sync/google/users", async (req, res, _next) => {
             created,
             updated,
             skipped,
+            ...(email ? {} : { deactivated: deactivatedCount }),
         });
         return;
     }

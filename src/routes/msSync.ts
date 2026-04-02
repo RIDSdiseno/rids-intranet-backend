@@ -2,7 +2,10 @@
 import { Router, type Request, type Response } from "express";
 import pLimit from "p-limit";
 import { listUsersWithLicenses } from "../ms/graph.js";
-import { upsertSolicitanteFromMicrosoft } from "../service/solicitanteSyncMs.js";
+import {
+  upsertSolicitanteFromMicrosoft,
+  deactivateMissingMicrosoftSolicitantes,
+} from "../service/solicitanteSyncMs.js";
 import type { MsUserInput } from "../service/solicitanteSyncMs.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -196,6 +199,14 @@ msSyncRouter.post(
       const sel = await selectMsUsers(cleanDomain, undefined);
       const normalized = normalizeForUpsert(sel.target);
 
+      if (!normalized.length) {
+        res.status(502).json({
+          ok: false,
+          error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+        });
+        return;
+      }
+
       const r = await syncMsUsersBatch(
         normalized,
         Number(empresaId),
@@ -205,7 +216,19 @@ msSyncRouter.post(
         }
       );
 
-      res.json({ ok: true, domain: cleanDomain, empresaId, ...r, timings: { ...sel.timings, ...r.timings } });
+      const microsoftIdsVigentes = normalized
+        .map((u) => u.id?.trim())
+        .filter(Boolean);
+
+      const deactivated = await deactivateMissingMicrosoftSolicitantes(
+        Number(empresaId),
+        microsoftIdsVigentes
+      );
+
+      res.json({
+        ok: true, domain: cleanDomain, empresaId, ...r, deactivated: deactivated.count,
+        deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+      });
     } catch (e: any) {
       console.error("[POST /sync/microsoft/users] ERROR:", e);
       res.status(500).json({ ok: false, error: e?.message || "internal" });
@@ -236,9 +259,30 @@ msSyncRouter.get(
 
       const sel = await selectMsUsers(domain, undefined);
       const normalized = normalizeForUpsert(sel.target);
+
+      if (!normalized.length) {
+        res.status(502).json({
+          ok: false,
+          error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+        });
+        return;
+      }
+
       const r = await syncMsUsersBatch(normalized, empresaId);
 
-      res.json({ ok: true, domain, empresaId, ...r, timings: { ...sel.timings, ...r.timings } });
+      const microsoftIdsVigentes = normalized
+        .map((u) => u.id?.trim())
+        .filter(Boolean);
+
+      const deactivated = await deactivateMissingMicrosoftSolicitantes(
+        empresaId,
+        microsoftIdsVigentes
+      );
+
+      res.json({
+        ok: true, domain, empresaId, ...r, deactivated: deactivated.count,
+        deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+      });
     } catch (e: any) {
       console.error("[GET /sync/microsoft/users] ERROR:", e);
       res.status(500).json({ ok: false, error: e?.message || "internal" });

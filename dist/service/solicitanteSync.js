@@ -19,6 +19,35 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
     if (!email)
         return null;
     const nombre = buildNombre(user, email);
+    const activo = !(user.suspended ?? false);
+    // 1) Buscar primero por googleUserId
+    if (user.id) {
+        const byGoogle = await prisma.solicitante.findUnique({
+            where: { googleUserId: user.id },
+        });
+        if (byGoogle) {
+            const changes = {};
+            if (byGoogle.nombre !== nombre)
+                changes.nombre = nombre;
+            if (byGoogle.email !== email)
+                changes.email = email;
+            if (byGoogle.empresaId !== empresaId)
+                changes.empresaId = empresaId;
+            if (byGoogle.isActive !== activo)
+                changes.isActive = activo;
+            if (byGoogle.accountType !== "google")
+                changes.accountType = "google";
+            if (Object.keys(changes).length === 0)
+                return byGoogle;
+            const updated = await prisma.solicitante.update({
+                where: { id_solicitante: byGoogle.id_solicitante },
+                data: changes,
+            });
+            bus.emit("solicitante.updated", updated);
+            return updated;
+        }
+    }
+    // 2) Buscar por empresaId + email
     const existing = await prisma.solicitante.findFirst({
         where: { empresaId, email },
         orderBy: { id_solicitante: "asc" },
@@ -27,10 +56,12 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
         const changes = {};
         if (existing.nombre !== nombre)
             changes.nombre = nombre;
-        if (!existing.accountType)
-            changes.accountType = "google";
         if (!existing.googleUserId && user.id)
             changes.googleUserId = user.id;
+        if (existing.isActive !== activo)
+            changes.isActive = activo;
+        if (existing.accountType !== "google")
+            changes.accountType = "google";
         if (Object.keys(changes).length === 0)
             return existing;
         const updated = await prisma.solicitante.update({
@@ -40,20 +71,46 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
         bus.emit("solicitante.updated", updated);
         return updated;
     }
-    const created = await prisma.solicitante.create({
-        data: {
-            nombre,
-            email,
-            empresaId,
-            accountType: "google",
-            googleUserId: user.id || null,
-        },
-    });
-    bus.emit("solicitante.created", created);
-    return created;
+    // 3) Crear con blindaje por carrera
+    try {
+        const created = await prisma.solicitante.create({
+            data: {
+                nombre,
+                email,
+                empresaId,
+                accountType: "google",
+                googleUserId: user.id || null,
+                isActive: activo,
+            },
+        });
+        bus.emit("solicitante.created", created);
+        return created;
+    }
+    catch (e) {
+        if (e?.code === "P2002" && user.id) {
+            const already = await prisma.solicitante.findUnique({
+                where: { googleUserId: user.id },
+            });
+            if (already) {
+                const updated = await prisma.solicitante.update({
+                    where: { id_solicitante: already.id_solicitante },
+                    data: {
+                        nombre,
+                        email,
+                        empresaId,
+                        accountType: "google",
+                        isActive: activo,
+                    },
+                });
+                bus.emit("solicitante.updated", updated);
+                return updated;
+            }
+        }
+        throw e;
+    }
 }
 /** Alias para compatibilidad */
-export { upsertSolicitanteFromGoogle_min as upsertSolicitanteFromGoogle };
+export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 /* ==============================================================
    Versión full (recomendada)
    ==============================================================
@@ -132,5 +189,49 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
     });
     bus.emit("solicitante.created", created);
     return created;
+}
+export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVigentes) {
+    const ids = googleIdsVigentes
+        .map((x) => x?.trim())
+        .filter(Boolean);
+    if (!ids.length) {
+        return { count: 0, users: [] };
+    }
+    const usersToDeactivate = await prisma.solicitante.findMany({
+        where: {
+            empresaId,
+            accountType: "google",
+            googleUserId: { not: null },
+            isActive: true,
+            NOT: {
+                googleUserId: { in: ids },
+            },
+            equipos: {
+                none: {},
+            },
+        },
+        select: {
+            id_solicitante: true,
+            nombre: true,
+            email: true,
+            googleUserId: true,
+            empresaId: true,
+        },
+        orderBy: { nombre: "asc" },
+    });
+    const result = await prisma.solicitante.updateMany({
+        where: {
+            id_solicitante: {
+                in: usersToDeactivate.map((u) => u.id_solicitante),
+            },
+        },
+        data: {
+            isActive: false,
+        },
+    });
+    return {
+        count: result.count,
+        users: usersToDeactivate,
+    };
 }
 //# sourceMappingURL=solicitanteSync.js.map

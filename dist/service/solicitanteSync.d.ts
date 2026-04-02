@@ -23,7 +23,7 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
     deletedAt: Date | null;
 } | null>;
 /** Alias para compatibilidad */
-export { upsertSolicitanteFromGoogle_min as upsertSolicitanteFromGoogle };
+export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
     id_solicitante: number;
     clienteId: number | null;
@@ -36,5 +36,15 @@ export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empre
     isActive: boolean;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
+}>;
+export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsVigentes: string[]): Promise<{
+    count: number;
+    users: {
+        id_solicitante: number;
+        googleUserId: string | null;
+        nombre: string;
+        email: string | null;
+        empresaId: number;
+    }[];
 }>;
 //# sourceMappingURL=solicitanteSync.d.ts.map

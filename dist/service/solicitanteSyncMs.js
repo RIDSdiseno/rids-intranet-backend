@@ -144,4 +144,48 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
         });
     });
 }
+export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsVigentes) {
+    const ids = microsoftIdsVigentes
+        .map((x) => x?.trim())
+        .filter(Boolean);
+    if (!ids.length) {
+        return { count: 0, users: [] };
+    }
+    const usersToDeactivate = await prisma.solicitante.findMany({
+        where: {
+            empresaId,
+            accountType: "microsoft",
+            microsoftUserId: { not: null },
+            isActive: true,
+            NOT: {
+                microsoftUserId: { in: ids },
+            },
+            equipos: {
+                none: {},
+            },
+        },
+        select: {
+            id_solicitante: true,
+            nombre: true,
+            email: true,
+            microsoftUserId: true,
+            empresaId: true,
+        },
+        orderBy: { nombre: "asc" },
+    });
+    const result = await prisma.solicitante.updateMany({
+        where: {
+            id_solicitante: {
+                in: usersToDeactivate.map((u) => u.id_solicitante),
+            },
+        },
+        data: {
+            isActive: false,
+        },
+    });
+    return {
+        count: result.count,
+        users: usersToDeactivate,
+    };
+}
 //# sourceMappingURL=solicitanteSyncMs.js.map

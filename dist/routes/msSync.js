@@ -2,7 +2,7 @@
 import { Router } from "express";
 import pLimit from "p-limit";
 import { listUsersWithLicenses } from "../ms/graph.js";
-import { upsertSolicitanteFromMicrosoft } from "../service/solicitanteSyncMs.js";
+import { upsertSolicitanteFromMicrosoft, deactivateMissingMicrosoftSolicitantes, } from "../service/solicitanteSyncMs.js";
 import { prisma } from "../lib/prisma.js";
 export const msSyncRouter = Router();
 /* =================== Utils =================== */
@@ -151,11 +151,25 @@ msSyncRouter.post("/sync/microsoft/users", async (req, res) => {
         const cleanDomain = domain.trim().toLowerCase();
         const sel = await selectMsUsers(cleanDomain, undefined);
         const normalized = normalizeForUpsert(sel.target);
+        if (!normalized.length) {
+            res.status(502).json({
+                ok: false,
+                error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+            });
+            return;
+        }
         const r = await syncMsUsersBatch(normalized, Number(empresaId), {
             ...(typeof concurrency === "number" ? { concurrency } : {}),
             ...(typeof chunkSize === "number" ? { chunkSize } : {}),
         });
-        res.json({ ok: true, domain: cleanDomain, empresaId, ...r, timings: { ...sel.timings, ...r.timings } });
+        const microsoftIdsVigentes = normalized
+            .map((u) => u.id?.trim())
+            .filter(Boolean);
+        const deactivated = await deactivateMissingMicrosoftSolicitantes(Number(empresaId), microsoftIdsVigentes);
+        res.json({
+            ok: true, domain: cleanDomain, empresaId, ...r, deactivated: deactivated.count,
+            deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+        });
     }
     catch (e) {
         console.error("[POST /sync/microsoft/users] ERROR:", e);
@@ -180,8 +194,22 @@ msSyncRouter.get("/sync/microsoft/users", async (req, res) => {
         const domain = domainRaw.toLowerCase();
         const sel = await selectMsUsers(domain, undefined);
         const normalized = normalizeForUpsert(sel.target);
+        if (!normalized.length) {
+            res.status(502).json({
+                ok: false,
+                error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+            });
+            return;
+        }
         const r = await syncMsUsersBatch(normalized, empresaId);
-        res.json({ ok: true, domain, empresaId, ...r, timings: { ...sel.timings, ...r.timings } });
+        const microsoftIdsVigentes = normalized
+            .map((u) => u.id?.trim())
+            .filter(Boolean);
+        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsVigentes);
+        res.json({
+            ok: true, domain, empresaId, ...r, deactivated: deactivated.count,
+            deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+        });
     }
     catch (e) {
         console.error("[GET /sync/microsoft/users] ERROR:", e);

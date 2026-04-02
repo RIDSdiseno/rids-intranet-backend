@@ -22,4 +22,14 @@ export declare function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId
     solicitante: any;
     created: boolean;
 }>;
+export declare function deactivateMissingMicrosoftSolicitantes(empresaId: number, microsoftIdsVigentes: string[]): Promise<{
+    count: number;
+    users: {
+        id_solicitante: number;
+        microsoftUserId: string | null;
+        nombre: string;
+        email: string | null;
+        empresaId: number;
+    }[];
+}>;
 //# sourceMappingURL=solicitanteSyncMs.d.ts.map

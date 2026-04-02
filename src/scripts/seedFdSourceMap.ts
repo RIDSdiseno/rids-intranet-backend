@@ -17,7 +17,7 @@ const MAPPINGS: Array<{
 }> = [
     { org: "ALIANZ", domains: ["alianz.cl"] },
     { org: "ASUR", domains: ["asursa.com"] },
-    { org: "BDK", domains: ["bdk.cl"] },
+    { org: "BDK", domains: ["bdk-spa.cl"] },
     { org: "BODEGAL", domains: ["bodegal.cl"] },
     { org: "CLINICA NACE", domains: ["clinicanace.cl", "nace.cl"] },
     { org: "GRUPO COLCHAGUA", domains: ["grupocolchagua.cl"] },
@@ -91,3 +91,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+  

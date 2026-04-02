@@ -1,6 +1,9 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { listAllUsers } from "../google/googleDirectory.js";
-import { upsertSolicitanteFromGoogle } from "../service/solicitanteSync.js";
+import {
+  upsertSolicitanteFromGoogle,
+  deactivateMissingGoogleSolicitantes,
+} from "../service/solicitanteSync.js";
 import { prisma } from "../lib/prisma.js";
 
 const router = Router();
@@ -26,6 +29,14 @@ router.post(
 
       // ✅ Usa listAllUsers(domain) — el domain ahora determina el admin correcto
       const users = await listAllUsers(dom);
+
+      if (!users.length) {
+        res.status(502).json({
+          ok: false,
+          error: "Google devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+        });
+        return;
+      }
 
       let created = 0, updated = 0, skipped = 0;
 
@@ -54,6 +65,15 @@ router.post(
         if (before) updated++; else created++;
       }
 
+      const googleIdsVigentes = users
+        .map((u) => u.id?.trim())
+        .filter(Boolean);
+
+      const deactivated = await deactivateMissingGoogleSolicitantes(
+        empIdNum,
+        googleIdsVigentes
+      );
+
       res.json({
         ok: true,
         domain: dom,
@@ -62,6 +82,8 @@ router.post(
         created,
         updated,
         skipped,
+        deactivated: deactivated.count,
+        deactivatedUsers: deactivated.users,
       });
       return;
     } catch (e: any) {
@@ -102,8 +124,8 @@ router.put(
 
       const target = email
         ? users.filter(
-            (u) => (u.primaryEmail || "").toLowerCase() === emailNorm
-          )
+          (u) => (u.primaryEmail || "").toLowerCase() === emailNorm
+        )
         : users;
 
       if (email && target.length === 0) {
@@ -139,6 +161,29 @@ router.put(
         if (before) updated++; else created++;
       }
 
+      let deactivatedCount = 0;
+
+      if (!email) {
+        if (!users.length) {
+          res.status(502).json({
+            ok: false,
+            error: "Google devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+          });
+          return;
+        }
+
+        const googleIdsVigentes = users
+          .map((u) => u.id?.trim())
+          .filter(Boolean);
+
+        const deactivated = await deactivateMissingGoogleSolicitantes(
+          empIdNum,
+          googleIdsVigentes
+        );
+
+        deactivatedCount = deactivated.count;
+      }
+
       res.json({
         ok: true,
         domain: dom,
@@ -148,6 +193,7 @@ router.put(
         created,
         updated,
         skipped,
+        ...(email ? {} : { deactivated: deactivatedCount }),
       });
       return;
     } catch (e: any) {
