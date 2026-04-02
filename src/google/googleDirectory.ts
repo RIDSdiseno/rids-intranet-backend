@@ -28,9 +28,26 @@ function subjectForDomain(domain?: string): string {
 
 /** Autenticación por Service Account + impersonación del admin (por dominio) */
 export function getDirectoryClient(domain?: string) {
-  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL!;
-  const privateKey = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL || "";
+  const privateKey = (process.env.GOOGLE_PRIVATE_KEY || "")
+    .replace(/^"(.*)"$/s, "$1")
+    .replace(/\\n/g, "\n")
+    .trim();
+
+  if (!clientEmail) throw new Error("Falta GOOGLE_CLIENT_EMAIL");
+
+  if (!privateKey.includes("BEGIN PRIVATE KEY") || !privateKey.includes("END PRIVATE KEY")) {
+    throw new Error("GOOGLE_PRIVATE_KEY inválida o mal formateada");
+  }
+
   const subject = subjectForDomain(domain);
+
+  console.log("GOOGLE domain:", domain);
+  console.log("GOOGLE subject:", subject);
+  console.log("GOOGLE_CLIENT_EMAIL:", process.env.GOOGLE_CLIENT_EMAIL);
+  console.log("PRIVATE KEY EXISTS:", !!process.env.GOOGLE_PRIVATE_KEY);
+  console.log("PRIVATE KEY START:", (process.env.GOOGLE_PRIVATE_KEY || "").slice(0, 35));
+  console.log("PRIVATE KEY END:", (process.env.GOOGLE_PRIVATE_KEY || "").slice(-35));
 
   const auth = new google.auth.JWT({
     email: clientEmail,
