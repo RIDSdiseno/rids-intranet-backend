@@ -38,6 +38,7 @@ interface ParsedEmail {
     inReplyTo?: string;
     attachmentsMeta: Array<{
         graphAttachmentId: string;
+        odataType?: string | null;
         filename: string;
         mimeType: string;
         bytes: number;
@@ -184,9 +185,23 @@ class GraphReaderService {
         if (!data.attachmentsMeta?.length) return;
 
         for (const att of data.attachmentsMeta) {
+            console.log("💾 Intentando guardar adjunto:", {
+                graphAttachmentId: att.graphAttachmentId,
+                filename: att.filename,
+                mimeType: att.mimeType,
+                isInline: att.isInline,
+                contentId: att.contentId,
+            });
+
             const buffer = await this.downloadAttachment(
                 data.graphMessageId,
                 att.graphAttachmentId
+            );
+
+            console.log(
+                "📥 Resultado downloadAttachment:",
+                att.filename,
+                buffer ? `OK (${buffer.length} bytes)` : "NULL"
             );
 
             if (!buffer) continue;
@@ -271,8 +286,8 @@ class GraphReaderService {
         const subject = message.subject || 'Sin asunto';
 
         /* =============================
-   🔥 HEADERS (THREADING REAL)
-============================= */
+         🔥 HEADERS (THREADING REAL)
+          ============================= */
         const headers = message.internetMessageHeaders as GraphHeader[] | undefined;
 
         const references = headers?.find((h: GraphHeader) => h.name === "References")?.value;
@@ -321,7 +336,7 @@ class GraphReaderService {
         /* =============================
            5️⃣ CUERPO
         ============================= */
-        const bodyHtml = message.body?.content || '';
+        const bodyHtml = message.body?.content || "";
 
         const bodyText =
             message.body?.contentType === 'text'
@@ -390,19 +405,35 @@ class GraphReaderService {
         /* =============================
            🔟 ADJUNTOS
         ============================= */
-        if (message.hasAttachments) {
+
+        const bodyHasCidImages = /<img[^>]+src=["']cid:/i.test(bodyHtml);
+        const bodyHasRemoteImages = /<img[^>]+src=["']https?:\/\//i.test(bodyHtml);
+
+        if (message.hasAttachments || bodyHasCidImages || bodyHasRemoteImages) {
             try {
-                emailData.attachmentsMeta =
-                    await this.fetchAttachmentsMeta(graphMessageId);
+                emailData.attachmentsMeta = await this.fetchAttachmentsMeta(graphMessageId);
             } catch (err) {
-                console.error('⚠️ Error obteniendo adjuntos:', err);
+                console.error("⚠️ Error obteniendo adjuntos:", err);
                 emailData.attachmentsMeta = [];
             }
         }
 
+        console.log("📎 attachmentsMeta count:", emailData.attachmentsMeta.length);
+        console.log(
+            "📎 attachmentsMeta detail:",
+            emailData.attachmentsMeta.map((a) => ({
+                id: a.graphAttachmentId,
+                filename: a.filename,
+                mimeType: a.mimeType,
+                isInline: a.isInline,
+                contentId: a.contentId,
+                odataType: a.odataType,
+            }))
+        );
+
         /* =============================
-   1️⃣1️⃣ PROCESAR
-============================= */
+           1️⃣1️⃣ PROCESAR
+         ============================= */
         console.log(`📨 Procesando: ${fromEmail} - ${subject}`);
 
         await this.createOrUpdateTicket(emailData, existingTicket);
@@ -426,31 +457,31 @@ class GraphReaderService {
 
         const res = await client
             .api(`/users/${this.supportEmail}/messages/${graphMessageId}/attachments`)
-            .top(50)
+            .top(100)
             .get();
 
         const items = res.value ?? [];
 
-        return items.map((a: any) => {
-            let contentId: string | null = null;
+        console.log("📨 Graph attachments raw:", JSON.stringify(items, null, 2));
 
-            // 🔥 SOLO fileAttachment tiene contentId
-            if (a['@odata.type'] === '#microsoft.graph.fileAttachment') {
-                contentId = a.contentId
-                    ? a.contentId
-                        .replace(/^cid:/i, '')
-                        .replace(/^</, '')
-                        .replace(/>$/, '')
-                    : null;
-            }
+        return items.map((a: any) => {
+            const isFileAttachment = a["@odata.type"] === "#microsoft.graph.fileAttachment";
+
+            const contentId = isFileAttachment && a.contentId
+                ? String(a.contentId)
+                    .replace(/^cid:/i, "")
+                    .replace(/^</, "")
+                    .replace(/>$/, "")
+                : null;
 
             return {
                 graphAttachmentId: a.id,
-                filename: a.name,
-                mimeType: a.contentType,
+                filename: a.name || "attachment",
+                mimeType: a.contentType || "application/octet-stream",
                 bytes: a.size ?? 0,
-                isInline: a.isInline ?? false,
-                contentId, // ✅ AHORA SÍ
+                isInline: Boolean(a.isInline),
+                contentId,
+                odataType: a["@odata.type"] || null,
             };
         });
     }
@@ -1006,17 +1037,26 @@ class GraphReaderService {
         const client = await this.getClient();
 
         const res = await client
-            .api(
-                `/users/${this.supportEmail}/messages/${graphMessageId}/attachments/${attachmentId}`
-            )
+            .api(`/users/${this.supportEmail}/messages/${graphMessageId}/attachments/${attachmentId}`)
             .get();
 
-        // Solo fileAttachment tiene contenido
         if (
-            res['@odata.type'] === '#microsoft.graph.fileAttachment' &&
+            res["@odata.type"] === "#microsoft.graph.fileAttachment" &&
             res.contentBytes
         ) {
-            return Buffer.from(res.contentBytes, 'base64');
+            return Buffer.from(res.contentBytes, "base64");
+        }
+
+        try {
+            const raw = await client
+                .api(`/users/${this.supportEmail}/messages/${graphMessageId}/attachments/${attachmentId}/$value`)
+                .get();
+
+            if (Buffer.isBuffer(raw)) return raw;
+            if (raw instanceof ArrayBuffer) return Buffer.from(raw);
+            if (raw?.arrayBuffer) return Buffer.from(await raw.arrayBuffer());
+        } catch (err) {
+            console.warn(`⚠️ No se pudo descargar attachment ${attachmentId} por $value`);
         }
 
         return null;
