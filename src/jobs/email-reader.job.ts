@@ -4,6 +4,7 @@ import { graphReaderService } from '../service/email/graph-reader.service.js';
 
 let isRunning = false;
 
+// Job programado para leer emails cada 50 segundos (ajustable según necesidades)
 export function startEmailReaderJob() {
     cron.schedule('*/50 * * * * *', async () => {
         if (isRunning) {

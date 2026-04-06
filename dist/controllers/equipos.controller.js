@@ -42,6 +42,7 @@ const listQuerySchema = z.object({
         .optional(),
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
+// Nuevo: esquema para reasignar equipos por serial
 const createEquipoSchema = z.object({
     empresaId: z.coerce.number().int().positive().optional(),
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
@@ -53,7 +54,7 @@ const createEquipoSchema = z.object({
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
-    // 🔥 NUEVOS CAMPOS DETALLE
+    // NUEVOS CAMPOS DETALLE
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -70,7 +71,7 @@ const createEquipoSchema = z.object({
     usuarioPersonal: z.string().optional(),
     passwordPersonal: z.string().optional(),
 });
-// 🔥 Nuevo: acepta 1 equipo o { equipos: [...] }
+// Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
     createEquipoSchema, // 1 solo equipo
     z.array(createEquipoSchema).min(1), // array directo
@@ -78,6 +79,7 @@ const createEquiposRequestSchema = z.union([
         equipos: z.array(createEquipoSchema).min(1), // { equipos: [...] }
     }),
 ]);
+// Esquema para actualizar equipo (todos los campos opcionales)
 const equipoUpdateSchema = z.object({
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
     tipo: z.nativeEnum(TipoEquipo).optional(),
@@ -88,7 +90,7 @@ const equipoUpdateSchema = z.object({
     ram: z.string().trim().min(1).optional(),
     disco: z.string().trim().min(1).optional(),
     propiedad: z.string().trim().min(1).optional(),
-    // 🔥 NUEVOS
+    // NUEVOS
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -131,6 +133,7 @@ function mapOrderBy(sortBy, sortDir) {
         : "id_equipo";
     return { [key]: sortDir };
 }
+// Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e) {
     const detalle = e.detalle ?? null;
     return {
@@ -166,6 +169,7 @@ function flattenRow(e) {
         passwordPersonal: detalle?.passwordPersonal ?? null,
     };
 }
+// Asegura que exista un solicitante placeholder para la empresa dada, y devuelve su ID
 async function ensurePlaceholderSolicitante(empresaId) {
     const PLACEHOLDER_NAME = "[SIN SOLICITANTE]";
     const found = await prisma.solicitante.findFirst({
@@ -251,6 +255,7 @@ export async function listEquipos(req, res) {
                 }
                 : {}),
         };
+        // Si el cliente está filtrando por empresaId, forzamos que solo vea esa empresa (incluso si intenta usar empresaName para evadirlo)
         const orderBy = mapOrderBy(q.sortBy, q.sortDir);
         const skip = (q.page - 1) * q.pageSize;
         const total = await prisma.equipo.count({ where });
@@ -330,6 +335,7 @@ export async function createEquipo(req, res) {
                 if (!idSolicitanteFinal && data.empresaId) {
                     idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
                 }
+                // Si no se dio ni idSolicitante ni empresaId, el equipo quedará sin solicitante (idSolicitante = null), lo cual es permitido. Luego se podrá reasignar desde el update indicando el idSolicitante o la empresaId para conectar al placeholder.
                 const equipo = await prisma.equipo.create({
                     data: {
                         tipo: data.tipo,
@@ -341,7 +347,7 @@ export async function createEquipo(req, res) {
                         disco: data.disco,
                         propiedad: data.propiedad,
                         idSolicitante: idSolicitanteFinal,
-                        // 🔥 AQUÍ VA EL DETALLE
+                        // AQUÍ VA EL DETALLE
                         detalle: {
                             create: {
                                 macWifi: data.macWifi ?? null,
@@ -411,14 +417,14 @@ export async function getEquipoById(req, res) {
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
-        // ✅ Si es CLIENTE, valida que el equipo sea de su empresa
+        // Si es CLIENTE, valida que el equipo sea de su empresa
         if (user?.rol === "CLIENTE") {
             const empresaEquipoId = equipo.solicitante?.empresaId ?? null;
             if (!empresaEquipoId || empresaEquipoId !== user.empresaId) {
                 return res.status(403).json({ error: "No autorizado" });
             }
         }
-        // ✅ Busca el log CREATE (primero en el tiempo)
+        // Busca el log CREATE (primero en el tiempo)
         const createLog = await prisma.auditLog.findFirst({
             where: {
                 entity: "Equipo",
@@ -464,6 +470,7 @@ export async function updateEquipo(req, res) {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
         let solicitanteUpdate;
+        // Si se dio idSolicitante, conectamos al solicitante indicado (puede ser null para desasignar)
         if (data.idSolicitante !== undefined) {
             if (data.idSolicitante === null) {
                 const empresaId = data.empresaId ?? equipoActual.solicitante?.empresaId;
@@ -479,6 +486,7 @@ export async function updateEquipo(req, res) {
                 solicitanteUpdate = { connect: { id_solicitante: data.idSolicitante } };
             }
         }
+        // Si se dio empresaId pero no idSolicitante, conectamos al placeholder de esa empresa
         const actualizado = await prisma.equipo.update({
             where: { id_equipo: id },
             data: {
@@ -491,7 +499,7 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.disco ? { disco: equipoData.disco } : {}),
                 ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
-                // 🔥 AQUI VA EL DETALLE
+                // AQUI VA EL DETALLE
                 detalle: {
                     upsert: {
                         create: {
@@ -608,12 +616,14 @@ export async function getEquiposByEmpresa(req, res) {
         });
     }
 }
+// POST /api/equipos/reassign
 const reassignEquiposSchema = z.object({
     equipos: z.array(z.object({
         serial: z.string().trim().min(1),
         idSolicitante: z.coerce.number().int().positive(),
     })).min(1),
 });
+// Reasigna múltiples equipos a nuevos solicitantes por serial
 export async function reassignEquipos(req, res) {
     try {
         const { equipos } = reassignEquiposSchema.parse(req.body);

@@ -1,3 +1,4 @@
+// Controlador para sincronizar sesiones de TeamViewer como mantenciones remotas en la base de datos. Este proceso se puede ejecutar manualmente o programar para que corra automáticamente cada cierto tiempo, asegurando que las sesiones de TeamViewer se registren correctamente y se asocien con las empresas y solicitantes correspondientes.
 import type { Request, Response } from "express";
 import { getConnections, getDevice } from "../../service/teamviewer/teamviewer.service.js";
 import { prisma } from "../../lib/prisma.js";
@@ -23,6 +24,7 @@ function normalizeName(name: string) {
         .trim();
 }
 
+// Controlador principal para sincronizar sesiones de TeamViewer
 export async function syncTeamViewer(req: Request, res: Response) {
     try {
         const result = await runTeamViewerSyncInternal();
@@ -32,6 +34,7 @@ export async function syncTeamViewer(req: Request, res: Response) {
     }
 }
 
+// Función interna que realiza toda la lógica de sincronización, separada del controlador para facilitar testing y posibles ejecuciones programadas sin necesidad de una petición HTTP
 export async function runTeamViewerSyncInternal() {
     const lastSession = await prisma.mantencionRemota.findFirst({
         where: { origen: "TEAMVIEWER" },
@@ -58,13 +61,13 @@ export async function runTeamViewerSyncInternal() {
     let yaExistian = 0;
     let sinEmpresa = 0;
 
-    // 🔥 1) Obtener IDs en batch
+    // 1) Obtener IDs en batch
     const sessionIds = sessions.map(s => s.id);
     const deviceIds = sessions
         .map(s => String(s.deviceid ?? "").trim())
         .filter(Boolean);
 
-    // 🔥 2) Buscar mantenciones ya existentes en 1 sola query
+    // 2) Buscar mantenciones ya existentes en 1 sola query
     const existentes = await prisma.mantencionRemota.findMany({
         where: { teamviewerId: { in: sessionIds } },
         select: { teamviewerId: true },
@@ -72,16 +75,18 @@ export async function runTeamViewerSyncInternal() {
 
     const existentesSet = new Set(existentes.map(e => e.teamviewerId));
 
-    // 🔥 3) Traer todos los mapas en 1 query
+    // 3) Traer todos los mapas en 1 query
     const deviceMaps = await prisma.teamViewerDeviceMap.findMany({
         where: { deviceId: { in: deviceIds } },
         select: { deviceId: true, empresaId: true, solicitanteId: true },
     });
-
+    
+    // Crear un mapa en memoria para acceso rápido por deviceId
     const deviceMap = new Map(
         deviceMaps.map(d => [d.deviceId, d])
     );
-
+    
+    // Obtener el ID del técnico de soporte para asignar a las mantenciones remotas creadas (si existe)
     const soporteRids = await prisma.tecnico.findUnique({
         where: { email: "soporte@rids.cl" },
         select: { id_tecnico: true }
@@ -89,7 +94,7 @@ export async function runTeamViewerSyncInternal() {
 
     const tecnicoSoporteId = soporteRids?.id_tecnico ?? null;
 
-    // 🔥 4) Traer todos los equipos relacionados en 1 query
+    // 4) Traer todos los equipos relacionados en 1 query
     const equipos = await prisma.equipo.findMany({
         where: {
             detalle: {
@@ -103,7 +108,8 @@ export async function runTeamViewerSyncInternal() {
             },
         },
     });
-
+    
+    // Crear un mapa en memoria para acceso rápido por teamViewer (deviceId)
     const equiposSinTV = await prisma.equipo.findMany({
         where: {
             detalle: {
@@ -118,7 +124,8 @@ export async function runTeamViewerSyncInternal() {
             },
         },
     });
-
+    
+    // Crear un mapa en memoria para equipos sin teamViewer, indexado por solicitanteId para facilitar el fallback de auto-completar teamViewer
     const equipoSinTVMap = new Map<number, any>();
 
     for (const eq of equiposSinTV) {
@@ -126,7 +133,8 @@ export async function runTeamViewerSyncInternal() {
             equipoSinTVMap.set(eq.solicitante.id_solicitante, eq);
         }
     }
-
+    
+    // Crear un mapa en memoria para acceso rápido por teamViewer (deviceId)
     const equipoMap = new Map<string, any>();
 
     for (const eq of equipos) {
@@ -135,17 +143,17 @@ export async function runTeamViewerSyncInternal() {
         }
     }
 
-    // 🔥 5) Traer solicitantes para fallback (una sola vez)
+    // 5) Traer solicitantes para fallback (una sola vez)
     const solicitantes = await prisma.solicitante.findMany({
         select: { id_solicitante: true, empresaId: true, nombre: true },
     });
 
-    // 🔥 6) Traer empresas UNA sola vez (optimización)
+    // 6) Traer empresas UNA sola vez (optimización)
     const empresas = await prisma.empresa.findMany({
         select: { id_empresa: true, nombre: true },
     });
 
-    // 🔥 LOOP LIVIANO (sin queries pesadas)
+    // Para cada sesión de TeamViewer, intentamos asociarla con una empresa y un solicitante usando varios métodos (mapa explícito, inventario, fallback por nombre, match por groupname). Si logramos resolver la empresa, creamos o actualizamos la mantención remota correspondiente. También contamos cuántas sesiones se crean, cuántas ya existían y cuántas no se pudieron asociar a una empresa.
     for (const session of sessions) {
 
         if (existentesSet.has(session.id)) {
@@ -234,7 +242,8 @@ export async function runTeamViewerSyncInternal() {
                 empresaId = match.id_empresa;
             }
         }
-
+        
+        // 4️⃣ Intentar match por alias o grupo usando API de TeamViewer (si tenemos deviceId)
         if (!empresaId && deviceId) {
             try {
                 const deviceInfo = await getDevice(
@@ -292,7 +301,8 @@ export async function runTeamViewerSyncInternal() {
             sinEmpresa++;
             continue;
         }
-
+        
+        // Crear o actualizar mantención remota
         await prisma.mantencionRemota.upsert({
             where: {
                 teamviewerId: session.id,
@@ -303,6 +313,7 @@ export async function runTeamViewerSyncInternal() {
                 duracionMinutos,
                 deviceNombre: deviceNombre || null,
             },
+            // si no existe, lo crea con esta data
             create: {
                 teamviewerId: session.id,
                 origen: "TEAMVIEWER",

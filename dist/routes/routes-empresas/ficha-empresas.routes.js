@@ -1,3 +1,4 @@
+// Rutas para manejo de ficha de empresas, con endpoints para CRUD completo de ficha técnica, sucursales, red sucursal, servidores y usuarios de servidores, delegando la lógica al controlador correspondiente. Todas las rutas están protegidas por autenticación.
 import { Router } from "express";
 // Ficha
 import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, upsertChecklistEmpresa } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";

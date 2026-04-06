@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import { buildReporteEmpresaData } from "../service/ia-metricas-reportes/reportEmpresa.service.js";
 
+// ======================================================
+/*  Obtener Reporte Empresa
+    GET /api/reportes/empresa/:empresaId?month=YYYY-MM */
 export async function getReporteEmpresa(req: Request, res: Response) {
   try {
     const empresaId = Number(req.params.empresaId);

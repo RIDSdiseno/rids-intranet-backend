@@ -8,6 +8,10 @@ declare class GraphReaderService {
     getClient(): Promise<Client>;
     readInboxEmails(): Promise<void>;
     private saveAttachments;
+    private extractRemoteImages;
+    private guessMimeTypeFromUrl;
+    private downloadRemoteImage;
+    private persistRemoteImages;
     private processMessage;
     private fetchAttachmentsMeta;
     private stripHtml;

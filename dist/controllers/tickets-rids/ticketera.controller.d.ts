@@ -14,7 +14,7 @@ export declare function listTickets(req: Request, res: Response): Promise<Respon
 export declare function getTicketById(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function updateTicket(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function inboundEmail(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
-export declare function downloadTicketAttachment(req: Request, res: Response): Promise<void | Response<any, Record<string, any>>>;
+export declare function downloadTicketAttachment(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function proxyExternalImage(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function bulkUpdateTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function bulkMergeTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

@@ -500,6 +500,7 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
   }
 };
 
+// Alias por compatibilidad
 export const visitasMetrics = async (req: Request, res: Response) => {
   const from = new Date(`${req.query.from as string}T00:00:00`);
   const to = new Date(`${req.query.to as string}T00:00:00`);

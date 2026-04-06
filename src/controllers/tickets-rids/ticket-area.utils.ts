@@ -16,9 +16,13 @@ export function parseArea(raw: unknown): TicketArea | undefined {
     const candidate = Array.isArray(raw) ? raw[0] : raw;
     const area = String(candidate ?? "").trim().toUpperCase();
     if (!area) return undefined;
+
     if (area === "SOPORTE") return "SOPORTE";
     if (area === "INFORMATICA") return "INFORMATICA";
     if (area === "VENTAS") return "VENTAS";
+    if (area === "ADMIN") return "ADMIN";
+    if (area === "OFERTAS") return "OFERTAS";
+
     return undefined;
 }
 
@@ -52,7 +56,9 @@ export function detectArea(ticket: TicketTextLike): TicketArea {
         keywords.some((keyword) => text.includes(normalizeText(keyword)));
 
     if (hasAnyKeyword(AREA_KEYWORDS.INFORMATICA)) return "INFORMATICA";
+    if (hasAnyKeyword(AREA_KEYWORDS.ADMIN)) return "ADMIN";
     if (hasAnyKeyword(AREA_KEYWORDS.VENTAS)) return "VENTAS";
+    if (hasAnyKeyword(AREA_KEYWORDS.OFERTAS)) return "OFERTAS";
 
     return "SOPORTE";
 }

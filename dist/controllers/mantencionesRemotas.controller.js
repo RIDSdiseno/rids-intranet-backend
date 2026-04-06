@@ -35,6 +35,7 @@ function isCliente(user) {
 function isTecnico(user) {
     return String(user?.rol ?? "").toUpperCase() === "TECNICO";
 }
+// Valida que el ID de mantención exista y que el cliente (si aplica) sea dueño. Retorna empresaId para validaciones posteriores.
 async function assertClienteOwnershipOr404(id_mantencion, user) {
     const current = await prisma.mantencionRemota.findUnique({
         where: { id_mantencion },
@@ -227,6 +228,7 @@ const CreateMantencionSchema = z
         });
     }
 });
+// Si usas impersonación, debes definir un map de dominio a subject en GOOGLE_IMPERSONATED_MAP, o un subject fallback en GOOGLE_IMPERSONATED_ADMIN.
 const UpdateMantencionSchema = z
     .object({
     empresaId: z.number().int().positive().optional(),

@@ -1,8 +1,10 @@
+// Controlador para manejo de detalles de trabajo, con funciones para crear, obtener, actualizar y eliminar detalles de trabajo, así como generar cotizaciones desde órdenes. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
 import type { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Función para generar número de orden único por año, con formato "OT-YYYY-XXXX", donde XXXX es un contador secuencial que se reinicia cada año. Consulta la última orden creada para el año actual y genera el siguiente número en secuencia.
 async function generarNumeroOrdenOT(): Promise<string> {
     const year = new Date().getFullYear();
 
@@ -33,12 +35,12 @@ async function generarNumeroOrdenOT(): Promise<string> {
    CRUD: DETALLETRABAJOGESTIOO
 ===================================================== */
 
-// ✅ Crear trabajo
+// Crear trabajo
 export async function createDetalleTrabajo(req: Request, res: Response) {
     try {
         const data = req.body;
 
-        // 🔐 Validar técnico si viene
+        // Validar técnico si viene
         if (data.tecnicoId) {
             const tecnico = await prisma.tecnico.findUnique({
                 where: { id_tecnico: Number(data.tecnicoId) },
@@ -80,7 +82,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             numeroOrden = ordenGrupo?.numeroOrden ?? null;
         }
 
-        // 👉 Crear trabajo
+        // Crear trabajo
         const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
             data: {
                 fecha: fechaTrabajo,
@@ -112,7 +114,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             },
         });
 
-        // ✅ SI ES ENTRADA → usar su ID como grupo
+        // SI ES ENTRADA → usar su ID como grupo
         if (nuevoTrabajo.area === "ENTRADA") {
             await prisma.detalleTrabajoGestioo.update({
                 where: { id: nuevoTrabajo.id },
@@ -120,7 +122,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
-        // 🔁 Recargar con relaciones
+        // Recargar con relaciones
         const trabajoFinal = await prisma.detalleTrabajoGestioo.findUnique({
             where: { id: nuevoTrabajo.id },
             include: {
@@ -150,7 +152,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
     }
 }
 
-// ✅ Obtener todos los trabajos
+// Obtener todos los trabajos
 export async function getDetallesTrabajo(_req: Request, res: Response) {
     try {
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
@@ -179,7 +181,7 @@ export async function getDetallesTrabajo(_req: Request, res: Response) {
     }
 }
 
-// ✅ Obtener trabajo por ID
+// Obtener trabajo por ID
 export async function getDetalleTrabajoById(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
@@ -210,7 +212,7 @@ export async function getDetalleTrabajoById(req: Request, res: Response) {
     }
 }
 
-// ✅ Actualizar trabajo
+// Actualizar trabajo
 export async function updateDetalleTrabajo(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
@@ -312,7 +314,7 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
     }
 }
 
-// ✅ Eliminar trabajo
+// Eliminar trabajo
 export async function deleteDetalleTrabajo(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
@@ -331,7 +333,7 @@ export async function deleteDetalleTrabajo(req: Request, res: Response) {
     }
 }
 
-// ✅ Obtener trabajos por equipo
+// Obtener trabajos por equipo
 export async function getDetallesTrabajoByEquipo(req: Request, res: Response) {
     try {
         const equipoId = Number(req.params.equipoId);
@@ -355,7 +357,7 @@ export async function getDetallesTrabajoByEquipo(req: Request, res: Response) {
     }
 }
 
-// ✅ Obtener trabajos por técnico
+// Obtener trabajos por técnico
 export async function getDetallesTrabajoByTecnico(req: Request, res: Response) {
     try {
         const tecnicoId = Number(req.params.tecnicoId);
@@ -378,6 +380,7 @@ export async function getDetallesTrabajoByTecnico(req: Request, res: Response) {
     }
 }
 
+// Generar cotización desde orden
 export async function generarCotizacionDesdeOrden(req: Request, res: Response) {
     try {
         const numeroOrden = req.params.numeroOrden;

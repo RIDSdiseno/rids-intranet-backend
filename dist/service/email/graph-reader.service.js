@@ -59,6 +59,7 @@ class GraphReaderService {
             // Lee una ventana más amplia para no perder correos
             const minutes = 30;
             const since = new Date(Date.now() - minutes * 60 * 1000);
+            // Filtra por fecha de recepción para evitar leer todo el inbox cada vez
             const response = await client
                 .api(`/users/${this.supportEmail}/mailFolders/inbox/messages`)
                 .filter(`receivedDateTime ge ${since.toISOString()}`)
@@ -72,6 +73,7 @@ class GraphReaderService {
                 console.log('📭 No hay correos recientes');
                 return;
             }
+            // Deduplicar mensajes por internetMessageId (o id de Graph si no hay internetMessageId), para evitar reprocesar el mismo correo si la función se ejecuta varias veces en paralelo o si Microsoft envía duplicados.
             const seen = new Set();
             const uniqueMessages = messages.filter((msg) => {
                 const dedupeId = msg.internetMessageId || msg.id;
@@ -100,7 +102,6 @@ class GraphReaderService {
             throw err;
         }
     }
-    // ... otros métodos (fetchAttachmentsMeta, stripHtml, createOrUpdateTicket, etc.) ...
     /* ======================================================
        Guardar adjuntos
     ====================================================== */
@@ -119,14 +120,35 @@ class GraphReaderService {
             console.log("📥 Resultado downloadAttachment:", att.filename, buffer ? `OK (${buffer.length} bytes)` : "NULL");
             if (!buffer)
                 continue;
+            //  Subir a Cloudinary usando stream
             const safeName = att.filename.replace(/[^\w.\-]/g, "_");
-            // 🔥 Subir a Cloudinary usando stream
+            const extension = safeName.split(".").pop()?.toLowerCase() || "";
+            const rawExtensions = [
+                "xlsx",
+                "xls",
+                "csv",
+                "doc",
+                "docx",
+                "ppt",
+                "pptx",
+                "zip",
+                "rar",
+                "7z",
+                "txt",
+                "pdf",
+            ];
+            const resourceType = rawExtensions.includes(extension) ? "raw" : "auto";
+            const baseName = safeName.replace(/\.[^.]+$/, "");
+            const uploadOptions = {
+                folder: `rids/helpdesk/tickets/${ticketId}`,
+                resource_type: resourceType,
+                public_id: `email_${ticketId}_${Date.now()}_${baseName}`,
+                use_filename: false,
+                unique_filename: false,
+                ...(resourceType === "raw" ? { format: extension } : {}),
+            };
             const uploadResult = await new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream({
-                    folder: `rids/helpdesk/tickets/${ticketId}`,
-                    resource_type: "auto",
-                    public_id: `email_${ticketId}_${Date.now()}`,
-                }, (error, result) => {
+                const stream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
                     if (error)
                         reject(error);
                     else
@@ -146,6 +168,101 @@ class GraphReaderService {
                 },
             });
         }
+    }
+    // Descargar adjunto desde Graph API
+    extractRemoteImages(html) {
+        if (!html)
+            return [];
+        const matches = [...html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*>/gi)];
+        const urls = matches
+            .map((m) => m[1])
+            .filter((url) => typeof url === "string" && url.length > 0);
+        return [...new Set(urls)];
+    }
+    // Descargar adjunto desde Graph API
+    guessMimeTypeFromUrl(url) {
+        const clean = (url.split("?")[0] || "").toLowerCase();
+        if (clean.endsWith(".png"))
+            return "image/png";
+        if (clean.endsWith(".jpg") || clean.endsWith(".jpeg"))
+            return "image/jpeg";
+        if (clean.endsWith(".gif"))
+            return "image/gif";
+        if (clean.endsWith(".webp"))
+            return "image/webp";
+        if (clean.endsWith(".svg"))
+            return "image/svg+xml";
+        return "application/octet-stream";
+    }
+    // Descargar imagen remota con headers adecuados para evitar bloqueos, y convertir a Buffer
+    async downloadRemoteImage(url) {
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                },
+            });
+            if (!response.ok) {
+                console.warn(`⚠️ No se pudo descargar imagen remota: ${url} (${response.status})`);
+                return null;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            return Buffer.from(arrayBuffer);
+        }
+        catch (err) {
+            console.warn(`⚠️ Error descargando imagen remota: ${url}`, err);
+            return null;
+        }
+    }
+    // Procesar imágenes remotas en el cuerpo del email: descargarlas, subirlas a Cloudinary y reemplazar URLs
+    async persistRemoteImages(ticketId, messageId, bodyHtml) {
+        if (!bodyHtml)
+            return bodyHtml;
+        const remoteUrls = this.extractRemoteImages(bodyHtml);
+        if (!remoteUrls.length)
+            return bodyHtml;
+        let updatedHtml = bodyHtml;
+        for (const imageUrl of remoteUrls) {
+            // evita volver a procesar imágenes ya alojadas por ustedes
+            if (imageUrl.includes("res.cloudinary.com") ||
+                imageUrl.includes("rids.cl")) {
+                continue;
+            }
+            const buffer = await this.downloadRemoteImage(imageUrl);
+            if (!buffer)
+                continue;
+            const filename = imageUrl.split("/").pop()?.split("?")[0] || `remote-image-${Date.now()}`;
+            const mimeType = this.guessMimeTypeFromUrl(imageUrl);
+            // Subir a Cloudinary usando stream
+            const uploadResult = await new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream({
+                    folder: `rids/helpdesk/tickets/${ticketId}`,
+                    resource_type: "image",
+                    public_id: `remote_${ticketId}_${Date.now()}`,
+                }, (error, result) => {
+                    if (error)
+                        reject(error);
+                    else
+                        resolve(result);
+                });
+                Readable.from(buffer).pipe(stream);
+            });
+            // Guardar como adjunto para tener registro y evitar pérdida si la imagen original desaparece
+            await prisma.ticketAttachment.create({
+                data: {
+                    messageId,
+                    filename,
+                    mimeType,
+                    bytes: buffer.length,
+                    url: uploadResult.secure_url,
+                    isInline: true,
+                    contentId: null,
+                },
+            });
+            updatedHtml = updatedHtml.replaceAll(imageUrl, uploadResult.secure_url);
+        }
+        return updatedHtml;
     }
     /* ======================================================
        Procesar mensaje individual
@@ -209,6 +326,7 @@ class GraphReaderService {
         const blockedSenders = [
             'mailer-daemon',
             'bounce',
+            'postmaster',
         ];
         if (blockedSenders.some(b => fromEmail.includes(b))) {
             console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
@@ -282,15 +400,6 @@ class GraphReaderService {
                 emailData.attachmentsMeta = [];
             }
         }
-        console.log("📎 attachmentsMeta count:", emailData.attachmentsMeta.length);
-        console.log("📎 attachmentsMeta detail:", emailData.attachmentsMeta.map((a) => ({
-            id: a.graphAttachmentId,
-            filename: a.filename,
-            mimeType: a.mimeType,
-            isInline: a.isInline,
-            contentId: a.contentId,
-            odataType: a.odataType,
-        })));
         /* =============================
            1️⃣1️⃣ PROCESAR
          ============================= */
@@ -317,7 +426,6 @@ class GraphReaderService {
             .top(100)
             .get();
         const items = res.value ?? [];
-        console.log("📨 Graph attachments raw:", JSON.stringify(items, null, 2));
         return items.map((a) => {
             const isFileAttachment = a["@odata.type"] === "#microsoft.graph.fileAttachment";
             const contentId = isFileAttachment && a.contentId
@@ -490,6 +598,15 @@ class GraphReaderService {
            6️⃣ ADJUNTOS
         ============================= */
         await this.saveAttachments(ticket.id, msg.id, data);
+        if (data.bodyHtml) {
+            const normalizedHtml = await this.persistRemoteImages(ticket.id, msg.id, data.bodyHtml);
+            if (normalizedHtml !== data.bodyHtml) {
+                await prisma.ticketMessage.update({
+                    where: { id: msg.id },
+                    data: { bodyHtml: normalizedHtml },
+                });
+            }
+        }
         /* =============================
            7️⃣ EVENTOS
         ============================= */
@@ -503,8 +620,8 @@ class GraphReaderService {
             from: data.fromEmail,
         });
         /* =============================
-   8️⃣ AUTO-REPLY (ROBUSTO)
-============================= */
+           8️⃣  AUTO-REPLY (ROBUSTO)
+         ============================= */
         try {
             console.log("📤 Preparando auto-reply...");
             // ✅ 1. Validar destinatario
@@ -516,7 +633,7 @@ class GraphReaderService {
                 console.warn("⚠️ Email es soporte, no se envía auto-reply");
                 return;
             }
-            // 🔥 Obtener técnico + firma
+            // Obtener técnico + firma
             let tecnico = null;
             if (ticket.assigneeId) {
                 tecnico = await prisma.tecnico.findUnique({
@@ -530,6 +647,7 @@ class GraphReaderService {
                     }
                 });
             }
+            // Si no hay técnico asignado, usar el detectado por empresa o el primero activo
             const tecnicoRender = tecnico
                 ? {
                     nombre: tecnico.nombre,
@@ -539,6 +657,7 @@ class GraphReaderService {
                     firmaPath: tecnico.firma?.path ?? null,
                 }
                 : null;
+            // Renderizar plantilla
             const rendered = await ticketEmailTemplateService.render({
                 key: "AUTO_REPLY_INBOUND",
                 tecnico: tecnicoRender,
@@ -657,6 +776,7 @@ class GraphReaderService {
             orderBy: { createdAt: "desc" },
             take: 10,
         });
+        // Normalizar y comparar sujetos de los tickets recientes
         for (const ticket of recentTickets) {
             const normalizedTicketSubject = this.normalizeSubject(ticket.subject);
             if (normalizedTicketSubject === normalizedSubject) {
@@ -669,6 +789,7 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     async addMessageToTicket(ticketId, data) {
+        // Validar que el ticket aún existe y no está cerrado antes de agregar el mensaje
         const ticketBase = await prisma.ticket.findUnique({
             where: { id: ticketId },
             select: {
@@ -676,6 +797,7 @@ class GraphReaderService {
                 requesterId: true,
             },
         });
+        // Si el ticket ya tiene requester asignado, lo respetamos. Sino, intentamos asignar por email.
         let requester = await prisma.solicitante.findFirst({
             where: {
                 email: data.fromEmail,
@@ -712,6 +834,7 @@ class GraphReaderService {
                     sourceReferences: data.references || null,
                 },
             });
+            // Actualizar ticket (última actividad, posible requester, etc.)
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: {
@@ -722,10 +845,12 @@ class GraphReaderService {
                     }),
                 },
             });
+            // Verificar estado actual del ticket dentro de la transacción para evitar condiciones de carrera
             const ticketActual = await tx.ticket.findUnique({
                 where: { id: ticketId },
                 select: { status: true }
             });
+            // Si el ticket estaba cerrado, lo reabrimos automáticamente al recibir una respuesta del cliente
             if (ticketActual?.status === TicketStatus.CLOSED) {
                 console.log(`🔄 Reabriendo ticket #${ticketId}`);
                 await tx.ticket.update({
@@ -759,6 +884,15 @@ class GraphReaderService {
         // 2) Adjuntos FUERA de la transacción (lento)
         try {
             await this.saveAttachments(ticketId, msg.id, data);
+            if (data.bodyHtml) {
+                const normalizedHtml = await this.persistRemoteImages(ticketId, msg.id, data.bodyHtml);
+                if (normalizedHtml !== data.bodyHtml) {
+                    await prisma.ticketMessage.update({
+                        where: { id: msg.id },
+                        data: { bodyHtml: normalizedHtml },
+                    });
+                }
+            }
         }
         catch (e) {
             console.error("⚠️ Error guardando adjuntos:", e);
@@ -771,6 +905,7 @@ class GraphReaderService {
             from: data.fromEmail,
             subject: data.subject,
         });
+        // Si el ticket estaba cerrado, el evento de re-apertura ya se emitió en la transacción. No es necesario emitirlo de nuevo aquí.
         bus.emit("ticket.customer_replied", {
             ticketId,
             subject: data.subject,
@@ -779,6 +914,7 @@ class GraphReaderService {
             direction: "INBOUND",
             lastActivityAt: new Date(),
         });
+        // Emitir evento general de actualización para que se refresque el ticket en el frontend, etc.
         bus.emit("ticket.updated", {
             ticketId,
             source: "customer_reply",
@@ -913,6 +1049,7 @@ class GraphReaderService {
             return [];
         }
     }
+    // Crear evento en el calendario del soporte
     async createCalendarEvent(params) {
         const client = await this.getClient();
         const timeZone = "America/Santiago";
@@ -949,6 +1086,7 @@ class GraphReaderService {
             .header("Prefer", `outlook.timezone="${timeZone}"`)
             .post(payload);
     }
+    // Actualizar evento (solo campos específicos)
     async updateCalendarEvent(eventId, params) {
         const client = await this.getClient();
         const timeZone = "America/Santiago";

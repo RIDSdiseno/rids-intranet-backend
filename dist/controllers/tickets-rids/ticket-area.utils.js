@@ -10,6 +10,10 @@ export function parseArea(raw) {
         return "INFORMATICA";
     if (area === "VENTAS")
         return "VENTAS";
+    if (area === "ADMIN")
+        return "ADMIN";
+    if (area === "OFERTAS")
+        return "OFERTAS";
     return undefined;
 }
 export function normalizeText(input) {
@@ -44,8 +48,12 @@ export function detectArea(ticket) {
     const hasAnyKeyword = (keywords) => keywords.some((keyword) => text.includes(normalizeText(keyword)));
     if (hasAnyKeyword(AREA_KEYWORDS.INFORMATICA))
         return "INFORMATICA";
+    if (hasAnyKeyword(AREA_KEYWORDS.ADMIN))
+        return "ADMIN";
     if (hasAnyKeyword(AREA_KEYWORDS.VENTAS))
         return "VENTAS";
+    if (hasAnyKeyword(AREA_KEYWORDS.OFERTAS))
+        return "OFERTAS";
     return "SOPORTE";
 }
 //# sourceMappingURL=ticket-area.utils.js.map

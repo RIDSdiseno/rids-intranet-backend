@@ -9,6 +9,7 @@ const DEFAULT_AUTH: MsAuth = {
   clientSecret: process.env.MS_CLIENT_SECRET || "",
 };
 
+// Parsea la variable de entorno MS_AUTH_MAP para obtener las credenciales por dominio
 function parseAuthMap(): Record<string, MsAuth> {
   const raw = process.env.MS_AUTH_MAP || "";
   const out: Record<string, MsAuth> = {};
@@ -71,6 +72,7 @@ export type MsUser = {
 /* =================== Token cache (por perfil) =================== */
 let cached: { token: string; exp: number; key: string } | null = null;
 
+// Obtiene un token de acceso para Microsoft Graph, con caching en memoria por perfil (tenant+clientId)
 async function getToken(auth: MsAuth): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const cacheKey = `${auth.tenant}:${auth.clientId}`;
@@ -263,6 +265,7 @@ async function listUsersForSingleDomain(domain?: string): Promise<MsUser[]> {
   });
 }
 
+// Listado principal exportado, con soporte multi-dominio y filtrado opcional por email
 export async function listUsersWithLicenses(opts?: ListOpts): Promise<MsUser[]> {
   const dom = opts?.filterDomain;
 

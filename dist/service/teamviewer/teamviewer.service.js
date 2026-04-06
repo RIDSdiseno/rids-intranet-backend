@@ -1,3 +1,4 @@
+// Servicio para interactuar con la API de TeamViewer
 import axios from "axios";
 const TEAMVIEWER_API = "https://webapi.teamviewer.com/api/v1";
 // Configuración de Axios para TeamViewer

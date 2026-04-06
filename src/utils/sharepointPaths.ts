@@ -1,3 +1,4 @@
+// Función para normalizar el nombre de la empresa, eliminando acentos, mayúsculas y espacios extra
 function normalizeEmpresa(nombre: string): string {
     return nombre
         .trim()
@@ -7,6 +8,7 @@ function normalizeEmpresa(nombre: string): string {
         .replace(/\s+/g, " ");
 }
 
+// Función para resolver la ruta de SharePoint según el nombre de la empresa, utilizando un mapeo predefinido
 export function resolveSharepointPathReporte(
     empresa: string
 ): string | null {
@@ -29,6 +31,10 @@ export function resolveSharepointPathReporte(
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO COLCHAGUA/Informes",
         "FIJACIONES PROCRET":
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/PROCRET/Informes",
+        "COVASACHILE":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/COVASA CHILE/Informes",
+        "SOS GROUP":
+            "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/SOS GROUP/Informes",
         "T-SALES":
             "/Documentos compartidos/General/CLIENTES/2026/CLIENTES SOPORTE MENSUAL/GRUPO T-SALES/T-SALES/Informes",
         "INFINET":

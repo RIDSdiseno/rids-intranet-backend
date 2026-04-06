@@ -1,3 +1,4 @@
+// Rutas para manejo de autenticación, con endpoints para registro, login (incluyendo Microsoft), refresh de tokens, logout, recuperación de contraseña y cambio de contraseña. Las rutas protegidas requieren autenticación mediante el middleware correspondiente.
 import { Router } from "express";
 import { register, login, refresh, logout, me, changePassword } from "../controllers/auth.controller.js";
 import { auth } from "../middlewares/auth.js"; // <- nombrado

@@ -1,6 +1,8 @@
+// controllers/tickets-rids/reply-templates/ticket-email-template.controller.ts
 import type { Request, Response } from "express";
 import { ticketEmailTemplateService } from "../../../service/email/reply-templates/ticket-email-template.service.js";
 
+// Controlador para listar las plantillas de email para tickets, incluyendo variables disponibles
 export async function listTicketEmailTemplates(_req: Request, res: Response) {
     try {
         const data = await ticketEmailTemplateService.list();
@@ -30,6 +32,7 @@ export async function listTicketEmailTemplates(_req: Request, res: Response) {
     }
 }
 
+// Controlador para actualizar o crear una plantilla de email para tickets
 export async function updateTicketEmailTemplate(req: Request, res: Response) {
     try {
         const { key, subjectTpl, bodyHtmlTpl, isEnabled, name } = req.body;
@@ -62,6 +65,7 @@ export async function updateTicketEmailTemplate(req: Request, res: Response) {
     }
 }
 
+// Controlador para generar una vista previa de una plantilla de email para tickets con datos de ejemplo
 export async function previewTicketEmailTemplate(req: Request, res: Response) {
     try {
         const { key, subjectTpl, bodyHtmlTpl } = req.body;

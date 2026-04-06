@@ -1,5 +1,6 @@
 import { prisma } from "../../../lib/prisma.js";
 import { ticketEmailTemplateService } from "../../../service/email/reply-templates/ticket-email-template.service.js";
+// Controlador para obtener la configuración de la firma de email predeterminada para tickets
 export async function getTicketEmailSignature(_req, res) {
     try {
         const data = await ticketEmailTemplateService.getSignatureSettings();
@@ -16,12 +17,14 @@ export async function getTicketEmailSignature(_req, res) {
         });
     }
 }
+// Controlador para actualizar o crear la configuración de la firma de email predeterminada para tickets
 export async function updateTicketEmailSignature(req, res) {
     try {
         const { nombre, cargo, area, email, telefono, sitioWeb1, sitioWeb2, imageUrl, isEnabled, } = req.body;
         const existing = await prisma.ticketEmailSignature.findFirst({
             orderBy: { id: "asc" },
         });
+        // Si ya existe una configuración, la actualizamos; si no, creamos una nueva con los datos proporcionados o valores por defecto
         const data = existing
             ? await prisma.ticketEmailSignature.update({
                 where: { id: existing.id },

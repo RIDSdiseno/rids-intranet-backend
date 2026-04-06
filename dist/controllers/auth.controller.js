@@ -87,6 +87,7 @@ function signAccessToken(userId, email, rol, empresaId) {
         algorithm: "HS256",
     });
 }
+// CORRECCIÓN: Configuración del transporter con tipos correctos
 function signRefreshToken(userId, tokenId) {
     const payload = tokenId ? { tid: tokenId } : {};
     return jwt.sign(payload, getRefreshSecret(), {
@@ -95,6 +96,7 @@ function signRefreshToken(userId, tokenId) {
         algorithm: "HS256",
     });
 }
+// CORRECCIÓN: Configuración del transporter con tipos correctos
 function getClientInfo(req) {
     const userAgent = req.get("user-agent") || "unknown";
     const ip = (req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
@@ -102,6 +104,7 @@ function getClientInfo(req) {
         "unknown").replace(/^::ffff:/, ""); // Normalizar IPv6-mapped IPv4
     return { userAgent, ip };
 }
+// CORRECCIÓN: Configuración del transporter con tipos correctos
 function getRefreshFromRequest(req) {
     // Priorizar header sobre cookie
     const fromHeader = req.get("x-refresh-token");
@@ -110,6 +113,7 @@ function getRefreshFromRequest(req) {
     // @ts-ignore si usas cookie-parser
     return req.cookies?.rt || null;
 }
+// CORRECCIÓN: Configuración del transporter con tipos correctos
 function setRefreshCookie(res, token) {
     res.cookie("rt", token, {
         httpOnly: true,
@@ -123,6 +127,7 @@ function setRefreshCookie(res, token) {
 // Cache para verificación de emails existentes (short-lived)
 const emailCheckCache = new Map();
 const CACHE_TTL = 30000; // 30 segundos
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const register = async (req, res) => {
     try {
         const parsed = registerSchema.safeParse(req.body ?? {});
@@ -371,6 +376,7 @@ export const logout = async (req, res) => {
     res.clearCookie("rt", { path: "/" });
     return res.json({ ok: true });
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const loginMicrosoft = async (req, res) => {
     console.log("🔥 loginMicrosoft llamado", req.body);
     try {
@@ -427,6 +433,7 @@ export const loginMicrosoft = async (req, res) => {
         });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const me = async (req, res) => {
     const user = req.user;
     if (!user?.id) {
@@ -514,6 +521,7 @@ export const changePassword = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;

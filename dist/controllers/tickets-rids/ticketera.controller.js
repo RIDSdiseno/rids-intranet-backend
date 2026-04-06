@@ -29,6 +29,7 @@ export async function createTicket(req, res) {
     try {
         const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail, } = req.body;
         let empresaIdFinal = empresaId;
+        // Si no se envió empresaId pero sí un correo manual, asignamos a "SIN CLASIFICAR" para no bloquear la creación del ticket (el agente luego puede editar el ticket y asignar la empresa correcta).
         if (!empresaIdFinal && bodyFromEmail?.trim()) {
             const empresaSinClasificar = await prisma.empresa.findFirst({
                 where: {
@@ -39,6 +40,7 @@ export async function createTicket(req, res) {
                 },
                 select: { id_empresa: true },
             });
+            // Si no existe la empresa "SIN CLASIFICAR", respondemos con error para que el equipo de soporte cree esa empresa primero, ya que es necesaria para este flujo de fallback.
             if (!empresaSinClasificar) {
                 return res.status(400).json({
                     ok: false,
@@ -47,6 +49,7 @@ export async function createTicket(req, res) {
             }
             empresaIdFinal = empresaSinClasificar.id_empresa;
         }
+        // Validaciones básicas
         if (!empresaIdFinal || !subject) {
             return res.status(400).json({
                 ok: false,
@@ -60,6 +63,12 @@ export async function createTicket(req, res) {
             });
         }
         const publicId = crypto.randomUUID();
+        // Creamos el ticket dentro de una transacción para asegurar que la creación del ticket, 
+        // el evento de creación y el mensaje inicial (si existe) se creen de forma atómica. 
+        // Luego emitimos un evento "ticket.created" para que otros sistemas puedan reaccionar a
+        //  la creación del ticket (como enviar notificaciones, actualizar dashboards, etc). 
+        // Finalmente, si el ticket tiene un correo de origen válido, intentamos enviar 
+        // un auto-reply al cliente con un template personalizado.
         const ticket = await prisma.$transaction(async (tx) => {
             const ticket = await tx.ticket.create({
                 data: {
@@ -116,6 +125,7 @@ export async function createTicket(req, res) {
             maxWait: 10000,
             timeout: 15000,
         });
+        // Emitimos evento de ticket creado para que otros sistemas puedan reaccionar (notificaciones, dashboards, etc)
         bus.emit("ticket.created", {
             id: ticket.id,
             publicId: ticket.publicId,
@@ -141,6 +151,10 @@ export async function createTicket(req, res) {
                 message: "El correo manual no tiene un formato válido",
             });
         }
+        // Si tenemos un correo de origen válido, intentamos enviar un auto-reply al cliente 
+        // con un template personalizado. Para esto, renderizamos el template "TICKET_CREATED_WEB"
+        //  con la información del ticket y del técnico asignado (si existe). 
+        // Si el template está habilitado, enviamos el correo usando el graphReaderService.
         const tecnico = ticket.assigneeId
             ? await prisma.tecnico.findUnique({
                 where: { id_tecnico: ticket.assigneeId },
@@ -155,6 +169,10 @@ export async function createTicket(req, res) {
                 }
             })
             : null;
+        // Si el ticket tiene un correo de origen válido, intentamos enviar un auto-reply al cliente
+        //  con un template personalizado. Para esto, renderizamos el template 
+        // "TICKET_CREATED_WEB" con la información del ticket y del técnico asignado (si existe).
+        //  Si el template está habilitado, enviamos el correo usando el graphReaderService.
         if (normalizedFromEmail &&
             normalizedFromEmail !== process.env.EMAIL_USER?.trim().toLowerCase()) {
             try {
@@ -223,6 +241,7 @@ export async function replyTicketAsAgent(req, res) {
                 message: "Ticket inválido",
             });
         }
+        // Primero actualizamos la base de datos (creación del mensaje, actualización del ticket, creación del evento
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
             include: {
@@ -248,6 +267,9 @@ export async function replyTicketAsAgent(req, res) {
         const uniqueEmails = (emails) => [...new Set(emails.map(normalizeEmail).filter(Boolean))];
         const toEmails = uniqueEmails(to.length ? to : [ticket.requester?.email || ticket.fromEmail]);
         const ccEmails = uniqueEmails(cc || []).filter(email => !toEmails.includes(email));
+        // Actualizamos la base de datos dentro de una transacción para asegurar que la creación 
+        // del mensaje, la actualización del ticket y la creación del evento se realicen de 
+        // forma atómica. Luego, si el mensaje no es interno, intentamos enviar un correo al cliente con un template personalizado usando el graphReaderService.
         await prisma.$transaction(async (tx) => {
             const fromEmail = process.env.SMTP_USER ?? null;
             // 1️⃣ Crear mensaje UNA SOLA VEZ
@@ -301,7 +323,7 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
         });
-        // 🆕 Enviar email al cliente (solo si no es nota interna)
+        //  Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
             const tecnico = ticket.assignee ?? null;
             const tecnicoRender = tecnico
@@ -364,7 +386,6 @@ export async function listTickets(req, res) {
         const whereActual = {
             AND: [],
         };
-        // ✅ Después
         const validStatuses = Object.values(TicketStatus);
         if (status && validStatuses.includes(status)) {
             whereActual.status = status;
@@ -374,12 +395,16 @@ export async function listTickets(req, res) {
                 not: TicketStatus.CLOSED,
             };
         }
+        // Agregamos filtros de prioridad, técnico asignado y empresa si vienen en la query
         if (priority)
             whereActual.priority = priority;
         if (assigneeId)
             whereActual.assigneeId = Number(assigneeId);
         if (empresaId)
             whereActual.empresaId = Number(empresaId);
+        // Si viene el filtro de área, lo dejamos para filtrar después de traer los tickets, ya que
+        // el área se detecta con lógica personalizada y no es un campo directo en la base de datos
+        // Esto nos permite evitar joins complejos o consultas pesadas.
         if (search) {
             const searchValue = String(search).trim();
             const searchNumber = Number(searchValue);
@@ -499,6 +524,9 @@ export async function listTickets(req, res) {
         statusCounts.forEach(s => {
             counts[s.status] = s._count.status;
         });
+        // Formateamos la respuesta para incluir solo los primeros 2 mensajes de cada ticket y 
+        // construir el campo sla con la información de SLA calculada según la lógica definida en 
+        // buildTicketSla. También agregamos el campo lastMessageDirection para indicar la dirección del último mensaje (INBOUND, OUTBOUND o INTERNAL) y facilitar el renderizado en el frontend.
         const formattedTickets = tickets.map((ticket) => {
             const sla = buildTicketSla(ticket);
             const messages = (ticket.messages ?? []).slice(0, 2).map((message) => ({
@@ -822,13 +850,37 @@ export async function inboundEmail(req, res) {
 // GET /helpdesk/attachments/:id/download
 // Endpoint para descargar adjuntos de tickets (firmas, archivos, etc.)
 export async function downloadTicketAttachment(req, res) {
-    const attachmentId = Number(req.params.attachmentId);
-    const att = await prisma.ticketAttachment.findUnique({
-        where: { id: attachmentId },
-    });
-    if (!att)
-        return res.status(404).json({ ok: false });
-    return res.redirect(att.url);
+    try {
+        const attachmentId = Number(req.params.attachmentId);
+        if (!attachmentId || Number.isNaN(attachmentId)) {
+            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
+        }
+        const att = await prisma.ticketAttachment.findUnique({
+            where: { id: attachmentId },
+        });
+        if (!att) {
+            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
+        }
+        const response = await fetch(att.url);
+        if (!response.ok) {
+            return res.status(404).json({
+                ok: false,
+                message: "No se pudo obtener el archivo",
+            });
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
+        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
+        res.setHeader("Content-Length", String(buffer.length));
+        return res.send(buffer);
+    }
+    catch (error) {
+        console.error("[helpdesk] downloadTicketAttachment error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al descargar adjunto",
+        });
+    }
 }
 // GET /helpdesk/external-image
 // Proxy para mostrar imágenes externas (ej. en plantillas de email) sin exponer el URL directo al cliente
@@ -856,6 +908,7 @@ export async function proxyExternalImage(req, res) {
         return res.sendStatus(500);
     }
 }
+// Endpoint para actualizar múltiples tickets a la vez (status, técnico asignado)
 export async function bulkUpdateTickets(req, res) {
     try {
         const { ticketIds, status, assigneeId } = req.body;
@@ -892,6 +945,7 @@ export async function bulkUpdateTickets(req, res) {
         return res.status(500).json({ ok: false });
     }
 }
+// Endpoint para fusionar múltiples tickets en uno solo (moviendo mensajes y cerrando los tickets secundarios)
 export async function bulkMergeTickets(req, res) {
     try {
         const { mainTicketId, ticketIds } = req.body;
@@ -956,6 +1010,7 @@ export async function bulkMergeTickets(req, res) {
         });
     }
 }
+// Endpoint para eliminar un ticket (y todos sus mensajes, adjuntos y eventos relacionados) 
 export async function deleteTicket(req, res) {
     try {
         const ticketId = Number(req.params.id);

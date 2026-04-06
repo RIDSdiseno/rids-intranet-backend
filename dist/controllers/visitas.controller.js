@@ -426,6 +426,7 @@ export const getVisitasMetrics = async (req, res) => {
             .json({ error: "No se pudieron obtener métricas de visitas" });
     }
 };
+// Alias por compatibilidad
 export const visitasMetrics = async (req, res) => {
     const from = new Date(`${req.query.from}T00:00:00`);
     const to = new Date(`${req.query.to}T00:00:00`);

@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
-// ✅ Obtener todos los servicios
+//  Obtener todos los servicios
 export async function getServicios(_req, res) {
     try {
         const servicios = await prisma.servicioGestioo.findMany({
@@ -13,7 +13,7 @@ export async function getServicios(_req, res) {
         res.status(500).json({ error: "Error al obtener servicios" });
     }
 }
-// ✅ Obtener servicio por ID
+//  Obtener servicio por ID
 export async function getServicioById(req, res) {
     try {
         const id = Number(req.params.id);
@@ -35,7 +35,7 @@ export async function getServicioById(req, res) {
         error: "Error al obtener servicio",
     });
 }
-// ✅ Crear servicio
+//  Crear servicio
 export async function createServicio(req, res) {
     try {
         const { nombre, descripcion, precio, categoria, duracionHoras, entidadId, } = req.body;
@@ -68,7 +68,7 @@ export async function createServicio(req, res) {
         });
     }
 }
-// ✅ Actualizar servicio
+//  Actualizar servicio
 export async function updateServicio(req, res) {
     try {
         const id = Number(req.params.id);
@@ -110,7 +110,7 @@ export async function updateServicio(req, res) {
         });
     }
 }
-// ✅ Eliminar servicio
+//  Eliminar servicio
 export async function deleteServicio(req, res) {
     try {
         const id = Number(req.params.id);

@@ -26,6 +26,9 @@ const normMode = (v: unknown): CleanupMode => {
   return s === "purge" ? "purge" : "deactivate";
 };
 
+// ======================================================
+/*  Cleanup de Solicitantes sin cuenta (accountType null + no google/msId)
+*/
 async function getOrCreateSystemSolicitanteId(tx: TxClient, empresaId: number) {
   const sysClienteId = -empresaId;
   const sysEmail = `sistema+empresa-${empresaId}@rids.local`;
@@ -58,6 +61,7 @@ async function getOrCreateSystemSolicitanteId(tx: TxClient, empresaId: number) {
   return sys.id_solicitante;
 }
 
+// Función principal de cleanup por empresa (con tx)
 async function cleanupNoCuentaForEmpresa(
   tx: TxClient,
   empresaId: number,

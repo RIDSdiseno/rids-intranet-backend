@@ -1,3 +1,4 @@
+// Rutas para sincronización de usuarios desde Google Directory a la tabla de solicitantes, con endpoints para sincronización total por dominio o individual por email, y manejo de desactivaciones según los usuarios vigentes en Google
 import { Router } from "express";
 import { listAllUsers } from "../google/googleDirectory.js";
 import { upsertSolicitanteFromGoogle, deactivateMissingGoogleSolicitantes, } from "../service/solicitanteSync.js";

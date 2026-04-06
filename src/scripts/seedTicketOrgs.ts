@@ -8,6 +8,7 @@ const ORGS = [
   "CINTAX","COVASACHILE","SOS GROUP",  // 👈
 ];
 
+// Script para sembrar las organizaciones de tickets (ticketOrg) a partir de un listado predefinido
 async function main() {
   let count = 0;
   for (const name of ORGS) {
@@ -21,6 +22,7 @@ async function main() {
   console.log(`✅ TicketOrg sembradas/actualizadas: ${count}`);
 }
 
+// Ejecutar el script, con manejo básico de errores y desconexión de Prisma al final
 main()
   .catch((e) => {
     console.error("Seed TicketOrg error:", e);

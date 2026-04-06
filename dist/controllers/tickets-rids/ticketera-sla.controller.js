@@ -16,6 +16,7 @@ export function getSlaTargets(priority) {
     const key = String(priority || "NORMAL").toUpperCase();
     return SLA_CONFIG[key] ?? SLA_CONFIG.NORMAL;
 }
+// Función para construir el objeto de SLA de un ticket, con su estado (OK, BREACHED, PENDING) y minutos restantes o transcurridos
 export function buildTicketSla(ticket) {
     const now = new Date();
     const createdAt = new Date(ticket.createdAt);
@@ -58,6 +59,7 @@ export function buildTicketSla(ticket) {
         }
         // else: plazo aún vigente → PENDING (valor inicial)
     }
+    // Construimos el objeto SLA con targets, tiempos y estados para primera respuesta y resolución
     return {
         targets,
         firstResponse: {
@@ -80,6 +82,7 @@ export function buildTicketSla(ticket) {
         },
     };
 }
+// Endpoint para obtener métricas de SLA de los tickets, con opción de filtrar por empresa y rango de fechas
 export async function getTicketSla(req, res) {
     try {
         const empresaId = req.query.empresaId
@@ -131,6 +134,7 @@ export async function getTicketSla(req, res) {
         let rsMinutesSum = 0;
         let rsMinutesCount = 0;
         const byTechnicianMap = new Map();
+        // Recorremos los tickets para calcular el estado de SLA de cada uno y acumular métricas generales y por técnico
         for (const t of tickets) {
             const sla = buildTicketSla(t);
             // Primera respuesta
@@ -201,6 +205,7 @@ export async function getTicketSla(req, res) {
                 rsMinutesCount++;
             }
         }
+        // Calculamos métricas generales de SLA y formateamos el resultado por técnico, incluyendo cumplimiento y tiempos promedio de respuesta y resolución
         const technicians = Array.from(byTechnicianMap.values()).map((t) => ({
             ...t,
             avgFirstResponseMinutes: t.firstResponseMinutesCount > 0
@@ -216,6 +221,7 @@ export async function getTicketSla(req, res) {
                 ? Math.round((t.resolutionOk / t.totalTickets) * 100)
                 : 0,
         }));
+        // Devolvemos la respuesta con las métricas de SLA generales y por técnico
         return res.json({
             ok: true,
             sla: {

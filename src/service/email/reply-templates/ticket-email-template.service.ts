@@ -1,3 +1,4 @@
+// src/services/email/reply-templates/ticket-email-template.service.ts
 import { prisma } from "../../../lib/prisma.js";
 import {
     DEFAULT_TICKET_EMAIL_TEMPLATES,
@@ -14,11 +15,14 @@ type TecnicoFirmaInput = {
     firmaPath?: string | null;
 };
 
+// Servicio para gestionar templates de correo relacionados con tickets (creación, actualización, respuestas, etc.)
 class TicketEmailTemplateService {
-
+    
+    // Logo por defecto para la firma, si no se configura otro en DB o input del técnico
     private defaultLogo =
         "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif";
-
+    
+    // Asegura que los templates por defecto existan en DB, para evitar errores si se intenta acceder a un template que no se ha creado aún.
     async ensureDefaults() {
         for (const tpl of DEFAULT_TICKET_EMAIL_TEMPLATES) {
             const exists = await prisma.ticketEmailTemplate.findUnique({
@@ -31,7 +35,8 @@ class TicketEmailTemplateService {
             }
         }
     }
-
+    
+    // Obtiene un template por key, o devuelve el default si no está en DB
     async getTemplate(key: TemplateKey) {
         await this.ensureDefaults();
 
@@ -90,7 +95,8 @@ class TicketEmailTemplateService {
 
         return output;
     }
-
+    
+    // Construye el HTML de la firma para un técnico específico o usando los valores por defecto de DB, o devuelve string vacío si la firma no está habilitada y no se proporciona info del técnico.
     async buildFirmaHtml(tecnico?: TecnicoFirmaInput | null): Promise<string> {
         const settings = await this.getSignatureSettings();
 
@@ -136,7 +142,8 @@ class TicketEmailTemplateService {
   </tr>
 </table>`.trim();
     }
-
+    
+    // Método principal para renderizar un template con variables y la firma del técnico (si aplica)
     async render(params: {
         key: TemplateKey;
         vars: RenderVars;
@@ -163,7 +170,8 @@ class TicketEmailTemplateService {
             isEnabled: tpl.isEnabled,
         };
     }
-
+    
+    // Lista todos los templates disponibles, asegurando que los defaults existan en DB
     async list() {
         await this.ensureDefaults();
 
@@ -171,7 +179,8 @@ class TicketEmailTemplateService {
             orderBy: { id: "asc" },
         });
     }
-
+    
+    // Actualiza un template específico por key, permitiendo modificar solo algunos campos sin afectar el resto
     async update(params: {
         key: TemplateKey;
         subjectTpl?: string;
@@ -199,7 +208,8 @@ class TicketEmailTemplateService {
             },
         });
     }
-
+    
+    // Método para enviar un correo usando un template específico, con variables y adjuntos opcionales
     async preview(params: {
         key: TemplateKey;
         subjectTpl?: string;
@@ -211,7 +221,8 @@ class TicketEmailTemplateService {
         const bodyHtmlTpl = params.bodyHtmlTpl ?? original.bodyHtmlTpl;
 
         const firmaHtml = await this.buildFirmaHtml(null);
-
+        
+        // Variables de ejemplo para la preview, se pueden extender o modificar según el template
         const vars: RenderVars = {
             nombre: "Juan Pérez",
             ticketId: 1234,
@@ -230,7 +241,8 @@ class TicketEmailTemplateService {
             bodyHtml: this.renderString(bodyHtmlTpl, vars),
         };
     }
-
+    
+    // Método para enviar un correo usando un template específico, con variables, adjuntos opcionales y headers para threading en el cliente de correo
     async getSignatureSettings() {
         let settings = await prisma.ticketEmailSignature.findFirst({
             orderBy: { id: "asc" },

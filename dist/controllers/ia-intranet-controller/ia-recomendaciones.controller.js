@@ -3,6 +3,7 @@ import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/repo
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
+// Genera recomendaciones operativas para un cliente específico usando IA, basado en su informe mensual de soporte técnico
 export async function generarRecomendacionesOperativasIA(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);

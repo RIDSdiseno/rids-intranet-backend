@@ -1,7 +1,7 @@
 import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
 /* ======================================================
-   🎨 Estilos por empresa (Excel)
+   Estilos por empresa (Excel)
 ====================================================== */
 function getEmpresaStyle(nombre) {
     const n = nombre.toLowerCase();
@@ -14,7 +14,7 @@ function getEmpresaStyle(nombre) {
     return { header: "FF334155", body: "FFF1F5F9" };
 }
 /* ======================================================
-   🎨 Estilos de hoja Excel
+  Estilos de hoja Excel
 ====================================================== */
 function styleSheet(ws, rows, cols, colors) {
     // Header
@@ -50,7 +50,7 @@ function styleSheet(ws, rows, cols, colors) {
     ws["!cols"] = Array.from({ length: cols }).map(() => ({ wch: 18 }));
 }
 // ======================================================
-/* 🧹 Normalización de nombres de empresa
+/*  Normalización de nombres de empresa
 ====================================================== */
 function normalizeEmpresa(nombre) {
     return nombre
@@ -62,7 +62,7 @@ function normalizeEmpresa(nombre) {
     ;
 }
 /* ======================================================
-   📂 Resolución de rutas SharePoint (CLAVE)
+    Resolución de rutas SharePoint (CLAVE)
 ====================================================== */
 function resolveSharepointPath(empresa) {
     const key = normalizeEmpresa(empresa);
@@ -143,7 +143,7 @@ function buildInventarioExcel(equipos, mes) {
     return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 /* ======================================================
-   📥 Export MANUAL (Web)
+    Export MANUAL (Web)
    GET /api/inventario/export
 ====================================================== */
 export async function exportInventario(req, res) {
@@ -181,7 +181,7 @@ export async function exportInventario(req, res) {
     }
 }
 /* ======================================================
-   🤖 Export AUTOMÁTICO (Power Automate)
+    Export AUTOMÁTICO (Power Automate)
    POST /api/inventario/export/sharepoint
 ====================================================== */
 export async function exportInventarioForSharepoint(req, res) {
@@ -238,7 +238,7 @@ export async function exportInventarioForSharepoint(req, res) {
     }
 }
 // ======================================================
-/* 📋 Obtener Inventario
+/*  Obtener Inventario
    GET /api/inventario
 ====================================================== */
 export async function getInventario(req, res) {

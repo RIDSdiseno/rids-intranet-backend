@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
+// Función para generar número de orden único por año, con formato "OT-YYYY-XXXX", donde XXXX es un contador secuencial que se reinicia cada año. Consulta la última orden creada para el año actual y genera el siguiente número en secuencia.
 async function generarNumeroOrdenOT() {
     const year = new Date().getFullYear();
     const ultimaOrden = await prisma.detalleTrabajoGestioo.findFirst({
@@ -23,11 +24,11 @@ async function generarNumeroOrdenOT() {
 /* =====================================================
    CRUD: DETALLETRABAJOGESTIOO
 ===================================================== */
-// ✅ Crear trabajo
+// Crear trabajo
 export async function createDetalleTrabajo(req, res) {
     try {
         const data = req.body;
-        // 🔐 Validar técnico si viene
+        // Validar técnico si viene
         if (data.tecnicoId) {
             const tecnico = await prisma.tecnico.findUnique({
                 where: { id_tecnico: Number(data.tecnicoId) },
@@ -61,7 +62,7 @@ export async function createDetalleTrabajo(req, res) {
             });
             numeroOrden = ordenGrupo?.numeroOrden ?? null;
         }
-        // 👉 Crear trabajo
+        // Crear trabajo
         const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
             data: {
                 fecha: fechaTrabajo,
@@ -88,14 +89,14 @@ export async function createDetalleTrabajo(req, res) {
                 incluyeCargador: data.incluyeCargador ?? false,
             },
         });
-        // ✅ SI ES ENTRADA → usar su ID como grupo
+        // SI ES ENTRADA → usar su ID como grupo
         if (nuevoTrabajo.area === "ENTRADA") {
             await prisma.detalleTrabajoGestioo.update({
                 where: { id: nuevoTrabajo.id },
                 data: { ordenGrupoId: nuevoTrabajo.id },
             });
         }
-        // 🔁 Recargar con relaciones
+        // Recargar con relaciones
         const trabajoFinal = await prisma.detalleTrabajoGestioo.findUnique({
             where: { id: nuevoTrabajo.id },
             include: {
@@ -123,7 +124,7 @@ export async function createDetalleTrabajo(req, res) {
         return res.status(500).json({ error: "Error al crear detalle de trabajo" });
     }
 }
-// ✅ Obtener todos los trabajos
+// Obtener todos los trabajos
 export async function getDetallesTrabajo(_req, res) {
     try {
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
@@ -151,7 +152,7 @@ export async function getDetallesTrabajo(_req, res) {
         return res.status(500).json({ error: "Error al obtener órdenes" });
     }
 }
-// ✅ Obtener trabajo por ID
+// Obtener trabajo por ID
 export async function getDetalleTrabajoById(req, res) {
     try {
         const id = Number(req.params.id);
@@ -179,7 +180,7 @@ export async function getDetalleTrabajoById(req, res) {
         return res.status(500).json({ error: "Error al obtener detalle de trabajo" });
     }
 }
-// ✅ Actualizar trabajo
+// Actualizar trabajo
 export async function updateDetalleTrabajo(req, res) {
     try {
         const id = Number(req.params.id);
@@ -266,7 +267,7 @@ export async function updateDetalleTrabajo(req, res) {
         });
     }
 }
-// ✅ Eliminar trabajo
+// Eliminar trabajo
 export async function deleteDetalleTrabajo(req, res) {
     try {
         const id = Number(req.params.id);
@@ -283,7 +284,7 @@ export async function deleteDetalleTrabajo(req, res) {
         return res.status(500).json({ error: "Error al eliminar detalle de trabajo" });
     }
 }
-// ✅ Obtener trabajos por equipo
+// Obtener trabajos por equipo
 export async function getDetallesTrabajoByEquipo(req, res) {
     try {
         const equipoId = Number(req.params.equipoId);
@@ -305,7 +306,7 @@ export async function getDetallesTrabajoByEquipo(req, res) {
         return res.status(500).json({ error: "Error al obtener trabajos por equipo" });
     }
 }
-// ✅ Obtener trabajos por técnico
+// Obtener trabajos por técnico
 export async function getDetallesTrabajoByTecnico(req, res) {
     try {
         const tecnicoId = Number(req.params.tecnicoId);
@@ -326,6 +327,7 @@ export async function getDetallesTrabajoByTecnico(req, res) {
         return res.status(500).json({ error: "Error al obtener trabajos por técnico" });
     }
 }
+// Generar cotización desde orden
 export async function generarCotizacionDesdeOrden(req, res) {
     try {
         const numeroOrden = req.params.numeroOrden;

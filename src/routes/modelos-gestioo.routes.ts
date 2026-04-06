@@ -1,3 +1,4 @@
+// Rutas para manejo de modelos de gestión, con endpoints para CRUD completo (crear, leer, actualizar, eliminar) y delegando la lógica al controlador correspondiente
 import { Router } from "express";
 import {
     createModelo,

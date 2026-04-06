@@ -1,3 +1,4 @@
+// Script para sincronizar usuarios desde Google Directory a la tabla de solicitantes
 import "dotenv/config";
 import { listAllUsers } from "../google/googleDirectory.js";
 import { upsertSolicitanteFromGoogle_min } from "../service/solicitanteSync.js";

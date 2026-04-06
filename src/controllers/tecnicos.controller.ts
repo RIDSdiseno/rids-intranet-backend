@@ -5,7 +5,7 @@ import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
 import type { Request, Response } from "express";
 
-
+// Listar técnicos
 export async function listTecnicos(_req: Request, res: Response) {
     try {
         const tecnicos = await prisma.tecnico.findMany({
@@ -25,6 +25,8 @@ export async function listTecnicos(_req: Request, res: Response) {
         return res.status(500).json({ error: "Error al listar técnicos" });
     }
 }
+
+// Actualizar técnico (nombre, email, status, rol)
 export async function updateTecnico(req: Request, res: Response) {
     console.log(" updateTecnico body:", req.body);
     try {
@@ -54,6 +56,7 @@ export async function updateTecnico(req: Request, res: Response) {
     }
 }
 
+// Eliminar técnico (borrado físico)
 export async function deleteTecnico(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
@@ -72,6 +75,7 @@ export async function deleteTecnico(req: Request, res: Response) {
     }
 }
 
+// Crear técnico
 export async function createTecnico(req: Request, res: Response) {
   try {
     const { nombre, email, password, rol, status } = req.body;

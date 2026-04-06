@@ -3,7 +3,7 @@ import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
 
 /* ======================================================
-   🎨 Estilos por empresa (Excel)
+   Estilos por empresa (Excel)
 ====================================================== */
 function getEmpresaStyle(nombre: string) {
     const n = nombre.toLowerCase();
@@ -14,7 +14,7 @@ function getEmpresaStyle(nombre: string) {
 }
 
 /* ======================================================
-   🎨 Estilos de hoja Excel
+  Estilos de hoja Excel
 ====================================================== */
 function styleSheet(
     ws: XLSX.WorkSheet,
@@ -57,7 +57,7 @@ function styleSheet(
 }
 
 // ======================================================
-/* 🧹 Normalización de nombres de empresa
+/*  Normalización de nombres de empresa
 ====================================================== */
 function normalizeEmpresa(nombre: string): string {
     return nombre
@@ -69,7 +69,7 @@ function normalizeEmpresa(nombre: string): string {
 }
 
 /* ======================================================
-   📂 Resolución de rutas SharePoint (CLAVE)
+    Resolución de rutas SharePoint (CLAVE)
 ====================================================== */
 function resolveSharepointPath(empresa: string): string | null {
     const key = normalizeEmpresa(empresa);
@@ -200,7 +200,7 @@ function buildInventarioExcel(
 }
 
 /* ======================================================
-   📥 Export MANUAL (Web)
+    Export MANUAL (Web)
    GET /api/inventario/export
 ====================================================== */
 export async function exportInventario(req: Request, res: Response) {
@@ -254,7 +254,7 @@ export async function exportInventario(req: Request, res: Response) {
 }
 
 /* ======================================================
-   🤖 Export AUTOMÁTICO (Power Automate)
+    Export AUTOMÁTICO (Power Automate)
    POST /api/inventario/export/sharepoint
 ====================================================== */
 export async function exportInventarioForSharepoint(
@@ -324,7 +324,7 @@ export async function exportInventarioForSharepoint(
 }
 
 // ======================================================
-/* 📋 Obtener Inventario
+/*  Obtener Inventario
    GET /api/inventario
 ====================================================== */
 export async function getInventario(

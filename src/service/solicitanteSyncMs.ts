@@ -179,6 +179,7 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
   });
 }
 
+// Función para desactivar solicitantes vinculados a Microsoft que ya no están en el listado de usuarios de MS
 export async function deactivateMissingMicrosoftSolicitantes(
   empresaId: number,
   microsoftIdsVigentes: string[]

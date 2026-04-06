@@ -1,8 +1,10 @@
+// controllers/tickets-rids/reply-templates/tecnico-signature.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../../lib/prisma.js";
 import cloudinary from "../../../config/cloudinary.js";
 import { Readable } from "stream";
 
+// Controlador para obtener la configuración de la firma de email de un técnico específico
 export async function getTecnicoSignature(req: Request, res: Response) {
     try {
         const tecnicoId = Number(req.params.id);
@@ -13,7 +15,8 @@ export async function getTecnicoSignature(req: Request, res: Response) {
                 message: "Técnico inválido",
             });
         }
-
+        
+        // Obtenemos los datos del técnico junto con su firma (si existe)
         const tecnico = await prisma.tecnico.findUnique({
             where: { id_tecnico: tecnicoId },
             select: {
@@ -54,6 +57,7 @@ export async function getTecnicoSignature(req: Request, res: Response) {
     }
 }
 
+// Controlador para actualizar o crear la configuración de la firma de email de un técnico específico
 export async function updateTecnicoSignatureData(req: Request, res: Response) {
     try {
         const tecnicoId = Number(req.params.id);
@@ -65,7 +69,8 @@ export async function updateTecnicoSignatureData(req: Request, res: Response) {
                 message: "Técnico inválido",
             });
         }
-
+        
+        // Actualizamos los datos de la firma del técnico (cargo, área, texto) sin modificar la imagen. Si el técnico no tiene firma, se actualizarán los campos y se podrá subir una imagen posteriormente.
         const tecnico = await prisma.tecnico.update({
             where: { id_tecnico: tecnicoId },
             data: {
@@ -104,6 +109,7 @@ export async function updateTecnicoSignatureData(req: Request, res: Response) {
     }
 }
 
+// Controlador para subir o actualizar la imagen de la firma de un técnico específico
 export async function uploadTecnicoSignatureImage(req: Request, res: Response) {
     try {
         const tecnicoId = Number(req.params.id);
@@ -122,7 +128,8 @@ export async function uploadTecnicoSignatureImage(req: Request, res: Response) {
                 message: "Debes subir una imagen",
             });
         }
-
+        
+        // Subimos la imagen a Cloudinary y guardamos la URL en la base de datos. Si ya existe una firma para el técnico, se actualizará; si no, se creará una nueva.
         const uploadResult = await new Promise<any>((resolve, reject) => {
             const stream = cloudinary.uploader.upload_stream(
                 {
@@ -167,6 +174,7 @@ export async function uploadTecnicoSignatureImage(req: Request, res: Response) {
     }
 }
 
+// Controlador para eliminar la imagen de la firma de un técnico específico
 export async function deleteTecnicoSignatureImage(req: Request, res: Response) {
     try {
         const tecnicoId = Number(req.params.id);

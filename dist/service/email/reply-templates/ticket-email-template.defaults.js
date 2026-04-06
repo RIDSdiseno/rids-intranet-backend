@@ -1,8 +1,10 @@
+// Archivo con los templates de correo por defecto para tickets, usados en respuestas automáticas y confirmaciones. Estos templates se aseguran de existir en DB al iniciar el servicio, y pueden ser personalizados desde la interfaz de administración.
 export const TICKET_EMAIL_TEMPLATE_KEYS = {
     AUTO_REPLY_INBOUND: "AUTO_REPLY_INBOUND",
     TICKET_CREATED_WEB: "TICKET_CREATED_WEB",
     AGENT_REPLY: "AGENT_REPLY",
 };
+// Lista de templates de correo por defecto para tickets, con variables de ejemplo para subject y body. Estos templates se pueden modificar o extender según las necesidades del negocio.
 export const DEFAULT_TICKET_EMAIL_TEMPLATES = [
     {
         key: TICKET_EMAIL_TEMPLATE_KEYS.AUTO_REPLY_INBOUND,

@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 
 const prisma = new PrismaClient();
 
-// ✅ Obtener todos los servicios
+//  Obtener todos los servicios
 export async function getServicios(_req: Request, res: Response) {
   try {
     const servicios = await prisma.servicioGestioo.findMany({
@@ -17,7 +17,7 @@ export async function getServicios(_req: Request, res: Response) {
   }
 }
 
-// ✅ Obtener servicio por ID
+//  Obtener servicio por ID
 export async function getServicioById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
@@ -42,7 +42,7 @@ export async function getServicioById(req: Request, res: Response) {
   });
 }
 
-// ✅ Crear servicio
+//  Crear servicio
 export async function createServicio(req: Request, res: Response) {
   try {
     const {
@@ -89,7 +89,7 @@ export async function createServicio(req: Request, res: Response) {
   }
 }
 
-// ✅ Actualizar servicio
+//  Actualizar servicio
 export async function updateServicio(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
@@ -150,7 +150,7 @@ export async function updateServicio(req: Request, res: Response) {
   }
 }
 
-// ✅ Eliminar servicio
+//  Eliminar servicio
 export async function deleteServicio(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);

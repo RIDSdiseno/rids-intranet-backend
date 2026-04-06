@@ -1,3 +1,4 @@
+// jobs/teamviewer.cron.ts
 import cron from "node-cron";
 import { runTeamViewerSyncInternal } from "../controllers/controllers-teamviewer/teamviewer.controller.js";
 // Este cron se encarga de sincronizar los datos de TeamViewer cada 15 minutos

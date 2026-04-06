@@ -1,3 +1,4 @@
+// Rutas para manejo de uploads de imágenes, utilizando Multer para procesar los archivos subidos y delegando la lógica al controlador correspondiente
 import { Router } from "express";
 import { upload } from "../config/multer.js";
 import { uploadImagen } from "../controllers/upload-imagenes.controller.js";

@@ -1,5 +1,6 @@
 // src/services/email/email-sender.service.ts
 import nodemailer from 'nodemailer';
+// Servicio para enviar correos relacionados con tickets (notificaciones, respuestas, etc.)
 class EmailSenderService {
     transporter;
     async sendStatusEmail(ticketId, nuevoEstado, toEmail) {
@@ -36,6 +37,7 @@ class EmailSenderService {
                 filename: file.originalname,
                 path: file.path, // Cloudinary secure_url
             })) || [];
+            // Enviar correo con template HTML y adjuntos
             await this.transporter.sendMail({
                 from: `"Soporte RIDS" <${process.env.SMTP_USER}>`,
                 to: to.join(","),
@@ -55,6 +57,7 @@ class EmailSenderService {
             throw error;
         }
     }
+    // Método para enviar correo de confirmación al crear un ticket
     async sendTicketCreatedEmail(to, id, summary) {
         try {
             await this.transporter.sendMail({
@@ -119,6 +122,7 @@ class EmailSenderService {
     </html>
     `;
     }
+    // Método para convertir texto a entidades HTML y preservar saltos de línea
     escapeHtml(text) {
         return text
             .replace(/&/g, '&amp;')
@@ -128,6 +132,7 @@ class EmailSenderService {
             .replace(/'/g, '&#039;')
             .replace(/\n/g, '<br>');
     }
+    // Método para traducir estados internos a texto legible para el cliente
     translateStatus(status) {
         const translations = {
             NEW: 'Nuevo',

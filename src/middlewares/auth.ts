@@ -11,6 +11,7 @@ interface JwtPayloadCustom {
   empresaId?: number | null;
 }
 
+// Middleware de autenticación que verifica el token JWT y enriquece el request con la información del usuario
 export function auth(required = true): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const header = req.headers.authorization;
@@ -30,7 +31,8 @@ export function auth(required = true): RequestHandler {
     }
 
     const token = header.slice(7);
-
+    
+    // Verificamos el token JWT
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayloadCustom;
 

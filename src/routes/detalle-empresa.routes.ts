@@ -1,3 +1,4 @@
+// Rutas para manejo de detalles de empresa, con endpoints para CRUD completo y consulta por empresa, delegando la lógica al controlador correspondiente
 import { Router } from "express";
 import {
     createDetalleEmpresa,

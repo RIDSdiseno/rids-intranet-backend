@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { asyncLocalStorage, setRequestContext, clearRequestContext } from "../lib/request-context.js";
+// Middleware de autenticación que verifica el token JWT y enriquece el request con la información del usuario
 export function auth(required = true) {
     return (req, res, next) => {
         const header = req.headers.authorization;
@@ -18,6 +19,7 @@ export function auth(required = true) {
             return;
         }
         const token = header.slice(7);
+        // Verificamos el token JWT
         try {
             const payload = jwt.verify(token, process.env.JWT_SECRET);
             const userId = Number(payload.sub);

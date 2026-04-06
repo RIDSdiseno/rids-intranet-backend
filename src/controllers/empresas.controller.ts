@@ -452,7 +452,7 @@ export async function getEmpresaById(
 /* =======================================================
    POST /api/empresas - SIN nested create (usa DetalleEmpresa separado)
    ======================================================= */
-
+   
 export async function createEmpresa(
   req: Request,
   res: Response

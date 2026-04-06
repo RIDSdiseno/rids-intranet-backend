@@ -12,6 +12,9 @@ const normMode = (v) => {
     const s = String(v ?? "deactivate").trim().toLowerCase();
     return s === "purge" ? "purge" : "deactivate";
 };
+// ======================================================
+/*  Cleanup de Solicitantes sin cuenta (accountType null + no google/msId)
+*/
 async function getOrCreateSystemSolicitanteId(tx, empresaId) {
     const sysClienteId = -empresaId;
     const sysEmail = `sistema+empresa-${empresaId}@rids.local`;
@@ -41,6 +44,7 @@ async function getOrCreateSystemSolicitanteId(tx, empresaId) {
     });
     return sys.id_solicitante;
 }
+// Función principal de cleanup por empresa (con tx)
 async function cleanupNoCuentaForEmpresa(tx, empresaId, mode) {
     // ✅ Excepción: clínicas/boxes -> no limpiar
     if (EXCLUDED_EMPRESA_IDS.has(empresaId)) {

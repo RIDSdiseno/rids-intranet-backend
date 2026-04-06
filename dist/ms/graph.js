@@ -5,6 +5,7 @@ const DEFAULT_AUTH = {
     clientId: process.env.MS_CLIENT_ID || "",
     clientSecret: process.env.MS_CLIENT_SECRET || "",
 };
+// Parsea la variable de entorno MS_AUTH_MAP para obtener las credenciales por dominio
 function parseAuthMap() {
     const raw = process.env.MS_AUTH_MAP || "";
     const out = {};
@@ -30,6 +31,7 @@ function getAuthForDomain(domain) {
 }
 /* =================== Token cache (por perfil) =================== */
 let cached = null;
+// Obtiene un token de acceso para Microsoft Graph, con caching en memoria por perfil (tenant+clientId)
 async function getToken(auth) {
     const now = Math.floor(Date.now() / 1000);
     const cacheKey = `${auth.tenant}:${auth.clientId}`;
@@ -184,6 +186,7 @@ async function listUsersForSingleDomain(domain) {
         };
     });
 }
+// Listado principal exportado, con soporte multi-dominio y filtrado opcional por email
 export async function listUsersWithLicenses(opts) {
     const dom = opts?.filterDomain;
     if (!dom) {

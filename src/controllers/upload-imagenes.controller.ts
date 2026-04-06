@@ -1,6 +1,8 @@
+// src/controllers/upload-imagenes.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 
+// Controlador para subir imagenes a Cloudinary y asociarlas a productosGestioo
 export async function uploadImagen(req: Request, res: Response) {
     try {
         const file = req.file;
@@ -56,7 +58,7 @@ export async function uploadImagen(req: Request, res: Response) {
         console.error("❌ Error al subir imagen:", error);
 
         // =========================
-        // 🧠 ERRORES DE CLOUDINARY
+        //  ERRORES DE CLOUDINARY
         // =========================
         const rawMessage = error?.message || "";
 
@@ -71,7 +73,7 @@ export async function uploadImagen(req: Request, res: Response) {
         }
 
         // =========================
-        // 🧠 ERRORES DE PRISMA
+        //  ERRORES DE PRISMA
         // =========================
         if (error?.code === "P2025") {
             return res.status(404).json({
@@ -80,7 +82,7 @@ export async function uploadImagen(req: Request, res: Response) {
         }
 
         // =========================
-        // ❌ ERROR GENÉRICO
+        //  ERROR GENÉRICO
         // =========================
         return res.status(500).json({
             message: "Error interno al subir la imagen.",

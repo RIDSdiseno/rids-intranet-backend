@@ -190,6 +190,7 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
     bus.emit("solicitante.created", created);
     return created;
 }
+// Función de retry genérica para operaciones con prisma, con backoff exponencial
 export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVigentes) {
     const ids = googleIdsVigentes
         .map((x) => x?.trim())

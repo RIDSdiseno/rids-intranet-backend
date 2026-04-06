@@ -47,6 +47,7 @@ function diffObjects(before, after) {
     }
     return changes;
 }
+// --- Helper para sanitizar objetos antes de guardarlos en AuditLog (solo primitivos) ---
 function sanitizeForAudit(obj) {
     if (!obj)
         return {};
@@ -132,6 +133,7 @@ export const prisma = prismaBase.$extends({
                 });
                 return result;
             },
+            // --- Lógica similar para UPDATE, con enriquecimiento previo ---
             async update({ model, args, query }) {
                 const actorId = getCurrentUserId();
                 if (!model || model === "AuditLog") {
@@ -230,6 +232,7 @@ export const prisma = prismaBase.$extends({
                 });
                 return result;
             },
+            // --- NUEVO MÉTODO PARA DELETE, con lógica similar pero adaptada ---
             async delete({ model, args, query }) {
                 const actorId = getCurrentUserId();
                 if (!model || model === "AuditLog") {
@@ -291,6 +294,7 @@ export const prisma = prismaBase.$extends({
                     });
                     empresaId = equipo?.solicitante?.empresaId ?? null;
                 }
+                // Guardamos el log con los cambios ya enriquecidos
                 await prismaBase.auditLog.create({
                     data: {
                         entity: model,

@@ -1,7 +1,11 @@
+// Controlador para subir reportes DOCX a SharePoint vía Power Automate
 import type { Request, Response } from "express";
 import fetch from "node-fetch";
 import { resolveSharepointPathReporte } from "../utils/sharepointPaths.js";
 
+// ======================================================
+/*  Subir Reporte DOCX a SharePoint vía Power Automate
+    POST /api/reportes/upload */
 export async function uploadReporteDocx(req: Request, res: Response) {
     try {
         console.log("📥 uploadReporteDocx called");
