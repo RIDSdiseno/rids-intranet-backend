@@ -5,7 +5,7 @@ const ORGS = [
   "ALIANZ","ASUR","BDK","BODEGAL","CLINICA NACE","GRUPO COLCHAGUA",
   "FIJACIONES PROCET","INFINITYCONNECT","INFINET","JPL","RWAY",
   "T-SALES","VPRIME","PINI","RIDS","BDK-SPA","BERCIA","SOFTLAND","INTCOMEX",
-  "CINTAX","COVASACHILE","SOS GROUP",  // 👈
+  "CINTAX","COVASACHILE","SOS GROUP","DITECSUR"
 ];
 
 // Script para sembrar las organizaciones de tickets (ticketOrg) a partir de un listado predefinido

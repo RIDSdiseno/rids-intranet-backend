@@ -25,6 +25,11 @@ declare class GraphReaderService {
         cc?: string[];
         subject: string;
         bodyHtml: string;
+        attachments?: Array<{
+            name: string;
+            contentType: string;
+            contentBytes: string;
+        }>;
     }): Promise<void>;
     private toSantiagoDateTime;
     readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{

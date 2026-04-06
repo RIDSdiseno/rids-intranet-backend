@@ -4,8 +4,10 @@ import { detectArea, parseArea } from "./ticket-area.utils.js";
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
 import { buildTicketSla } from "./ticketera-sla.controller.js";
 import { ticketEmailTemplateService } from "../../service/email/reply-templates/ticket-email-template.service.js";
+import { sendTicketAssignedEmail } from "./ticket-assignment-mailer.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
+import fs from "fs/promises";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str
@@ -350,12 +352,28 @@ export async function replyTicketAsAgent(req, res) {
                     areaTecnico: tecnico?.area || "Soporte Técnico",
                 },
             });
+            const emailAttachments = files?.length
+                ? await Promise.all(files.map(async (file) => {
+                    const response = await fetch(file.path);
+                    if (!response.ok) {
+                        throw new Error(`No se pudo descargar adjunto: ${file.originalname}`);
+                    }
+                    const arrayBuffer = await response.arrayBuffer();
+                    const fileBuffer = Buffer.from(arrayBuffer);
+                    return {
+                        name: file.originalname,
+                        contentType: file.mimetype || "application/octet-stream",
+                        contentBytes: fileBuffer.toString("base64"),
+                    };
+                }))
+                : [];
             if (rendered.isEnabled) {
                 await graphReaderService.sendReplyEmail({
                     to: toEmails,
                     cc: ccEmails,
                     subject: rendered.subject,
                     bodyHtml: rendered.bodyHtml,
+                    attachments: emailAttachments,
                 });
             }
         }
@@ -710,6 +728,17 @@ export async function updateTicket(req, res) {
                 await tx.ticketEvent.createMany({ data: events });
             }
         });
+        const assigneeChanged = assigneeId !== undefined &&
+            assigneeId !== ticket.assigneeId &&
+            assigneeId !== null;
+        if (assigneeChanged) {
+            try {
+                await sendTicketAssignedEmail(ticketId);
+            }
+            catch (err) {
+                console.error("⚠️ Error enviando correo de asignación:", err);
+            }
+        }
         if (status && status !== ticket.status) {
             bus.emit("ticket.status_changed", {
                 ticketId,
@@ -915,6 +944,10 @@ export async function bulkUpdateTickets(req, res) {
         if (!ticketIds?.length) {
             return res.status(400).json({ ok: false });
         }
+        const ticketsBefore = await prisma.ticket.findMany({
+            where: { id: { in: ticketIds } },
+            select: { id: true, assigneeId: true },
+        });
         await prisma.ticket.updateMany({
             where: { id: { in: ticketIds } },
             data: {
@@ -939,9 +972,23 @@ export async function bulkUpdateTickets(req, res) {
                 assigneeId,
             },
         });
+        if (assigneeId !== undefined && assigneeId !== null) {
+            const changedTicketIds = ticketsBefore
+                .filter(ticket => ticket.assigneeId !== assigneeId)
+                .map(ticket => ticket.id);
+            for (const ticketId of changedTicketIds) {
+                try {
+                    await sendTicketAssignedEmail(ticketId);
+                }
+                catch (err) {
+                    console.error(`⚠️ Error enviando correo de asignación para ticket #${ticketId}:`, err);
+                }
+            }
+        }
         return res.json({ ok: true });
     }
     catch (err) {
+        console.error("[helpdesk] bulkUpdateTickets error:", err);
         return res.status(500).json({ ok: false });
     }
 }

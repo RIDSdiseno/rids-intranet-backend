@@ -985,6 +985,12 @@ class GraphReaderService {
                 ccRecipients: ccRecipients.map(address => ({
                     emailAddress: { address }
                 })),
+                attachments: (params.attachments ?? []).map(att => ({
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    name: att.name,
+                    contentType: att.contentType,
+                    contentBytes: att.contentBytes,
+                })),
             },
             saveToSentItems: true,
         });
