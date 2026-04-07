@@ -16,11 +16,11 @@ function buildDateFilter(fromDate, toDate, startIdx = 1) {
     let sql = "";
     let idx = startIdx;
     if (fromDate) {
-        sql += ` AND m.inicio >= $${idx++}`;
+        sql += ` AND m.inicio::date >= $${idx++}::date`;
         params.push(fromDate);
     }
     if (toDate) {
-        sql += ` AND m.inicio < $${idx++}`;
+        sql += ` AND m.inicio::date <= $${idx++}::date`;
         params.push(toDate);
     }
     return { sql, params, nextIdx: idx };
