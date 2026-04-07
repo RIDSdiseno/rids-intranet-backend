@@ -1,19 +1,14 @@
 // Controlador para sincronizar sesiones de TeamViewer como mantenciones remotas en la base de datos. Este proceso se puede ejecutar manualmente o programar para que corra automáticamente cada cierto tiempo, asegurando que las sesiones de TeamViewer se registren correctamente y se asocien con las empresas y solicitantes correspondientes.
 import type { Request, Response } from "express";
-import { getConnections, getDevice } from "../../service/teamviewer/teamviewer.service.js";
+import {
+    getDevice,
+    getAllConnectionsHistorical,
+    calcDurationMinutes,
+    type TeamViewerSession,
+} from "../../service/teamviewer/teamviewer.service.js";
 import { prisma } from "../../lib/prisma.js";
 
 const norm = (s?: string | null) => (s ?? "").trim().replace(/\s+/g, " ");
-
-interface TeamViewerSession {
-    id: string;
-    deviceid?: string | number | null;
-    devicename?: string | null;
-    groupname?: string | null;
-    start_date: string;
-    end_date?: string | null;
-    duration?: number | null;
-}
 
 function normalizeName(name: string) {
     return name
@@ -35,23 +30,42 @@ export async function syncTeamViewer(req: Request, res: Response) {
 }
 
 // Función interna que realiza toda la lógica de sincronización, separada del controlador para facilitar testing y posibles ejecuciones programadas sin necesidad de una petición HTTP
-export async function runTeamViewerSyncInternal() {
-    const lastSession = await prisma.mantencionRemota.findFirst({
-        where: { origen: "TEAMVIEWER" },
-        orderBy: { inicio: "desc" },
-        select: { inicio: true },
+export async function runTeamViewerSyncInternal(opts?: {
+    fromDate?: string;
+    toDate?: string;
+    fullHistorical?: boolean;
+}) {
+    let fromDate: string | undefined;
+    let toDate: string | undefined;
+
+    if (opts?.fullHistorical) {
+        fromDate = opts.fromDate;
+        toDate = opts.toDate;
+    } else {
+        const lastSession = await prisma.mantencionRemota.findFirst({
+            where: { origen: "TEAMVIEWER" },
+            orderBy: { inicio: "desc" },
+            select: { inicio: true },
+        });
+
+        fromDate = lastSession?.inicio
+            ? new Date(lastSession.inicio.getTime() + 1000)
+                .toISOString()
+                .replace(/\.\d{3}Z$/, "Z")
+            : undefined;
+
+        toDate = undefined;
+    }
+
+    console.log("Sync TeamViewer desde:", fromDate ?? "Primera ejecución");
+    console.log("Sync TeamViewer hasta:", toDate ?? "Actual");
+
+    const data = await getAllConnectionsHistorical({
+        ...(fromDate ? { fromDate } : {}),
+        ...(toDate ? { toDate } : {}),
     });
 
-    const fromDate = lastSession?.inicio
-        ? new Date(lastSession.inicio.getTime() + 1000)
-            .toISOString()
-            .replace(/\.\d{3}Z$/, "Z")
-        : undefined;
-
-    console.log("Última fecha sync:", fromDate ?? "Primera ejecución");
-
-    const data = await getConnections(fromDate);
-    const sessions: TeamViewerSession[] = data?.records ?? [];
+    const sessions: TeamViewerSession[] = data ?? [];
 
     if (!sessions.length) {
         return { ok: true, totalRecibidas: 0 };
@@ -80,12 +94,12 @@ export async function runTeamViewerSyncInternal() {
         where: { deviceId: { in: deviceIds } },
         select: { deviceId: true, empresaId: true, solicitanteId: true },
     });
-    
+
     // Crear un mapa en memoria para acceso rápido por deviceId
     const deviceMap = new Map(
         deviceMaps.map(d => [d.deviceId, d])
     );
-    
+
     // Obtener el ID del técnico de soporte para asignar a las mantenciones remotas creadas (si existe)
     const soporteRids = await prisma.tecnico.findUnique({
         where: { email: "soporte@rids.cl" },
@@ -108,7 +122,7 @@ export async function runTeamViewerSyncInternal() {
             },
         },
     });
-    
+
     // Crear un mapa en memoria para acceso rápido por teamViewer (deviceId)
     const equiposSinTV = await prisma.equipo.findMany({
         where: {
@@ -124,7 +138,7 @@ export async function runTeamViewerSyncInternal() {
             },
         },
     });
-    
+
     // Crear un mapa en memoria para equipos sin teamViewer, indexado por solicitanteId para facilitar el fallback de auto-completar teamViewer
     const equipoSinTVMap = new Map<number, any>();
 
@@ -133,7 +147,7 @@ export async function runTeamViewerSyncInternal() {
             equipoSinTVMap.set(eq.solicitante.id_solicitante, eq);
         }
     }
-    
+
     // Crear un mapa en memoria para acceso rápido por teamViewer (deviceId)
     const equipoMap = new Map<string, any>();
 
@@ -242,7 +256,7 @@ export async function runTeamViewerSyncInternal() {
                 empresaId = match.id_empresa;
             }
         }
-        
+
         // 4️⃣ Intentar match por alias o grupo usando API de TeamViewer (si tenemos deviceId)
         if (!empresaId && deviceId) {
             try {
@@ -301,7 +315,7 @@ export async function runTeamViewerSyncInternal() {
             sinEmpresa++;
             continue;
         }
-        
+
         // Crear o actualizar mantención remota
         await prisma.mantencionRemota.upsert({
             where: {

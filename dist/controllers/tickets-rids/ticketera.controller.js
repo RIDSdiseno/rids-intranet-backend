@@ -472,8 +472,6 @@ export async function listTickets(req, res) {
         }
         const parsedArea = parseArea(area);
         const orderBy = [
-            { lastActivityAt: "desc" },
-            { updatedAt: "desc" },
             { createdAt: "desc" },
         ];
         let tickets = [];
@@ -654,9 +652,7 @@ export async function updateTicket(req, res) {
                 message: "Ticket no encontrado",
             });
         }
-        const updateData = {
-            lastActivityAt: new Date(),
-        };
+        const updateData = {};
         const events = [];
         /* ================== STATUS ================== */
         if (status && status !== ticket.status) {
@@ -713,7 +709,7 @@ export async function updateTicket(req, res) {
                 actorId: agentId ?? null,
             });
         }
-        if (Object.keys(updateData).length === 1) {
+        if (Object.keys(updateData).length === 0) {
             return res.json({
                 ok: true,
                 message: "No hubo cambios",
@@ -955,7 +951,6 @@ export async function bulkUpdateTickets(req, res) {
                 ...(status === TicketStatus.CLOSED && { closedAt: new Date() }),
                 ...(status === TicketStatus.CLOSED && { resolvedAt: new Date() }),
                 ...(assigneeId !== undefined && { assigneeId }),
-                lastActivityAt: new Date(),
             },
         });
         if (status) {

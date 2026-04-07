@@ -1,4 +1,4 @@
-import { getConnections, getDevice } from "../../service/teamviewer/teamviewer.service.js";
+import { getDevice, getAllConnectionsHistorical, calcDurationMinutes, } from "../../service/teamviewer/teamviewer.service.js";
 import { prisma } from "../../lib/prisma.js";
 const norm = (s) => (s ?? "").trim().replace(/\s+/g, " ");
 function normalizeName(name) {
@@ -20,20 +20,33 @@ export async function syncTeamViewer(req, res) {
     }
 }
 // Función interna que realiza toda la lógica de sincronización, separada del controlador para facilitar testing y posibles ejecuciones programadas sin necesidad de una petición HTTP
-export async function runTeamViewerSyncInternal() {
-    const lastSession = await prisma.mantencionRemota.findFirst({
-        where: { origen: "TEAMVIEWER" },
-        orderBy: { inicio: "desc" },
-        select: { inicio: true },
+export async function runTeamViewerSyncInternal(opts) {
+    let fromDate;
+    let toDate;
+    if (opts?.fullHistorical) {
+        fromDate = opts.fromDate;
+        toDate = opts.toDate;
+    }
+    else {
+        const lastSession = await prisma.mantencionRemota.findFirst({
+            where: { origen: "TEAMVIEWER" },
+            orderBy: { inicio: "desc" },
+            select: { inicio: true },
+        });
+        fromDate = lastSession?.inicio
+            ? new Date(lastSession.inicio.getTime() + 1000)
+                .toISOString()
+                .replace(/\.\d{3}Z$/, "Z")
+            : undefined;
+        toDate = undefined;
+    }
+    console.log("Sync TeamViewer desde:", fromDate ?? "Primera ejecución");
+    console.log("Sync TeamViewer hasta:", toDate ?? "Actual");
+    const data = await getAllConnectionsHistorical({
+        ...(fromDate ? { fromDate } : {}),
+        ...(toDate ? { toDate } : {}),
     });
-    const fromDate = lastSession?.inicio
-        ? new Date(lastSession.inicio.getTime() + 1000)
-            .toISOString()
-            .replace(/\.\d{3}Z$/, "Z")
-        : undefined;
-    console.log("Última fecha sync:", fromDate ?? "Primera ejecución");
-    const data = await getConnections(fromDate);
-    const sessions = data?.records ?? [];
+    const sessions = data ?? [];
     if (!sessions.length) {
         return { ok: true, totalRecibidas: 0 };
     }

@@ -585,15 +585,14 @@ export async function listTickets(req: Request, res: Response) {
         }
 
         const parsedArea = parseArea(area);
+
         const orderBy: Prisma.TicketOrderByWithRelationInput[] = [
-            { lastActivityAt: "desc" },
-            { updatedAt: "desc" },
             { createdAt: "desc" },
         ];
 
         let tickets: any[] = [];
         let total = 0;
-
+        
         if (parsedArea) {
             const areaCandidates = await prisma.ticket.findMany({
                 where: whereActual,
@@ -794,9 +793,7 @@ export async function updateTicket(req: Request, res: Response) {
             });
         }
 
-        const updateData: any = {
-            lastActivityAt: new Date(),
-        };
+        const updateData: any = {};
 
         const events: any[] = [];
 
@@ -865,7 +862,7 @@ export async function updateTicket(req: Request, res: Response) {
             });
         }
 
-        if (Object.keys(updateData).length === 1) {
+        if (Object.keys(updateData).length === 0) {
             return res.json({
                 ok: true,
                 message: "No hubo cambios",
@@ -1149,7 +1146,6 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
                 ...(status === TicketStatus.CLOSED && { closedAt: new Date() }),
                 ...(status === TicketStatus.CLOSED && { resolvedAt: new Date() }),
                 ...(assigneeId !== undefined && { assigneeId }),
-                lastActivityAt: new Date(),
             },
         });
 
