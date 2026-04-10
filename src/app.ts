@@ -50,7 +50,6 @@ function makeCorsOriginValidator(allowed: string[]): cors.CorsOptions["origin"] 
   };
 }
 
-
 const app = express();
 
 console.log("[ENV] CORS_ORIGIN raw =", process.env.CORS_ORIGIN);

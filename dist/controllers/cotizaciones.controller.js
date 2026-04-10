@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 import { getSimpleAPIConfig, generarDTE, generarSobre, enviarAlSII, consultarEstadoEnvio } from "../service/simple-api/simpleapi.service.js";
 const prisma = new PrismaClient();
+// UTILIDADES
 function generarSKU() {
     const random = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
     return `SKU-${random}`;
@@ -370,13 +371,13 @@ export async function createCotizacion(req, res) {
                         const precioCLP = Number(i.precioOriginalCLP ?? i.precio ?? 0);
                         return {
                             tipo: i.tipo,
-                            // 🔤 TEXTO
+                            // TEXTO
                             nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
                             descripcion: i.descripcion?.trim() && i.descripcion.trim() !== ""
                                 ? i.descripcion.trim()
                                 : "", // <-- Cambiar null por string vacío
                             cantidad: Number(i.cantidad ?? 1),
-                            // 🔥 PRECIO REAL (CLP)
+                            // PRECIO REAL (CLP)
                             precio: precioCLP,
                             precioOriginalCLP: precioCLP,
                             // COSTOS
@@ -443,6 +444,7 @@ export async function updateCotizacion(req, res) {
             }
         }
         const data = normalizeCotizacionData(rest);
+        // 1️⃣ Preparar filtro para items: SOLO LOS QUE EXISTEN EN DB (con ID numérico válido)
         await prisma.$transaction(async (tx) => {
             await tx.cotizacionGestioo.update({
                 where: { id },
@@ -456,10 +458,11 @@ export async function updateCotizacion(req, res) {
                     }),
                 },
             });
+            // 2️⃣ Si se incluyen items, procesar actualizaciones, eliminaciones y creaciones
             if (items !== undefined) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
                 const itemsConIdNumerico = items.filter((i) => typeof i.id === "number" &&
-                    idsExistentesBD.includes(i.id) // 🔥 SOLO SI EXISTE EN DB
+                    idsExistentesBD.includes(i.id) // SOLO SI EXISTE EN DB
                 );
                 const idsQueSiguen = itemsConIdNumerico.map((i) => i.id);
                 const idsAEliminar = idsExistentesBD.filter((itemId) => !idsQueSiguen.includes(itemId));
@@ -471,6 +474,7 @@ export async function updateCotizacion(req, res) {
                         },
                     });
                 }
+                // ACTUALIZAR items existentes (con ID numérico válido y que existan en DB)
                 for (const i of itemsConIdNumerico) {
                     await tx.cotizacionItemGestioo.update({
                         where: { id: i.id },
@@ -495,6 +499,7 @@ export async function updateCotizacion(req, res) {
                     });
                 }
                 const itemsNuevos = items.filter((i) => !(typeof i.id === "number" && i.id > 0));
+                // CREAR nuevos items (SIN ID numérico válido)
                 if (itemsNuevos.length > 0) {
                     await tx.cotizacionItemGestioo.createMany({
                         data: itemsNuevos.map((i) => ({
@@ -520,6 +525,7 @@ export async function updateCotizacion(req, res) {
                 }
             }
         });
+        // 3️⃣ Retornar cotización actualizada con items
         const updated = await prisma.cotizacionGestioo.findUnique({
             where: { id },
             include: {
@@ -972,10 +978,6 @@ export async function consultarEstadoSII(req, res) {
             });
         }
         const config = getSimpleAPIConfig();
-        console.log("🔎 CONSULTA ENVIO:", {
-            trackId: factura.trackId,
-            ambiente: config.ambiente
-        });
         const result = await consultarEstadoEnvio(config, factura.trackId);
         await prisma.factura.update({
             where: { id_factura: factura.id_factura },

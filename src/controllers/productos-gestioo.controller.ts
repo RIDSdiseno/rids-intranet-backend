@@ -89,7 +89,7 @@ export async function createProducto(req: Request, res: Response) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
 
-        // ✅ COSTO REAL: priorizamos precioCosto, si no viene usamos precio
+        // COSTO REAL: priorizamos precioCosto, si no viene usamos precio
         const costoReal: number | null =
             precioCosto !== undefined && precioCosto !== null
                 ? Number(precioCosto)
@@ -115,7 +115,7 @@ export async function createProducto(req: Request, res: Response) {
             data: {
                 nombre: nombre.trim(),
                 descripcion: descripcion?.trim() || null,
-                // 👉 Guardamos siempre el COSTO en "precio"
+                //Guardamos siempre el COSTO en "precio"
                 precio: costoReal,
                 categoria: categoria || null,
                 stock: stock !== undefined ? Number(stock) : 0,
@@ -123,7 +123,7 @@ export async function createProducto(req: Request, res: Response) {
                 estado: "disponible",
                 activo: true,
                 porcGanancia: porcNumero,
-                // 👉 Guardamos la venta final en "precioTotal"
+                // Guardamos la venta final en "precioTotal"
                 precioTotal: precioTotal,
                 imagen: imagen ?? null,
                 serie: serie || null,
@@ -224,7 +224,7 @@ export async function updateProducto(req: Request, res: Response) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
         }
 
-        // ✅ COSTO REAL: priorizamos precioCosto, luego precio, luego lo que ya está en BD
+        // COSTO REAL: priorizamos precioCosto, luego precio, luego lo que ya está en BD
         const costoReal: number =
             precioCosto !== undefined && precioCosto !== null
                 ? Number(precioCosto)
@@ -245,7 +245,7 @@ export async function updateProducto(req: Request, res: Response) {
         const data = {
             nombre: nombre.trim(),
             descripcion: descripcion?.trim() || null,
-            // 👉 Guardamos costo real en "precio"
+            // Guardamos costo real en "precio"
             precio: costoReal,
             categoria: categoria || null,
             stock:
@@ -254,7 +254,7 @@ export async function updateProducto(req: Request, res: Response) {
                     : existe.stock,
             serie: serie || existe.serie,
             porcGanancia: porcNumero,
-            // 👉 Guardamos venta final en "precioTotal"
+            // Guardamos venta final en "precioTotal"
             precioTotal: precioTotal,
             imagen:
                 imagen === undefined || imagen === ""

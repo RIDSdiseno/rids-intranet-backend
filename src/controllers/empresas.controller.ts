@@ -129,7 +129,8 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         arr.push({ id_visita: v.id_visita, status: v.status });
         visitasPorEmpresa.set(empId, arr);
       }
-
+      
+      // Armar respuesta final combinando todo
       const data = empresasBase.map((e) => {
         const solicitantesEmp = solPorEmpresa.get(e.id_empresa) ?? [];
         const ticketsEmp = ticketsPorEmpresa.get(e.id_empresa) ?? [];
@@ -452,7 +453,6 @@ export async function getEmpresaById(
 /* =======================================================
    POST /api/empresas - SIN nested create (usa DetalleEmpresa separado)
    ======================================================= */
-   
 export async function createEmpresa(
   req: Request,
   res: Response

@@ -46,8 +46,11 @@ export function calcDurationMinutes(session) {
     if (session.end_date) {
         fin = new Date(session.end_date);
     }
-    else if (session.duration) {
-        fin = new Date(inicio.getTime() + session.duration * 1000);
+    else {
+        const durationSeconds = session.duration;
+        if (typeof durationSeconds === "number" && durationSeconds >= 0) {
+            fin = new Date(inicio.getTime() + durationSeconds * 1000);
+        }
     }
     if (!fin)
         return 0;

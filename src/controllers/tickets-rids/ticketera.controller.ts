@@ -16,8 +16,6 @@ import crypto from "crypto";
 
 import { bus } from "../../lib/events.js";
 
-import fs from "fs/promises";
-
 // Extiende Request para tener req.user.id
 declare global {
     namespace Express {

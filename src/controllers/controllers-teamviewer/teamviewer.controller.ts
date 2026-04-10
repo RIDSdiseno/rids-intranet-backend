@@ -8,6 +8,8 @@ import {
 } from "../../service/teamviewer/teamviewer.service.js";
 import { prisma } from "../../lib/prisma.js";
 
+import { runBackfillTeamViewerDurationsInternal } from "./teamviewer-data.controller.js";
+
 const norm = (s?: string | null) => (s ?? "").trim().replace(/\s+/g, " ");
 
 function normalizeName(name: string) {
@@ -17,6 +19,10 @@ function normalizeName(name: string) {
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function formatDateOnly(date: Date) {
+    return date.toISOString().slice(0, 10);
 }
 
 // Controlador principal para sincronizar sesiones de TeamViewer
@@ -68,7 +74,14 @@ export async function runTeamViewerSyncInternal(opts?: {
     const sessions: TeamViewerSession[] = data ?? [];
 
     if (!sessions.length) {
-        return { ok: true, totalRecibidas: 0 };
+        return {
+            ok: true,
+            totalRecibidas: 0,
+            creadas: 0,
+            yaExistian: 0,
+            sinEmpresa: 0,
+            backfill: null,
+        };
     }
 
     let creadas = 0;
@@ -348,11 +361,50 @@ export async function runTeamViewerSyncInternal(opts?: {
         creadas++;
     }
 
+    const backfillFromDate =
+        fromDate ? fromDate.slice(0, 10) : undefined;
+
+    const backfillToDate =
+        toDate ? toDate.slice(0, 10) : formatDateOnly(new Date());
+
+    type BackfillResult =
+        | {
+            ok: boolean;
+            empresaId: number | null;
+            totalFaltantes: number;
+            actualizadas: number;
+            sinMatch: number;
+            sinDuracionConfiable: number;
+        }
+        | {
+            ok: false;
+            error: string;
+        }
+        | null;
+
+    let backfill: BackfillResult = null;
+
+    if (backfillFromDate && backfillToDate) {
+        try {
+            backfill = await runBackfillTeamViewerDurationsInternal({
+                fromDate: backfillFromDate,
+                toDate: backfillToDate,
+            });
+        } catch (error) {
+            console.error("[runTeamViewerSyncInternal][backfill]", error);
+            backfill = {
+                ok: false,
+                error: "Falló el backfill posterior a la sync",
+            };
+        }
+    }
+
     return {
         ok: true,
         totalRecibidas: sessions.length,
         creadas,
         yaExistian,
         sinEmpresa,
+        backfill,
     };
 }

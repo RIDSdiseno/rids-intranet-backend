@@ -280,7 +280,7 @@ const CreateMantencionSchema = z
     }
   });
 
-  // Si usas impersonación, debes definir un map de dominio a subject en GOOGLE_IMPERSONATED_MAP, o un subject fallback en GOOGLE_IMPERSONATED_ADMIN.
+// Si usas impersonación, debes definir un map de dominio a subject en GOOGLE_IMPERSONATED_MAP, o un subject fallback en GOOGLE_IMPERSONATED_ADMIN.
 const UpdateMantencionSchema = z
   .object({
     empresaId: z.number().int().positive().optional(),
@@ -740,12 +740,27 @@ export const closeMantencionRemota = async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
 
-    const current = await assertClienteOwnershipOr404(id, user);
+    const current = await prisma.mantencionRemota.findUnique({
+      where: { id_mantencion: id },
+      select: { empresaId: true, status: true, fin: true },
+    });
+
     if (!current) return res.status(404).json({ error: "Mantención no encontrada" });
+
+    if (isCliente(user) && current.empresaId !== Number(user.empresaId)) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+
+    if (current.status === "COMPLETADA") {
+      return res.status(400).json({ error: "La mantención ya está cerrada" });
+    }
 
     const updated = await prisma.mantencionRemota.update({
       where: { id_mantencion: id },
-      data: { status: "COMPLETADA", fin: new Date() },
+      data: {
+        status: "COMPLETADA",
+        fin: current.fin ?? new Date(),
+      },
       select: mantencionSelect,
     });
 
@@ -758,7 +773,6 @@ export const closeMantencionRemota = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "No se pudo cerrar la mantención" });
   }
 };
-
 /* ------------------------------------ */
 /* Metrics                               */
 /* ------------------------------------ */

@@ -15,7 +15,13 @@ export function startTeamViewerCron() {
 
         try {
             const result = await runTeamViewerSyncInternal();
-            console.log("✅ Sync completada:", result);
+            console.log("✅ Sync completada:", {
+                totalRecibidas: result.totalRecibidas,
+                creadas: result.creadas,
+                yaExistian: result.yaExistian,
+                sinEmpresa: result.sinEmpresa,
+                backfill: result.backfill,
+            });
         } catch (error) {
             console.error("❌ Error en sync automática:", error);
         }

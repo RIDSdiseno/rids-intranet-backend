@@ -8,6 +8,7 @@ import { getSimpleAPIConfig, generarDTE, generarSobre, enviarAlSII, consultarEst
 
 const prisma = new PrismaClient();
 
+// UTILIDADES
 function generarSKU(): string {
     const random = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
     return `SKU-${random}`;
@@ -441,7 +442,7 @@ export async function createCotizacion(req: Request, res: Response) {
                         return {
                             tipo: i.tipo,
 
-                            // 🔤 TEXTO
+                            // TEXTO
                             nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
                             descripcion:
                                 i.descripcion?.trim() && i.descripcion.trim() !== ""
@@ -450,7 +451,7 @@ export async function createCotizacion(req: Request, res: Response) {
 
                             cantidad: Number(i.cantidad ?? 1),
 
-                            // 🔥 PRECIO REAL (CLP)
+                            // PRECIO REAL (CLP)
                             precio: precioCLP,
                             precioOriginalCLP: precioCLP,
 
@@ -532,7 +533,8 @@ export async function updateCotizacion(req: Request, res: Response) {
         }
 
         const data = normalizeCotizacionData(rest);
-
+        
+        // 1️⃣ Preparar filtro para items: SOLO LOS QUE EXISTEN EN DB (con ID numérico válido)
         await prisma.$transaction(async (tx) => {
             await tx.cotizacionGestioo.update({
                 where: { id },
@@ -547,17 +549,18 @@ export async function updateCotizacion(req: Request, res: Response) {
                         imagen: req.body.imagen,
                     }),
                 },
-            });
-
+            }); 
+            
+            // 2️⃣ Si se incluyen items, procesar actualizaciones, eliminaciones y creaciones
             if (items !== undefined) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
 
                 const itemsConIdNumerico = items.filter(
                     (i: any) =>
                         typeof i.id === "number" &&
-                        idsExistentesBD.includes(i.id) // 🔥 SOLO SI EXISTE EN DB
+                        idsExistentesBD.includes(i.id) // SOLO SI EXISTE EN DB
                 );
-                
+
                 const idsQueSiguen = itemsConIdNumerico.map((i: any) => i.id);
 
                 const idsAEliminar = idsExistentesBD.filter(
@@ -572,7 +575,8 @@ export async function updateCotizacion(req: Request, res: Response) {
                         },
                     });
                 }
-
+                
+                // ACTUALIZAR items existentes (con ID numérico válido y que existan en DB)
                 for (const i of itemsConIdNumerico) {
                     await tx.cotizacionItemGestioo.update({
                         where: { id: i.id },
@@ -602,7 +606,8 @@ export async function updateCotizacion(req: Request, res: Response) {
                 const itemsNuevos = items.filter(
                     (i: any) => !(typeof i.id === "number" && i.id > 0)
                 );
-
+                
+                // CREAR nuevos items (SIN ID numérico válido)
                 if (itemsNuevos.length > 0) {
                     await tx.cotizacionItemGestioo.createMany({
                         data: itemsNuevos.map((i: any) => ({
@@ -630,7 +635,8 @@ export async function updateCotizacion(req: Request, res: Response) {
                 }
             }
         });
-
+        
+        // 3️⃣ Retornar cotización actualizada con items
         const updated = await prisma.cotizacionGestioo.findUnique({
             where: { id },
             include: {
@@ -1164,11 +1170,6 @@ export async function consultarEstadoSII(req: Request, res: Response) {
         }
 
         const config = getSimpleAPIConfig();
-
-        console.log("🔎 CONSULTA ENVIO:", {
-            trackId: factura.trackId,
-            ambiente: config.ambiente
-        });
 
         const result = await consultarEstadoEnvio(
             config,

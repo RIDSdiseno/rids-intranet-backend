@@ -1,7 +1,7 @@
 // lib/request-context.ts
 import { AsyncLocalStorage } from "async_hooks";
 export const asyncLocalStorage = new AsyncLocalStorage();
-// ✅ Fallback Map — sobrevive los await internos de Prisma
+// Fallback Map — sobrevive los await internos de Prisma
 const contextMap = new Map();
 export function getCurrentUserId() {
     const store = asyncLocalStorage.getStore();

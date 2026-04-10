@@ -7,7 +7,6 @@ import { ticketEmailTemplateService } from "../../service/email/reply-templates/
 import { sendTicketAssignedEmail } from "./ticket-assignment-mailer.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
-import fs from "fs/promises";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str

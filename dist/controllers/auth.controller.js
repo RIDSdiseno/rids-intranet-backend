@@ -184,6 +184,7 @@ export const register = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const login = async (req, res) => {
     const start = Date.now();
     try {
@@ -273,6 +274,7 @@ export const login = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const refresh = async (req, res) => {
     const token = getRefreshFromRequest(req);
     if (!token) {
@@ -361,6 +363,7 @@ export const refresh = async (req, res) => {
         return res.status(401).json({ error: "REFRESH_INVALID" });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const logout = async (req, res) => {
     const token = getRefreshFromRequest(req);
     if (token) {
@@ -569,6 +572,7 @@ export const forgotPassword = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const resetPassword = async (req, res) => {
     try {
         const { token, newPassword } = req.body;

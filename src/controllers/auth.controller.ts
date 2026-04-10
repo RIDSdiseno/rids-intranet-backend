@@ -230,6 +230,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const login = async (req: Request, res: Response) => {
   const start = Date.now();
 
@@ -339,6 +340,7 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const refresh = async (req: Request, res: Response) => {
   const token = getRefreshFromRequest(req);
   if (!token) {
@@ -455,6 +457,7 @@ export const refresh = async (req: Request, res: Response) => {
   }
 };
 
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const logout = async (req: Request, res: Response) => {
   const token = getRefreshFromRequest(req);
   if (token) {
@@ -707,6 +710,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
   }
 };
 
+// Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const resetPassword = async (req: Request, res: Response) => {
   try {
     const { token, newPassword } = req.body;

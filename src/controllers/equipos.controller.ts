@@ -377,7 +377,7 @@ export async function createEquipo(req: Request, res: Response) {
     const created: any[] = [];
     const errors: any[] = [];
 
-    // 🔥 transacción para que sea más estable
+    // transacción para que sea más estable
     for (const data of equiposToCreate) {
       try {
 
@@ -560,7 +560,8 @@ export async function updateEquipo(req: Request, res: Response) {
 
       ...equipoData
     } = data;
-
+    
+    // Validar empresaId si viene
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
       include: { solicitante: { select: { empresaId: true } } },

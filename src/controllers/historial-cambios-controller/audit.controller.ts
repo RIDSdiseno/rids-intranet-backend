@@ -2,6 +2,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 
+// Controlador para listar logs de auditoría con filtros y paginación
 export const listAuditLogs = async (req: Request, res: Response) => {
     try {
         const {
@@ -65,6 +66,7 @@ export const listAuditLogs = async (req: Request, res: Response) => {
     }
 };
 
+// Controlador para listar logs de auditoría relacionados a una empresa específica
 export const listAuditByEmpresa = async (req: Request, res: Response) => {
     try {
         const { empresaId } = req.params;
@@ -121,7 +123,8 @@ export const listAuditByEmpresa = async (req: Request, res: Response) => {
                     : []),
             ],
         };
-
+        
+        // 3️⃣ Consultar logs con el filtro consolidado
         const [logs, total] = await Promise.all([
             prisma.auditLog.findMany({
                 where,

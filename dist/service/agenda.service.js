@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { TipoAgenda, EstadoAgenda } from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
+import { string } from "zod";
 /* ======================================================
    ⚠️  Errores de negocio
 ====================================================== */
@@ -913,8 +914,39 @@ async function buscarAgendaCoincidenteDesdeOutlook(params) {
     return mejorCoincidencia;
 }
 export async function sincronizarAgendaDesdeOutlook(year, month) {
-    const { startDateTime, endDateTime } = buildAgendaOutlookMonthRange(year, month);
+    const { inicio, fin, startDateTime, endDateTime } = buildAgendaOutlookMonthRange(year, month);
     const events = await graphReaderService.readCalendarEvents(startDateTime, endDateTime);
+    const outlookIdsVigentes = new Set(events
+        .map((event) => event.id?.trim())
+        .filter((id) => Boolean(id)));
+    const visitasLocalesSincronizadas = await prisma.agendaVisita.findMany({
+        where: {
+            fecha: {
+                gte: inicio,
+                lte: fin,
+            },
+            outlookEventId: {
+                not: null,
+            },
+        },
+        select: { id: true,
+            outlookEventId: true,
+        },
+    });
+    const visitasEliminadasEnOutlook = visitasLocalesSincronizadas.filter((visita) => {
+        const outlookId = visita.outlookEventId?.trim();
+        return Boolean(outlookId) && !outlookIdsVigentes.has(outlookId);
+    });
+    if (visitasEliminadasEnOutlook.length > 0) {
+        await prisma.agendaVisita.deleteMany({
+            where: {
+                id: {
+                    in: visitasEliminadasEnOutlook.map((visita) => visita.id),
+                },
+            },
+        });
+        console.log(`[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}`);
+    }
     let creadas = 0;
     let actualizadas = 0;
     let omitidas = 0;

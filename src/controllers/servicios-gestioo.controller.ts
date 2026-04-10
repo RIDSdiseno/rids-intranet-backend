@@ -37,7 +37,7 @@ export async function getServicioById(req: Request, res: Response) {
     console.error("❌ Error al obtener servicio:", error);
     res.status(500).json({ error: "Error al obtener servicio" });
   }
-  return res.status(500).json({        // ✅ RETURN OBLIGATORIO
+  return res.status(500).json({        // RETURN OBLIGATORIO
     error: "Error al obtener servicio",
   });
 }

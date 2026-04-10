@@ -191,7 +191,7 @@ export async function updateDetalleTrabajo(req, res) {
         if (!existing) {
             return res.status(404).json({ error: "Detalle de trabajo no encontrado" });
         }
-        // 🔐 Validar técnico si viene
+        // Validar técnico si viene
         if (data.tecnicoId !== undefined && data.tecnicoId !== null) {
             const tecnico = await prisma.tecnico.findUnique({
                 where: { id_tecnico: Number(data.tecnicoId) },
@@ -200,7 +200,7 @@ export async function updateDetalleTrabajo(req, res) {
                 return res.status(400).json({ error: "Técnico no válido" });
             }
         }
-        // 🔥 Si se está cambiando a SALIDA → cerrar entradas previas
+        // Si se está cambiando a SALIDA → cerrar entradas previas
         if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
             await prisma.detalleTrabajoGestioo.updateMany({
                 where: {
@@ -213,6 +213,7 @@ export async function updateDetalleTrabajo(req, res) {
                 },
             });
         }
+        // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData = {
             tipoTrabajo: data.tipoTrabajo,
             descripcion: data.descripcion ?? null,

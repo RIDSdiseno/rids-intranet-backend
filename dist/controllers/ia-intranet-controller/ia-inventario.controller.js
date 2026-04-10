@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import OpenAI from "openai";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Controlador para analizar el inventario IT de una empresa usando IA
 export async function analizarInventarioEmpresa(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);

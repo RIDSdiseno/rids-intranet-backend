@@ -318,7 +318,7 @@ export async function createEquipo(req, res) {
                 : [parsed];
         const created = [];
         const errors = [];
-        // 🔥 transacción para que sea más estable
+        // transacción para que sea más estable
         for (const data of equiposToCreate) {
             try {
                 const existe = await prisma.equipo.findUnique({
@@ -462,6 +462,7 @@ export async function updateEquipo(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
         const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
+        // Validar empresaId si viene
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: { solicitante: { select: { empresaId: true } } },

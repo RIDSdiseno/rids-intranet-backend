@@ -7,14 +7,19 @@ export declare function runTeamViewerSyncInternal(opts?: {
 }): Promise<{
     ok: boolean;
     totalRecibidas: number;
-    creadas?: never;
-    yaExistian?: never;
-    sinEmpresa?: never;
-} | {
-    ok: boolean;
-    totalRecibidas: number;
     creadas: number;
     yaExistian: number;
     sinEmpresa: number;
+    backfill: {
+        ok: boolean;
+        empresaId: number | null;
+        totalFaltantes: number;
+        actualizadas: number;
+        sinMatch: number;
+        sinDuracionConfiable: number;
+    } | {
+        ok: false;
+        error: string;
+    } | null;
 }>;
 //# sourceMappingURL=teamviewer.controller.d.ts.map

@@ -98,6 +98,7 @@ export async function getEmpresas(req, res) {
                 arr.push({ id_visita: v.id_visita, status: v.status });
                 visitasPorEmpresa.set(empId, arr);
             }
+            // Armar respuesta final combinando todo
             const data = empresasBase.map((e) => {
                 const solicitantesEmp = solPorEmpresa.get(e.id_empresa) ?? [];
                 const ticketsEmp = ticketsPorEmpresa.get(e.id_empresa) ?? [];

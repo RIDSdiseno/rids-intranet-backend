@@ -7,7 +7,8 @@ import {
     syncTeamViewerHistorical,
     getTeamViewerTotalsByEmpresa,
     getTeamViewerMonthlyAverages,
-    getTeamViewerMonthlyBreakdown
+    getTeamViewerMonthlyBreakdown,
+    backfillTeamViewerDurations
 } from "../../controllers/controllers-teamviewer/teamviewer-data.controller.js";
 
 const router = Router();
@@ -24,5 +25,8 @@ router.get("/totals", getTeamViewerTotalsByEmpresa);
 // Promedios mensuales por empresa
 router.get("/monthly-averages", getTeamViewerMonthlyAverages);
 router.get("/monthly-breakdown", getTeamViewerMonthlyBreakdown);
+
+// Backfill de duraciones faltantes
+router.post("/backfill-durations", backfillTeamViewerDurations);
 
 export default router;

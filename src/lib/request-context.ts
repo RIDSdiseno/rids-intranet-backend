@@ -8,7 +8,7 @@ interface RequestStore {
 
 export const asyncLocalStorage = new AsyncLocalStorage<RequestStore>();
 
-// ✅ Fallback Map — sobrevive los await internos de Prisma
+// Fallback Map — sobrevive los await internos de Prisma
 const contextMap = new Map<string, number | null>();
 
 export function getCurrentUserId(): number | null {

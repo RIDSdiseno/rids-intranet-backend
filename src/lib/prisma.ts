@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 
-
 type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 const prismaBase = new PrismaClient({
   //log:

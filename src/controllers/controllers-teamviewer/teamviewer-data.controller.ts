@@ -367,3 +367,155 @@ export async function getTeamViewerMonthlyBreakdown(req: Request, res: Response)
         return res.status(500).json({ error: "Error obteniendo desglose mensual TeamViewer" });
     }
 }
+
+export async function runBackfillTeamViewerDurationsInternal(params: {
+    empresaId?: number;
+    fromDate: string;
+    toDate: string;
+}) {
+    const { empresaId, fromDate, toDate } = params;
+
+    const whereClause = {
+        ...(empresaId !== undefined ? { empresaId } : {}),
+        origen: "TEAMVIEWER" as const,
+        duracionMinutos: null,
+        inicio: {
+            gte: new Date(`${fromDate}T00:00:00.000Z`),
+            lt: new Date(`${toDate}T23:59:59.999Z`),
+        },
+        NOT: {
+            teamviewerId: null,
+        },
+    };
+
+    const faltantes = await prisma.mantencionRemota.findMany({
+        where: whereClause,
+        select: {
+            id_mantencion: true,
+            teamviewerId: true,
+            inicio: true,
+            fin: true,
+        },
+    });
+
+    if (!faltantes.length) {
+        return {
+            ok: true,
+            empresaId: empresaId ?? null,
+            totalFaltantes: 0,
+            actualizadas: 0,
+            sinMatch: 0,
+            sinDuracionConfiable: 0,
+        };
+    }
+
+    const sessions = (await getAllConnectionsHistorical({
+        fromDate,
+        toDate,
+    })) as TeamViewerSession[];
+
+    const sessionById = new Map<string, TeamViewerSession>();
+    for (const s of sessions ?? []) {
+        if (s?.id) sessionById.set(s.id, s);
+    }
+
+    let actualizadas = 0;
+    let sinMatch = 0;
+    let sinDuracionConfiable = 0;
+
+    for (const row of faltantes) {
+        const tvId = row.teamviewerId ?? "";
+        const session = sessionById.get(tvId);
+
+        if (!session) {
+            sinMatch++;
+            continue;
+        }
+
+        const tieneDuracion =
+            typeof session.duration === "number" && session.duration >= 0;
+        const tieneFin = !!session.end_date;
+
+        if (!tieneDuracion && !tieneFin) {
+            sinDuracionConfiable++;
+            continue;
+        }
+
+        const minutos = calcDurationMinutes(session);
+        if (!Number.isFinite(minutos) || minutos < 0) {
+            sinDuracionConfiable++;
+            continue;
+        }
+
+        let finTeamViewer: Date;
+
+        if (session.end_date) {
+            finTeamViewer = new Date(session.end_date);
+        } else {
+            const durationSeconds = session.duration;
+
+            if (typeof durationSeconds !== "number" || durationSeconds < 0) {
+                sinDuracionConfiable++;
+                continue;
+            }
+
+            finTeamViewer = new Date(
+                new Date(session.start_date).getTime() + durationSeconds * 1000
+            );
+        }
+
+        await prisma.mantencionRemota.update({
+            where: { id_mantencion: row.id_mantencion },
+            data: {
+                duracionMinutos: minutos,
+                fin: finTeamViewer,
+                status: "COMPLETADA",
+            },
+        });
+
+        actualizadas++;
+    }
+
+    return {
+        ok: true,
+        empresaId: empresaId ?? null,
+        totalFaltantes: faltantes.length,
+        actualizadas,
+        sinMatch,
+        sinDuracionConfiable,
+    };
+}
+
+export async function backfillTeamViewerDurations(req: Request, res: Response) {
+    try {
+        const empresaIdRaw = req.body?.empresaId;
+        const empresaId =
+            empresaIdRaw === undefined || empresaIdRaw === null || empresaIdRaw === ""
+                ? undefined
+                : Number(empresaIdRaw);
+
+        const fromDate = typeof req.body?.fromDate === "string" ? req.body.fromDate : undefined;
+        const toDate = typeof req.body?.toDate === "string" ? req.body.toDate : undefined;
+
+        if (empresaId !== undefined && Number.isNaN(empresaId)) {
+            return res.status(400).json({ error: "empresaId inválido" });
+        }
+
+        if (!fromDate || !toDate) {
+            return res.status(400).json({ error: "fromDate y toDate son obligatorios" });
+        }
+
+        const result = await runBackfillTeamViewerDurationsInternal({
+            ...(empresaId !== undefined ? { empresaId } : {}),
+            fromDate,
+            toDate,
+        });
+
+        return res.json(result);
+    } catch (error) {
+        console.error("[backfillTeamViewerDurations]", error);
+        return res.status(500).json({
+            error: "Error haciendo backfill de duraciones TeamViewer",
+        });
+    }
+}

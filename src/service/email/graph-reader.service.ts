@@ -42,8 +42,8 @@ interface ParsedEmail {
         filename: string;
         mimeType: string;
         bytes: number;
-        contentId: string | null;  // ✅ Añadir
-        isInline: boolean;   // ✅ Añadir
+        contentId: string | null;  // Añadir
+        isInline: boolean;   // Añadir
     }>;
 }
 
