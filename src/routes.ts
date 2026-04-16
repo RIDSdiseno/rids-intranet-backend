@@ -75,11 +75,12 @@ import { agendaRouter } from "./routes/agenda.routes.js";
 import correoRouter from "./routes/correo.routes.js";
 
 /* ========================================================= */
-import { auth } from "./middlewares/auth.js";
+import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
 export const api = Router();
 
 api.use(auth(false));
+api.use(onlyOwnEmpresa());
 
 /* ===================== App Core ===================== */
 api.use("/auth", authRouter);

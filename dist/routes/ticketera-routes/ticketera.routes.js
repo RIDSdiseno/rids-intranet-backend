@@ -3,7 +3,7 @@ import { Router } from "express";
 import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket } from "../../controllers/tickets-rids/ticketera.controller.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
-import { getTicketSla } from "../../controllers/tickets-rids/ticketera-sla.controller.js";
+import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
 import { getTicketKpis, getTicketKpisByAgent, } from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
 import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
 import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.controller.js";
@@ -13,6 +13,8 @@ import multer from "multer";
 import { getTecnicoSignature, updateTecnicoSignatureData, uploadTecnicoSignatureImage, deleteTecnicoSignatureImage, } from "../../controllers/tickets-rids/reply-templates/tecnico-signature.controller.js";
 import { getTicketEmailSignature, updateTicketEmailSignature } from "../../controllers/tickets-rids/reply-templates/ticket-default-signature.controller.js";
 import { getTicketMetricsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
+import { getTicketsDashboardMonthly, getTicketsDashboardRanking, } from "../../controllers/tickets-rids/dashboard/ticketDashboard.controller.js";
+import { getSlaConfig, updateSlaConfig, } from "../../controllers/tickets-rids/tickets-sla/sla-config.controller.js";
 const ticketeraRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 // =======================
@@ -40,6 +42,11 @@ ticketeraRouter.get("/contactos", buscarContactos);
 // =======================
 ticketeraRouter.get("/tecnicos/metrics", getTicketMetricsByTecnico);
 // =======================
+// MÉTRICAS TICKETS
+// =======================
+ticketeraRouter.get("/dashboard-empresas/monthly", getTicketsDashboardMonthly);
+ticketeraRouter.get("/dashboard-empresas/ranking", getTicketsDashboardRanking);
+// =======================
 // PLANTILLAS DE EMAIL
 // =======================
 ticketeraRouter.get("/email-templates", listTicketEmailTemplates);
@@ -52,6 +59,11 @@ ticketeraRouter.put("/email-signature", updateTicketEmailSignature);
 // =======================
 ticketeraRouter.post("/inbound-email", inboundEmail);
 ticketeraRouter.post("/process-emails", processEmails);
+// =======================
+// SLA CONFIG
+// =======================
+ticketeraRouter.get("/sla-config", getSlaConfig);
+ticketeraRouter.patch("/sla-config/:priority", updateSlaConfig);
 // =======================
 // ATTACHMENTS
 // =======================

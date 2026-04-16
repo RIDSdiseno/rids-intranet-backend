@@ -74,3 +74,41 @@ export function auth(required = true): RequestHandler {
     }
   };
 }
+
+export function onlyOwnEmpresa(): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = (req as any).user;
+
+    // Solo aplica a CLIENTEs
+    if (!user || user.rol !== "CLIENTE") {
+      next();
+      return;
+    }
+
+    // Si el cliente no tiene empresaId en su token, bloquear
+    if (!user.empresaId) {
+      res.status(403).json({ error: "Tu cuenta no está asociada a ninguna empresa" });
+      return;
+    }
+
+    // Forzar el empresaId del token en la request para que los
+    // controllers lo usen directamente
+    req.query.empresaId = String(user.empresaId);
+
+    // Si hay empresaId en params o body que no coincide, bloquear
+    const paramId = req.params.empresaId;
+    const bodyId = req.body?.empresaId;
+
+    if (paramId && Number(paramId) !== user.empresaId) {
+      res.status(403).json({ error: "No tienes acceso a los datos de esta empresa" });
+      return;
+    }
+
+    if (bodyId && Number(bodyId) !== user.empresaId) {
+      res.status(403).json({ error: "No tienes acceso a los datos de esta empresa" });
+      return;
+    }
+
+    next();
+  };
+}

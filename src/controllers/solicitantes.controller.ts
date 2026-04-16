@@ -146,6 +146,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
           id_solicitante: true,
           nombre: true,
           email: true,
+          telefono: true,
           empresaId: true,
           accountType: true,
           googleUserId: true,
@@ -287,11 +288,21 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
     const rows = await prisma.solicitante.findMany({
       where,
       orderBy: buildSolicitanteOrderBy(orderByKey, orderDir),
-      select: { id_solicitante: true, nombre: true },
+      select: {
+        id_solicitante: true,
+        nombre: true,
+        email: true,
+        telefono: true,
+      },
     });
 
     return res.json({
-      items: rows.map((s) => ({ id: s.id_solicitante, nombre: s.nombre })),
+      items: rows.map((s) => ({
+        id: s.id_solicitante,
+        nombre: s.nombre,
+        email: s.email ?? null,
+        telefono: s.telefono ?? null,
+      })),
     });
   } catch (err: unknown) {
     console.error("[solicitantes.byEmpresa] error:", err);
@@ -455,6 +466,9 @@ export const createSolicitante = async (req: Request, res: Response) => {
     const nombre = String(req.body?.nombre ?? "").trim();
     const emailRaw = (req.body?.email ?? null) as string | null;
     const email = emailRaw ? String(emailRaw).trim() : null;
+    const telefonoRaw = (req.body?.telefono ?? null) as string | null;
+    const telefono = telefonoRaw ? String(telefonoRaw).trim() : null;
+
     const empresaId = toInt(req.body?.empresaId);
 
     if (!nombre) return res.status(400).json({ error: "El nombre es obligatorio" });
@@ -467,11 +481,12 @@ export const createSolicitante = async (req: Request, res: Response) => {
     if (!empresa) return res.status(404).json({ error: "La empresa no existe" });
 
     const created = await prisma.solicitante.create({
-      data: { nombre, email, empresaId },
+      data: { nombre, email, telefono, empresaId },
       select: {
         id_solicitante: true,
         nombre: true,
         email: true,
+        telefono: true,
         empresaId: true,
         accountType: true,
         empresa: { select: { id_empresa: true, nombre: true } },
@@ -501,6 +516,7 @@ export const getSolicitanteById = async (req: Request, res: Response) => {
         id_solicitante: true,
         nombre: true,
         email: true,
+        telefono: true,
         empresaId: true,
         accountType: true,
         empresa: { select: { id_empresa: true, nombre: true } },
@@ -560,9 +576,14 @@ export const updateSolicitante = async (req: Request, res: Response) => {
         : typeof req.body?.email === "string"
           ? req.body.email.trim()
           : undefined;
+    const telefono =
+      req.body?.telefono === null
+        ? null
+        : typeof req.body?.telefono === "string"
+          ? req.body.telefono.trim()
+          : undefined;
     const empresaId =
       typeof req.body?.empresaId !== "undefined" ? toInt(req.body.empresaId) : undefined;
-
     if (empresaId !== undefined && empresaId <= 0) {
       return res.status(400).json({ error: "empresaId inválido" });
     }
@@ -586,12 +607,14 @@ export const updateSolicitante = async (req: Request, res: Response) => {
       data: {
         ...(nombre !== undefined ? { nombre } : {}),
         ...(email !== undefined ? { email } : {}),
+        ...(telefono !== undefined ? { telefono } : {}),
         ...(empresaId !== undefined ? { empresaId } : {}),
       },
       select: {
         id_solicitante: true,
         nombre: true,
         email: true,
+        telefono: true,
         empresaId: true,
         accountType: true,
         empresa: { select: { id_empresa: true, nombre: true } },

@@ -1,15 +1,18 @@
-// controllers/tickets-rids/ticketera-sla.controller.ts
 import type { Request, Response } from "express";
-import { prisma } from "../../lib/prisma.js";
-
+import { prisma } from "../../../lib/prisma.js";
 import { TicketPriority, TicketStatus } from "@prisma/client";
+import { getSlaConfigFromDB } from "../../../config/sla.config.js";
 
-export const SLA_CONFIG = {
-    LOW: { firstResponseMinutes: 60, resolutionMinutes: 240 }, // 1h respuesta, 4h cierre
-    NORMAL: { firstResponseMinutes: 30, resolutionMinutes: 60 }, // 30min respuesta, 1h cierre
-    HIGH: { firstResponseMinutes: 15, resolutionMinutes: 30 }, // 15min respuesta, 30min cierre
-    URGENT: { firstResponseMinutes: 5, resolutionMinutes: 15 }, // 5min respuesta, 15min cierre
-};
+export function getSlaTargets(
+    priority: TicketPriority | string | null | undefined,
+    slaConfig: Record<string, { firstResponseMinutes: number; resolutionMinutes: number }>
+) {
+    const key = String(priority || "NORMAL").toUpperCase();
+    return slaConfig[key] ?? slaConfig["NORMAL"] ?? {
+        firstResponseMinutes: 60,
+        resolutionMinutes: 90,
+    };
+}
 
 function addMinutes(date: Date, minutes: number) {
     return new Date(date.getTime() + minutes * 60 * 1000);
@@ -19,24 +22,20 @@ function diffMinutes(a: Date, b: Date) {
     return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 }
 
-export function getSlaTargets(priority?: TicketPriority | string | null) {
-    const key = String(priority || "NORMAL").toUpperCase() as keyof typeof SLA_CONFIG;
-    return SLA_CONFIG[key] ?? SLA_CONFIG.NORMAL;
-}
-
-// Función para construir el objeto de SLA de un ticket, con su estado (OK, BREACHED, PENDING) y minutos restantes o transcurridos
-export function buildTicketSla(ticket: {
-    createdAt: Date;
-    firstResponseAt?: Date | null;
-    resolvedAt?: Date | null;
-    closedAt?: Date | null;
-    status?: TicketStatus | string | null;
-    priority?: TicketPriority | string | null;
-}) {
+export function buildTicketSla(
+    ticket: {
+        createdAt: Date;
+        firstResponseAt?: Date | null;
+        resolvedAt?: Date | null;
+        closedAt?: Date | null;
+        status?: TicketStatus | string | null;
+        priority?: TicketPriority | string | null;
+    },
+    slaConfig: Record<string, { firstResponseMinutes: number; resolutionMinutes: number }>
+) {
     const now = new Date();
     const createdAt = new Date(ticket.createdAt);
-
-    const targets = getSlaTargets(ticket.priority);
+    const targets = getSlaTargets(ticket.priority, slaConfig);
 
     const firstResponseDueAt = addMinutes(createdAt, targets.firstResponseMinutes);
     const resolutionDueAt = addMinutes(createdAt, targets.resolutionMinutes);
@@ -44,16 +43,11 @@ export function buildTicketSla(ticket: {
     const firstResponseAt = ticket.firstResponseAt ? new Date(ticket.firstResponseAt) : null;
     const resolutionEndAt = ticket.closedAt ? new Date(ticket.closedAt) : null;
 
-    // ── Primera respuesta ──────────────────────────────────────────────────────
+    // ── Primera respuesta ─────────────────────────────────────────────────────
     let firstResponseStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
     if (firstResponseAt) {
-        // Respondido: OK si llegó a tiempo, BREACHED si tardó
         firstResponseStatus = firstResponseAt <= firstResponseDueAt ? "OK" : "BREACHED";
     } else if (now > firstResponseDueAt) {
-        // Plazo vencido sin respuesta:
-        // Si el ticket ya está cerrado/resuelto sin dato de firstResponseAt,
-        // lo contamos como OK (beneficio de la duda — dato no registrado).
-        // Si está activo, es un incumplimiento real.
         const isTerminated =
             ticket.status === TicketStatus.CLOSED ||
             ticket.status === TicketStatus.RESOLVED;
@@ -63,7 +57,6 @@ export function buildTicketSla(ticket: {
     // ── Resolución ────────────────────────────────────────────────────────────
     let resolutionStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
     if (resolutionEndAt) {
-        // Cerrado: OK si llegó a tiempo, BREACHED si tardó
         resolutionStatus = resolutionEndAt <= resolutionDueAt ? "OK" : "BREACHED";
     } else {
         const isTerminated =
@@ -71,16 +64,12 @@ export function buildTicketSla(ticket: {
             ticket.status === TicketStatus.RESOLVED;
 
         if (isTerminated) {
-            // Cerrado/resuelto sin closedAt registrado → OK (dato faltante)
             resolutionStatus = "OK";
         } else if (now > resolutionDueAt) {
-            // Activo y plazo vencido → incumplimiento real
             resolutionStatus = "BREACHED";
         }
-        // else: plazo aún vigente → PENDING (valor inicial)
     }
-    
-    // Construimos el objeto SLA con targets, tiempos y estados para primera respuesta y resolución
+
     return {
         targets,
         firstResponse: {
@@ -104,30 +93,26 @@ export function buildTicketSla(ticket: {
     };
 }
 
-// Endpoint para obtener métricas de SLA de los tickets, con opción de filtrar por empresa y rango de fechas
 export async function getTicketSla(req: Request, res: Response) {
     try {
+        const slaConfig = await getSlaConfigFromDB();
+
         const empresaId = req.query.empresaId
             ? Number(req.query.empresaId)
             : undefined;
 
-        // ✅ Leer rango de fechas enviado por el frontend
         const from = req.query.from ? new Date(req.query.from as string) : undefined;
         const to = req.query.to ? new Date(req.query.to as string) : undefined;
 
         const tickets = await prisma.ticket.findMany({
             where: {
                 ...(empresaId && { empresaId }),
-
-                // ✅ Filtrar por rango de fechas si el frontend lo envía
-                ...(from || to
-                    ? {
-                        createdAt: {
-                            ...(from && { gte: from }),
-                            ...(to && { lte: to }),
-                        },
-                    }
-                    : {}),
+                ...(from || to ? {
+                    createdAt: {
+                        ...(from && { gte: from }),
+                        ...(to && { lte: to }),
+                    },
+                } : {}),
             },
             select: {
                 id: true,
@@ -147,31 +132,23 @@ export async function getTicketSla(req: Request, res: Response) {
             },
         });
 
-        let frTotal = 0;
-        let frOk = 0;
-        let frBreached = 0;
-        let frPending = 0;
-
-        let rsTotal = 0;
-        let rsOk = 0;
-        let rsBreached = 0;
-        let rsPending = 0;
-
-        let frMinutesSum = 0;
-        let frMinutesCount = 0;
-        let rsMinutesSum = 0;
-        let rsMinutesCount = 0;
+        let frTotal = 0, frOk = 0, frBreached = 0, frPending = 0;
+        let rsTotal = 0, rsOk = 0, rsBreached = 0, rsPending = 0;
+        let frMinutesSum = 0, frMinutesCount = 0;
+        let rsMinutesSum = 0, rsMinutesCount = 0;
 
         const byTechnicianMap = new Map<number, any>();
-        
-        // Recorremos los tickets para calcular el estado de SLA de cada uno y acumular métricas generales y por técnico
+
         for (const t of tickets) {
-            const sla = buildTicketSla(t);
+            const sla = buildTicketSla(t, slaConfig);
+
+            const tieneRespuesta = t.firstResponseAt !== null;
+            const tieneCierre = t.closedAt !== null;
+            const estaActivo =
+                t.status !== TicketStatus.CLOSED &&
+                t.status !== TicketStatus.RESOLVED;
 
             // Primera respuesta
-            const tieneRespuesta = t.firstResponseAt !== null;
-            const estaActivo = t.status !== TicketStatus.CLOSED && t.status !== TicketStatus.RESOLVED;
-
             if (tieneRespuesta || estaActivo) {
                 if (sla.firstResponse.status === "OK") frOk++;
                 if (sla.firstResponse.status === "BREACHED") frBreached++;
@@ -180,8 +157,6 @@ export async function getTicketSla(req: Request, res: Response) {
             }
 
             // Resolución
-            const tieneCierre = t.closedAt !== null;
-
             if (tieneCierre || estaActivo) {
                 if (sla.resolution.status === "OK") rsOk++;
                 if (sla.resolution.status === "BREACHED") rsBreached++;
@@ -189,7 +164,7 @@ export async function getTicketSla(req: Request, res: Response) {
                 rsTotal++;
             }
 
-            // Por técnico asignado
+            // Por técnico
             if (t.assigneeId && t.assignee) {
                 if (!byTechnicianMap.has(t.assigneeId)) {
                     byTechnicianMap.set(t.assigneeId, {
@@ -212,7 +187,6 @@ export async function getTicketSla(req: Request, res: Response) {
 
                 if (sla.firstResponse.status === "OK") stat.firstResponseOk++;
                 if (sla.firstResponse.status === "BREACHED") stat.firstResponseBreached++;
-
                 if (sla.resolution.status === "OK") stat.resolutionOk++;
                 if (sla.resolution.status === "BREACHED") stat.resolutionBreached++;
 
@@ -220,7 +194,6 @@ export async function getTicketSla(req: Request, res: Response) {
                     stat.firstResponseMinutesSum += sla.firstResponse.elapsedMinutes;
                     stat.firstResponseMinutesCount++;
                 }
-
                 if (sla.resolution.elapsedMinutes !== null) {
                     stat.resolutionMinutesSum += sla.resolution.elapsedMinutes;
                     stat.resolutionMinutesCount++;
@@ -236,8 +209,7 @@ export async function getTicketSla(req: Request, res: Response) {
                 rsMinutesCount++;
             }
         }
-        
-        // Calculamos métricas generales de SLA y formateamos el resultado por técnico, incluyendo cumplimiento y tiempos promedio de respuesta y resolución
+
         const technicians = Array.from(byTechnicianMap.values()).map((t) => ({
             ...t,
             avgFirstResponseMinutes:
@@ -257,8 +229,7 @@ export async function getTicketSla(req: Request, res: Response) {
                     ? Math.round((t.resolutionOk / t.totalTickets) * 100)
                     : 0,
         }));
-        
-        // Devolvemos la respuesta con las métricas de SLA generales y por técnico
+
         return res.json({
             ok: true,
             sla: {
@@ -283,9 +254,6 @@ export async function getTicketSla(req: Request, res: Response) {
         });
     } catch (error) {
         console.error("[helpdesk] SLA error:", error);
-        return res.status(500).json({
-            ok: false,
-            message: "Error al calcular SLA",
-        });
+        return res.status(500).json({ ok: false, message: "Error al calcular SLA" });
     }
 }

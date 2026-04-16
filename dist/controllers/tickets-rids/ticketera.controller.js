@@ -2,11 +2,12 @@ import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
-import { buildTicketSla } from "./ticketera-sla.controller.js";
+import { buildTicketSla } from "./tickets-sla/ticketera-sla.controller.js";
 import { ticketEmailTemplateService } from "../../service/email/reply-templates/ticket-email-template.service.js";
 import { sendTicketAssignedEmail } from "./ticket-assignment-mailer.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
+import { getSlaConfigFromDB } from "../../config/sla.config.js";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str
@@ -24,6 +25,58 @@ function toHtmlEntities(str) {
         .replace(/Ñ/g, "&Ntilde;")
         .replace(/ü/g, "&uuml;")
         .replace(/ü/g, "&uuml;");
+}
+function normalizeEmail(email) {
+    if (!email)
+        return null;
+    const cleaned = email.trim().toLowerCase();
+    return cleaned || null;
+}
+function splitEmails(value) {
+    if (!value)
+        return [];
+    return value
+        .split(",")
+        .map((e) => normalizeEmail(e))
+        .filter((e) => Boolean(e));
+}
+function uniqueEmails(emails) {
+    return [...new Set(emails.map(normalizeEmail).filter(Boolean))];
+}
+function buildReplyRecipients(messages, supportEmail, fallbackTo) {
+    const support = normalizeEmail(supportEmail);
+    const participants = new Set();
+    for (const msg of messages) {
+        const from = normalizeEmail(msg.fromEmail);
+        const to = splitEmails(msg.toEmail);
+        const cc = splitEmails(msg.cc);
+        if (from && from !== support)
+            participants.add(from);
+        for (const email of to) {
+            if (email !== support)
+                participants.add(email);
+        }
+        for (const email of cc) {
+            if (email !== support)
+                participants.add(email);
+        }
+    }
+    const lastInbound = [...messages]
+        .reverse()
+        .find((m) => m.direction === MessageDirection.INBOUND &&
+        normalizeEmail(m.fromEmail) !== support);
+    const primaryTo = normalizeEmail(lastInbound?.fromEmail) ||
+        normalizeEmail(fallbackTo) ||
+        [...participants][0] ||
+        null;
+    if (!primaryTo) {
+        return { to: [], cc: [] };
+    }
+    participants.delete(primaryTo);
+    return {
+        to: [primaryTo],
+        cc: [...participants],
+    };
 }
 // Crear ticket
 export async function createTicket(req, res) {
@@ -252,22 +305,36 @@ export async function replyTicketAsAgent(req, res) {
                         id_tecnico: true,
                         nombre: true,
                         email: true,
-                        cargo: true, // 🆕
-                        area: true, // 🆕
+                        cargo: true,
+                        area: true,
                         firma: {
                             select: { path: true }
                         }
                     }
-                }
+                },
+                messages: {
+                    orderBy: { createdAt: "asc" },
+                    select: {
+                        direction: true,
+                        fromEmail: true,
+                        toEmail: true,
+                        cc: true,
+                    },
+                },
             },
         });
         if (!ticket) {
             return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
-        const normalizeEmail = (email) => email?.trim().toLowerCase() || null;
-        const uniqueEmails = (emails) => [...new Set(emails.map(normalizeEmail).filter(Boolean))];
-        const toEmails = uniqueEmails(to.length ? to : [ticket.requester?.email || ticket.fromEmail]);
-        const ccEmails = uniqueEmails(cc || []).filter(email => !toEmails.includes(email));
+        const supportEmail = (process.env.EMAIL_USER || "").trim().toLowerCase();
+        const replyRecipients = buildReplyRecipients(ticket.messages.map((m) => ({
+            direction: m.direction,
+            fromEmail: m.fromEmail,
+            toEmail: m.toEmail,
+            cc: m.cc,
+        })), supportEmail, ticket.requester?.email ?? ticket.fromEmail ?? null);
+        const toEmails = uniqueEmails(to.length ? to : replyRecipients.to);
+        const ccEmails = uniqueEmails(cc.length ? cc : replyRecipients.cc).filter(email => !toEmails.includes(email));
         // Actualizamos la base de datos dentro de una transacción para asegurar que la creación 
         // del mensaje, la actualización del ticket y la creación del evento se realicen de 
         // forma atómica. Luego, si el mensaje no es interno, intentamos enviar un correo al cliente con un template personalizado usando el graphReaderService.
@@ -401,16 +468,14 @@ export async function listTickets(req, res) {
         const take = Math.min(Number(pageSize) || 30, 100);
         const skip = (pageNum - 1) * take;
         const whereActual = {
+            deletedAt: null,
             AND: [],
         };
         const validStatuses = Object.values(TicketStatus);
-        if (status && validStatuses.includes(status)) {
+        if (status &&
+            status !== "ALL" &&
+            validStatuses.includes(status)) {
             whereActual.status = status;
-        }
-        else {
-            whereActual.status = {
-                not: TicketStatus.CLOSED,
-            };
         }
         // Agregamos filtros de prioridad, técnico asignado y empresa si vienen en la query
         if (priority)
@@ -470,9 +535,20 @@ export async function listTickets(req, res) {
             };
         }
         const parsedArea = parseArea(area);
-        const orderBy = [
-            { createdAt: "desc" },
-        ];
+        const isClosedFilter = status === TicketStatus.CLOSED;
+        const orderBy = isClosedFilter
+            ? [
+                {
+                    closedAt: {
+                        sort: "desc",
+                        nulls: "last",
+                    },
+                },
+                { createdAt: "desc" },
+            ]
+            : [
+                { createdAt: "desc" },
+            ];
         let tickets = [];
         let total = 0;
         if (parsedArea) {
@@ -539,11 +615,12 @@ export async function listTickets(req, res) {
         statusCounts.forEach(s => {
             counts[s.status] = s._count.status;
         });
+        const slaConfig = await getSlaConfigFromDB();
         // Formateamos la respuesta para incluir solo los primeros 2 mensajes de cada ticket y 
         // construir el campo sla con la información de SLA calculada según la lógica definida en 
         // buildTicketSla. También agregamos el campo lastMessageDirection para indicar la dirección del último mensaje (INBOUND, OUTBOUND o INTERNAL) y facilitar el renderizado en el frontend.
         const formattedTickets = tickets.map((ticket) => {
-            const sla = buildTicketSla(ticket);
+            const sla = buildTicketSla(ticket, slaConfig);
             const messages = (ticket.messages ?? []).slice(0, 2).map((message) => ({
                 direction: message.direction,
                 isInternal: message.isInternal,
@@ -592,8 +669,11 @@ export async function getTicketById(req, res) {
                 message: "ID de ticket inválido",
             });
         }
-        const ticket = await prisma.ticket.findUnique({
-            where: { id: ticketId },
+        const ticket = await prisma.ticket.findFirst({
+            where: {
+                id: ticketId,
+                deletedAt: null,
+            },
             include: {
                 empresa: true,
                 requester: true,
@@ -613,12 +693,79 @@ export async function getTicketById(req, res) {
                 message: "Ticket no encontrado",
             });
         }
-        const sla = buildTicketSla(ticket);
+        // Asignar automaticamente a tecnico al abrir el ticket
+        const agentId = req.user?.id ?? null;
+        const tecnicoActual = agentId
+            ? await prisma.tecnico.findUnique({
+                where: { id_tecnico: agentId },
+                select: { id_tecnico: true, status: true },
+            })
+            : null;
+        let ticketFinal = ticket;
+        if (!ticket.assigneeId && tecnicoActual?.status) {
+            try {
+                ticketFinal = await prisma.ticket.update({
+                    where: { id: ticket.id },
+                    data: {
+                        assigneeId: tecnicoActual.id_tecnico,
+                        lastActivityAt: new Date(),
+                    },
+                    include: {
+                        empresa: true,
+                        requester: true,
+                        assignee: true,
+                        messages: {
+                            orderBy: { createdAt: "asc" },
+                            include: { attachments: true },
+                        },
+                        events: {
+                            orderBy: { createdAt: "asc" },
+                        },
+                    },
+                });
+                await prisma.ticketEvent.create({
+                    data: {
+                        ticketId: ticket.id,
+                        type: TicketEventType.ASSIGNED,
+                        oldValue: null,
+                        newValue: String(tecnicoActual.id_tecnico),
+                        actorType: TicketActorType.AGENT,
+                        actorId: tecnicoActual.id_tecnico,
+                    },
+                });
+                bus.emit("ticket.updated", {
+                    ticketId: ticket.id,
+                    changes: {
+                        assigneeId: tecnicoActual.id_tecnico,
+                    },
+                    source: "auto_assign_on_open",
+                });
+                try {
+                    await sendTicketAssignedEmail(ticket.id);
+                }
+                catch (err) {
+                    console.error("⚠️ Error enviando correo de autoasignación:", err);
+                }
+            }
+            catch (error) {
+                console.error("[helpdesk] auto assign on open error:", error);
+            }
+        }
+        const slaConfig = await getSlaConfigFromDB();
+        const sla = buildTicketSla(ticketFinal, slaConfig);
+        const supportEmail = (process.env.EMAIL_USER || "").trim().toLowerCase();
+        const replyRecipients = buildReplyRecipients(ticketFinal.messages.map((m) => ({
+            direction: m.direction,
+            fromEmail: m.fromEmail,
+            toEmail: m.toEmail,
+            cc: m.cc,
+        })), supportEmail, ticketFinal.requester?.email ?? ticketFinal.fromEmail ?? null);
         return res.json({
             ok: true,
             ticket: {
-                ...ticket,
+                ...ticketFinal,
                 sla,
+                replyRecipients,
             },
         });
     }
@@ -1061,27 +1208,37 @@ export async function deleteTicket(req, res) {
                 message: "Ticket inválido",
             });
         }
-        await prisma.$transaction(async (tx) => {
-            // 1️⃣ Adjuntos
-            await tx.ticketAttachment.deleteMany({
-                where: {
-                    message: {
-                        ticketId,
-                    },
-                },
+        const ticket = await prisma.ticket.findUnique({
+            where: { id: ticketId },
+            select: {
+                id: true,
+                deletedAt: true,
+                status: true,
+                resolvedAt: true,
+                closedAt: true,
+            },
+        });
+        if (!ticket) {
+            return res.status(404).json({
+                ok: false,
+                message: "Ticket no encontrado",
             });
-            // 2️⃣ Mensajes
-            await tx.ticketMessage.deleteMany({
-                where: { ticketId },
+        }
+        if (ticket.deletedAt) {
+            return res.json({
+                ok: true,
+                message: "Ticket ya estaba eliminado",
             });
-            // 3️⃣ Eventos
-            await tx.ticketEvent.deleteMany({
-                where: { ticketId },
-            });
-            // 4️⃣ Ticket
-            await tx.ticket.delete({
-                where: { id: ticketId },
-            });
+        }
+        await prisma.ticket.update({
+            where: { id: ticketId },
+            data: {
+                deletedAt: new Date(),
+                status: "CLOSED",
+                resolvedAt: ticket.resolvedAt ?? new Date(),
+                closedAt: ticket.closedAt ?? new Date(),
+                lastActivityAt: new Date(),
+            },
         });
         return res.json({
             ok: true,

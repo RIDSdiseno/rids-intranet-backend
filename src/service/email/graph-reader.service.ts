@@ -32,9 +32,10 @@ interface ParsedEmail {
     bodyHtml: string;
     messageId: string;
     conversationId: string;
+    to: string[];
     cc: string[];
     graphMessageId: string;
-    references?: string; // 🆕
+    references?: string;
     inReplyTo?: string;
     attachmentsMeta: Array<{
         graphAttachmentId: string;
@@ -42,8 +43,8 @@ interface ParsedEmail {
         filename: string;
         mimeType: string;
         bytes: number;
-        contentId: string | null;  // Añadir
-        isInline: boolean;   // Añadir
+        contentId: string | null;
+        isInline: boolean;
     }>;
 }
 
@@ -392,13 +393,23 @@ class GraphReaderService {
         /* =============================
            1️⃣ DEDUPE (PRIMERO DE TODO)
         ============================= */
+        const existingProcessed = await prisma.processedInboundEmail.findUnique({
+            where: { sourceMessageId: internetMessageId },
+            select: { id: true },
+        });
+
+        if (existingProcessed) {
+            console.log(`⏭️ Ignorado: email ya procesado en ProcessedInboundEmail (${graphMessageId})`);
+            return;
+        }
+
         const existingMsg = await prisma.ticketMessage.findUnique({
             where: { sourceMessageId: internetMessageId },
             select: { id: true },
         });
 
         if (existingMsg) {
-            console.log(`⏭️ Ignorado: email ya procesado (${graphMessageId})`);
+            console.log(`⏭️ Ignorado: email ya procesado en TicketMessage (${graphMessageId})`);
             return;
         }
 
@@ -439,13 +450,13 @@ class GraphReaderService {
         ============================= */
         const toAddresses =
             message.toRecipients?.map((r: any) =>
-                (r.emailAddress.address || '').toLowerCase()
-            ) || [];
+                (r.emailAddress.address || "").trim().toLowerCase()
+            ).filter(Boolean) || [];
 
         const ccAddresses =
             message.ccRecipients?.map((r: any) =>
-                (r.emailAddress.address || '').toLowerCase()
-            ) || [];
+                (r.emailAddress.address || "").trim().toLowerCase()
+            ).filter(Boolean) || [];
 
         console.log("📨 To:", toAddresses);
         console.log("📨 Cc:", ccAddresses);
@@ -525,11 +536,12 @@ class GraphReaderService {
             subject,
             bodyText,
             bodyHtml,
-            messageId: internetMessageId, // 🔥 ESTE ES EL CAMBIO MÁS IMPORTANTE
+            messageId: internetMessageId,
             graphMessageId,
-            conversationId: message.conversationId || '',
+            conversationId: message.conversationId || "",
             ...(references && { references }),
             ...(inReplyTo && { inReplyTo }),
+            to: toAddresses,
             cc: ccAddresses,
             attachmentsMeta: [],
         };
@@ -767,7 +779,7 @@ class GraphReaderService {
                         isInternal: false,
                         fromEmail: data.fromEmail,
                         cc: data.cc.length ? data.cc.join(",") : null,
-                        toEmail: this.supportEmail,
+                        toEmail: data.to.length ? data.to.join(",") : this.supportEmail,
                         sourceMessageId: data.messageId, // 🔥 unique → protege contra duplicados
                         sourceInReplyTo: data.inReplyTo || null,
                         sourceReferences: data.references || null,
@@ -779,6 +791,17 @@ class GraphReaderService {
 
             ticket = result.ticket;
             msg = result.msg;
+
+            await prisma.processedInboundEmail.create({
+                data: {
+                    sourceMessageId: data.messageId,
+                    graphMessageId: data.graphMessageId,
+                    conversationId: data.conversationId || null,
+                    fromEmail: data.fromEmail,
+                    subject: data.subject,
+                    ticketId: ticket.id,
+                },
+            });
 
         } catch (err: any) {
             // 🔥 Si sourceMessageId ya existe → ticket duplicado, ignorar todo
@@ -1049,7 +1072,13 @@ class GraphReaderService {
 
         // 1) DB rápido (sin adjuntos)
         const msg = await prisma.$transaction(async (tx) => {
-            // ✅ DEDUPE primero para que no duplique nada
+            // DEDUPE primero para que no duplique nada
+            const existsProcessed = await tx.processedInboundEmail.findUnique({
+                where: { sourceMessageId: data.messageId },
+                select: { id: true },
+            });
+            if (existsProcessed) return null;
+
             const exists = await tx.ticketMessage.findUnique({
                 where: { sourceMessageId: data.messageId },
                 select: { id: true },
@@ -1064,11 +1093,22 @@ class GraphReaderService {
                     bodyHtml: data.bodyHtml,
                     isInternal: false,
                     fromEmail: data.fromEmail,
-                    toEmail: this.supportEmail,
+                    toEmail: data.to.length ? data.to.join(",") : this.supportEmail,
                     cc: data.cc.length ? data.cc.join(",") : null,
                     sourceMessageId: data.messageId,
                     sourceInReplyTo: data.inReplyTo || null,
                     sourceReferences: data.references || null,
+                },
+            });
+
+            await tx.processedInboundEmail.create({
+                data: {
+                    sourceMessageId: data.messageId,
+                    graphMessageId: data.graphMessageId,
+                    conversationId: data.conversationId || null,
+                    fromEmail: data.fromEmail,
+                    subject: data.subject,
+                    ticketId,
                 },
             });
 

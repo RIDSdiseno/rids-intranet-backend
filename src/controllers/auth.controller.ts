@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { transporter } from "../lib/mailer.js";
 
+import nodemailer from "nodemailer";
+
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
@@ -281,7 +283,7 @@ export const login = async (req: Request, res: Response) => {
     }
 
     if (!tecnico.status) {
-      return res.status(403).json({ error: "Usuario inactivo, contacte al administrador. "});
+      return res.status(403).json({ error: "Usuario inactivo, contacte al administrador. " });
     }
 
     // ✅ Rol fijo
@@ -516,15 +518,15 @@ export const loginMicrosoft = async (req: Request, res: Response) => {
     });
 
     if (!tecnico) {
-  tecnico = await prisma.tecnico.create({
-    data: {
-      nombre: decoded.name || email,
-      email: email,
-      status: true,
-      passwordHash: "",
+      tecnico = await prisma.tecnico.create({
+        data: {
+          nombre: decoded.name || email,
+          email: email,
+          status: true,
+          passwordHash: "",
+        }
+      });
     }
-  });
-}
 
     //  Crear JWT de tu sistema
     const accessToken = jwt.sign(
@@ -586,9 +588,21 @@ setInterval(() => {
   emailCheckCache.clear();
 }, CACHE_TTL * 2);
 
+const passwordRules = z
+  .string()
+  .min(8, "La contraseña debe tener al menos 8 caracteres")
+  .regex(/[A-Z]/, "La contraseña debe incluir al menos una mayúscula")
+  .regex(/[a-z]/, "La contraseña debe incluir al menos una minúscula")
+  .regex(/[0-9]/, "La contraseña debe incluir al menos un número")
+
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Contraseña actual requerida"),
-  newPassword: z.string().min(6, "Mínimo 6 caracteres"),
+  newPassword: passwordRules,
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Token requerido"),
+  newPassword: passwordRules,
 });
 
 export const changePassword = async (req: Request, res: Response) => {
@@ -667,14 +681,12 @@ export const forgotPassword = async (req: Request, res: Response) => {
       where: { email: email.trim().toLowerCase() },
     });
 
-    // Siempre responder lo mismo para no revelar si el email existe
     if (!tecnico) {
       return res.json({ ok: true, message: "Si el correo existe recibirás un email" });
     }
 
-    // Generar token único
     const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 minutos
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
 
     await prisma.passwordResetToken.create({
       data: {
@@ -686,8 +698,27 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
+    const host = process.env.SMTP_HOST;
+    const port = Number(process.env.SMTP_PORT);
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASSWORD;
+
+    if (!host || !port || !user || !pass) {
+      throw new Error("Faltan variables");
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: false,
+      auth: {
+        user,
+        pass,
+      },
+    });
+
     await transporter.sendMail({
-      from: process.env.MAIL_FROM,
+      from: process.env.SMTP_FROM || user,
       to: tecnico.email,
       subject: "Recuperación de contraseña - RIDS",
       html: `
@@ -713,6 +744,14 @@ export const forgotPassword = async (req: Request, res: Response) => {
 // Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const resetPassword = async (req: Request, res: Response) => {
   try {
+    const parsed = resetPasswordSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      return res.status(400).json({
+        error: firstIssue?.message ?? "Datos inválidos",
+      });
+    }
+
     const { token, newPassword } = req.body;
 
     if (!token || !newPassword) {

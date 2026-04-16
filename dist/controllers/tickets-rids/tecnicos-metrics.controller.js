@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus } from "@prisma/client";
-import { buildTicketSla } from "./ticketera-sla.controller.js";
+import { buildTicketSla } from "../tickets-rids/tickets-sla/ticketera-sla.controller.js";
+import { getSlaConfigFromDB } from "../../config/sla.config.js";
 export async function getTicketMetricsByTecnico(req, res) {
     try {
         const empresaId = req.query.empresaId
@@ -11,18 +12,18 @@ export async function getTicketMetricsByTecnico(req, res) {
             : undefined;
         const from = req.query.from ? new Date(req.query.from) : undefined;
         const to = req.query.to ? new Date(req.query.to) : undefined;
+        // ✅ Resolver config SLA una sola vez antes del loop
+        const slaConfig = await getSlaConfigFromDB();
         const tickets = await prisma.ticket.findMany({
             where: {
                 assigneeId: tecnicoId ? tecnicoId : { not: null },
                 ...(empresaId && { empresaId }),
-                ...(from || to
-                    ? {
-                        createdAt: {
-                            ...(from && { gte: from }),
-                            ...(to && { lte: to }),
-                        },
-                    }
-                    : {}),
+                ...(from || to ? {
+                    createdAt: {
+                        ...(from && { gte: from }),
+                        ...(to && { lte: to }),
+                    },
+                } : {}),
             },
             select: {
                 id: true,
@@ -42,14 +43,10 @@ export async function getTicketMetricsByTecnico(req, res) {
                     },
                 },
                 events: {
-                    select: {
-                        type: true,
-                    },
+                    select: { type: true },
                 },
             },
-            orderBy: {
-                createdAt: "desc",
-            },
+            orderBy: { createdAt: "desc" },
         });
         const byTecnico = new Map();
         for (const ticket of tickets) {
@@ -80,7 +77,8 @@ export async function getTicketMetricsByTecnico(req, res) {
                 });
             }
             const row = byTecnico.get(key);
-            const sla = buildTicketSla(ticket);
+            // ✅ Pasar slaConfig como segundo argumento
+            const sla = buildTicketSla(ticket, slaConfig);
             row.assignedTickets++;
             if (ticket.status === TicketStatus.NEW || ticket.status === TicketStatus.OPEN) {
                 row.openTickets++;
@@ -88,12 +86,10 @@ export async function getTicketMetricsByTecnico(req, res) {
             if (ticket.status === TicketStatus.PENDING || ticket.status === TicketStatus.ON_HOLD) {
                 row.pendingTickets++;
             }
-            if (ticket.status === TicketStatus.RESOLVED) {
+            if (ticket.status === TicketStatus.RESOLVED)
                 row.resolvedTickets++;
-            }
-            if (ticket.status === TicketStatus.CLOSED) {
+            if (ticket.status === TicketStatus.CLOSED)
                 row.closedTickets++;
-            }
             if (ticket.events?.some((e) => e.type === "REOPENED")) {
                 row.reopenedTickets++;
             }
@@ -119,12 +115,8 @@ export async function getTicketMetricsByTecnico(req, res) {
             }
         }
         const data = Array.from(byTecnico.values()).map((row) => {
-            const firstResponseTotal = row.firstResponseOk +
-                row.firstResponseBreached +
-                row.firstResponsePending;
-            const resolutionTotal = row.resolutionOk +
-                row.resolutionBreached +
-                row.resolutionPending;
+            const firstResponseTotal = row.firstResponseOk + row.firstResponseBreached + row.firstResponsePending;
+            const resolutionTotal = row.resolutionOk + row.resolutionBreached + row.resolutionPending;
             return {
                 tecnicoId: row.tecnicoId,
                 nombre: row.nombre,
@@ -161,10 +153,7 @@ export async function getTicketMetricsByTecnico(req, res) {
                 },
             };
         });
-        return res.json({
-            ok: true,
-            data,
-        });
+        return res.json({ ok: true, data });
     }
     catch (error) {
         console.error("[helpdesk] getTicketMetricsByTecnico error:", error);

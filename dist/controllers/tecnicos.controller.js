@@ -1,12 +1,15 @@
-// src/controllers/tecnicos.controller.ts
-//import type { reseller_v1 } from "googleapis";
-//import { Prisma } from "@prisma/client";
 import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
-// Listar técnicos
+// Listar técnicos válidos para selects / asignaciones
 export async function listTecnicos(_req, res) {
     try {
         const tecnicos = await prisma.tecnico.findMany({
+            where: {
+                status: true,
+                rol: {
+                    in: ["ADMIN", "TECNICO"],
+                },
+            },
             select: {
                 id_tecnico: true,
                 nombre: true,
@@ -23,9 +26,29 @@ export async function listTecnicos(_req, res) {
         return res.status(500).json({ error: "Error al listar técnicos" });
     }
 }
-// Actualizar técnico (nombre, email, status, rol)
+// Listar todos los usuarios
+export async function listUsuarios(_req, res) {
+    try {
+        const tecnicos = await prisma.tecnico.findMany({
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                status: true,
+                rol: true,
+            },
+            orderBy: { nombre: "asc" },
+        });
+        return res.status(200).json(tecnicos);
+    }
+    catch (error) {
+        console.error("Error al listar usuarios:", error);
+        return res.status(500).json({ error: "Error al listar usuarios" });
+    }
+}
+// Actualizar técnico
 export async function updateTecnico(req, res) {
-    console.log(" updateTecnico body:", req.body);
+    console.log("updateTecnico body:", req.body);
     try {
         const id = Number(req.params.id);
         const { nombre, email, status, rol } = req.body;
@@ -52,7 +75,7 @@ export async function updateTecnico(req, res) {
         return res.status(500).json({ error: "Error al actualizar tecnico" });
     }
 }
-// Eliminar técnico (borrado físico)
+// Eliminar técnico
 export async function deleteTecnico(req, res) {
     try {
         const id = Number(req.params.id);

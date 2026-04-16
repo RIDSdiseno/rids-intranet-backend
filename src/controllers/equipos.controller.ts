@@ -232,6 +232,7 @@ export async function listEquipos(req: Request, res: Response) {
   try {
     const q = listQuerySchema.parse(req.query);
     const INS: Prisma.QueryMode = "insensitive";
+
     const user = (req as any).user;
 
     const where: Prisma.EquipoWhereInput = {
@@ -304,7 +305,7 @@ export async function listEquipos(req: Request, res: Response) {
         }
         : {}),
     };
-   
+
     // Si el cliente está filtrando por empresaId, forzamos que solo vea esa empresa (incluso si intenta usar empresaName para evadirlo)
     const orderBy = mapOrderBy(q.sortBy, q.sortDir as Prisma.SortOrder);
     const skip = (q.page - 1) * q.pageSize;
@@ -398,7 +399,7 @@ export async function createEquipo(req: Request, res: Response) {
         if (!idSolicitanteFinal && data.empresaId) {
           idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
         }
-        
+
         // Si no se dio ni idSolicitante ni empresaId, el equipo quedará sin solicitante (idSolicitante = null), lo cual es permitido. Luego se podrá reasignar desde el update indicando el idSolicitante o la empresaId para conectar al placeholder.
         const equipo = await prisma.equipo.create({
           data: {
@@ -560,7 +561,7 @@ export async function updateEquipo(req: Request, res: Response) {
 
       ...equipoData
     } = data;
-    
+
     // Validar empresaId si viene
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
@@ -572,7 +573,7 @@ export async function updateEquipo(req: Request, res: Response) {
     }
 
     let solicitanteUpdate: Prisma.SolicitanteUpdateOneWithoutEquiposNestedInput | undefined;
-    
+
     // Si se dio idSolicitante, conectamos al solicitante indicado (puede ser null para desasignar)
     if (data.idSolicitante !== undefined) {
       if (data.idSolicitante === null) {
@@ -590,7 +591,7 @@ export async function updateEquipo(req: Request, res: Response) {
         solicitanteUpdate = { connect: { id_solicitante: data.idSolicitante } };
       }
     }
-    
+
     // Si se dio empresaId pero no idSolicitante, conectamos al placeholder de esa empresa
     const actualizado = await prisma.equipo.update({
       where: { id_equipo: id },

@@ -11,6 +11,7 @@ import { startAgendaCierreCron } from "./jobs/agenda-jobs/agenda-cierre.cron.js"
 import { startAgendaNotificacionesCron } from "./jobs/agenda-jobs/agenda-notificaciones.cron.js";
 import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordatorios.cron.js";
 import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
+import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
 function parseOrigins(raw) {
     if (!raw || !raw.trim())
         return ["http://localhost:5173"];
@@ -65,9 +66,6 @@ bus.on("ticket.updated", (payload) => {
 bus.on("ticket.message", (payload) => {
     io.emit("ticket.message", payload);
 });
-bus.on("ticket.updated", (payload) => {
-    io.emit("ticket.updated", payload);
-});
 // Arranque
 const PORT = Number(process.env.PORT ?? 3000);
 server.listen(PORT, () => {
@@ -78,6 +76,7 @@ server.listen(PORT, () => {
     startAgendaNotificacionesCron();
     startAgendaRecordatoriosCron();
     startAgendaOutlookSyncCron();
+    startTicketSlaAlertsCron();
     // 🆕 Iniciar job de emails
     if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
         startEmailReaderJob();

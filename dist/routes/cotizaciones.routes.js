@@ -6,7 +6,7 @@ const cotizacionesRouter = Router();
 /* ============================
    RUTAS CRUD COTIZACION GESTIOO
 ============================ */
-// 🔐 PROTEGER TODO EL ROUTER
+// PROTEGER TODO EL ROUTER
 cotizacionesRouter.use(auth());
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem);
