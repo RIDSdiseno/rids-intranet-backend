@@ -515,4 +515,238 @@ export const closeVisita = async (req, res) => {
         return res.status(500).json({ error: "No se pudo cerrar la visita" });
     }
 };
+function getDuracionMinutos(inicio, fin) {
+    if (!inicio || !fin)
+        return 0;
+    const ini = new Date(inicio).getTime();
+    const end = new Date(fin).getTime();
+    if (Number.isNaN(ini) || Number.isNaN(end) || end <= ini)
+        return 0;
+    return Math.round((end - ini) / 60000);
+}
+export const getVisitasDashboard = async (req, res) => {
+    try {
+        const fromQ = req.query.fromDate;
+        const toQ = req.query.toDate;
+        const empresaIdQ = req.query.empresaId;
+        const user = req.user;
+        const empresaIdForzada = user?.rol === "CLIENTE" ? user.empresaId : undefined;
+        const where = {
+            ...(empresaIdForzada
+                ? { empresaId: empresaIdForzada }
+                : empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
+            ...(fromQ || toQ ? {
+                inicio: {
+                    ...(fromQ ? { gte: new Date(fromQ) } : {}),
+                    ...(toQ ? { lte: new Date(toQ) } : {}),
+                }
+            } : {}),
+        };
+        const visitas = await prisma.visita.findMany({
+            where,
+            select: {
+                id_visita: true,
+                inicio: true,
+                fin: true,
+                status: true,
+                empresaId: true,
+                empresa: { select: { id_empresa: true, nombre: true } },
+                tecnico: { select: { id_tecnico: true, nombre: true } },
+            },
+            orderBy: { inicio: "asc" },
+        });
+        // ─── AGRUPAR POR JORNADA (tecnico + inicio + fin) ───────────────────
+        // Evita multiplicar horas cuando hay N solicitantes en la misma visita
+        const jornadasMap = new Map();
+        for (const v of visitas) {
+            const tecnico = v.tecnico?.nombre?.trim() || "Sin técnico";
+            const inicioStr = v.inicio ? new Date(v.inicio).toISOString() : "?";
+            const finStr = v.fin ? new Date(v.fin).toISOString() : "null";
+            const key = `${tecnico}|${inicioStr}|${finStr}`;
+            if (!jornadasMap.has(key)) {
+                jornadasMap.set(key, {
+                    inicio: v.inicio,
+                    fin: v.fin ?? null,
+                    tecnico,
+                    empresa: v.empresa?.nombre ?? `#${v.empresaId}`,
+                    empresaId: v.empresaId ?? null,
+                    status: v.status,
+                });
+            }
+        }
+        const jornadas = Array.from(jornadasMap.values());
+        // ─── KPIs sobre jornadas únicas ──────────────────────────────────────
+        const totalJornadas = jornadas.length;
+        const duraciones = jornadas.map((j) => getDuracionMinutos(j.inicio, j.fin));
+        const totalMinutos = duraciones.reduce((acc, n) => acc + n, 0);
+        const totalHoras = Number((totalMinutos / 60).toFixed(1));
+        const promedioMinutosPorJornada = totalJornadas > 0
+            ? Math.round(totalMinutos / totalJornadas)
+            : 0;
+        const maximaDuracionMinutos = duraciones.length ? Math.max(...duraciones) : 0;
+        const diasConVisitas = new Set(jornadas
+            .filter((j) => j.inicio)
+            .map((j) => new Date(j.inicio).toISOString().slice(0, 10))).size;
+        const promedioHorasPorDia = diasConVisitas > 0
+            ? Number((totalHoras / diasConVisitas).toFixed(1))
+            : 0;
+        // Status sigue usando visitas individuales (correcto: 1 por solicitante)
+        const completadas = visitas.filter(v => v.status === "COMPLETADA").length;
+        const pendientes = visitas.filter(v => v.status === "PENDIENTE").length;
+        const canceladas = visitas.filter(v => v.status === "CANCELADA").length;
+        // ─── porMes sobre jornadas ───────────────────────────────────────────
+        const porMesMap = new Map();
+        for (const j of jornadas) {
+            if (!j.inicio)
+                continue;
+            const fecha = new Date(j.inicio);
+            if (Number.isNaN(fecha.getTime()))
+                continue;
+            const mes = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+            const minutos = getDuracionMinutos(j.inicio, j.fin);
+            if (!porMesMap.has(mes))
+                porMesMap.set(mes, { mes, visitas: 0, minutos: 0 });
+            const row = porMesMap.get(mes);
+            row.visitas += 1;
+            row.minutos += minutos;
+        }
+        const porMes = Array.from(porMesMap.values()).sort((a, b) => a.mes.localeCompare(b.mes));
+        // ─── porDia sobre jornadas ───────────────────────────────────────────
+        const porDiaMap = new Map();
+        for (const j of jornadas) {
+            if (!j.inicio)
+                continue;
+            const fecha = new Date(j.inicio).toISOString().slice(0, 10);
+            const minutos = getDuracionMinutos(j.inicio, j.fin);
+            if (!porDiaMap.has(fecha))
+                porDiaMap.set(fecha, { fecha, visitas: 0, minutos: 0 });
+            const row = porDiaMap.get(fecha);
+            row.visitas += 1;
+            row.minutos += minutos;
+        }
+        const porDia = Array.from(porDiaMap.values()).sort((a, b) => a.fecha.localeCompare(b.fecha));
+        // ─── porTecnico sobre jornadas con detalle mensual ───────────────────────
+        const porTecnicoFullMap = new Map();
+        for (const j of jornadas) {
+            const minutos = getDuracionMinutos(j.inicio, j.fin);
+            const fecha = new Date(j.inicio);
+            if (Number.isNaN(fecha.getTime()))
+                continue;
+            const dia = fecha.toISOString().slice(0, 10);
+            const mes = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+            if (!porTecnicoFullMap.has(j.tecnico)) {
+                porTecnicoFullMap.set(j.tecnico, {
+                    tecnico: j.tecnico,
+                    jornadas: 0,
+                    minutos: 0,
+                    diasUnicos: new Set(),
+                    mesesMap: new Map(),
+                });
+            }
+            const tec = porTecnicoFullMap.get(j.tecnico);
+            tec.jornadas++;
+            tec.minutos += minutos;
+            tec.diasUnicos.add(dia);
+            if (!tec.mesesMap.has(mes)) {
+                tec.mesesMap.set(mes, { mes, jornadas: 0, minutos: 0, diasUnicos: new Set() });
+            }
+            const mesRow = tec.mesesMap.get(mes);
+            mesRow.jornadas++;
+            mesRow.minutos += minutos;
+            mesRow.diasUnicos.add(dia);
+        }
+        const porTecnicoChart = Array.from(porTecnicoFullMap.values())
+            .map((tec) => ({
+            tecnico: tec.tecnico,
+            visitas: tec.jornadas,
+            minutos: tec.minutos,
+            horas: Number((tec.minutos / 60).toFixed(1)),
+            diasConVisitas: tec.diasUnicos.size,
+            meses: Array.from(tec.mesesMap.values())
+                .map((m) => ({
+                mes: m.mes,
+                jornadas: m.jornadas,
+                minutos: m.minutos,
+                horas: Number((m.minutos / 60).toFixed(1)),
+                diasConVisitas: m.diasUnicos.size,
+            }))
+                .sort((a, b) => a.mes.localeCompare(b.mes)),
+        }))
+            .sort((a, b) => b.minutos - a.minutos);
+        // ─── porEmpresa sobre JORNADAS (horas reales) ───────────────────────────
+        const porEmpresaMap = new Map();
+        for (const j of jornadas) {
+            const empresa = j.empresa;
+            const fecha = new Date(j.inicio);
+            if (Number.isNaN(fecha.getTime()))
+                continue;
+            const dia = fecha.toISOString().slice(0, 10);
+            const mes = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+            const minutos = getDuracionMinutos(j.inicio, j.fin);
+            if (!porEmpresaMap.has(empresa)) {
+                porEmpresaMap.set(empresa, {
+                    nombre: empresa,
+                    jornadas: 0,
+                    minutos: 0,
+                    diasUnicos: new Set(),
+                    mesesMap: new Map(),
+                });
+            }
+            const emp = porEmpresaMap.get(empresa);
+            emp.jornadas++;
+            emp.minutos += minutos;
+            emp.diasUnicos.add(dia);
+            if (!emp.mesesMap.has(mes)) {
+                emp.mesesMap.set(mes, { mes, jornadas: 0, minutos: 0, diasUnicos: new Set() });
+            }
+            const mesRow = emp.mesesMap.get(mes);
+            mesRow.jornadas++;
+            mesRow.minutos += minutos;
+            mesRow.diasUnicos.add(dia);
+        }
+        const porEmpresa = Array.from(porEmpresaMap.values())
+            .map((emp) => ({
+            nombre: emp.nombre,
+            jornadas: emp.jornadas,
+            minutos: emp.minutos,
+            horas: Number((emp.minutos / 60).toFixed(1)),
+            diasConVisitas: emp.diasUnicos.size,
+            meses: Array.from(emp.mesesMap.values())
+                .map((m) => ({
+                mes: m.mes,
+                jornadas: m.jornadas,
+                minutos: m.minutos,
+                horas: Number((m.minutos / 60).toFixed(1)),
+                diasConVisitas: m.diasUnicos.size,
+            }))
+                .sort((a, b) => a.mes.localeCompare(b.mes)),
+        }))
+            .sort((a, b) => b.minutos - a.minutos);
+        return res.json({
+            kpis: {
+                totalVisitas: visitas.length,
+                totalJornadas,
+                completadas,
+                pendientes,
+                canceladas,
+                diasConVisitas,
+                totalMinutos,
+                totalHoras,
+                promedioMinutosPorJornada,
+                promedioHorasPorDia,
+                maximaDuracionMinutos,
+            },
+            charts: {
+                porMes,
+                porDia,
+                porTecnico: porTecnicoChart,
+                porEmpresa
+            },
+        });
+    }
+    catch (err) {
+        console.error("[visitas.dashboard] error:", err);
+        return res.status(500).json({ error: "No se pudo obtener el dashboard de visitas" });
+    }
+};
 //# sourceMappingURL=visitas.controller.js.map

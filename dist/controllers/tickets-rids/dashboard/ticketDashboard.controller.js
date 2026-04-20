@@ -4,11 +4,11 @@ function buildDateFilter(fromDate, toDate, startIdx = 1) {
     let sql = "";
     let idx = startIdx;
     if (fromDate) {
-        sql += ` AND t."createdAt" >= $${idx++}`;
+        sql += ` AND t."createdAt" >= ($${idx++}::timestamptz AT TIME ZONE 'UTC')`;
         params.push(fromDate);
     }
     if (toDate) {
-        sql += ` AND t."createdAt" < $${idx++}`;
+        sql += ` AND t."createdAt" < ($${idx++}::timestamptz AT TIME ZONE 'UTC')`;
         params.push(toDate);
     }
     return { sql, params, nextIdx: idx };

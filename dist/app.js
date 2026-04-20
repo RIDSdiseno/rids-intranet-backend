@@ -43,16 +43,13 @@ app.set("prisma", prisma);
 /* ========= Base ========= */
 app.set("trust proxy", 1);
 app.set("json replacer", (_key, value) => typeof value === "bigint" ? value.toString() : value);
-/* ========= Seguridad / Parsers ========= */
+/* ========= Seguridad ========= */
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: false,
 }));
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
-app.use(cookieParser());
 /* ========= CORS ========= */
 const allowedOrigins = [
     "https://rids-intranet.netlify.app",
@@ -90,6 +87,10 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+/* ========= Parsers ========= */
+app.use(express.json({ limit: "60mb" }));
+app.use(express.urlencoded({ extended: true, limit: "60mb" }));
+app.use(cookieParser());
 /* ========= Logs ========= */
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 /* ========= Healthcheck ========= */
@@ -109,13 +110,22 @@ app.use((_req, res) => {
 });
 /* ========= Error handler ========= */
 app.use((err, _req, res, _next) => {
+    console.error("[API ERROR]", err);
+    if (err?.type === "entity.too.large") {
+        return res.status(413).json({
+            ok: false,
+            error: "El archivo es demasiado grande para ser procesado.",
+        });
+    }
     const code = err?.status ?? 500;
     const msg = err?.message ?? "Internal Server Error";
-    console.error("[API ERROR]", err);
     res.status(code).json({
         ok: false,
         error: msg,
     });
+    {
+        return;
+    }
 });
 export default app;
 //# sourceMappingURL=app.js.map

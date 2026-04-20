@@ -54,12 +54,17 @@ const listQuerySchema = z.object({
 });
 
 // Nuevo: esquema para reasignar equipos por serial
+const adicionalSchema = z.object({
+  tipo: z.string().trim().min(1),
+  descripcion: z.string().trim().optional().nullable(),
+  cantidad: z.coerce.number().int().positive().default(1),
+  serialAdicional: z.string().trim().optional().nullable(),
+});
+
 const createEquipoSchema = z.object({
   empresaId: z.coerce.number().int().positive().optional(),
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
-
   tipo: z.nativeEnum(TipoEquipo).default(TipoEquipo.GENERICO),
-
   serial: z.string().trim().min(1),
   marca: z.string().trim().min(1),
   modelo: z.string().trim().min(1),
@@ -68,7 +73,6 @@ const createEquipoSchema = z.object({
   disco: z.string().trim().min(1),
   propiedad: z.string().trim().min(1),
 
-  // NUEVOS CAMPOS DETALLE
   macWifi: z.string().optional(),
   redEthernet: z.string().optional(),
   so: z.string().optional(),
@@ -78,15 +82,14 @@ const createEquipoSchema = z.object({
   teamViewer: z.string().optional(),
   claveTv: z.string().optional(),
   revisado: z.string().optional(),
-
   adminRidsUsuario: z.string().optional(),
   adminRidsPassword: z.string().optional(),
-
   usuarioEmpresa: z.string().optional(),
   passwordEmpresa: z.string().optional(),
-
   usuarioPersonal: z.string().optional(),
   passwordPersonal: z.string().optional(),
+
+  adicionales: z.array(adicionalSchema).optional().default([]),
 });
 
 // Nuevo: acepta 1 equipo o { equipos: [...] }
@@ -109,6 +112,8 @@ const equipoUpdateSchema = z.object({
   ram: z.string().trim().min(1).optional(),
   disco: z.string().trim().min(1).optional(),
   propiedad: z.string().trim().min(1).optional(),
+
+  adicionales: z.array(adicionalSchema).optional(),
 
   // NUEVOS
   macWifi: z.string().optional(),
@@ -205,6 +210,8 @@ function flattenRow(e: any) {
     passwordEmpresa: detalle?.passwordEmpresa ?? null,
     usuarioPersonal: detalle?.usuarioPersonal ?? null,
     passwordPersonal: detalle?.passwordPersonal ?? null,
+
+    adicionales: e.adicionales ?? [],
   };
 }
 
@@ -338,7 +345,11 @@ export async function listEquipos(req: Request, res: Response) {
 
     const rows = await prisma.equipo.findMany({
       where,
-      include: { solicitante: { include: { empresa: true } }, detalle: true },
+      include: {
+        solicitante: { include: { empresa: true } },
+        detalle: true,
+        adicionales: true,
+      },
       orderBy,
       skip,
       take: q.pageSize,
@@ -413,7 +424,6 @@ export async function createEquipo(req: Request, res: Response) {
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
 
-            // AQUÍ VA EL DETALLE
             detalle: {
               create: {
                 macWifi: data.macWifi ?? null,
@@ -425,21 +435,30 @@ export async function createEquipo(req: Request, res: Response) {
                 teamViewer: data.teamViewer ?? null,
                 claveTv: data.claveTv ?? null,
                 revisado: data.revisado ?? null,
-
                 adminRidsUsuario: data.adminRidsUsuario ?? null,
                 adminRidsPassword: data.adminRidsPassword ?? null,
-
                 usuarioEmpresa: data.usuarioEmpresa ?? null,
                 passwordEmpresa: data.passwordEmpresa ?? null,
-
                 usuarioPersonal: data.usuarioPersonal ?? null,
                 passwordPersonal: data.passwordPersonal ?? null,
               },
+            },
+
+            adicionales: {
+              create: (data.adicionales ?? [])
+                .filter((a) => !!a?.tipo?.trim())
+                .map((a) => ({
+                  tipo: a.tipo.trim(),
+                  descripcion: a.descripcion?.trim() || null,
+                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
+                  serialAdicional: a.serialAdicional?.trim() || null,
+                })),
             },
           },
           include: {
             solicitante: { include: { empresa: true } },
             detalle: true,
+            adicionales: true,
           },
         });
 
@@ -489,7 +508,11 @@ export async function getEquipoById(req: Request, res: Response) {
 
     const equipo = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: { solicitante: { include: { empresa: true } }, detalle: true },
+      include: {
+        solicitante: { include: { empresa: true } },
+        detalle: true,
+        adicionales: true,
+      },
     });
 
     if (!equipo) return res.status(404).json({ error: "Equipo no encontrado" });
@@ -558,6 +581,7 @@ export async function updateEquipo(req: Request, res: Response) {
       passwordEmpresa,
       usuarioPersonal,
       passwordPersonal,
+      adicionales,
 
       ...equipoData
     } = data;
@@ -606,7 +630,6 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
         ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
 
-        // AQUI VA EL DETALLE
         detalle: {
           upsert: {
             create: {
@@ -638,19 +661,34 @@ export async function updateEquipo(req: Request, res: Response) {
               revisado: revisado ?? null,
               adminRidsUsuario: adminRidsUsuario ?? null,
               adminRidsPassword: adminRidsPassword ?? null,
-
               usuarioEmpresa: usuarioEmpresa ?? null,
               passwordEmpresa: passwordEmpresa ?? null,
-
               usuarioPersonal: usuarioPersonal ?? null,
               passwordPersonal: passwordPersonal ?? null,
             },
           },
         },
+
+        ...(adicionales !== undefined
+          ? {
+            adicionales: {
+              deleteMany: {},
+              create: adicionales
+                .filter((a) => !!a?.tipo?.trim())
+                .map((a) => ({
+                  tipo: a.tipo.trim(),
+                  descripcion: a.descripcion?.trim() || null,
+                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
+                  serialAdicional: a.serialAdicional?.trim() || null,
+                })),
+            },
+          }
+          : {}),
       },
       include: {
         solicitante: { include: { empresa: true } },
         detalle: true,
+        adicionales: true,
       },
     });
 

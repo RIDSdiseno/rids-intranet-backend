@@ -63,7 +63,7 @@ app.set("json replacer", (_key: string, value: unknown) =>
   typeof value === "bigint" ? value.toString() : value
 );
 
-/* ========= Seguridad / Parsers ========= */
+/* ========= Seguridad ========= */
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -72,10 +72,6 @@ app.use(
     contentSecurityPolicy: false,
   })
 );
-
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
-app.use(cookieParser());
 
 /* ========= CORS ========= */
 const allowedOrigins = [
@@ -108,18 +104,23 @@ const corsOptions: cors.CorsOptions = {
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   allowedHeaders: [
-  "Content-Type",
-  "Authorization",
-  "X-Requested-With",
-  "Cache-Control",
-  "Pragma",
-  "Expires",
-],
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Cache-Control",
+    "Pragma",
+    "Expires",
+  ],
   optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+
+/* ========= Parsers ========= */
+app.use(express.json({ limit: "60mb" }));
+app.use(express.urlencoded({ extended: true, limit: "60mb" }));
+app.use(cookieParser());
 
 /* ========= Logs ========= */
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
@@ -153,15 +154,25 @@ app.use((
   res: Response,
   _next: NextFunction
 ) => {
+  console.error("[API ERROR]", err);
+
+  if ((err as any)?.type === "entity.too.large") {
+    return res.status(413).json({
+      ok: false,
+      error: "El archivo es demasiado grande para ser procesado.",
+    });
+  }
+
   const code = (err as { status?: number })?.status ?? 500;
   const msg = (err as { message?: string })?.message ?? "Internal Server Error";
-
-  console.error("[API ERROR]", err);
 
   res.status(code).json({
     ok: false,
     error: msg,
   });
+  {
+    return
+  }
 });
 
 export default app;

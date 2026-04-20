@@ -43,6 +43,12 @@ const listQuerySchema = z.object({
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 // Nuevo: esquema para reasignar equipos por serial
+const adicionalSchema = z.object({
+    tipo: z.string().trim().min(1),
+    descripcion: z.string().trim().optional().nullable(),
+    cantidad: z.coerce.number().int().positive().default(1),
+    serialAdicional: z.string().trim().optional().nullable(),
+});
 const createEquipoSchema = z.object({
     empresaId: z.coerce.number().int().positive().optional(),
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
@@ -54,7 +60,6 @@ const createEquipoSchema = z.object({
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
-    // NUEVOS CAMPOS DETALLE
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -70,6 +75,7 @@ const createEquipoSchema = z.object({
     passwordEmpresa: z.string().optional(),
     usuarioPersonal: z.string().optional(),
     passwordPersonal: z.string().optional(),
+    adicionales: z.array(adicionalSchema).optional().default([]),
 });
 // Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
@@ -90,6 +96,7 @@ const equipoUpdateSchema = z.object({
     ram: z.string().trim().min(1).optional(),
     disco: z.string().trim().min(1).optional(),
     propiedad: z.string().trim().min(1).optional(),
+    adicionales: z.array(adicionalSchema).optional(),
     // NUEVOS
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
@@ -167,6 +174,7 @@ function flattenRow(e) {
         passwordEmpresa: detalle?.passwordEmpresa ?? null,
         usuarioPersonal: detalle?.usuarioPersonal ?? null,
         passwordPersonal: detalle?.passwordPersonal ?? null,
+        adicionales: e.adicionales ?? [],
     };
 }
 // Asegura que exista un solicitante placeholder para la empresa dada, y devuelve su ID
@@ -283,7 +291,11 @@ export async function listEquipos(req, res) {
         }
         const rows = await prisma.equipo.findMany({
             where,
-            include: { solicitante: { include: { empresa: true } }, detalle: true },
+            include: {
+                solicitante: { include: { empresa: true } },
+                detalle: true,
+                adicionales: true,
+            },
             orderBy,
             skip,
             take: q.pageSize,
@@ -347,7 +359,6 @@ export async function createEquipo(req, res) {
                         disco: data.disco,
                         propiedad: data.propiedad,
                         idSolicitante: idSolicitanteFinal,
-                        // AQUÍ VA EL DETALLE
                         detalle: {
                             create: {
                                 macWifi: data.macWifi ?? null,
@@ -367,10 +378,21 @@ export async function createEquipo(req, res) {
                                 passwordPersonal: data.passwordPersonal ?? null,
                             },
                         },
+                        adicionales: {
+                            create: (data.adicionales ?? [])
+                                .filter((a) => !!a?.tipo?.trim())
+                                .map((a) => ({
+                                tipo: a.tipo.trim(),
+                                descripcion: a.descripcion?.trim() || null,
+                                cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
+                                serialAdicional: a.serialAdicional?.trim() || null,
+                            })),
+                        },
                     },
                     include: {
                         solicitante: { include: { empresa: true } },
                         detalle: true,
+                        adicionales: true,
                     },
                 });
                 created.push(equipo);
@@ -413,7 +435,11 @@ export async function getEquipoById(req, res) {
         const user = req.user;
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
-            include: { solicitante: { include: { empresa: true } }, detalle: true },
+            include: {
+                solicitante: { include: { empresa: true } },
+                detalle: true,
+                adicionales: true,
+            },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
@@ -461,7 +487,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, ...equipoData } = data;
+        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, adicionales, ...equipoData } = data;
         // Validar empresaId si viene
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
@@ -500,7 +526,6 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.disco ? { disco: equipoData.disco } : {}),
                 ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
-                // AQUI VA EL DETALLE
                 detalle: {
                     upsert: {
                         create: {
@@ -539,10 +564,26 @@ export async function updateEquipo(req, res) {
                         },
                     },
                 },
+                ...(adicionales !== undefined
+                    ? {
+                        adicionales: {
+                            deleteMany: {},
+                            create: adicionales
+                                .filter((a) => !!a?.tipo?.trim())
+                                .map((a) => ({
+                                tipo: a.tipo.trim(),
+                                descripcion: a.descripcion?.trim() || null,
+                                cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
+                                serialAdicional: a.serialAdicional?.trim() || null,
+                            })),
+                        },
+                    }
+                    : {}),
             },
             include: {
                 solicitante: { include: { empresa: true } },
                 detalle: true,
+                adicionales: true,
             },
         });
         clearCache();

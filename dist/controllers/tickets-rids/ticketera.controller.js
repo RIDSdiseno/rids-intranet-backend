@@ -557,7 +557,7 @@ export async function listTickets(req, res) {
                 include: {
                     empresa: { select: { nombre: true } },
                     assignee: { select: { id_tecnico: true, nombre: true } },
-                    requester: { select: { nombre: true } },
+                    requester: { select: { nombre: true, email: true } },
                     messages: {
                         orderBy: { createdAt: "desc" },
                         select: {
@@ -585,14 +585,15 @@ export async function listTickets(req, res) {
                     include: {
                         empresa: { select: { nombre: true } },
                         assignee: { select: { id_tecnico: true, nombre: true } },
-                        requester: { select: { nombre: true } },
+                        requester: { select: { nombre: true, email: true } },
                         messages: {
-                            orderBy: { createdAt: "desc" },
-                            take: 2,
+                            orderBy: { createdAt: "asc" },
                             select: {
                                 direction: true,
-                                isInternal: true,
-                                createdAt: true,
+                                fromEmail: true,
+                                toEmail: true,
+                                cc: true,
+                                sourceMessageId: true,
                             },
                         },
                     },

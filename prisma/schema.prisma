@@ -448,11 +448,28 @@ model Equipo {
   origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
   cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
 
+  adicionales EquipoAdicional[]
+
   @@index([empresaId])
   @@index([productoId])
   @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
+}
+
+model EquipoAdicional {
+  id              Int      @id @default(autoincrement())
+  serialAdicional String?  
+  equipoId        Int
+  tipo            String
+  descripcion     String?
+  cantidad        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+
+  @@index([equipoId])
 }
 
 model DetalleEquipo {
@@ -1077,6 +1094,26 @@ model ReporteIA {
   createdAt DateTime @default(now())
 
   @@unique([empresaId, periodo])
+}
+
+model ReporteGenerado {
+  id             Int      @id @default(autoincrement())
+  empresaId      Int?
+  empresaNombre  String
+  periodo        String
+  tipo           String
+  nombreArchivo  String
+  urlArchivo     String?
+  storagePath    String?
+  sharepointPath String?
+  generadoPorId  Int?
+  generadoPor    String?
+  estado         String   @default("GENERADO")
+  createdAt      DateTime @default(now())
+
+  @@index([empresaId, createdAt])
+  @@index([periodo])
+  @@index([tipo])
 }
 
 enum TipoAgenda {

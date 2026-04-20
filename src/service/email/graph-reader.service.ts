@@ -551,7 +551,15 @@ class GraphReaderService {
         ============================= */
         const existingTicket = await this.findExistingTicket(emailData);
 
-        if (isInternal && !existingTicket) {
+        const allowedInternalCreators = [
+            "carenas@rids.cl",
+        ].map(e => e.trim().toLowerCase());
+
+        if (
+            isInternal &&
+            !existingTicket &&
+            !allowedInternalCreators.includes(fromEmail)
+        ) {
             console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
             return;
         }
@@ -716,7 +724,7 @@ class GraphReaderService {
             },
         });
 
-        // 🔥 SI EXISTE PERO ESTÁ EN OTRA EMPRESA → CORREGIR
+        // SI EXISTE PERO ESTÁ EN OTRA EMPRESA → CORREGIR
         if (requester && requester.empresaId !== empresa.id_empresa) {
             console.log("🔁 Corrigiendo empresa del solicitante");
 
@@ -973,7 +981,6 @@ class GraphReaderService {
         if (orConditions.length > 0) {
             const ticket = await prisma.ticket.findFirst({
                 where: {
-                    status: { not: TicketStatus.CLOSED },
                     messages: {
                         some: {
                             OR: orConditions
@@ -1006,7 +1013,6 @@ class GraphReaderService {
             const ticket = await prisma.ticket.findFirst({
                 where: {
                     id: ticketId,
-                    status: { not: TicketStatus.CLOSED },
                 }
             });
 
@@ -1021,7 +1027,6 @@ class GraphReaderService {
         const recentTickets = await prisma.ticket.findMany({
             where: {
                 fromEmail: data.fromEmail,
-                status: { not: TicketStatus.CLOSED },
                 createdAt: {
                     gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
                 },

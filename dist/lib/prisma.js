@@ -73,6 +73,20 @@ async function getNombreSolicitante(id) {
     });
     return sol?.nombre || null;
 }
+function formatAdicionalesForAudit(adicionales) {
+    if (!Array.isArray(adicionales) || adicionales.length === 0)
+        return null;
+    return adicionales
+        .map((a) => {
+        const tipo = a?.tipo ?? "OTRO";
+        const cantidad = Number(a?.cantidad) > 0 ? Number(a.cantidad) : 1;
+        const descripcion = a?.descripcion?.trim();
+        return descripcion
+            ? `${tipo} (${descripcion}) x${cantidad}`
+            : `${tipo} x${cantidad}`;
+    })
+        .join(" | ");
+}
 /* =========================
    EXTENSION GLOBAL AUTOMÁTICA
 ========================= */
@@ -145,7 +159,7 @@ export const prisma = prismaBase.$extends({
                     if (model === "Equipo") {
                         before = await prismaBase.equipo.findUnique({
                             where: args.where,
-                            include: { detalle: true },
+                            include: { detalle: true, adicionales: true },
                         });
                     }
                     else if (model === "DetalleEquipo") {
@@ -161,11 +175,26 @@ export const prisma = prismaBase.$extends({
                 }
                 const result = await query(args);
                 const r = result;
+                let afterSource = r;
+                if (model === "Equipo") {
+                    afterSource = await prismaBase.equipo.findUnique({
+                        where: { id_equipo: r.id_equipo },
+                        include: { detalle: true, adicionales: true },
+                    });
+                }
                 const after = model === "Equipo"
-                    ? sanitizeForAudit({ ...r, ...(r?.detalle ?? {}) })
+                    ? sanitizeForAudit({
+                        ...afterSource,
+                        ...(afterSource?.detalle ?? {}),
+                        adicionalesResumen: formatAdicionalesForAudit(afterSource?.adicionales),
+                    })
                     : sanitizeForAudit(r);
                 const beforeClean = model === "Equipo"
-                    ? sanitizeForAudit({ ...before, ...(before?.detalle ?? {}) })
+                    ? sanitizeForAudit({
+                        ...before,
+                        ...(before?.detalle ?? {}),
+                        adicionalesResumen: formatAdicionalesForAudit(before?.adicionales),
+                    })
                     : sanitizeForAudit(before);
                 const changes = diffObjects(beforeClean, after);
                 if (model === "Equipo") {

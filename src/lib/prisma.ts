@@ -4,9 +4,9 @@ import { getCurrentUserId } from "../lib/request-context.js";
 type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 const prismaBase = new PrismaClient({
   //log:
-    //process.env.NODE_ENV === "development"
-    //  ? ["query", "error", "warn"]
-    //  : ["error"],
+  //process.env.NODE_ENV === "development"
+  //  ? ["query", "error", "warn"]
+  //  : ["error"],
 });
 
 /* =========================
@@ -90,6 +90,22 @@ async function getNombreSolicitante(id: number | null | undefined) {
   });
   return sol?.nombre || null;
 }
+
+function formatAdicionalesForAudit(adicionales: any[] | null | undefined) {
+  if (!Array.isArray(adicionales) || adicionales.length === 0) return null;
+
+  return adicionales
+    .map((a) => {
+      const tipo = a?.tipo ?? "OTRO";
+      const cantidad = Number(a?.cantidad) > 0 ? Number(a.cantidad) : 1;
+      const descripcion = a?.descripcion?.trim();
+
+      return descripcion
+        ? `${tipo} (${descripcion}) x${cantidad}`
+        : `${tipo} x${cantidad}`;
+    })
+    .join(" | ");
+}
 /* =========================
    EXTENSION GLOBAL AUTOMÁTICA
 ========================= */
@@ -158,7 +174,7 @@ export const prisma = prismaBase.$extends({
 
         return result;
       },
-      
+
       // --- Lógica similar para UPDATE, con enriquecimiento previo ---
       async update({ model, args, query }) {
 
@@ -175,11 +191,10 @@ export const prisma = prismaBase.$extends({
         let before: any = null;
 
         if (args?.where) {
-
           if (model === "Equipo") {
             before = await prismaBase.equipo.findUnique({
               where: args.where,
-              include: { detalle: true },
+              include: { detalle: true, adicionales: true },
             });
           } else if (model === "DetalleEquipo") {
             before = await prismaBase.detalleEquipo.findUnique({
@@ -190,18 +205,34 @@ export const prisma = prismaBase.$extends({
               where: args.where,
             });
           }
-
         }
 
         const result = await query(args);
         const r: any = result;
 
+        let afterSource: any = r;
+
+        if (model === "Equipo") {
+          afterSource = await prismaBase.equipo.findUnique({
+            where: { id_equipo: r.id_equipo },
+            include: { detalle: true, adicionales: true },
+          });
+        }
+
         const after = model === "Equipo"
-          ? sanitizeForAudit({ ...r, ...(r?.detalle ?? {}) })
+          ? sanitizeForAudit({
+            ...afterSource,
+            ...(afterSource?.detalle ?? {}),
+            adicionalesResumen: formatAdicionalesForAudit(afterSource?.adicionales),
+          })
           : sanitizeForAudit(r);
 
         const beforeClean = model === "Equipo"
-          ? sanitizeForAudit({ ...before, ...(before?.detalle ?? {}) })
+          ? sanitizeForAudit({
+            ...before,
+            ...(before?.detalle ?? {}),
+            adicionalesResumen: formatAdicionalesForAudit(before?.adicionales),
+          })
           : sanitizeForAudit(before);
 
         const changes = diffObjects(beforeClean, after);
@@ -283,7 +314,7 @@ export const prisma = prismaBase.$extends({
 
         return result;
       },
-      
+
       // --- NUEVO MÉTODO PARA DELETE, con lógica similar pero adaptada ---
       async delete({ model, args, query }) {
         const actorId = getCurrentUserId();
@@ -360,7 +391,7 @@ export const prisma = prismaBase.$extends({
           });
           empresaId = equipo?.solicitante?.empresaId ?? null;
         }
-        
+
         // Guardamos el log con los cambios ya enriquecidos
         await prismaBase.auditLog.create({
           data: {
