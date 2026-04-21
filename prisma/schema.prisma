@@ -459,7 +459,7 @@ model Equipo {
 
 model EquipoAdicional {
   id              Int      @id @default(autoincrement())
-  serialAdicional String?  
+  serialAdicional String?
   equipoId        Int
   tipo            String
   descripcion     String?
@@ -868,6 +868,7 @@ model Ticket {
   fromEmail       String?
   inboxEmail      String?
   firstResponseAt DateTime?
+  lastReopenedAt  DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
   createdAt       DateTime        @default(now())
@@ -913,6 +914,7 @@ model TicketMessage {
   toEmail          String?
   cc               String?
   sourceMessageId  String?            @unique
+  graphMessageId   String?
   sourceInReplyTo  String?
   sourceReferences String?
   createdAt        DateTime           @default(now())
@@ -921,6 +923,7 @@ model TicketMessage {
 
   @@index([ticketId])
   @@index([createdAt])
+  @@index([graphMessageId])
 }
 
 model TicketAttachment {

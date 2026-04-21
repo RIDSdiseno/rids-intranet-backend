@@ -697,12 +697,49 @@ class GraphReaderService {
                     areaTecnico: "Asesorías RIDS Ltda.",
                 },
             });
-            if (rendered.isEnabled) {
-                await this.sendReplyEmail({
-                    to: data.fromEmail,
-                    subject: rendered.subject,
-                    bodyHtml: rendered.bodyHtml,
+            const lastInboundMessage = await prisma.ticketMessage.findFirst({
+                where: {
+                    ticketId: ticket.id,
+                    direction: MessageDirection.INBOUND,
+                    isInternal: false,
+                },
+                orderBy: { createdAt: "desc" },
+                select: {
+                    sourceMessageId: true,
+                },
+            });
+            let originalGraphMessageId = null;
+            if (lastInboundMessage?.sourceMessageId) {
+                const processed = await prisma.processedInboundEmail.findUnique({
+                    where: {
+                        sourceMessageId: lastInboundMessage.sourceMessageId,
+                    },
+                    select: {
+                        graphMessageId: true,
+                    },
                 });
+                originalGraphMessageId = processed?.graphMessageId ?? null;
+            }
+            if (rendered.isEnabled) {
+                let sentInternetMessageId = null;
+                if (originalGraphMessageId) {
+                    const sent = await this.replyToGraphMessage({
+                        originalGraphMessageId,
+                        to: [data.fromEmail],
+                        cc: [],
+                        bodyHtml: rendered.bodyHtml,
+                        attachments: [],
+                    });
+                    sentInternetMessageId = sent.internetMessageId;
+                }
+                else {
+                    await this.sendReplyEmail({
+                        to: data.fromEmail,
+                        subject: rendered.subject,
+                        bodyHtml: rendered.bodyHtml,
+                        attachments: [],
+                    });
+                }
                 await prisma.ticketMessage.create({
                     data: {
                         ticketId: ticket.id,
@@ -712,8 +749,8 @@ class GraphReaderService {
                         isInternal: false,
                         fromEmail: this.supportEmail,
                         toEmail: data.fromEmail,
-                        sourceMessageId: `<auto-reply-${ticket.id}-${Date.now()}@rids.cl>`,
-                        sourceInReplyTo: data.messageId,
+                        sourceMessageId: sentInternetMessageId,
+                        sourceInReplyTo: lastInboundMessage?.sourceMessageId ?? data.messageId,
                     },
                 });
             }
@@ -896,6 +933,7 @@ class GraphReaderService {
                         status: TicketStatus.OPEN,
                         resolvedAt: null,
                         closedAt: null,
+                        lastReopenedAt: new Date(),
                     }
                 });
                 await tx.ticketEvent.create({
@@ -1032,6 +1070,64 @@ class GraphReaderService {
             saveToSentItems: true,
         });
         console.log("✅ Graph sendMail ejecutado");
+    }
+    async replyToGraphMessage(params) {
+        const client = await this.getClient();
+        console.log("📤 Creando reply real sobre Graph message:", params.originalGraphMessageId);
+        const draft = await client
+            .api(`/users/${this.supportEmail}/messages/${params.originalGraphMessageId}/createReply`)
+            .post({});
+        const draftId = draft?.id ?? null;
+        if (!draftId) {
+            return {
+                graphMessageId: null,
+                internetMessageId: null,
+            };
+        }
+        await client
+            .api(`/users/${this.supportEmail}/messages/${draftId}`)
+            .patch({
+            body: {
+                contentType: "HTML",
+                content: params.bodyHtml,
+            },
+            ...(params.to?.length
+                ? {
+                    toRecipients: params.to.map(address => ({
+                        emailAddress: { address }
+                    })),
+                }
+                : {}),
+            ...(params.cc?.length
+                ? {
+                    ccRecipients: params.cc.map(address => ({
+                        emailAddress: { address }
+                    })),
+                }
+                : {}),
+        });
+        for (const att of params.attachments ?? []) {
+            await client
+                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                .post({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: att.name,
+                contentType: att.contentType,
+                contentBytes: att.contentBytes,
+            });
+        }
+        const draftWithIds = await client
+            .api(`/users/${this.supportEmail}/messages/${draftId}`)
+            .select("id,internetMessageId")
+            .get();
+        await client
+            .api(`/users/${this.supportEmail}/messages/${draftId}/send`)
+            .post({});
+        console.log("✅ Reply real enviado sobre el mensaje original");
+        return {
+            graphMessageId: draftWithIds?.id ?? draftId,
+            internetMessageId: draftWithIds?.internetMessageId ?? null,
+        };
     }
     toSantiagoDateTime(dateTime, timeZone) {
         const SANTIAGO_TZ = "America/Santiago";

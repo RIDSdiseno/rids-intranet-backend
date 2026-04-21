@@ -18,10 +18,18 @@ export function buildTicketSla(ticket, slaConfig) {
     const now = new Date();
     const createdAt = new Date(ticket.createdAt);
     const targets = getSlaTargets(ticket.priority, slaConfig);
-    const firstResponseDueAt = addMinutes(createdAt, targets.firstResponseMinutes);
-    const resolutionDueAt = addMinutes(createdAt, targets.resolutionMinutes);
+    const firstResponseStartAt = createdAt;
+    const resolutionStartAt = ticket.lastReopenedAt
+        ? new Date(ticket.lastReopenedAt)
+        : createdAt;
+    const firstResponseDueAt = addMinutes(firstResponseStartAt, targets.firstResponseMinutes);
+    const resolutionDueAt = addMinutes(resolutionStartAt, targets.resolutionMinutes);
     const firstResponseAt = ticket.firstResponseAt ? new Date(ticket.firstResponseAt) : null;
-    const resolutionEndAt = ticket.closedAt ? new Date(ticket.closedAt) : null;
+    const resolutionEndAt = ticket.closedAt
+        ? new Date(ticket.closedAt)
+        : ticket.resolvedAt
+            ? new Date(ticket.resolvedAt)
+            : null;
     // ── Primera respuesta ─────────────────────────────────────────────────────
     let firstResponseStatus = "PENDING";
     if (firstResponseAt) {
@@ -52,7 +60,9 @@ export function buildTicketSla(ticket, slaConfig) {
         firstResponse: {
             dueAt: firstResponseDueAt,
             at: firstResponseAt,
-            elapsedMinutes: firstResponseAt ? diffMinutes(createdAt, firstResponseAt) : null,
+            elapsedMinutes: firstResponseAt
+                ? diffMinutes(firstResponseStartAt, firstResponseAt)
+                : null,
             status: firstResponseStatus,
             remainingMinutes: firstResponseAt
                 ? 0
@@ -61,7 +71,9 @@ export function buildTicketSla(ticket, slaConfig) {
         resolution: {
             dueAt: resolutionDueAt,
             at: resolutionEndAt,
-            elapsedMinutes: resolutionEndAt ? diffMinutes(createdAt, resolutionEndAt) : null,
+            elapsedMinutes: resolutionEndAt
+                ? diffMinutes(resolutionStartAt, resolutionEndAt)
+                : null,
             status: resolutionStatus,
             remainingMinutes: resolutionEndAt
                 ? 0
@@ -92,6 +104,7 @@ export async function getTicketSla(req, res) {
                 createdAt: true,
                 firstResponseAt: true,
                 resolvedAt: true,
+                lastReopenedAt: true,
                 closedAt: true,
                 status: true,
                 priority: true,
@@ -112,7 +125,7 @@ export async function getTicketSla(req, res) {
         for (const t of tickets) {
             const sla = buildTicketSla(t, slaConfig);
             const tieneRespuesta = t.firstResponseAt !== null;
-            const tieneCierre = t.closedAt !== null;
+            const tieneCierre = t.closedAt !== null || t.resolvedAt !== null;
             const estaActivo = t.status !== TicketStatus.CLOSED &&
                 t.status !== TicketStatus.RESOLVED;
             // Primera respuesta

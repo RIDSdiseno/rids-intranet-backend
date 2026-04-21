@@ -405,6 +405,7 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                         fromEmail: true,
                         toEmail: true,
                         cc: true,
+                        sourceMessageId: true,
                     },
                 },
             },
@@ -437,10 +438,22 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         // Actualizamos la base de datos dentro de una transacción para asegurar que la creación 
         // del mensaje, la actualización del ticket y la creación del evento se realicen de 
         // forma atómica. Luego, si el mensaje no es interno, intentamos enviar un correo al cliente con un template personalizado usando el graphReaderService.
-        await prisma.$transaction(async (tx) => {
-            const fromEmail = process.env.SMTP_USER ?? null;
+        let createdMessageId: number | null = null;
+        let replyToSourceMessageId: string | null = null;
 
-            // 1️⃣ Crear mensaje UNA SOLA VEZ
+        await prisma.$transaction(async (tx) => {
+            const fromEmail = process.env.EMAIL_USER ?? null;
+
+            const lastInboundMessage = [...ticket.messages]
+                .reverse()
+                .find(
+                    (m) =>
+                        m.direction === MessageDirection.INBOUND &&
+                        m.sourceMessageId
+                );
+
+            replyToSourceMessageId = lastInboundMessage?.sourceMessageId ?? null;
+
             const createdMessage = await tx.ticketMessage.create({
                 data: {
                     ticketId,
@@ -448,12 +461,14 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                     bodyText: message,
                     isInternal: Boolean(isInternal),
                     fromEmail,
-                    toEmail: toEmails.join(","), // 👈 también mejoramos esto
+                    toEmail: toEmails.join(","),
                     cc: ccEmails.length ? ccEmails.join(",") : null,
+                    sourceInReplyTo: replyToSourceMessageId,
                 },
             });
 
-            // 2️⃣ Adjuntos
+            createdMessageId = createdMessage.id;
+
             if (files?.length) {
                 for (const file of files) {
                     await tx.ticketAttachment.create({
@@ -468,7 +483,6 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 }
             }
 
-            // 3️⃣ Update ticket
             const updateData: any = {
                 lastActivityAt: new Date(),
             };
@@ -489,7 +503,6 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 data: updateData,
             });
 
-            // 4️⃣ Evento
             await tx.ticketEvent.create({
                 data: {
                     ticketId,
@@ -553,13 +566,59 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 : [];
 
             if (rendered.isEnabled) {
-                await graphReaderService.sendReplyEmail({
-                    to: toEmails,
-                    cc: ccEmails,
-                    subject: rendered.subject,
-                    bodyHtml: rendered.bodyHtml,
-                    attachments: emailAttachments,
-                });
+                const lastInboundMessage = [...ticket.messages]
+                    .reverse()
+                    .find(
+                        (m) =>
+                            m.direction === MessageDirection.INBOUND &&
+                            m.sourceMessageId
+                    );
+
+                let originalGraphMessageId: string | null = null;
+
+                if (lastInboundMessage?.sourceMessageId) {
+                    const processed = await prisma.processedInboundEmail.findUnique({
+                        where: {
+                            sourceMessageId: lastInboundMessage.sourceMessageId,
+                        },
+                        select: {
+                            graphMessageId: true,
+                        },
+                    });
+
+                    originalGraphMessageId = processed?.graphMessageId ?? null;
+                }
+
+                let sentInternetMessageId: string | null = null;
+
+                if (originalGraphMessageId) {
+                    const sent = await graphReaderService.replyToGraphMessage({
+                        originalGraphMessageId,
+                        to: toEmails,
+                        cc: ccEmails,
+                        bodyHtml: rendered.bodyHtml,
+                        attachments: emailAttachments,
+                    });
+
+                    sentInternetMessageId = sent.internetMessageId;
+                } else {
+                    await graphReaderService.sendReplyEmail({
+                        to: toEmails,
+                        cc: ccEmails,
+                        subject: rendered.subject,
+                        bodyHtml: rendered.bodyHtml,
+                        attachments: emailAttachments,
+                    });
+                }
+
+                if (createdMessageId && sentInternetMessageId) {
+                    await prisma.ticketMessage.update({
+                        where: { id: createdMessageId },
+                        data: {
+                            sourceMessageId: sentInternetMessageId,
+                        },
+                    });
+                }
             }
         }
         bus.emit("ticket.updated", {
@@ -733,13 +792,12 @@ export async function listTickets(req: Request, res: Response) {
                         assignee: { select: { id_tecnico: true, nombre: true } },
                         requester: { select: { nombre: true, email: true } },
                         messages: {
-                            orderBy: { createdAt: "asc" },
+                            orderBy: { createdAt: "desc" },
+                            take: 2,
                             select: {
                                 direction: true,
-                                fromEmail: true,
-                                toEmail: true,
-                                cc: true,
-                                sourceMessageId: true,
+                                isInternal: true,
+                                createdAt: true,
                             },
                         },
                     },
@@ -775,21 +833,20 @@ export async function listTickets(req: Request, res: Response) {
         const formattedTickets = tickets.map((ticket) => {
             const sla = buildTicketSla(ticket, slaConfig);
 
-            const messages = (ticket.messages ?? []).slice(0, 2).map((message: any) => ({
+            const messages = (ticket.messages ?? []).map((message: any) => ({
                 direction: message.direction,
                 isInternal: message.isInternal,
                 createdAt: message.createdAt,
             }));
 
             const lastMsg = messages[0];
-            const isOnlyInitialMessage = messages.length <= 1;
 
             let lastMessageDirection: MessageDirection | "INTERNAL" | null = null;
 
-            if (!isOnlyInitialMessage) {
-                lastMessageDirection = lastMsg?.isInternal
+            if (lastMsg) {
+                lastMessageDirection = lastMsg.isInternal
                     ? "INTERNAL"
-                    : lastMsg?.direction ?? null;
+                    : lastMsg.direction ?? null;
             }
 
             return {

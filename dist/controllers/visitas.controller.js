@@ -1,8 +1,23 @@
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
+import { DateTime } from "luxon";
 /* ------------------------------------ */
 /* Helpers comunes                       */
 /* ------------------------------------ */
+function parseLocalDateTime(value) {
+    if (!value)
+        return null;
+    const str = typeof value === "string" ? value : value.toISOString();
+    // Si ya viene con timezone explícito (Z o +HH:MM), respetar tal cual
+    if (str.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(str)) {
+        return new Date(str);
+    }
+    // Sin timezone → asumir hora de Santiago y convertir a UTC
+    const dt = DateTime.fromISO(str, { zone: "America/Santiago" });
+    if (!dt.isValid)
+        return null;
+    return dt.toJSDate();
+}
 const visitaSelect = {
     id_visita: true,
     empresaId: true,
@@ -76,8 +91,8 @@ const CreateVisitaSchema = z
     // MODO "LOTE"
     solicitantesIds: z.array(z.number().int().positive()).optional(),
     solicitantesNombres: z.array(z.string().trim().min(1)).optional(),
-    inicio: z.coerce.date(), // ISO -> Date
-    fin: z.coerce.date().optional().nullable(),
+    inicio: z.string(),
+    fin: z.string().optional().nullable(),
     status: StatusEnum.optional().default("PENDIENTE"),
 })
     .extend(baseFlags.shape)
@@ -101,8 +116,8 @@ const UpdateVisitaSchema = z
     sucursalId: z.number().int().positive().optional(),
     solicitanteId: z.number().int().positive().optional(),
     solicitante: z.string().trim().optional(),
-    inicio: z.coerce.date().optional(),
-    fin: z.coerce.date().optional().nullable(),
+    inicio: z.string().optional(),
+    fin: z.string().optional().nullable(),
     status: StatusEnum.optional(),
 })
     .extend(baseFlags.partial().shape);
@@ -198,14 +213,17 @@ export const createVisita = async (req, res) => {
         // ¿Lote?
         const isBatch = (payload.solicitantesIds && payload.solicitantesIds.length > 0) ||
             (payload.solicitantesNombres && payload.solicitantesNombres.length > 0);
+        const inicioDate = parseLocalDateTime(payload.inicio);
+        if (!inicioDate)
+            return res.status(400).json({ error: "Fecha de inicio inválida" });
         // Datos comunes para todas las visitas
         const commonData = {
             empresaId: payload.empresaId,
             tecnicoId: payload.tecnicoId,
             direccion_visita: payload.direccion_visita ?? null, // ✅
             sucursalId: payload.sucursalId ?? null,
-            inicio: payload.inicio,
-            fin: payload.fin ?? null,
+            inicio: inicioDate,
+            fin: parseLocalDateTime(payload.fin ?? null),
             status: payload.status ?? "PENDIENTE",
             confImpresoras: !!payload.confImpresoras,
             confTelefonos: !!payload.confTelefonos,
@@ -314,38 +332,60 @@ export const updateVisita = async (req, res) => {
                 return res.status(400).json({ error: "solicitanteId no existe" });
             solicitanteToSet = s.nombre;
         }
-        // coherencia de 'otrosDetalle'
         const otrosDetalle = payload.otros === undefined
             ? payload.otrosDetalle
             : payload.otros
                 ? payload.otrosDetalle ?? null
                 : null;
+        // Construir data como Record para evitar conflicto con exactOptionalPropertyTypes
+        const data = {};
+        if (payload.empresaId !== undefined)
+            data.empresaId = payload.empresaId;
+        if (payload.tecnicoId !== undefined)
+            data.tecnicoId = payload.tecnicoId;
+        if (payload.direccion_visita !== undefined)
+            data.direccion_visita = payload.direccion_visita;
+        if (payload.sucursalId !== undefined)
+            data.sucursalId = payload.sucursalId;
+        if (payload.solicitanteId !== undefined)
+            data.solicitanteId = payload.solicitanteId;
+        if (solicitanteToSet !== undefined)
+            data.solicitante = solicitanteToSet;
+        if (payload.inicio !== undefined)
+            data.inicio = parseLocalDateTime(payload.inicio);
+        if (payload.fin !== undefined)
+            data.fin = parseLocalDateTime(payload.fin ?? null);
+        if (payload.status !== undefined)
+            data.status = payload.status;
+        if (payload.confImpresoras !== undefined)
+            data.confImpresoras = !!payload.confImpresoras;
+        if (payload.confTelefonos !== undefined)
+            data.confTelefonos = !!payload.confTelefonos;
+        if (payload.confPiePagina !== undefined)
+            data.confPiePagina = !!payload.confPiePagina;
+        if (payload.otros !== undefined)
+            data.otros = !!payload.otros;
+        if (otrosDetalle !== undefined)
+            data.otrosDetalle = otrosDetalle;
+        if (payload.actualizaciones !== undefined)
+            data.actualizaciones = !!payload.actualizaciones;
+        if (payload.antivirus !== undefined)
+            data.antivirus = !!payload.antivirus;
+        if (payload.ccleaner !== undefined)
+            data.ccleaner = !!payload.ccleaner;
+        if (payload.estadoDisco !== undefined)
+            data.estadoDisco = !!payload.estadoDisco;
+        if (payload.licenciaOffice !== undefined)
+            data.licenciaOffice = !!payload.licenciaOffice;
+        if (payload.licenciaWindows !== undefined)
+            data.licenciaWindows = !!payload.licenciaWindows;
+        if (payload.mantenimientoReloj !== undefined)
+            data.mantenimientoReloj = !!payload.mantenimientoReloj;
+        if (payload.rendimientoEquipo !== undefined)
+            data.rendimientoEquipo = !!payload.rendimientoEquipo;
         const updated = await prisma.visita.update({
             where: { id_visita: id },
-            data: {
-                ...(payload.empresaId !== undefined ? { empresaId: payload.empresaId } : {}),
-                ...(payload.tecnicoId !== undefined ? { tecnicoId: payload.tecnicoId } : {}),
-                ...(payload.direccion_visita !== undefined ? { direccion_visita: payload.direccion_visita } : {}),
-                ...(payload.sucursalId !== undefined ? { sucursalId: payload.sucursalId } : {}),
-                ...(payload.solicitanteId !== undefined ? { solicitanteId: payload.solicitanteId } : {}),
-                ...(solicitanteToSet !== undefined ? { solicitante: solicitanteToSet } : {}),
-                ...(payload.inicio !== undefined ? { inicio: payload.inicio } : {}),
-                ...(payload.fin !== undefined ? { fin: payload.fin } : {}),
-                ...(payload.status !== undefined ? { status: payload.status } : {}),
-                ...(payload.confImpresoras !== undefined ? { confImpresoras: !!payload.confImpresoras } : {}),
-                ...(payload.confTelefonos !== undefined ? { confTelefonos: !!payload.confTelefonos } : {}),
-                ...(payload.confPiePagina !== undefined ? { confPiePagina: !!payload.confPiePagina } : {}),
-                ...(payload.otros !== undefined ? { otros: !!payload.otros } : {}),
-                ...(otrosDetalle !== undefined ? { otrosDetalle } : {}),
-                ...(payload.actualizaciones !== undefined ? { actualizaciones: !!payload.actualizaciones } : {}),
-                ...(payload.antivirus !== undefined ? { antivirus: !!payload.antivirus } : {}),
-                ...(payload.ccleaner !== undefined ? { ccleaner: !!payload.ccleaner } : {}),
-                ...(payload.estadoDisco !== undefined ? { estadoDisco: !!payload.estadoDisco } : {}),
-                ...(payload.licenciaOffice !== undefined ? { licenciaOffice: !!payload.licenciaOffice } : {}),
-                ...(payload.licenciaWindows !== undefined ? { licenciaWindows: !!payload.licenciaWindows } : {}),
-                ...(payload.mantenimientoReloj !== undefined ? { mantenimientoReloj: !!payload.mantenimientoReloj } : {}),
-                ...(payload.rendimientoEquipo !== undefined ? { rendimientoEquipo: !!payload.rendimientoEquipo } : {}),
-            },
+            data,
             select: visitaSelect,
         });
         return res.json(updated);

@@ -31,6 +31,20 @@ declare class GraphReaderService {
             contentBytes: string;
         }>;
     }): Promise<void>;
+    replyToGraphMessage(params: {
+        originalGraphMessageId: string;
+        to?: string[];
+        cc?: string[];
+        bodyHtml: string;
+        attachments?: Array<{
+            name: string;
+            contentType: string;
+            contentBytes: string;
+        }>;
+    }): Promise<{
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+    }>;
     private toSantiagoDateTime;
     readCalendarEvents(startDateTime: string, endDateTime: string): Promise<Array<{
         id: string;

@@ -12,6 +12,7 @@ export declare function buildTicketSla(ticket: {
     firstResponseAt?: Date | null;
     resolvedAt?: Date | null;
     closedAt?: Date | null;
+    lastReopenedAt?: Date | null;
     status?: TicketStatus | string | null;
     priority?: TicketPriority | string | null;
 }, slaConfig: Record<string, {
