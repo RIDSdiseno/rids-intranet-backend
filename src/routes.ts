@@ -74,6 +74,9 @@ import { agendaRouter } from "./routes/agenda.routes.js";
 /* ===================== CORREO ===================== */
 import correoRouter from "./routes/correo.routes.js";
 
+/* ==================== SII simple api ================ */
+import simpleapiRouter from "./routes/Simpleapi.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
@@ -159,6 +162,9 @@ api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 
 /* ===================== CORREO ===================== */
 api.use("/correo", correoRouter);
+
+/* ==================== SII simple api ================ */
+api.use("/facturas", simpleapiRouter);
 
 /* ===================== Export ===================== */
 export default api;

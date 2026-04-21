@@ -20,7 +20,7 @@
     "@azure/identity": "^4.13.0",
     "@azure/msal-node": "^5.1.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@supabase/supabase-js": "^2.103.3",
+    "@supabase/supabase-js": "^2.104.0",
     "argon2": "^0.44.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
