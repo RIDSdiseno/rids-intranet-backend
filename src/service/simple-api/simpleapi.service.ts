@@ -34,6 +34,37 @@ interface CAFInfo {
   folioHasta: number | null;
 }
 
+export interface VentaRCV {
+  folio: number;
+  tipoDTE: number;
+  rutReceptor: string;
+  razonSocialReceptor: string;
+  fechaEmision: string;
+  montoNeto: number;
+  montoIVA: number;
+  montoTotal: number;
+  estado: string;
+}
+
+export interface ResultadoVentasRCV {
+  rut: string;
+  mes: string;
+  ano: string;
+  ventas: VentaRCV[];
+  total: number;
+}
+
+// ============================================================
+// CACHÉ EN MEMORIA
+// Solo se invalida cuando forceRefresh=true (botón Recargar)
+// Persiste mientras el servidor esté corriendo
+// ============================================================
+const cacheRCV = new Map<string, ResultadoVentasRCV>();
+
+function getCacheKey(rut: string, mes: string, ano: string): string {
+  return `${rut}-${mes}-${ano}`;
+}
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -46,17 +77,14 @@ function toInt(valor: unknown): number {
   if (typeof valor === "number") {
     return Number.isFinite(valor) ? Math.round(valor) : 0;
   }
-
   if (typeof valor === "string") {
     const normalizado = valor
       .replace(/\./g, "")
       .replace(/,/g, ".")
       .replace(/[^\d.-]/g, "");
-
     const num = Number(normalizado);
     return Number.isFinite(num) ? Math.round(num) : 0;
   }
-
   return 0;
 }
 
@@ -72,9 +100,7 @@ function limpiarRut(rut: string): string {
     .replace(/\./g, "")
     .replace(/\s+/g, "")
     .toUpperCase();
-
   const match = limpio.match(/^(\d+)-?([\dK])$/i);
-
   return match ? `${match[1] ?? ""}-${(match[2] ?? "").toUpperCase()}` : limpio;
 }
 
@@ -94,14 +120,10 @@ function extraerTag(xml: string, tag: string): string | null {
 
 function parseCAF(config: SimpleAPIConfig): CAFInfo {
   let xml = config.cafXml?.trim();
-
   if (!xml && config.cafXmlBase64) {
     xml = Buffer.from(config.cafXmlBase64, "base64").toString("utf-8").trim();
   }
-
-  if (!xml) {
-    throw new Error("No hay CAF configurado");
-  }
+  if (!xml) throw new Error("No hay CAF configurado");
 
   const tipoDTE = Number(extraerTag(xml, "TD"));
   const folioDesde = Number(extraerTag(xml, "D"));
@@ -116,18 +138,12 @@ function parseCAF(config: SimpleAPIConfig): CAFInfo {
 }
 
 function resolverFolio(factura: any, cafInfo: CAFInfo): number {
-  const candidatos = [
-    factura?.folio,
-    factura?.folioDTE,
-    factura?.numero,
-    factura?.nro,
-  ]
+  const candidatos = [factura?.folio, factura?.folioDTE, factura?.numero, factura?.nro]
     .map((v) => Number(v))
     .filter((v) => Number.isFinite(v) && v > 0);
 
   if (candidatos.length > 0) {
     const folio = candidatos[0]!;
-
     if (
       cafInfo.folioDesde != null &&
       cafInfo.folioHasta != null &&
@@ -137,14 +153,10 @@ function resolverFolio(factura: any, cafInfo: CAFInfo): number {
         `El folio ${folio} está fuera del rango del CAF (${cafInfo.folioDesde}-${cafInfo.folioHasta})`
       );
     }
-
     return folio;
   }
 
-  if (cafInfo.folioDesde != null) {
-    return cafInfo.folioDesde;
-  }
-
+  if (cafInfo.folioDesde != null) return cafInfo.folioDesde;
   throw new Error("No se pudo resolver el folio del DTE");
 }
 
@@ -193,7 +205,7 @@ export function getSimpleAPIConfig(): SimpleAPIConfig {
 }
 
 // ============================================================
-// OBTENER TOKEN DE SIMPLEAPI (ejecutar una vez y cachear)
+// OBTENER TOKEN DE SIMPLEAPI DTE (cacheable)
 // ============================================================
 let cachedToken: string | null = null;
 let tokenExpiry = 0;
@@ -248,15 +260,10 @@ async function getSimpleAPIToken(config: SimpleAPIConfig): Promise<string> {
 }
 
 // ============================================================
-// HELPER: llamada HTTP a SimpleAPI — CON AUTH TOKEN
+// HELPER: llamada HTTP a SimpleAPI DTE — CON BEARER TOKEN
 // ============================================================
-async function callSimpleAPI(
-  config: SimpleAPIConfig,
-  endpoint: string,
-  body: object
-) {
+async function callSimpleAPI(config: SimpleAPIConfig, endpoint: string, body: object) {
   const token = await getSimpleAPIToken(config);
-
   const url = `${config.url}${endpoint}`;
   console.log("📡 SimpleAPI URL:", url);
 
@@ -279,7 +286,6 @@ async function callSimpleAPI(
     tokenExpiry = 0;
 
     const newToken = await getSimpleAPIToken(config);
-
     const retry = await fetch(url, {
       method: "POST",
       headers: {
@@ -298,7 +304,6 @@ async function callSimpleAPI(
         `SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ${retryText}`
       );
     }
-
     return JSON.parse(retryText);
   }
 
@@ -316,9 +321,78 @@ async function callSimpleAPI(
   }
 
   if (!response.ok) {
+    throw new Error(`SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`);
+  }
+
+  return data;
+}
+
+// ============================================================
+// HELPER: llamada HTTP a SimpleAPI RCV
+// Usa multipart/form-data con certificado .pfx + Bearer token
+// URL completa incluye mes y año: /api/RCV/ventas/MM/AAAA
+// ============================================================
+async function callSimpleAPIRCV(urlCompleta: string, rutEmpresaOverride?: string): Promise<any> {
+  const certBase64 = process.env.SII_CERT_BASE64;
+  const certPassword = process.env.SII_CERT_PASSWORD;
+  const rutCertificado = process.env.RUT_FIRMANTE;
+  const rutEmpresa = rutEmpresaOverride ?? process.env.RUT_EMPRESA;
+
+  if (!certBase64 || !certPassword || !rutCertificado || !rutEmpresa) {
+    throw new Error("Faltan variables de entorno para RCV: SII_CERT_BASE64, SII_CERT_PASSWORD, RUT_FIRMANTE o RUT_EMPRESA");
+  }
+
+  const config = getSimpleAPIConfig();
+  const token = await getSimpleAPIToken(config);
+
+  const certBuffer = Buffer.from(certBase64, "base64");
+  const formData = new FormData();
+
+  const inputJson = JSON.stringify({
+    RutCertificado: limpiarRut(rutCertificado),
+    RutEmpresa: limpiarRut(rutEmpresa),
+    Ambiente: 1,
+    Password: certPassword,
+  });
+
+  formData.append("input", inputJson);
+
+  const certBlob = new Blob([certBuffer], { type: "application/octet-stream" });
+  formData.append("files", certBlob, "certificado.pfx");
+
+  console.log("📡 SimpleAPI RCV URL:", urlCompleta);
+  console.log("📡 RCV RutEmpresa:", limpiarRut(rutEmpresa));
+
+  const response = await fetch(urlCompleta, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  }).catch((err) => {
+    console.error("❌ FETCH ERROR DETALLE:", err?.cause ?? err);
+    throw err;
+  });
+
+  const rawText = await response.text();
+  console.log("📥 RCV STATUS:", response.status);
+  console.log("📥 RCV RAW:", rawText?.slice(0, 800));
+
+  if (!rawText?.trim()) {
+    throw new Error(`SimpleAPI RCV respuesta vacía (${response.status})`);
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
     throw new Error(
-      `SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`
+      `SimpleAPI RCV respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
     );
+  }
+
+  if (!response.ok) {
+    throw new Error(`SimpleAPI RCV error ${response.status}: ${JSON.stringify(data)}`);
   }
 
   return data;
@@ -327,23 +401,17 @@ async function callSimpleAPI(
 // ============================================================
 // PASO 1: GENERAR DTE
 // ============================================================
-export async function generarDTE(
-  config: SimpleAPIConfig,
-  factura: any
-): Promise<DTEGenerado> {
+export async function generarDTE(config: SimpleAPIConfig, factura: any): Promise<DTEGenerado> {
   const cotizacion = factura?.cotizacion;
   const entidad = cotizacion?.entidad;
 
   if (!cotizacion) throw new Error("No se recibió factura.cotizacion");
   if (!entidad) throw new Error("La cotización no tiene entidad/receptor");
-
   if (!entidad?.rut) throw new Error("El cliente no tiene RUT registrado");
   if (!entidad?.nombre) throw new Error("El cliente no tiene nombre registrado");
-
   if (!Array.isArray(cotizacion?.items) || cotizacion.items.length === 0) {
     throw new Error("La cotización no tiene ítems para emitir");
   }
-
   if (!config.cafXml && !config.cafXmlBase64) {
     throw new Error("No hay CAF configurado para generar DTE");
   }
@@ -367,7 +435,6 @@ export async function generarDTE(
   if (cafInfo.tipoDTE == null) {
     throw new Error("No se pudo leer <TD> del CAF. Revisa el base64 o el XML.");
   }
-
   if (cafInfo.tipoDTE !== 33) {
     throw new Error(
       `El CAF configurado no corresponde a Factura Electrónica (33). TD actual: ${cafInfo.tipoDTE}`
@@ -399,13 +466,9 @@ export async function generarDTE(
     const precio = toInt(item?.precio);
     const cantidad = Number(item?.cantidad) || 1;
     const montoItem = toInt(precio * cantidad);
-
     const nombreBase = item?.nombre || item?.descripcion;
 
-    if (!nombreBase) {
-      throw new Error(`Item ${index + 1} no tiene nombre ni descripción`);
-    }
-
+    if (!nombreBase) throw new Error(`Item ${index + 1} no tiene nombre ni descripción`);
     if (precio < 0 || cantidad <= 0 || montoItem < 0) {
       throw new Error(`Item ${index + 1} tiene valores inválidos`);
     }
@@ -459,9 +522,7 @@ export async function generarDTE(
           direccion: truncar(entidad.direccion ?? "Sin dirección", 70),
           comuna: truncar(entidad.comuna ?? "Santiago", 20),
           ciudad: truncar(entidad.ciudad ?? "Santiago", 20),
-          ...(entidad.correo
-            ? { correoElectronico: truncar(entidad.correo, 80) }
-            : {}),
+          ...(entidad.correo ? { correoElectronico: truncar(entidad.correo, 80) } : {}),
         },
         totales: {
           montoNeto,
@@ -519,29 +580,17 @@ export async function generarDTE(
     );
   }
 
-  return {
-    xml: JSON.stringify(data),
-    folio,
-    raw: data,
-  };
+  return { xml: JSON.stringify(data), folio, raw: data };
 }
 
 // ============================================================
 // PASO 2: GENERAR SOBRE DE ENVÍO
 // ============================================================
-export async function generarSobre(
-  config: SimpleAPIConfig,
-  dteGenerado: DTEGenerado
-): Promise<string> {
-  if (!dteGenerado?.xml) {
-    throw new Error("No se recibió el DTE generado para armar el sobre");
-  }
+export async function generarSobre(config: SimpleAPIConfig, dteGenerado: DTEGenerado): Promise<string> {
+  if (!dteGenerado?.xml) throw new Error("No se recibió el DTE generado para armar el sobre");
 
   const dteRaw = safeJsonParse(dteGenerado.xml);
-
-  if (!dteRaw || typeof dteRaw === "string") {
-    throw new Error("El XML/JSON del DTE generado es inválido");
-  }
+  if (!dteRaw || typeof dteRaw === "string") throw new Error("El XML/JSON del DTE generado es inválido");
 
   const payload = {
     certificado: {
@@ -559,7 +608,6 @@ export async function generarSobre(
   };
 
   const data = await callSimpleAPI(config, "/api/v1/envio/generar", payload);
-
   return JSON.stringify(data);
 }
 
@@ -602,13 +650,8 @@ export async function enviarAlSII(
 // ============================================================
 // PASO 4: CONSULTAR ESTADO EN SII
 // ============================================================
-export async function consultarEstadoEnvio(
-  config: SimpleAPIConfig,
-  trackId: string
-): Promise<any> {
-  if (!trackId) {
-    throw new Error("trackId es obligatorio para consultar estado");
-  }
+export async function consultarEstadoEnvio(config: SimpleAPIConfig, trackId: string): Promise<any> {
+  if (!trackId) throw new Error("trackId es obligatorio para consultar estado");
 
   const payload = {
     certificado: {
@@ -621,4 +664,102 @@ export async function consultarEstadoEnvio(
   };
 
   return callSimpleAPI(config, "/api/v1/consulta/envio", payload);
+}
+
+// ============================================================
+// RCV: CONSULTAR VENTAS (FACTURAS EMITIDAS)
+// - Sin forceRefresh: devuelve caché si existe (no gasta token)
+// - Con forceRefresh=true: llama al SII y actualiza caché (gasta token)
+// ============================================================
+export async function consultarVentasRCV(
+  mes: string,
+  ano: string,
+  rutEmpresaOverride?: string,
+  forceRefresh = false
+): Promise<ResultadoVentasRCV> {
+  const rut = rutEmpresaOverride ?? process.env.RUT_EMPRESA;
+  const rcvUrl = process.env.SIMPLEAPI_RCV_URL;
+
+  if (!rut || !rcvUrl) {
+    throw new Error("Faltan variables: RUT_EMPRESA o SIMPLEAPI_RCV_URL");
+  }
+
+  const mesNum = parseInt(mes, 10);
+  const anoNum = parseInt(ano, 10);
+
+  if (isNaN(mesNum) || mesNum < 1 || mesNum > 12) {
+    throw new Error(`Mes inválido: ${mes}. Debe ser entre 01 y 12`);
+  }
+  if (isNaN(anoNum) || anoNum < 2000 || anoNum > new Date().getFullYear()) {
+    throw new Error(`Año inválido: ${ano}`);
+  }
+
+  const mesPadded = String(mesNum).padStart(2, "0");
+  const rutLimpio = limpiarRut(rut);
+  const cacheKey = getCacheKey(rutLimpio, mesPadded, ano);
+
+  // Devolver caché si existe y no se fuerza recarga
+  if (!forceRefresh) {
+    const cached = cacheRCV.get(cacheKey);
+    if (cached) {
+      console.log(`💾 RCV desde caché: ${cacheKey}`);
+      return cached;
+    }
+  }
+
+  const urlCompleta = `${rcvUrl}/api/RCV/ventas/${mesPadded}/${ano}`;
+  console.log("📊 Consultando RCV Ventas SII:", { rut: rutLimpio, mes: mesPadded, ano });
+
+  const data = await callSimpleAPIRCV(urlCompleta, rutEmpresaOverride);
+
+  const listaRaw: any[] =
+    data?.ventas?.detalleVentas ??
+    data?.ventas?.DetalleVentas ??
+    data?.detalleVentas ??
+    (Array.isArray(data?.ventas) ? data.ventas : []);
+
+  const ventas: VentaRCV[] = listaRaw.map((item: any) => ({
+    folio: Number(item?.folio ?? item?.Folio ?? 0),
+    tipoDTE: Number(item?.tipoDTE ?? item?.TipoDTE ?? item?.tipo ?? 33),
+    rutReceptor: String(item?.rutReceptor ?? item?.RutReceptor ?? item?.rutCliente ?? ""),
+    razonSocialReceptor: String(item?.razonSocialReceptor ?? item?.RazonSocial ?? item?.razonSocial ?? ""),
+    fechaEmision: String(item?.fechaEmision ?? item?.FechaEmision ?? item?.fecha ?? ""),
+    montoNeto: toInt(item?.montoNeto ?? item?.MontoNeto ?? item?.neto ?? 0),
+    montoIVA: toInt(item?.montoIVA ?? item?.MontoIVA ?? item?.montoIva ?? item?.iva ?? 0),
+    montoTotal: toInt(item?.montoTotal ?? item?.MontoTotal ?? item?.total ?? 0),
+    estado: String(item?.estado ?? item?.Estado ?? item?.estadoDTE ?? ""),
+  }));
+
+  const resultado: ResultadoVentasRCV = {
+    rut: rutLimpio,
+    mes: mesPadded,
+    ano,
+    ventas,
+    total: ventas.length,
+  };
+
+  // Guardar en caché
+  cacheRCV.set(cacheKey, resultado);
+  console.log(`💾 RCV guardado en caché: ${cacheKey} (${ventas.length} docs)`);
+
+  return resultado;
+}
+
+// ============================================================
+// RCV: RESUMEN MENSUAL DE VENTAS
+// ============================================================
+export async function consultarResumenVentasRCV(
+  mes: string,
+  ano: string,
+  rutEmpresaOverride?: string
+): Promise<any> {
+  const rcvUrl = process.env.SIMPLEAPI_RCV_URL;
+  if (!rcvUrl) throw new Error("Falta variable: SIMPLEAPI_RCV_URL");
+
+  const mesPadded = String(parseInt(mes, 10)).padStart(2, "0");
+  const urlCompleta = `${rcvUrl}/api/RCV/ventas/${mesPadded}/${ano}`;
+
+  console.log("📊 Consultando Resumen RCV Ventas:", { mes: mesPadded, ano });
+
+  return callSimpleAPIRCV(urlCompleta, rutEmpresaOverride);
 }

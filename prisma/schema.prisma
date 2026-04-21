@@ -447,8 +447,7 @@ model Equipo {
   producto               ProductoGestioo?        @relation(fields: [productoId], references: [id])
   origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
   cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
-
-  adicionales EquipoAdicional[]
+  adicionales            EquipoAdicional[]
 
   @@index([empresaId])
   @@index([productoId])
@@ -466,8 +465,7 @@ model EquipoAdicional {
   cantidad        Int      @default(1)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  equipo          Equipo   @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@index([equipoId])
 }
@@ -873,11 +871,11 @@ model Ticket {
   closedAt        DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-  deletedAt       DateTime?
   lastActivityAt  DateTime        @default(now())
   publicId        String          @unique
   aiSummary       String?
   rolAsignado     String?
+  deletedAt       DateTime?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -984,7 +982,7 @@ model TicketEmailSignature {
 
 model SlaConfig {
   id                   Int      @id @default(autoincrement())
-  priority             String   @unique // LOW, NORMAL, HIGH, URGENT
+  priority             String   @unique
   firstResponseMinutes Int
   resolutionMinutes    Int
   updatedAt            DateTime @updatedAt
@@ -1107,12 +1105,12 @@ model ReporteGenerado {
   tipo           String
   nombreArchivo  String
   urlArchivo     String?
-  storagePath    String?
   sharepointPath String?
   generadoPorId  Int?
   generadoPor    String?
   estado         String   @default("GENERADO")
   createdAt      DateTime @default(now())
+  storagePath    String?
 
   @@index([empresaId, createdAt])
   @@index([periodo])
