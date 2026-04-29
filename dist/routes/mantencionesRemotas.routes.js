@@ -1,25 +1,42 @@
-// Rutas para manejo de mantenciones remotas, con endpoints para listado (con filtros y métricas), CRUD completo, acción rápida de cierre, y exportación a Excel, delegando la lógica al controlador correspondiente
+// src/routes/mantencionesRemotas.routes.ts
 import { Router } from "express";
-import { auth } from "../middlewares/auth.js";
+import { auth, onlyOwnEmpresa } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
 import { listMantencionesRemotas, exportMantencionesRemotas, getMantencionRemotaById, createMantencionRemota, updateMantencionRemota, deleteMantencionRemota, closeMantencionRemota, mantencionesRemotasMetrics, getMantencionesRemotasFilters, } from "../controllers/mantencionesRemotas.controller.js";
 const router = Router();
-router.use(auth());
-// Listado + filtros + métricas
-router.get("/", listMantencionesRemotas);
-router.get("/export", exportMantencionesRemotas);
-router.get("/filters", getMantencionesRemotasFilters);
-router.get("/metrics", mantencionesRemotasMetrics);
-// CRUD
-router.get("/:id", getMantencionRemotaById);
-router.post("/", createMantencionRemota);
-router.put("/:id", updateMantencionRemota);
-router.patch("/:id", updateMantencionRemota);
-router.delete("/:id", deleteMantencionRemota);
-// Acción rápida
-router.post("/:id/close", closeMantencionRemota);
-// Debug
-router.post("/__ping", (req, res) => {
-    return res.json({ ok: true, bodyType: typeof req.body, body: req.body ?? null });
+/* ========= Listado + filtros + métricas ========= */
+router.get("/", auth(), onlyOwnEmpresa(), (req, res, next) => {
+    Promise.resolve(listMantencionesRemotas(req, res)).catch(next);
+});
+router.get("/export", auth(), onlyOwnEmpresa(), (req, res, next) => {
+    Promise.resolve(exportMantencionesRemotas(req, res)).catch(next);
+});
+router.get("/filters", auth(), onlyOwnEmpresa(), (req, res, next) => {
+    Promise.resolve(getMantencionesRemotasFilters(req, res)).catch(next);
+});
+router.get("/metrics", auth(), onlyOwnEmpresa(), (req, res, next) => {
+    Promise.resolve(mantencionesRemotasMetrics(req, res)).catch(next);
+});
+/* ========= Detalle ========= */
+router.get("/:id", auth(), (req, res, next) => {
+    Promise.resolve(getMantencionRemotaById(req, res)).catch(next);
+});
+/* ========= CRUD solo interno ========= */
+router.post("/", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+    Promise.resolve(createMantencionRemota(req, res)).catch(next);
+});
+router.put("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+    Promise.resolve(updateMantencionRemota(req, res)).catch(next);
+});
+router.patch("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+    Promise.resolve(updateMantencionRemota(req, res)).catch(next);
+});
+router.delete("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+    Promise.resolve(deleteMantencionRemota(req, res)).catch(next);
+});
+/* ========= Acción rápida solo interno ========= */
+router.post("/:id/close", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+    Promise.resolve(closeMantencionRemota(req, res)).catch(next);
 });
 export default router;
 //# sourceMappingURL=mantencionesRemotas.routes.js.map

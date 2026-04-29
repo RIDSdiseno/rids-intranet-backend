@@ -30,6 +30,9 @@ export async function listTecnicos(_req, res) {
 export async function listUsuarios(_req, res) {
     try {
         const tecnicos = await prisma.tecnico.findMany({
+            where: {
+                status: true,
+            },
             select: {
                 id_tecnico: true,
                 nombre: true,

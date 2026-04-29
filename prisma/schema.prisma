@@ -1117,6 +1117,90 @@ model ReporteGenerado {
   @@index([tipo])
 }
 
+model FacturaDTE {
+  id            Int     @id @default(autoincrement())
+  empresaRut    String
+  empresaAlias  String?
+  folio         Int
+  tipoDTE       Int
+  tipoDTEString String?
+  estado        String?
+  tipoVenta     String?
+
+  fechaEmision     DateTime?
+  fechaRecepcion   DateTime?
+  fechaAcuseRecibo DateTime?
+
+  rutEmisor         String?
+  razonSocialEmisor String?
+  giroEmisor        String?
+
+  rutReceptor         String?
+  razonSocialReceptor String?
+  giroReceptor        String?
+  direccionReceptor   String?
+  comunaReceptor      String?
+  ciudadReceptor      String?
+
+  montoExento         Int @default(0)
+  montoNeto           Int @default(0)
+  montoIVA            Int @default(0)
+  montoIVARecuperable Int @default(0)
+  montoTotal          Int @default(0)
+
+  fuente         String? // RCV, XML, API, MANUAL
+  tieneDetalle   Boolean   @default(false)
+  xmlRaw         String?   @db.Text
+  rawJson        Json?
+  sincronizadoAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items FacturaDTEItem[]
+
+  @@unique([empresaRut, tipoDTE, folio])
+  @@index([empresaRut, fechaEmision])
+  @@index([rutReceptor])
+}
+
+model FacturaDTEItem {
+  id        Int  @id @default(autoincrement())
+  facturaId Int
+  linea     Int?
+
+  codigo         String?
+  nombre         String
+  descripcion    String?  @db.Text
+  cantidad       Decimal? @db.Decimal(18, 2)
+  unidadMedida   String?
+  precioUnitario Int      @default(0)
+  descuentoMonto Int      @default(0)
+  recargoMonto   Int      @default(0)
+  montoItem      Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  factura FacturaDTE @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+
+  @@index([facturaId])
+}
+
+model FacturaSyncLog {
+  id              Int      @id @default(autoincrement())
+  empresaRut      String
+  periodoAno      Int
+  periodoMes      Int
+  tipo            String // VENTAS, COMPRAS
+  totalDocumentos Int      @default(0)
+  ok              Boolean  @default(false)
+  mensaje         String?
+  createdAt       DateTime @default(now())
+
+  @@index([empresaRut, periodoAno, periodoMes, tipo])
+}
+
 enum TipoAgenda {
   SEMANA
   SABADO

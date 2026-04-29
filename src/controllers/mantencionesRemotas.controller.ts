@@ -792,7 +792,14 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
     const to = toQ ? new Date(toQ) : endDefault;
 
     const user = getUser(req);
-    const empresaIdFilter = isCliente(user) ? parsePositiveInt(user.empresaId) : null;
+
+    const empresaIdQ = req.query.empresaId as string | undefined;
+
+    const empresaIdFilter = isCliente(user)
+      ? parsePositiveInt(user.empresaId)
+      : empresaIdQ
+        ? parsePositiveInt(empresaIdQ)
+        : null;
 
     const baseWhere: Prisma.MantencionRemotaWhereInput = {
       ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),

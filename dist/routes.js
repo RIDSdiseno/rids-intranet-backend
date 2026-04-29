@@ -55,6 +55,8 @@ import iaRecomendacionesRouter from "./routes/ia-intranet-routes/ia-recomendacio
 import { agendaRouter } from "./routes/agenda.routes.js";
 /* ===================== CORREO ===================== */
 import correoRouter from "./routes/correo.routes.js";
+/* ==================== SII simple api ================ */
+import simpleapiRouter from "./routes/Simpleapi.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
@@ -120,6 +122,8 @@ api.use("/ia-reportes", iaReportesRouter);
 api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 /* ===================== CORREO ===================== */
 api.use("/correo", correoRouter);
+/* ==================== SII simple api ================ */
+api.use("/facturas", simpleapiRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

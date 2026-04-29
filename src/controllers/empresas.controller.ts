@@ -17,7 +17,7 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
 
     // Base: empresas (solo id + nombre)
     const user = (req as any).user;
- 
+
     console.log("USER:", user);
 
     const whereEmpresa =
@@ -129,7 +129,7 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         arr.push({ id_visita: v.id_visita, status: v.status });
         visitasPorEmpresa.set(empId, arr);
       }
-      
+
       // Armar respuesta final combinando todo
       const data = empresasBase.map((e) => {
         const solicitantesEmp = solPorEmpresa.get(e.id_empresa) ?? [];
@@ -188,10 +188,13 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
 
     // ------- RÁPIDO CON STATS (agregados) -------
 
-    // 1) Solicitantes por empresa
+    // 1) Solicitantes activos por empresa
     const solCount = await prisma.solicitante.groupBy({
       by: ["empresaId"],
-      where: { empresaId: { in: empresaIds } },
+      where: {
+        empresaId: { in: empresaIds },
+        isActive: true,
+      },
       _count: { empresaId: true },
     });
 
@@ -233,9 +236,13 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
 
     // 5) Equipos por empresa (vía solicitantes)
     const solicitantesDeEmp = await prisma.solicitante.findMany({
-      where: { empresaId: { in: empresaIds } },
+      where: {
+        empresaId: { in: empresaIds },
+        isActive: true,
+      },
       select: { id_solicitante: true, empresaId: true },
     });
+
     const solicIds = solicitantesDeEmp.map((s) => s.id_solicitante);
     const equiposCountPorSolic = solicIds.length
       ? await prisma.equipo.groupBy({
@@ -312,7 +319,7 @@ export async function getEmpresasStats(
     const user = (req as any).user;
 
     console.log("USER:", user);
-    
+
     if (user?.rol === "CLIENTE") {
       res.status(403).json({ error: "No autorizado" });
       return;

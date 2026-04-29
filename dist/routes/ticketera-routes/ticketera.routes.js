@@ -1,6 +1,6 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
-import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket, getTicketsHomeSummary } from "../../controllers/tickets-rids/ticketera.controller.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
@@ -31,6 +31,7 @@ ticketeraRouter.get("/kpis", getTicketKpis);
 ticketeraRouter.get("/kpis/agent", getTicketKpisByAgent);
 ticketeraRouter.get("/dashboard", getAgentDashboard);
 ticketeraRouter.get("/queues", getTicketQueues);
+ticketeraRouter.get("/home-summary", getTicketsHomeSummary);
 ticketeraRouter.patch("/bulk", bulkUpdateTickets);
 ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
 // =======================

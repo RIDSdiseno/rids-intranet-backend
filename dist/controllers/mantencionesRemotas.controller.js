@@ -660,7 +660,12 @@ export const mantencionesRemotasMetrics = async (req, res) => {
         const from = fromQ ? new Date(fromQ) : startDefault;
         const to = toQ ? new Date(toQ) : endDefault;
         const user = getUser(req);
-        const empresaIdFilter = isCliente(user) ? parsePositiveInt(user.empresaId) : null;
+        const empresaIdQ = req.query.empresaId;
+        const empresaIdFilter = isCliente(user)
+            ? parsePositiveInt(user.empresaId)
+            : empresaIdQ
+                ? parsePositiveInt(empresaIdQ)
+                : null;
         const baseWhere = {
             ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
             inicio: { gte: from, lt: to },

@@ -562,6 +562,28 @@ export async function listTickets(req, res) {
                         },
                     },
                 },
+                {
+                    requester: {
+                        email: {
+                            contains: searchValue,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    messages: {
+                        some: {
+                            OR: [
+                                {
+                                    bodyText: {
+                                        contains: searchValue,
+                                        mode: "insensitive",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
                 ...(Number.isInteger(searchNumber)
                     ? [
                         {
@@ -648,8 +670,13 @@ export async function listTickets(req, res) {
             tickets = result[0];
             total = result[1];
         }
+        const whereCounts = {
+            ...whereActual,
+        };
+        delete whereCounts.status;
         const statusCounts = await prisma.ticket.groupBy({
             by: ["status"],
+            where: whereCounts,
             _count: {
                 status: true,
             },
@@ -721,11 +748,11 @@ export async function getTicketById(req, res) {
                 requester: true,
                 assignee: true,
                 messages: {
-                    orderBy: { createdAt: "asc" },
+                    orderBy: { createdAt: "desc" },
                     include: { attachments: true },
                 },
                 events: {
-                    orderBy: { createdAt: "asc" },
+                    orderBy: { createdAt: "desc" },
                 },
             },
         });
@@ -757,11 +784,11 @@ export async function getTicketById(req, res) {
                         requester: true,
                         assignee: true,
                         messages: {
-                            orderBy: { createdAt: "asc" },
+                            orderBy: { createdAt: "desc" },
                             include: { attachments: true },
                         },
                         events: {
-                            orderBy: { createdAt: "asc" },
+                            orderBy: { createdAt: "desc" },
                         },
                     },
                 });
@@ -1292,6 +1319,62 @@ export async function deleteTicket(req, res) {
         return res.status(500).json({
             ok: false,
             message: "Error al eliminar ticket",
+        });
+    }
+}
+// count tickets mes
+export async function getTicketsHomeSummary(req, res) {
+    try {
+        const fromParam = req.query.from ? String(req.query.from) : null;
+        const toParam = req.query.to ? String(req.query.to) : null;
+        const from = fromParam ? new Date(`${fromParam}T00:00:00-04:00`) : null;
+        const to = toParam ? new Date(`${toParam}T00:00:00-04:00`) : null;
+        const dateFilter = from || to
+            ? {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lt: to } : {}),
+            }
+            : undefined;
+        const [recibidos, cerrados, resueltos] = await Promise.all([
+            prisma.ticket.count({
+                where: {
+                    deletedAt: null,
+                    ...(dateFilter ? { createdAt: dateFilter } : {}),
+                },
+            }),
+            prisma.ticket.count({
+                where: {
+                    deletedAt: null,
+                    status: "CLOSED",
+                    ...(dateFilter ? { closedAt: dateFilter } : {}),
+                },
+            }),
+            prisma.ticket.count({
+                where: {
+                    deletedAt: null,
+                    status: "RESOLVED",
+                    ...(dateFilter ? { resolvedAt: dateFilter } : {}),
+                },
+            }),
+        ]);
+        return res.json({
+            ok: true,
+            range: {
+                from,
+                to,
+            },
+            data: {
+                recibidos,
+                cerrados,
+                resueltos,
+            },
+        });
+    }
+    catch (error) {
+        console.error("[helpdesk] getTicketsHomeSummary error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error obteniendo resumen de tickets",
         });
     }
 }

@@ -19,4 +19,5 @@ export declare function proxyExternalImage(req: Request, res: Response): Promise
 export declare function bulkUpdateTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function bulkMergeTickets(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function deleteTicket(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getTicketsHomeSummary(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=ticketera.controller.d.ts.map

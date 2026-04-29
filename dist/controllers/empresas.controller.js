@@ -144,10 +144,13 @@ export async function getEmpresas(req, res) {
             return;
         }
         // ------- RÁPIDO CON STATS (agregados) -------
-        // 1) Solicitantes por empresa
+        // 1) Solicitantes activos por empresa
         const solCount = await prisma.solicitante.groupBy({
             by: ["empresaId"],
-            where: { empresaId: { in: empresaIds } },
+            where: {
+                empresaId: { in: empresaIds },
+                isActive: true,
+            },
             _count: { empresaId: true },
         });
         // 2) Tickets abiertos por empresa (status != 5)
@@ -178,7 +181,10 @@ export async function getEmpresas(req, res) {
         const ticketsTotalMap = new Map(ticketsTotal.map(r => [r.empresaId, r._count._all]));
         // 5) Equipos por empresa (vía solicitantes)
         const solicitantesDeEmp = await prisma.solicitante.findMany({
-            where: { empresaId: { in: empresaIds } },
+            where: {
+                empresaId: { in: empresaIds },
+                isActive: true,
+            },
             select: { id_solicitante: true, empresaId: true },
         });
         const solicIds = solicitantesDeEmp.map((s) => s.id_solicitante);

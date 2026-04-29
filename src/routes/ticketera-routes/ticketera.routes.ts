@@ -13,7 +13,8 @@ import {
     proxyExternalImage,
     bulkUpdateTickets,
     bulkMergeTickets,
-    deleteTicket
+    deleteTicket,
+    getTicketsHomeSummary
 } from "../../controllers/tickets-rids/ticketera.controller.js";
 
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
@@ -78,6 +79,7 @@ ticketeraRouter.get("/kpis", getTicketKpis);
 ticketeraRouter.get("/kpis/agent", getTicketKpisByAgent);
 ticketeraRouter.get("/dashboard", getAgentDashboard);
 ticketeraRouter.get("/queues", getTicketQueues);
+ticketeraRouter.get("/home-summary", getTicketsHomeSummary);
 ticketeraRouter.patch("/bulk", bulkUpdateTickets);
 ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
 
