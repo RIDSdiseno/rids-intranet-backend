@@ -4,8 +4,6 @@ import type { Request, Response } from "express";
 
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 
-import { getSimpleAPIConfig, generarDTE, generarSobre, enviarAlSII, consultarEstadoEnvio } from "../service/simple-api/simpleapi.service.js";
-
 const prisma = new PrismaClient();
 
 // UTILIDADES
@@ -968,6 +966,8 @@ export async function cambiarEstadoFactura(req: Request, res: Response) {
 // =====================================================
 //      EMITIR FACTURA AL SII - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
+
+/*
 export async function emitirFacturaSII(req: Request, res: Response) {
 
     const { id } = req.params;
@@ -1196,4 +1196,4 @@ export async function consultarEstadoSII(req: Request, res: Response) {
         });
     }
 }
-
+*/

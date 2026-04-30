@@ -1,36 +1,86 @@
 // src/controllers/simpleapi.controller.ts
-import { consultarVentasRCV, consultarResumenVentasRCV, } from "../service/simple-api/simpleapi.service.js";
-// Mapa de empresas permitidas
+import { consultarVentasRCV, consultarResumenVentasRCV, consultarComprasRCV, consultarResumenComprasRCV, } from "../service/simple-api/simpleapi.service.js";
 const EMPRESAS_PERMITIDAS = {
     econnet: process.env.RUT_EMPRESA ?? "",
     rids: process.env.RIDS_RUT_EMPRESA ?? "",
 };
+function validarMesAno(mes, ano) {
+    if (!mes || !ano) {
+        return "Parámetros requeridos: mes (01-12) y ano (ej: 2026)";
+    }
+    const mesNormalizado = String(mes).padStart(2, "0");
+    if (!/^\d{2}$/.test(mesNormalizado) ||
+        Number(mesNormalizado) < 1 ||
+        Number(mesNormalizado) > 12) {
+        return "Mes inválido. Debe estar entre 01 y 12";
+    }
+    if (!/^\d{4}$/.test(ano)) {
+        return "Año inválido. Debe tener formato YYYY";
+    }
+    return null;
+}
+function resolverRutEmpresa(empresaRaw) {
+    const empresa = String(empresaRaw ?? "").toLowerCase().trim();
+    if (!empresa) {
+        return {
+            ok: false,
+            error: "Debe enviar empresa. Ejemplo: empresa=econnet",
+        };
+    }
+    const rutEmpresa = EMPRESAS_PERMITIDAS[empresa];
+    if (!rutEmpresa) {
+        return {
+            ok: false,
+            error: `Empresa inválida o sin RUT configurado: ${empresa}`,
+        };
+    }
+    return {
+        ok: true,
+        empresa,
+        rutEmpresa,
+    };
+}
+function parseForceRefresh(req) {
+    return req.query.refresh === "true";
+}
 // ============================================================
-// GET /api/facturas/ventas?mes=04&ano=2025&empresa=rids&refresh=true
-// refresh=true fuerza nueva consulta al SII (gasta token)
-// Sin refresh=true devuelve caché si existe
+// GET /api/facturas/ventas?mes=01&ano=2026&empresa=econnet&refresh=true
 // ============================================================
 export async function getVentasRCV(req, res) {
     try {
         const mes = req.query.mes;
         const ano = req.query.ano;
-        const empresa = req.query.empresa?.toLowerCase();
-        const forceRefresh = req.query.refresh === "true";
-        if (!mes || !ano) {
+        const forceRefresh = parseForceRefresh(req);
+        const errorPeriodo = validarMesAno(mes, ano);
+        if (errorPeriodo) {
             res.status(400).json({
                 ok: false,
-                error: "Parámetros requeridos: mes (01-12) y ano (ej: 2025)",
+                error: errorPeriodo,
             });
             return;
         }
-        const rutEmpresa = empresa && EMPRESAS_PERMITIDAS[empresa]
-            ? EMPRESAS_PERMITIDAS[empresa]
-            : undefined;
-        console.log("🏢 empresa:", empresa, "| rut:", rutEmpresa, "| forceRefresh:", forceRefresh);
-        const resultado = await consultarVentasRCV(mes, ano, rutEmpresa, forceRefresh);
+        const empresaResult = resolverRutEmpresa(req.query.empresa);
+        if (!empresaResult.ok) {
+            res.status(400).json({
+                ok: false,
+                error: empresaResult.error,
+            });
+            return;
+        }
+        console.log("🏢 RCV ventas:", {
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            mes,
+            ano,
+            forceRefresh,
+        });
+        const resultado = await consultarVentasRCV(mes, ano, empresaResult.empresa, empresaResult.rutEmpresa, forceRefresh);
         res.json({
             ok: true,
-            data: resultado,
+            source: resultado.source,
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            data: resultado.data,
         });
     }
     catch (error) {
@@ -42,27 +92,36 @@ export async function getVentasRCV(req, res) {
     }
 }
 // ============================================================
-// GET /api/facturas/ventas/resumen?mes=04&ano=2025&empresa=rids
+// GET /api/facturas/ventas/resumen?mes=01&ano=2026&empresa=econnet
 // ============================================================
 export async function getResumenVentasRCV(req, res) {
     try {
         const mes = req.query.mes;
         const ano = req.query.ano;
-        const empresa = req.query.empresa?.toLowerCase();
-        if (!mes || !ano) {
+        const forceRefresh = parseForceRefresh(req);
+        const errorPeriodo = validarMesAno(mes, ano);
+        if (errorPeriodo) {
             res.status(400).json({
                 ok: false,
-                error: "Parámetros requeridos: mes (01-12) y ano (ej: 2025)",
+                error: errorPeriodo,
             });
             return;
         }
-        const rutEmpresa = empresa && EMPRESAS_PERMITIDAS[empresa]
-            ? EMPRESAS_PERMITIDAS[empresa]
-            : undefined;
-        const resultado = await consultarResumenVentasRCV(mes, ano, rutEmpresa);
+        const empresaResult = resolverRutEmpresa(req.query.empresa);
+        if (!empresaResult.ok) {
+            res.status(400).json({
+                ok: false,
+                error: empresaResult.error,
+            });
+            return;
+        }
+        const resultado = await consultarResumenVentasRCV(mes, ano, empresaResult.empresa, empresaResult.rutEmpresa, forceRefresh);
         res.json({
             ok: true,
-            data: resultado,
+            source: resultado.source,
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            data: resultado.data,
         });
     }
     catch (error) {
@@ -70,6 +129,95 @@ export async function getResumenVentasRCV(req, res) {
         res.status(500).json({
             ok: false,
             error: error?.message ?? "Error interno al consultar resumen",
+        });
+    }
+}
+// ============================================================
+// GET /api/facturas/compras?mes=01&ano=2026&empresa=econnet&refresh=true
+// ============================================================
+export async function getComprasRCV(req, res) {
+    try {
+        const mes = req.query.mes;
+        const ano = req.query.ano;
+        const forceRefresh = parseForceRefresh(req);
+        const errorPeriodo = validarMesAno(mes, ano);
+        if (errorPeriodo) {
+            res.status(400).json({
+                ok: false,
+                error: errorPeriodo,
+            });
+            return;
+        }
+        const empresaResult = resolverRutEmpresa(req.query.empresa);
+        if (!empresaResult.ok) {
+            res.status(400).json({
+                ok: false,
+                error: empresaResult.error,
+            });
+            return;
+        }
+        console.log("🏢 RCV compras:", {
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            mes,
+            ano,
+            forceRefresh,
+        });
+        const resultado = await consultarComprasRCV(mes, ano, empresaResult.empresa, empresaResult.rutEmpresa, forceRefresh);
+        res.json({
+            ok: true,
+            source: resultado.source,
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            data: resultado.data,
+        });
+    }
+    catch (error) {
+        console.error("❌ Error consultando compras RCV:", error?.message ?? error);
+        res.status(500).json({
+            ok: false,
+            error: error?.message ?? "Error interno al consultar compras",
+        });
+    }
+}
+// ============================================================
+// GET /api/facturas/compras/resumen?mes=01&ano=2026&empresa=econnet
+// ============================================================
+export async function getResumenComprasRCV(req, res) {
+    try {
+        const mes = req.query.mes;
+        const ano = req.query.ano;
+        const forceRefresh = parseForceRefresh(req);
+        const errorPeriodo = validarMesAno(mes, ano);
+        if (errorPeriodo) {
+            res.status(400).json({
+                ok: false,
+                error: errorPeriodo,
+            });
+            return;
+        }
+        const empresaResult = resolverRutEmpresa(req.query.empresa);
+        if (!empresaResult.ok) {
+            res.status(400).json({
+                ok: false,
+                error: empresaResult.error,
+            });
+            return;
+        }
+        const resultado = await consultarResumenComprasRCV(mes, ano, empresaResult.empresa, empresaResult.rutEmpresa, forceRefresh);
+        res.json({
+            ok: true,
+            source: resultado.source,
+            empresa: empresaResult.empresa,
+            rutEmpresa: empresaResult.rutEmpresa,
+            data: resultado.data,
+        });
+    }
+    catch (error) {
+        console.error("❌ Error consultando resumen compras RCV:", error?.message ?? error);
+        res.status(500).json({
+            ok: false,
+            error: error?.message ?? "Error interno al consultar resumen compras",
         });
     }
 }

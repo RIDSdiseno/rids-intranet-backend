@@ -1,397 +1,330 @@
-// simpleapi.service.ts
+// src/service/simple-api/simpleapi.service.ts
+
+import axios from "axios";
+import fs from "fs";
+import FormData from "form-data";
+
+import {
+  getSiiApiCache,
+  saveSiiApiCache,
+} from "./simple-api-cache.service.js";
 
 // ============================================================
-// TIPOS
+// Tipos
 // ============================================================
-interface SimpleAPIConfig {
-  url: string;
-  apiKey: string;
-  rutEmpresa: string;
-  razonSocial: string;
-  giro: string;
-  direccion: string;
-  comuna: string;
-  ciudad: string;
-  certBase64: string;
-  certPassword: string;
-  certRut: string;
-  ambiente: 0 | 1;
-  cafXml: string | undefined;
-  cafXmlBase64: string | undefined;
-}
 
-interface DTEGenerado {
-  xml: string;
-  folio: number;
-  trackId?: string;
-  raw?: any;
-}
-
-interface CAFInfo {
-  xml: string;
-  tipoDTE: number | null;
-  folioDesde: number | null;
-  folioHasta: number | null;
-}
-
-export interface VentaRCV {
+export type VentaRCV = {
   folio: number;
   tipoDTE: number;
+  tipoDTEString?: string;
+  tipoVenta?: string;
   rutReceptor: string;
   razonSocialReceptor: string;
   fechaEmision: string;
+  fechaRecepcion?: string;
+  fechaAcuseRecibo?: string;
+  montoExento: number;
   montoNeto: number;
   montoIVA: number;
+  montoIvaRecuperable?: number;
   montoTotal: number;
   estado: string;
-}
+  raw?: unknown;
+};
 
-export interface ResultadoVentasRCV {
+export type ResumenVentaRCV = {
+  tipoDte: number;
+  tipoDteString: string;
+  totalDocumentos: number;
+  montoExento: number;
+  montoNeto: number;
+  ivaRecuperable: number;
+  ivaUsoComun: number;
+  ivaNoRecuperable: number;
+  montoTotal: number;
+  estado: string | null;
+};
+
+export type ResultadoVentasRCV = {
   rut: string;
   mes: string;
   ano: string;
+  periodo: string;
+  resumenes: ResumenVentaRCV[];
   ventas: VentaRCV[];
   total: number;
-}
+  raw?: unknown;
+};
+
+export type CompraRCV = {
+  folio: number;
+  tipoDTE: number;
+  tipoDTEString?: string;
+  tipoCompra?: string;
+  rutProveedor: string;
+  razonSocialProveedor: string;
+  fechaEmision: string;
+  fechaRecepcion?: string;
+  fechaAcuse?: string;
+  montoExento: number;
+  montoNeto: number;
+  montoIVA: number;
+  montoIvaRecuperable?: number;
+  montoIvaNoRecuperable?: number;
+  montoTotal: number;
+  estado: string;
+  raw?: unknown;
+};
+
+export type ResumenCompraRCV = {
+  tipoDte: number;
+  tipoDteString: string;
+  totalDocumentos: number;
+  montoExento: number;
+  montoNeto: number;
+  ivaRecuperable: number;
+  ivaUsoComun: number;
+  ivaNoRecuperable: number;
+  montoTotal: number;
+  estado: string | null;
+};
+
+export type ResultadoComprasRCV = {
+  rut: string;
+  mes: string;
+  ano: string;
+  periodo: string;
+  resumenes: ResumenCompraRCV[];
+  compras: CompraRCV[];
+  total: number;
+  raw?: unknown;
+};
+
+type RcvSource = "cache" | "simpleapi";
+
+type RcvServiceResult<T> = {
+  source: RcvSource;
+  data: T;
+};
 
 // ============================================================
-// CACHÉ EN MEMORIA
-// Solo se invalida cuando forceRefresh=true (botón Recargar)
-// Persiste mientras el servidor esté corriendo
+// Helpers
 // ============================================================
-const cacheRCV = new Map<string, ResultadoVentasRCV>();
 
-function getCacheKey(rut: string, mes: string, ano: string): string {
-  return `${rut}-${mes}-${ano}`;
-}
-
-// ============================================================
-// HELPERS
-// ============================================================
-function truncar(valor: unknown, max: number): string {
-  const texto = String(valor ?? "").trim();
-  return texto.length > max ? texto.slice(0, max) : texto;
-}
-
-function toInt(valor: unknown): number {
-  if (typeof valor === "number") {
-    return Number.isFinite(valor) ? Math.round(valor) : 0;
-  }
-  if (typeof valor === "string") {
-    const normalizado = valor
-      .replace(/\./g, "")
-      .replace(/,/g, ".")
-      .replace(/[^\d.-]/g, "");
-    const num = Number(normalizado);
-    return Number.isFinite(num) ? Math.round(num) : 0;
-  }
-  return 0;
-}
-
-function formatFechaAAAAMMDD(fecha = new Date()): string {
-  const year = fecha.getFullYear();
-  const month = String(fecha.getMonth() + 1).padStart(2, "0");
-  const day = String(fecha.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function limpiarRut(rut: string): string {
-  const limpio = String(rut ?? "")
+function limpiarRut(rut?: string | null): string {
+  return String(rut ?? "")
     .replace(/\./g, "")
-    .replace(/\s+/g, "")
+    .trim()
     .toUpperCase();
-  const match = limpio.match(/^(\d+)-?([\dK])$/i);
-  return match ? `${match[1] ?? ""}-${(match[2] ?? "").toUpperCase()}` : limpio;
 }
 
-function safeJsonParse(value: string): any {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+function toInt(value: unknown): number {
+  if (value === null || value === undefined || value === "") return 0;
+
+  const cleaned = String(value)
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .trim();
+
+  const parsed = Number(cleaned);
+
+  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
 }
 
-function extraerTag(xml: string, tag: string): string | null {
-  const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i");
-  const match = xml.match(regex);
-  return match?.[1]?.trim() ?? null;
+function getAmbienteSimpleApi(): number {
+  // SimpleAPI doc:
+  // Ambiente: 1 producción, 0 certificación.
+  //
+  // Para consultar RCV real del SII normalmente debe ser 1.
+  // Si quieres controlar por .env:
+  // SII_AMBIENTE=produccion -> 1
+  // SII_AMBIENTE=certificacion -> 0
+  const ambiente = process.env.SII_AMBIENTE?.toLowerCase().trim();
+
+  if (ambiente === "certificacion") return 0;
+
+  return 1;
 }
 
-function parseCAF(config: SimpleAPIConfig): CAFInfo {
-  let xml = config.cafXml?.trim();
-  if (!xml && config.cafXmlBase64) {
-    xml = Buffer.from(config.cafXmlBase64, "base64").toString("utf-8").trim();
-  }
-  if (!xml) throw new Error("No hay CAF configurado");
+function getCertBuffer(): Buffer {
+  const certPath = process.env.SII_CERT_PATH?.trim();
+  const certBase64 = process.env.SII_CERT_BASE64?.trim();
 
-  const tipoDTE = Number(extraerTag(xml, "TD"));
-  const folioDesde = Number(extraerTag(xml, "D"));
-  const folioHasta = Number(extraerTag(xml, "H"));
+  if (certPath) {
+    if (!fs.existsSync(certPath)) {
+      throw new Error(`No existe el certificado PFX en la ruta configurada: ${certPath}`);
+    }
 
-  return {
-    xml,
-    tipoDTE: Number.isFinite(tipoDTE) ? tipoDTE : null,
-    folioDesde: Number.isFinite(folioDesde) ? folioDesde : null,
-    folioHasta: Number.isFinite(folioHasta) ? folioHasta : null,
-  };
-}
+    const buffer = fs.readFileSync(certPath);
 
-function resolverFolio(factura: any, cafInfo: CAFInfo): number {
-  const candidatos = [factura?.folio, factura?.folioDTE, factura?.numero, factura?.nro]
-    .map((v) => Number(v))
-    .filter((v) => Number.isFinite(v) && v > 0);
-
-  if (candidatos.length > 0) {
-    const folio = candidatos[0]!;
-    if (
-      cafInfo.folioDesde != null &&
-      cafInfo.folioHasta != null &&
-      (folio < cafInfo.folioDesde || folio > cafInfo.folioHasta)
-    ) {
+    if (buffer.length < 1000) {
       throw new Error(
-        `El folio ${folio} está fuera del rango del CAF (${cafInfo.folioDesde}-${cafInfo.folioHasta})`
+        `El certificado PFX parece inválido o incompleto. Bytes leídos desde SII_CERT_PATH: ${buffer.length}`
       );
     }
-    return folio;
+
+    return buffer;
   }
 
-  if (cafInfo.folioDesde != null) return cafInfo.folioDesde;
-  throw new Error("No se pudo resolver el folio del DTE");
-}
+  if (certBase64) {
+    const buffer = Buffer.from(certBase64, "base64");
 
-// ============================================================
-// CONFIG
-// ============================================================
-export function getSimpleAPIConfig(): SimpleAPIConfig {
-  const required: Record<string, string | undefined> = {
-    SIMPLEAPI_URL: process.env.SIMPLEAPI_URL,
-    SIMPLEAPI_KEY: process.env.SIMPLEAPI_KEY,
-    RUT_EMPRESA: process.env.RUT_EMPRESA,
-    RAZON_SOCIAL_EMPRESA: process.env.RAZON_SOCIAL_EMPRESA,
-    GIRO_EMPRESA: process.env.GIRO_EMPRESA,
-    DIRECCION_EMPRESA: process.env.DIRECCION_EMPRESA,
-    COMUNA_EMPRESA: process.env.COMUNA_EMPRESA,
-    CIUDAD_EMPRESA: process.env.CIUDAD_EMPRESA,
-    SII_CERT_BASE64: process.env.SII_CERT_BASE64,
-    SII_CERT_PASSWORD: process.env.SII_CERT_PASSWORD,
-    RUT_FIRMANTE: process.env.RUT_FIRMANTE,
-  };
-
-  const missing = Object.entries(required)
-    .filter(([, v]) => !v)
-    .map(([k]) => k);
-
-  if (missing.length > 0) {
-    throw new Error(`Faltan variables de entorno: ${missing.join(", ")}`);
-  }
-
-  return {
-    url: process.env.SIMPLEAPI_URL!,
-    apiKey: process.env.SIMPLEAPI_KEY!,
-    rutEmpresa: process.env.RUT_EMPRESA!,
-    razonSocial: process.env.RAZON_SOCIAL_EMPRESA!,
-    giro: process.env.GIRO_EMPRESA!,
-    direccion: process.env.DIRECCION_EMPRESA!,
-    comuna: process.env.COMUNA_EMPRESA!,
-    ciudad: process.env.CIUDAD_EMPRESA!,
-    certBase64: process.env.SII_CERT_BASE64!,
-    certPassword: process.env.SII_CERT_PASSWORD!,
-    certRut: process.env.RUT_FIRMANTE!,
-    ambiente: process.env.SII_AMBIENTE === "certificacion" ? 1 : 0,
-    cafXml: process.env.SII_CAF_XML,
-    cafXmlBase64: process.env.SII_CAF_XML_BASE64,
-  };
-}
-
-// ============================================================
-// OBTENER TOKEN DE SIMPLEAPI DTE (cacheable)
-// ============================================================
-let cachedToken: string | null = null;
-let tokenExpiry = 0;
-
-async function getSimpleAPIToken(config: SimpleAPIConfig): Promise<string> {
-  const ahora = Date.now();
-
-  if (cachedToken && ahora < tokenExpiry) {
-    console.log("🔑 Usando token cacheado");
-    return cachedToken;
-  }
-
-  console.log("🔑 Obteniendo nuevo token de SimpleAPI...");
-
-  const response = await fetch(`${config.url}/api/Auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ apikey: config.apiKey }),
-  });
-
-  const rawText = await response.text();
-  console.log("🔑 Auth STATUS:", response.status);
-  console.log("🔑 Auth RAW:", rawText);
-
-  if (!response.ok || !rawText?.trim()) {
-    throw new Error(
-      `SimpleAPI Auth falló (${response.status}): ${rawText || "respuesta vacía"}. ` +
-        `Verifica que SIMPLEAPI_KEY sea válida: ${config.apiKey}`
-    );
-  }
-
-  let token: string;
-  try {
-    const data = JSON.parse(rawText);
-    token =
-      typeof data === "string"
-        ? data
-        : (data.token ?? data.access_token ?? data.jwt ?? data.Token);
-  } catch {
-    token = rawText.trim().replace(/^"|"$/g, "");
-  }
-
-  if (!token) {
-    throw new Error(`SimpleAPI Auth no retornó token. Respuesta: ${rawText}`);
-  }
-
-  cachedToken = token;
-  tokenExpiry = ahora + 50 * 60 * 1000;
-
-  console.log("✅ Token obtenido:", token.substring(0, 30) + "...");
-  return token;
-}
-
-// ============================================================
-// HELPER: llamada HTTP a SimpleAPI DTE — CON BEARER TOKEN
-// ============================================================
-async function callSimpleAPI(config: SimpleAPIConfig, endpoint: string, body: object) {
-  const token = await getSimpleAPIToken(config);
-  const url = `${config.url}${endpoint}`;
-  console.log("📡 SimpleAPI URL:", url);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  const rawText = await response.text();
-  console.log("📥 STATUS:", response.status);
-  console.log("📥 RAW:", rawText || "(vacío)");
-
-  if (response.status === 401) {
-    console.log("⚠️ Token expirado, limpiando caché y reintentando...");
-    cachedToken = null;
-    tokenExpiry = 0;
-
-    const newToken = await getSimpleAPIToken(config);
-    const retry = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${newToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const retryText = await retry.text();
-    console.log("📥 RETRY STATUS:", retry.status);
-    console.log("📥 RETRY RAW:", retryText);
-
-    if (!retry.ok) {
+    if (buffer.length < 1000) {
       throw new Error(
-        `SimpleAPI error ${retry.status} en ${endpoint} (después de reintento): ${retryText}`
+        `El certificado PFX en SII_CERT_BASE64 parece inválido o incompleto. Bytes decodificados: ${buffer.length}`
       );
     }
-    return JSON.parse(retryText);
+
+    return buffer;
   }
 
-  if (!rawText?.trim()) {
-    throw new Error(`SimpleAPI respuesta vacía (${response.status}) en ${endpoint}`);
-  }
-
-  let data: any;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    throw new Error(
-      `SimpleAPI respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(`SimpleAPI error ${response.status} en ${endpoint}: ${JSON.stringify(data)}`);
-  }
-
-  return data;
+  throw new Error("Falta SII_CERT_PATH o SII_CERT_BASE64 para adjuntar el certificado PFX");
 }
 
-// ============================================================
-// HELPER: llamada HTTP a SimpleAPI RCV
-// Usa multipart/form-data con certificado .pfx + Bearer token
-// URL completa incluye mes y año: /api/RCV/ventas/MM/AAAA
-// ============================================================
-async function callSimpleAPIRCV(urlCompleta: string, rutEmpresaOverride?: string): Promise<any> {
-  const certBase64 = process.env.SII_CERT_BASE64;
-  const certPassword = process.env.SII_CERT_PASSWORD;
-  const rutCertificado = process.env.RUT_FIRMANTE;
+function getSimpleApiKey(): string {
+  const apiKey = process.env.SIMPLEAPI_KEY?.trim();
+
+  if (!apiKey) {
+    throw new Error("Falta variable de entorno SIMPLEAPI_KEY");
+  }
+
+  return apiKey;
+}
+
+function getSimpleApiRcvUrl(): string {
+  const rcvUrl = process.env.SIMPLEAPI_RCV_URL?.trim();
+
+  if (!rcvUrl) {
+    throw new Error("Falta variable de entorno SIMPLEAPI_RCV_URL");
+  }
+
+  return rcvUrl.replace(/\/+$/, "");
+}
+
+function getRutCertificado(): string {
+  const rutCertificado = process.env.RUT_FIRMANTE?.trim();
+
+  if (!rutCertificado) {
+    throw new Error("Falta variable de entorno RUT_FIRMANTE");
+  }
+
+  return limpiarRut(rutCertificado);
+}
+
+function getCertPassword(): string {
+  const password = process.env.SII_CERT_PASSWORD;
+
+  if (!password) {
+    throw new Error("Falta variable de entorno SII_CERT_PASSWORD");
+  }
+
+  return password;
+}
+
+function getRutEmpresa(rutEmpresaOverride?: string): string {
   const rutEmpresa = rutEmpresaOverride ?? process.env.RUT_EMPRESA;
 
-  if (!certBase64 || !certPassword || !rutCertificado || !rutEmpresa) {
-    throw new Error("Faltan variables de entorno para RCV: SII_CERT_BASE64, SII_CERT_PASSWORD, RUT_FIRMANTE o RUT_EMPRESA");
+  if (!rutEmpresa) {
+    throw new Error("Falta RUT_EMPRESA o rutEmpresaOverride");
   }
 
-  const config = getSimpleAPIConfig();
-  const token = await getSimpleAPIToken(config);
+  return limpiarRut(rutEmpresa);
+}
 
-  const certBuffer = Buffer.from(certBase64, "base64");
+function safeJsonParse(rawText: string): any {
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    throw new Error(
+      `SimpleAPI RCV respuesta no es JSON: ${rawText.slice(0, 300)}`
+    );
+  }
+}
+
+// ============================================================
+// Llamada base SimpleAPI RCV
+// ============================================================
+
+async function callSimpleAPIRCV(
+  urlCompleta: string,
+  rutEmpresaOverride?: string
+): Promise<any> {
+  const apiKey = getSimpleApiKey();
+  const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
+  const rutCertificado = getRutCertificado();
+  const certPassword = getCertPassword();
+  const certBuffer = getCertBuffer();
+
+  const input = {
+    RutCertificado: rutCertificado,
+    RutEmpresa: rutEmpresa,
+    Ambiente: getAmbienteSimpleApi(),
+    Password: certPassword,
+  };
+
   const formData = new FormData();
 
-  const inputJson = JSON.stringify({
-    RutCertificado: limpiarRut(rutCertificado),
-    RutEmpresa: limpiarRut(rutEmpresa),
-    Ambiente: 1,
-    Password: certPassword,
+  formData.append("input", JSON.stringify(input));
+  formData.append("files", certBuffer, {
+    filename: "certificado.pfx",
+    contentType: "application/octet-stream",
   });
-
-  formData.append("input", inputJson);
-
-  const certBlob = new Blob([certBuffer], { type: "application/octet-stream" });
-  formData.append("files", certBlob, "certificado.pfx");
 
   console.log("📡 SimpleAPI RCV URL:", urlCompleta);
-  console.log("📡 RCV RutEmpresa:", limpiarRut(rutEmpresa));
-
-  const response = await fetch(urlCompleta, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  }).catch((err) => {
-    console.error("❌ FETCH ERROR DETALLE:", err?.cause ?? err);
-    throw err;
+  console.log("📡 RCV RutEmpresa:", rutEmpresa);
+  console.log("🔑 SIMPLEAPI_KEY cargada:", {
+    exists: Boolean(apiKey),
+    length: apiKey.length,
+    prefix: apiKey.slice(0, 4),
+    suffix: apiKey.slice(-4),
+  });
+  console.log("📦 RCV form-data:", {
+    inputKeys: Object.keys(input).map((key) =>
+      key.toLowerCase().includes("password") ? `${key}:***` : key
+    ),
+    hasFile: certBuffer.length > 0,
+    certBytes: certBuffer.length,
   });
 
-  const rawText = await response.text();
-  console.log("📥 RCV STATUS:", response.status);
-  console.log("📥 RCV RAW:", rawText?.slice(0, 800));
+  const response = await axios.request({
+    method: "POST",
+    url: urlCompleta,
+    data: formData,
+    timeout: 180000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    headers: {
+      Authorization: apiKey,
+      Accept: "application/json, text/plain, */*",
+      ...formData.getHeaders(),
+    },
+    validateStatus: () => true,
+    transformResponse: [(data) => data],
+  });
 
-  if (!rawText?.trim()) {
+  const rawText =
+    typeof response.data === "string"
+      ? response.data
+      : JSON.stringify(response.data ?? "");
+
+  console.log("📥 RCV STATUS:", response.status);
+  console.log("📥 RCV RAW:", rawText.slice(0, 1200));
+
+  if (!rawText.trim()) {
     throw new Error(`SimpleAPI RCV respuesta vacía (${response.status})`);
   }
 
-  let data: any;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    throw new Error(
-      `SimpleAPI RCV respuesta no es JSON (${response.status}): ${rawText.slice(0, 300)}`
-    );
-  }
+  const data = safeJsonParse(rawText);
 
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
+    if (data?.mensaje) {
+      throw new Error(String(data.mensaje));
+    }
+
+    if (data?.error) {
+      throw new Error(String(data.error));
+    }
+
     throw new Error(`SimpleAPI RCV error ${response.status}: ${JSON.stringify(data)}`);
   }
 
@@ -399,367 +332,397 @@ async function callSimpleAPIRCV(urlCompleta: string, rutEmpresaOverride?: string
 }
 
 // ============================================================
-// PASO 1: GENERAR DTE
+// Normalizadores
 // ============================================================
-export async function generarDTE(config: SimpleAPIConfig, factura: any): Promise<DTEGenerado> {
-  const cotizacion = factura?.cotizacion;
-  const entidad = cotizacion?.entidad;
 
-  if (!cotizacion) throw new Error("No se recibió factura.cotizacion");
-  if (!entidad) throw new Error("La cotización no tiene entidad/receptor");
-  if (!entidad?.rut) throw new Error("El cliente no tiene RUT registrado");
-  if (!entidad?.nombre) throw new Error("El cliente no tiene nombre registrado");
-  if (!Array.isArray(cotizacion?.items) || cotizacion.items.length === 0) {
-    throw new Error("La cotización no tiene ítems para emitir");
-  }
-  if (!config.cafXml && !config.cafXmlBase64) {
-    throw new Error("No hay CAF configurado para generar DTE");
-  }
-
-  const cafInfo = parseCAF(config);
-
-  console.log("===== VALIDACION CAF =====");
-  console.log("CAF XML LENGTH:", cafInfo.xml.length);
-  console.log("CAF TD:", cafInfo.tipoDTE);
-  console.log("CAF FOLIO DESDE:", cafInfo.folioDesde);
-  console.log("CAF FOLIO HASTA:", cafInfo.folioHasta);
-  console.log("CAF CONTIENE AUTORIZACION:", cafInfo.xml.includes("<AUTORIZACION>"));
-  console.log("CAF CONTIENE TD33:", cafInfo.xml.includes("<TD>33</TD>"));
-  console.log(
-    Buffer.from(process.env.SII_CAF_XML_BASE64 || "", "base64")
-      .toString("utf-8")
-      .slice(0, 500)
-  );
-  console.log("==========================");
-
-  if (cafInfo.tipoDTE == null) {
-    throw new Error("No se pudo leer <TD> del CAF. Revisa el base64 o el XML.");
-  }
-  if (cafInfo.tipoDTE !== 33) {
-    throw new Error(
-      `El CAF configurado no corresponde a Factura Electrónica (33). TD actual: ${cafInfo.tipoDTE}`
-    );
-  }
-
-  const montoNeto = toInt(cotizacion.subtotal);
-  const montoIVA = toInt(cotizacion.iva);
-  const montoTotal = toInt(cotizacion.total);
-
-  if (montoNeto <= 0) throw new Error("Monto neto inválido");
-  if (montoTotal <= 0) throw new Error("Monto total inválido");
-
-  const fechaHoy = formatFechaAAAAMMDD();
-  const rutReceptor = limpiarRut(entidad.rut);
-
-  const casoSet =
-    factura?.casoSet ||
-    factura?.setCaso ||
-    factura?.numeroAtencion ||
-    cotizacion?.casoSet ||
-    cotizacion?.setCaso ||
-    cotizacion?.numeroAtencion ||
-    null;
-
-  const folioPrueba = resolverFolio(factura, cafInfo);
-
-  const detalles = cotizacion.items.map((item: any, index: number) => {
-    const precio = toInt(item?.precio);
-    const cantidad = Number(item?.cantidad) || 1;
-    const montoItem = toInt(precio * cantidad);
-    const nombreBase = item?.nombre || item?.descripcion;
-
-    if (!nombreBase) throw new Error(`Item ${index + 1} no tiene nombre ni descripción`);
-    if (precio < 0 || cantidad <= 0 || montoItem < 0) {
-      throw new Error(`Item ${index + 1} tiene valores inválidos`);
-    }
-
-    return {
-      numeroLinea: index + 1,
-      nombre: truncar(nombreBase, 80),
-      ...(item?.descripcion &&
-      String(item.descripcion).trim() !== String(nombreBase).trim()
-        ? { descripcion: truncar(item.descripcion, 1000) }
-        : {}),
-      cantidad,
-      precio,
-      montoItem,
-    };
-  });
-
-  const referencias = casoSet
-    ? [
-        {
-          nroLinRef: 1,
-          tpoDocRef: "SET",
-          folioRef: String(casoSet).trim(),
-          fchRef: fechaHoy,
-          rznRef: truncar(`CASO ${String(casoSet).trim()}`, 90),
-        },
-      ]
-    : [];
-
-  const payload = {
-    documento: {
-      id: `DTE-33-${folioPrueba}`,
-      encabezado: {
-        identificacionDTE: {
-          tipoDTE: 33,
-          folio: folioPrueba,
-          fechaEmisionString: fechaHoy,
-        },
-        emisor: {
-          rut: limpiarRut(config.rutEmpresa),
-          razonSocial: truncar(config.razonSocial, 100),
-          giro: truncar(config.giro, 80),
-          direccionOrigen: truncar(config.direccion, 70),
-          comunaOrigen: truncar(config.comuna, 20),
-          ciudadOrigen: truncar(config.ciudad, 20),
-        },
-        receptor: {
-          rut: rutReceptor,
-          razonSocial: truncar(entidad.nombre, 100),
-          giro: truncar(entidad.giro ?? "Sin giro", 80),
-          direccion: truncar(entidad.direccion ?? "Sin dirección", 70),
-          comuna: truncar(entidad.comuna ?? "Santiago", 20),
-          ciudad: truncar(entidad.ciudad ?? "Santiago", 20),
-          ...(entidad.correo ? { correoElectronico: truncar(entidad.correo, 80) } : {}),
-        },
-        totales: {
-          montoNeto,
-          tasaIVA: 19,
-          iva: montoIVA,
-          montoTotal,
-        },
-      },
-      detalles,
-      ...(referencias.length > 0 ? { referencias } : {}),
-    },
-    certificado: {
-      base64: config.certBase64,
-      password: config.certPassword,
-      rut: limpiarRut(config.certRut),
-    },
-    caf: config.cafXmlBase64
-      ? { base64: config.cafXmlBase64 }
-      : { xml: config.cafXml },
-  };
-
-  console.log("========== PAYLOAD DTE GENERAR ==========");
-  console.log(JSON.stringify(payload, null, 2));
-  console.log("=========================================");
-
-  console.log("===== RESUMEN DTE =====");
-  console.log("Documento ID:", payload.documento.id);
-  console.log("Tipo DTE:", payload.documento.encabezado.identificacionDTE.tipoDTE);
-  console.log("Folio:", payload.documento.encabezado.identificacionDTE.folio);
-  console.log("Fecha emisión:", payload.documento.encabezado.identificacionDTE.fechaEmisionString);
-  console.log("Receptor RUT:", payload.documento.encabezado.receptor.rut);
-  console.log("Receptor Razón Social:", payload.documento.encabezado.receptor.razonSocial);
-  console.log("Neto:", payload.documento.encabezado.totales.montoNeto);
-  console.log("IVA:", payload.documento.encabezado.totales.iva);
-  console.log("Total:", payload.documento.encabezado.totales.montoTotal);
-  console.log("Cantidad detalles:", payload.documento.detalles.length);
-  console.log("Referencias:", JSON.stringify(payload.documento.referencias || [], null, 2));
-  console.log("CAF incluido:", !!payload.caf);
-  console.log("CAF tipo:", payload.caf && "base64" in payload.caf ? "base64" : "xml");
-  console.log("=======================");
-
-  const data = await callSimpleAPI(config, "/api/v1/dte/generar", payload);
-
-  const folioRaw =
-    data?.folio ??
-    data?.documento?.encabezado?.identificacionDTE?.folio ??
-    data?.documento?.encabezado?.identificacionDTE?.folioDTE ??
-    folioPrueba;
-
-  const folio = Number(folioRaw);
-
-  if (!Number.isFinite(folio) || folio <= 0) {
-    throw new Error(
-      `No se pudo resolver un folio válido desde SimpleAPI. Valor recibido: ${String(folioRaw)}`
-    );
-  }
-
-  return { xml: JSON.stringify(data), folio, raw: data };
-}
-
-// ============================================================
-// PASO 2: GENERAR SOBRE DE ENVÍO
-// ============================================================
-export async function generarSobre(config: SimpleAPIConfig, dteGenerado: DTEGenerado): Promise<string> {
-  if (!dteGenerado?.xml) throw new Error("No se recibió el DTE generado para armar el sobre");
-
-  const dteRaw = safeJsonParse(dteGenerado.xml);
-  if (!dteRaw || typeof dteRaw === "string") throw new Error("El XML/JSON del DTE generado es inválido");
-
-  const payload = {
-    certificado: {
-      base64: config.certBase64,
-      password: config.certPassword,
-      rut: limpiarRut(config.certRut),
-    },
-    tipo: 1,
-    ambiente: config.ambiente,
-    caratula: {
-      rutEmisor: limpiarRut(config.rutEmpresa),
-      rutReceptor: "60803000-K",
-    },
-    documentos: [dteRaw],
-  };
-
-  const data = await callSimpleAPI(config, "/api/v1/envio/generar", payload);
-  return JSON.stringify(data);
-}
-
-// ============================================================
-// PASO 3: ENVIAR AL SII
-// ============================================================
-export async function enviarAlSII(
-  config: SimpleAPIConfig,
-  sobreGenerado?: string
-): Promise<{ trackId: string; estado: string; raw?: any }> {
-  const sobreRaw = sobreGenerado ? safeJsonParse(sobreGenerado) : undefined;
-
-  const payload = {
-    certificado: {
-      base64: config.certBase64,
-      password: config.certPassword,
-      rut: limpiarRut(config.certRut),
-    },
-    tipo: 1,
-    ambiente: config.ambiente,
-    ...(sobreRaw && typeof sobreRaw !== "string" ? { sobre: sobreRaw } : {}),
-  };
-
-  const data = await callSimpleAPI(config, "/api/v1/envio/enviar", payload);
-
-  const trackId =
-    data?.trackId ??
-    data?.TrackId ??
-    data?.track_id ??
-    data?.respuesta?.trackId ??
-    null;
-
+function normalizarResumenVenta(item: any): ResumenVentaRCV {
   return {
-    trackId: String(trackId ?? ""),
-    estado: data?.estado ?? data?.status ?? "ENVIADO",
-    raw: data,
+    tipoDte: toInt(item?.tipoDte),
+    tipoDteString: item?.tipoDteString ?? "",
+    totalDocumentos: toInt(item?.totalDocumentos),
+    montoExento: toInt(item?.montoExento),
+    montoNeto: toInt(item?.montoNeto),
+    ivaRecuperable: toInt(item?.ivaRecuperable),
+    ivaUsoComun: toInt(item?.ivaUsoComun),
+    ivaNoRecuperable: toInt(item?.ivaNoRecuperable),
+    montoTotal: toInt(item?.montoTotal),
+    estado: item?.estado ?? null,
+  };
+}
+
+function normalizarVenta(item: any): VentaRCV {
+  return {
+    folio: toInt(item?.folio ?? item?.Folio),
+    tipoDTE: toInt(item?.tipoDte ?? item?.tipoDTE ?? item?.TipoDTE),
+    tipoDTEString: item?.tipoDTEString ?? item?.tipoDteString ?? undefined,
+    tipoVenta: item?.tipoVenta ?? undefined,
+
+    rutReceptor: limpiarRut(
+      item?.rutCliente ??
+      item?.rutReceptor ??
+      item?.RutReceptor ??
+      ""
+    ),
+
+    razonSocialReceptor:
+      item?.razonSocial ??
+      item?.razonSocialReceptor ??
+      item?.RazonSocialReceptor ??
+      item?.cliente ??
+      "",
+
+    fechaEmision:
+      item?.fechaEmision ??
+      item?.FechaEmision ??
+      item?.fecha ??
+      "",
+
+    fechaRecepcion:
+      item?.fechaRecepcion ??
+      item?.FechaRecepcion ??
+      undefined,
+
+    fechaAcuseRecibo:
+      item?.fechaAcuseRecibo ??
+      item?.FechaAcuseRecibo ??
+      undefined,
+
+    montoExento: toInt(item?.montoExento ?? item?.MontoExento),
+    montoNeto: toInt(item?.montoNeto ?? item?.MontoNeto),
+    montoIVA: toInt(item?.montoIva ?? item?.montoIVA ?? item?.iva ?? item?.IVA),
+    montoIvaRecuperable: toInt(
+      item?.montoIvaRecuperable ??
+      item?.montoIVARecuperable ??
+      item?.ivaRecuperable
+    ),
+    montoTotal: toInt(item?.montoTotal ?? item?.MontoTotal),
+    estado: item?.estado ?? item?.Estado ?? "",
+    raw: item,
+  };
+}
+
+function normalizarResumenCompra(item: any): ResumenCompraRCV {
+  return {
+    tipoDte: toInt(item?.tipoDte),
+    tipoDteString: item?.tipoDteString ?? "",
+    totalDocumentos: toInt(item?.totalDocumentos),
+    montoExento: toInt(item?.montoExento),
+    montoNeto: toInt(item?.montoNeto),
+    ivaRecuperable: toInt(item?.ivaRecuperable),
+    ivaUsoComun: toInt(item?.ivaUsoComun),
+    ivaNoRecuperable: toInt(item?.ivaNoRecuperable),
+    montoTotal: toInt(item?.montoTotal),
+    estado: item?.estado ?? null,
+  };
+}
+
+function normalizarCompra(item: any): CompraRCV {
+  return {
+    folio: toInt(item?.folio ?? item?.Folio),
+    tipoDTE: toInt(item?.tipoDte ?? item?.tipoDTE ?? item?.TipoDTE),
+    tipoDTEString: item?.tipoDTEString ?? item?.tipoDteString ?? undefined,
+    tipoCompra: item?.tipoCompra ?? item?.tipoCompraString ?? undefined,
+
+    rutProveedor: limpiarRut(
+      item?.rutProveedor ??
+      item?.rutEmisor ??
+      item?.RutProveedor ??
+      item?.RutEmisor ??
+      ""
+    ),
+
+    razonSocialProveedor:
+      item?.razonSocialProveedor ??
+      item?.razonSocialEmisor ??
+      item?.razonSocial ??
+      item?.proveedor ??
+      item?.RazonSocialProveedor ??
+      "",
+
+    fechaEmision:
+      item?.fechaEmision ??
+      item?.FechaEmision ??
+      item?.fecha ??
+      "",
+
+    fechaRecepcion:
+      item?.fechaRecepcion ??
+      item?.FechaRecepcion ??
+      undefined,
+
+    fechaAcuse:
+      item?.fechaAcuse ??
+      item?.fechaAcuseRecibo ??
+      item?.FechaAcuse ??
+      undefined,
+
+    montoExento: toInt(item?.montoExento ?? item?.MontoExento),
+    montoNeto: toInt(item?.montoNeto ?? item?.MontoNeto),
+    montoIVA: toInt(item?.montoIva ?? item?.montoIVA ?? item?.iva ?? item?.IVA),
+    montoIvaRecuperable: toInt(
+      item?.montoIvaRecuperable ??
+      item?.montoIVARecuperable ??
+      item?.ivaRecuperable
+    ),
+    montoIvaNoRecuperable: toInt(
+      item?.montoIvaNoRecuperable ??
+      item?.montoIVANoRecuperable ??
+      item?.ivaNoRecuperable
+    ),
+    montoTotal: toInt(item?.montoTotal ?? item?.MontoTotal),
+    estado: item?.estado ?? item?.Estado ?? "",
+    raw: item,
   };
 }
 
 // ============================================================
-// PASO 4: CONSULTAR ESTADO EN SII
+// Consulta mensual completa: detalle ventas
+// GET /api/facturas/ventas?empresa=econnet&mes=01&ano=2026&refresh=true
 // ============================================================
-export async function consultarEstadoEnvio(config: SimpleAPIConfig, trackId: string): Promise<any> {
-  if (!trackId) throw new Error("trackId es obligatorio para consultar estado");
 
-  const payload = {
-    certificado: {
-      base64: config.certBase64,
-      password: config.certPassword,
-      rut: limpiarRut(config.certRut),
-    },
-    trackId: Number(trackId),
-    ambiente: config.ambiente,
-  };
-
-  return callSimpleAPI(config, "/api/v1/consulta/envio", payload);
-}
-
-// ============================================================
-// RCV: CONSULTAR VENTAS (FACTURAS EMITIDAS)
-// - Sin forceRefresh: devuelve caché si existe (no gasta token)
-// - Con forceRefresh=true: llama al SII y actualiza caché (gasta token)
-// ============================================================
 export async function consultarVentasRCV(
   mes: string,
   ano: string,
-  rutEmpresaOverride?: string,
+  empresaKey: string,
+  rutEmpresaOverride: string,
   forceRefresh = false
-): Promise<ResultadoVentasRCV> {
-  const rut = rutEmpresaOverride ?? process.env.RUT_EMPRESA;
-  const rcvUrl = process.env.SIMPLEAPI_RCV_URL;
+): Promise<RcvServiceResult<ResultadoVentasRCV>> {
+  const resumenResult = await consultarResumenVentasRCV(
+    mes,
+    ano,
+    empresaKey,
+    rutEmpresaOverride,
+    forceRefresh
+  );
 
-  if (!rut || !rcvUrl) {
-    throw new Error("Faltan variables: RUT_EMPRESA o SIMPLEAPI_RCV_URL");
-  }
+  const raw = resumenResult.data;
+  const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
+  const mesPadded = String(mes).padStart(2, "0");
 
-  const mesNum = parseInt(mes, 10);
-  const anoNum = parseInt(ano, 10);
+  const detalleRaw =
+    raw?.ventas?.detalleVentas ??
+    raw?.ventas?.DetalleVentas ??
+    [];
 
-  if (isNaN(mesNum) || mesNum < 1 || mesNum > 12) {
-    throw new Error(`Mes inválido: ${mes}. Debe ser entre 01 y 12`);
-  }
-  if (isNaN(anoNum) || anoNum < 2000 || anoNum > new Date().getFullYear()) {
-    throw new Error(`Año inválido: ${ano}`);
-  }
+  const resumenesRaw =
+    raw?.ventas?.resumenes ??
+    raw?.ventas?.Resumenes ??
+    [];
 
-  const mesPadded = String(mesNum).padStart(2, "0");
-  const rutLimpio = limpiarRut(rut);
-  const cacheKey = getCacheKey(rutLimpio, mesPadded, ano);
+  const ventas: VentaRCV[] = Array.isArray(detalleRaw)
+    ? detalleRaw.map(normalizarVenta)
+    : [];
 
-  // Devolver caché si existe y no se fuerza recarga
+  const resumenes: ResumenVentaRCV[] = Array.isArray(resumenesRaw)
+    ? resumenesRaw.map(normalizarResumenVenta)
+    : [];
+
+  return {
+    source: resumenResult.source,
+    data: {
+      rut: rutEmpresa,
+      mes: mesPadded,
+      ano,
+      periodo: `${ano}${mesPadded}`,
+      resumenes,
+      ventas,
+      total: ventas.length,
+      raw,
+    },
+  };
+}
+
+// ============================================================
+// Consulta mensual resumen/raw
+// GET /api/facturas/ventas/resumen?empresa=econnet&mes=01&ano=2026
+// ============================================================
+
+export async function consultarResumenVentasRCV(
+  mes: string,
+  ano: string,
+  empresaKey: string,
+  rutEmpresaOverride: string,
+  forceRefresh = false
+): Promise<RcvServiceResult<any>> {
+  const rcvUrl = getSimpleApiRcvUrl();
+  const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
+  const mesPadded = String(mes).padStart(2, "0");
+
   if (!forceRefresh) {
-    const cached = cacheRCV.get(cacheKey);
+    const cached = await getSiiApiCache({
+      empresaKey,
+      rutEmpresa,
+      tipo: "ventas",
+      mes: mesPadded,
+      ano,
+    });
+
     if (cached) {
-      console.log(`💾 RCV desde caché: ${cacheKey}`);
-      return cached;
+      console.log("💾 RCV ventas desde caché BD:", {
+        empresaKey,
+        rutEmpresa,
+        mes: mesPadded,
+        ano,
+        updatedAt: cached.updatedAt,
+      });
+
+      return {
+        source: "cache",
+        data: cached.data,
+      };
     }
   }
 
   const urlCompleta = `${rcvUrl}/api/RCV/ventas/${mesPadded}/${ano}`;
-  console.log("📊 Consultando RCV Ventas SII:", { rut: rutLimpio, mes: mesPadded, ano });
 
-  const data = await callSimpleAPIRCV(urlCompleta, rutEmpresaOverride);
-
-  const listaRaw: any[] =
-    data?.ventas?.detalleVentas ??
-    data?.ventas?.DetalleVentas ??
-    data?.detalleVentas ??
-    (Array.isArray(data?.ventas) ? data.ventas : []);
-
-  const ventas: VentaRCV[] = listaRaw.map((item: any) => ({
-    folio: Number(item?.folio ?? item?.Folio ?? 0),
-    tipoDTE: Number(item?.tipoDTE ?? item?.TipoDTE ?? item?.tipo ?? 33),
-    rutReceptor: String(item?.rutReceptor ?? item?.RutReceptor ?? item?.rutCliente ?? ""),
-    razonSocialReceptor: String(item?.razonSocialReceptor ?? item?.RazonSocial ?? item?.razonSocial ?? ""),
-    fechaEmision: String(item?.fechaEmision ?? item?.FechaEmision ?? item?.fecha ?? ""),
-    montoNeto: toInt(item?.montoNeto ?? item?.MontoNeto ?? item?.neto ?? 0),
-    montoIVA: toInt(item?.montoIVA ?? item?.MontoIVA ?? item?.montoIva ?? item?.iva ?? 0),
-    montoTotal: toInt(item?.montoTotal ?? item?.MontoTotal ?? item?.total ?? 0),
-    estado: String(item?.estado ?? item?.Estado ?? item?.estadoDTE ?? ""),
-  }));
-
-  const resultado: ResultadoVentasRCV = {
-    rut: rutLimpio,
+  console.log("📊 Consultando SimpleAPI RCV Ventas por mes:", {
+    empresaKey,
+    rutEmpresa,
     mes: mesPadded,
     ano,
-    ventas,
-    total: ventas.length,
+    forceRefresh,
+  });
+
+  const data = await callSimpleAPIRCV(urlCompleta, rutEmpresa);
+
+  await saveSiiApiCache(
+    {
+      empresaKey,
+      rutEmpresa,
+      tipo: "ventas",
+      mes: mesPadded,
+      ano,
+    },
+    data
+  );
+
+  return {
+    source: "simpleapi",
+    data,
   };
+}
 
-  // Guardar en caché
-  cacheRCV.set(cacheKey, resultado);
-  console.log(`💾 RCV guardado en caché: ${cacheKey} (${ventas.length} docs)`);
+export async function consultarComprasRCV(
+  mes: string,
+  ano: string,
+  empresaKey: string,
+  rutEmpresaOverride: string,
+  forceRefresh = false
+): Promise<RcvServiceResult<ResultadoComprasRCV>> {
+  const resumenResult = await consultarResumenComprasRCV(
+    mes,
+    ano,
+    empresaKey,
+    rutEmpresaOverride,
+    forceRefresh
+  );
 
-  return resultado;
+  const raw = resumenResult.data;
+  const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
+  const mesPadded = String(mes).padStart(2, "0");
+
+  const detalleRaw =
+    raw?.compras?.detalleCompras ??
+    raw?.compras?.DetalleCompras ??
+    [];
+
+  const resumenesRaw =
+    raw?.compras?.resumenes ??
+    raw?.compras?.Resumenes ??
+    [];
+
+  const compras: CompraRCV[] = Array.isArray(detalleRaw)
+    ? detalleRaw.map(normalizarCompra)
+    : [];
+
+  const resumenes: ResumenCompraRCV[] = Array.isArray(resumenesRaw)
+    ? resumenesRaw.map(normalizarResumenCompra)
+    : [];
+
+  return {
+    source: resumenResult.source,
+    data: {
+      rut: rutEmpresa,
+      mes: mesPadded,
+      ano,
+      periodo: `${ano}${mesPadded}`,
+      resumenes,
+      compras,
+      total: compras.length,
+      raw,
+    },
+  };
+}
+
+export async function consultarResumenComprasRCV(
+  mes: string,
+  ano: string,
+  empresaKey: string,
+  rutEmpresaOverride: string,
+  forceRefresh = false
+): Promise<RcvServiceResult<any>> {
+  const rcvUrl = getSimpleApiRcvUrl();
+  const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
+  const mesPadded = String(mes).padStart(2, "0");
+
+  if (!forceRefresh) {
+    const cached = await getSiiApiCache({
+      empresaKey,
+      rutEmpresa,
+      tipo: "compras",
+      mes: mesPadded,
+      ano,
+    });
+
+    if (cached) {
+      console.log("💾 RCV compras desde caché BD:", {
+        empresaKey,
+        rutEmpresa,
+        mes: mesPadded,
+        ano,
+        updatedAt: cached.updatedAt,
+      });
+
+      return {
+        source: "cache",
+        data: cached.data,
+      };
+    }
+  }
+
+  const urlCompleta = `${rcvUrl}/api/RCV/compras/${mesPadded}/${ano}`;
+
+  console.log("📊 Consultando SimpleAPI RCV Compras por mes:", {
+    empresaKey,
+    rutEmpresa,
+    mes: mesPadded,
+    ano,
+    forceRefresh,
+  });
+
+  const data = await callSimpleAPIRCV(urlCompleta, rutEmpresa);
+
+  await saveSiiApiCache(
+    {
+      empresaKey,
+      rutEmpresa,
+      tipo: "compras",
+      mes: mesPadded,
+      ano,
+    },
+    data
+  );
+
+  return {
+    source: "simpleapi",
+    data,
+  };
 }
 
 // ============================================================
-// RCV: RESUMEN MENSUAL DE VENTAS
+// Utilidad opcional para limpiar caché manualmente desde código
 // ============================================================
-export async function consultarResumenVentasRCV(
-  mes: string,
-  ano: string,
-  rutEmpresaOverride?: string
-): Promise<any> {
-  const rcvUrl = process.env.SIMPLEAPI_RCV_URL;
-  if (!rcvUrl) throw new Error("Falta variable: SIMPLEAPI_RCV_URL");
 
-  const mesPadded = String(parseInt(mes, 10)).padStart(2, "0");
-  const urlCompleta = `${rcvUrl}/api/RCV/ventas/${mesPadded}/${ano}`;
-
-  console.log("📊 Consultando Resumen RCV Ventas:", { mes: mesPadded, ano });
-
-  return callSimpleAPIRCV(urlCompleta, rutEmpresaOverride);
+export function limpiarCacheRCV() {
+  console.log("ℹ️ La caché RCV ahora está en BD usando SiiApiCache.");
 }

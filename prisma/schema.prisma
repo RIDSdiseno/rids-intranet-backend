@@ -866,7 +866,6 @@ model Ticket {
   fromEmail       String?
   inboxEmail      String?
   firstResponseAt DateTime?
-  lastReopenedAt  DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
   createdAt       DateTime        @default(now())
@@ -876,6 +875,7 @@ model Ticket {
   aiSummary       String?
   rolAsignado     String?
   deletedAt       DateTime?
+  lastReopenedAt  DateTime?
   empresa         Empresa         @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?    @relation(fields: [requesterId], references: [id_solicitante])
   assignee        Tecnico?        @relation(fields: [assigneeId], references: [id_tecnico])
@@ -912,10 +912,10 @@ model TicketMessage {
   toEmail          String?
   cc               String?
   sourceMessageId  String?            @unique
-  graphMessageId   String?
   sourceInReplyTo  String?
   sourceReferences String?
   createdAt        DateTime           @default(now())
+  graphMessageId   String?
   ticket           Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   attachments      TicketAttachment[]
 
@@ -1118,46 +1118,39 @@ model ReporteGenerado {
 }
 
 model FacturaDTE {
-  id            Int     @id @default(autoincrement())
-  empresaRut    String
-  empresaAlias  String?
-  folio         Int
-  tipoDTE       Int
-  tipoDTEString String?
-  estado        String?
-  tipoVenta     String?
-
-  fechaEmision     DateTime?
-  fechaRecepcion   DateTime?
-  fechaAcuseRecibo DateTime?
-
-  rutEmisor         String?
-  razonSocialEmisor String?
-  giroEmisor        String?
-
+  id                  Int              @id @default(autoincrement())
+  empresaRut          String
+  empresaAlias        String?
+  folio               Int
+  tipoDTE             Int
+  tipoDTEString       String?
+  estado              String?
+  tipoVenta           String?
+  fechaEmision        DateTime?
+  fechaRecepcion      DateTime?
+  fechaAcuseRecibo    DateTime?
+  rutEmisor           String?
+  razonSocialEmisor   String?
+  giroEmisor          String?
   rutReceptor         String?
   razonSocialReceptor String?
   giroReceptor        String?
   direccionReceptor   String?
   comunaReceptor      String?
   ciudadReceptor      String?
-
-  montoExento         Int @default(0)
-  montoNeto           Int @default(0)
-  montoIVA            Int @default(0)
-  montoIVARecuperable Int @default(0)
-  montoTotal          Int @default(0)
-
-  fuente         String? // RCV, XML, API, MANUAL
-  tieneDetalle   Boolean   @default(false)
-  xmlRaw         String?   @db.Text
-  rawJson        Json?
-  sincronizadoAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  items FacturaDTEItem[]
+  montoExento         Int              @default(0)
+  montoNeto           Int              @default(0)
+  montoIVA            Int              @default(0)
+  montoIVARecuperable Int              @default(0)
+  montoTotal          Int              @default(0)
+  fuente              String?
+  tieneDetalle        Boolean          @default(false)
+  xmlRaw              String?
+  rawJson             Json?
+  sincronizadoAt      DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  items               FacturaDTEItem[]
 
   @@unique([empresaRut, tipoDTE, folio])
   @@index([empresaRut, fechaEmision])
@@ -1165,24 +1158,21 @@ model FacturaDTE {
 }
 
 model FacturaDTEItem {
-  id        Int  @id @default(autoincrement())
-  facturaId Int
-  linea     Int?
-
+  id             Int        @id @default(autoincrement())
+  facturaId      Int
+  linea          Int?
   codigo         String?
   nombre         String
-  descripcion    String?  @db.Text
-  cantidad       Decimal? @db.Decimal(18, 2)
+  descripcion    String?
+  cantidad       Decimal?   @db.Decimal(18, 2)
   unidadMedida   String?
-  precioUnitario Int      @default(0)
-  descuentoMonto Int      @default(0)
-  recargoMonto   Int      @default(0)
-  montoItem      Int      @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  factura FacturaDTE @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+  precioUnitario Int        @default(0)
+  descuentoMonto Int        @default(0)
+  recargoMonto   Int        @default(0)
+  montoItem      Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  factura        FacturaDTE @relation(fields: [facturaId], references: [id], onDelete: Cascade)
 
   @@index([facturaId])
 }
@@ -1192,7 +1182,7 @@ model FacturaSyncLog {
   empresaRut      String
   periodoAno      Int
   periodoMes      Int
-  tipo            String // VENTAS, COMPRAS
+  tipo            String
   totalDocumentos Int      @default(0)
   ok              Boolean  @default(false)
   mensaje         String?
@@ -1201,6 +1191,76 @@ model FacturaSyncLog {
   @@index([empresaRut, periodoAno, periodoMes, tipo])
 }
 
+model RCVConsulta {
+  id            Int      @id @default(autoincrement())
+  empresaRut    String
+  empresaNombre String?
+  periodo       String
+  mes           Int
+  anio          Int
+  tipo          String
+  dia           Int?
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([empresaRut])
+  @@index([periodo])
+}
+
+model RCVResumen {
+  id              Int      @id @default(autoincrement())
+  consultaId      Int
+  operacion       String
+  tipoDocCodigo   Int
+  tipoDocNombre   String
+  totalDocumentos Int      @default(0)
+  montoExento     Int      @default(0)
+  montoNeto       Int      @default(0)
+  montoIVA        Int      @default(0)
+  montoIVANoRec   Int      @default(0)
+  montoTotal      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([consultaId])
+  @@index([operacion])
+}
+
+model SiiApiRequestLog {
+  id         Int      @id @default(autoincrement())
+  empresaKey String?
+  rutEmpresa String?
+  endpoint   String
+  method     String   @default("GET")
+  status     Int?
+  ok         Boolean  @default(false)
+  error      String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([empresaKey])
+  @@index([rutEmpresa])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SiiApiCache {
+  id         Int      @id @default(autoincrement())
+  empresaKey String
+  rutEmpresa String
+  tipo       String
+  mes        String?
+  ano        String?
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([empresaKey, tipo, mes, ano])
+  @@index([empresaKey])
+  @@index([rutEmpresa])
+  @@index([tipo])
+}
+
+// Enums
 enum TipoAgenda {
   SEMANA
   SABADO

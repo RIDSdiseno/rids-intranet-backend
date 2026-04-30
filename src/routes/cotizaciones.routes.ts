@@ -12,10 +12,6 @@ import {
     facturarCotizacion,
     anularFactura,
     pagarFactura,
-    consultarEstadoSII,
-    vincularFacturaSII,
-    consultarEnvioSII,
-    emitirFacturaSII,
     cambiarEstadoFactura,
     vincularEquipoAItem
 } from "../controllers/cotizaciones.controller.js";
@@ -39,10 +35,6 @@ cotizacionesRouter.get("/:id", getCotizacionById);
 cotizacionesRouter.post("/", createCotizacion);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
-cotizacionesRouter.post("/:id/emitir-sii", emitirFacturaSII);
-cotizacionesRouter.post("/facturas/:id/consultar-envio", consultarEnvioSII);
-cotizacionesRouter.post("/:id/vincular-factura-sii", vincularFacturaSII);
-cotizacionesRouter.post("/facturas/:id/consultar-sii", consultarEstadoSII);
 cotizacionesRouter.patch("/facturas/:id/estado", cambiarEstadoFactura);
 
 export default cotizacionesRouter;

@@ -1,7 +1,6 @@
 // Controlador para manejo de cotizaciones, con funciones para obtener cotizaciones paginadas con filtros avanzados, crear, actualizar y eliminar cotizaciones, vincular equipos a items, facturar cotizaciones y gestionar estados de facturas. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
 import { PrismaClient } from "@prisma/client";
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
-import { getSimpleAPIConfig, generarDTE, generarSobre, enviarAlSII, consultarEstadoEnvio } from "../service/simple-api/simpleapi.service.js";
 const prisma = new PrismaClient();
 // UTILIDADES
 function generarSKU() {
@@ -818,9 +817,13 @@ export async function cambiarEstadoFactura(req, res) {
 // =====================================================
 //      EMITIR FACTURA AL SII - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
-export async function emitirFacturaSII(req, res) {
+/*
+export async function emitirFacturaSII(req: Request, res: Response) {
+
     const { id } = req.params;
+
     try {
+
         const cotizacion = await prisma.cotizacionGestioo.findUnique({
             where: { id: Number(id) },
             include: {
@@ -828,21 +831,30 @@ export async function emitirFacturaSII(req, res) {
                 items: true
             }
         });
+
         if (!cotizacion)
             return res.status(404).json({ error: "Cotización no encontrada" });
+
         if (cotizacion.estado !== "APROBADA")
             return res.status(400).json({ error: "Solo cotizaciones aprobadas pueden emitirse" });
+
         if (!cotizacion.items.length)
             return res.status(400).json({ error: "La cotización no tiene items" });
+
         const config = getSimpleAPIConfig();
+
         if (!cotizacion.entidad?.rut)
             return res.status(400).json({ error: "La entidad no tiene RUT" });
+
         const rutReceptor = String(cotizacion.entidad.rut).replace(/\./g, "").trim();
+
         // Emitir DTE
         const dte = await generarDTE(config, { cotizacion });
+
         const envio = {
             trackId: dte.trackId ?? null
         };
+
         // Crear factura
         const factura = await prisma.factura.create({
             data: {
@@ -857,38 +869,52 @@ export async function emitirFacturaSII(req, res) {
                 trackId: envio.trackId
             }
         });
+
         await prisma.cotizacionGestioo.update({
             where: { id: cotizacion.id },
             data: { estado: "FACTURADA" }
         });
+
         return res.json({
             message: "Factura emitida correctamente",
             folio: dte.folio,
             trackId: envio.trackId
         });
-    }
-    catch (error) {
+
+    } catch (error: any) {
+
         console.error("Error emitirFacturaSII:", error);
+
         return res.status(500).json({
             error: error.message
         });
+
     }
 }
+
 // =====================================================
 //      CONSULTAR ESTADO ENVÍO SII - ACTUALIZAR ESTADO LOCAL
 // =====================================================
-export async function consultarEnvioSII(req, res) {
+export async function consultarEnvioSII(req: Request, res: Response) {
     const { id } = req.params;
+
     try {
         const factura = await prisma.factura.findUnique({
             where: { id_factura: Number(id) }
         });
+
         if (!factura?.trackId)
             return res.status(400).json({
                 error: "Factura no fue emitida desde el sistema"
             });
+
         const config = getSimpleAPIConfig();
-        const result = await consultarEstadoEnvio(config, factura.trackId);
+
+        const result = await consultarEstadoEnvio(
+            config,
+            factura.trackId
+        );
+
         await prisma.factura.update({
             where: { id_factura: factura.id_factura },
             data: {
@@ -896,54 +922,65 @@ export async function consultarEnvioSII(req, res) {
                 fechaEnvioSII: new Date()
             }
         });
+
         return res.json({
             message: "Estado actualizado",
             estado: result.estado
         });
-    }
-    catch (error) {
+
+    } catch (error: any) {
         console.error("❌ Error consultarEnvioSII:", error.message);
         return res.status(500).json({ error: error.message });
     }
 }
+
 // =====================================================
 //      VINCULAR FACTURA SII EXISTENTE - SOLO PARA COTIZACIONES APROBADAS
 // =====================================================
-export async function vincularFacturaSII(req, res) {
-    const { id } = req.params; //  CAMBIAR ESTO
+export async function vincularFacturaSII(req: Request, res: Response) {
+    const { id } = req.params;  //  CAMBIAR ESTO
     const { tipoDTE, folioSII, rutEmisor } = req.body;
+
     try {
         const cotizacion = await prisma.cotizacionGestioo.findUnique({
-            where: { id: Number(id) }, //  USAR PARAM
+            where: { id: Number(id) },  //  USAR PARAM
             include: { entidad: true }
         });
+
         if (!cotizacion)
             return res.status(404).json({ error: "Cotización no encontrada" });
+
         // =====================================================
         // VALIDAR ESTADO DE COTIZACIÓN
         // =====================================================
+
         if (cotizacion.estado !== "APROBADA") {
             return res.status(400).json({
                 error: "Solo se pueden vincular facturas a cotizaciones aprobadas"
             });
         }
+
         // =====================================================
         // VALIDAR QUE EL FOLIO NO ESTÉ REGISTRADO
         // =====================================================
+
         const existe = await prisma.factura.findFirst({
             where: {
                 folioSII: String(folioSII),
                 tipoDTE: Number(tipoDTE)
             }
         });
+
         if (existe) {
             return res.status(400).json({
                 error: `El folio ${folioSII} ya está registrado en el sistema`
             });
         }
+
         // =====================================================
         // CREAR FACTURA VINCULADA A LA COTIZACIÓN
         // =====================================================
+
         const factura = await prisma.factura.create({
             data: {
                 numeroFactura: `EXT-${folioSII}`,
@@ -956,29 +993,39 @@ export async function vincularFacturaSII(req, res) {
                 estadoSII: EstadoDTE.RECIBIDO
             }
         });
+
         return res.json({ message: "Factura vinculada correctamente", factura });
-    }
-    catch (error) {
+
+    } catch (error: any) {
         console.error("🔥 ERROR REAL:", error);
         return res.status(500).json({ error: error.message });
     }
 }
+
 // =====================================================
 //      CONSULTAR ESTADO SII - ACTUALIZAR ESTADO LOCAL
 // =====================================================
-export async function consultarEstadoSII(req, res) {
+export async function consultarEstadoSII(req: Request, res: Response) {
     const { id } = req.params;
+
     try {
         const factura = await prisma.factura.findUnique({
             where: { id_factura: Number(id) }
         });
+
         if (!factura?.trackId) {
             return res.status(400).json({
                 error: "Factura no fue emitida desde el sistema"
             });
         }
+
         const config = getSimpleAPIConfig();
-        const result = await consultarEstadoEnvio(config, factura.trackId);
+
+        const result = await consultarEstadoEnvio(
+            config,
+            factura.trackId
+        );
+
         await prisma.factura.update({
             where: { id_factura: factura.id_factura },
             data: {
@@ -986,16 +1033,18 @@ export async function consultarEstadoSII(req, res) {
                 fechaEnvioSII: new Date()
             }
         });
+
         return res.json({
             message: "Estado actualizado",
             estado: result.estado
         });
-    }
-    catch (error) {
+
+    } catch (error: any) {
         console.error("❌ Error consultarEstadoSII:", error.message);
         return res.status(500).json({
             error: error.message ?? "Error consultando SII"
         });
     }
 }
+*/
 //# sourceMappingURL=cotizaciones.controller.js.map

@@ -77,6 +77,9 @@ import correoRouter from "./routes/correo.routes.js";
 /* ==================== SII simple api ================ */
 import simpleapiRouter from "./routes/Simpleapi.routes.js";
 
+/* ===================== SII API ===================== */
+import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
@@ -165,6 +168,9 @@ api.use("/correo", correoRouter);
 
 /* ==================== SII simple api ================ */
 api.use("/facturas", simpleapiRouter);
+
+/* ===================== SII API ===================== */
+api.use("/sii", siiApiRoutes);
 
 /* ===================== Export ===================== */
 export default api;
