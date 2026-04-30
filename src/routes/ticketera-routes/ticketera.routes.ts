@@ -48,7 +48,7 @@ import {
 
 import { getTicketEmailSignature, updateTicketEmailSignature } from "../../controllers/tickets-rids/reply-templates/ticket-default-signature.controller.js";
 
-import { getTicketMetricsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
+import { getTicketMetricsByTecnico, getWorstClosedTicketsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
 
 import {
     getTicketsDashboardMonthly,
@@ -92,7 +92,7 @@ ticketeraRouter.get("/contactos", buscarContactos)
 // MÉTRICAS TÉCNICOS
 // =======================
 ticketeraRouter.get("/tecnicos/metrics", getTicketMetricsByTecnico);
-
+ticketeraRouter.get("/tecnicos/worst-closed", getWorstClosedTicketsByTecnico);
 // =======================
 // MÉTRICAS TICKETS
 // =======================

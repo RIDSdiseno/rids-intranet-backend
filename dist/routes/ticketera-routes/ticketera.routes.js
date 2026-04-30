@@ -12,7 +12,7 @@ import { listTicketEmailTemplates, updateTicketEmailTemplate, previewTicketEmail
 import multer from "multer";
 import { getTecnicoSignature, updateTecnicoSignatureData, uploadTecnicoSignatureImage, deleteTecnicoSignatureImage, } from "../../controllers/tickets-rids/reply-templates/tecnico-signature.controller.js";
 import { getTicketEmailSignature, updateTicketEmailSignature } from "../../controllers/tickets-rids/reply-templates/ticket-default-signature.controller.js";
-import { getTicketMetricsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
+import { getTicketMetricsByTecnico, getWorstClosedTicketsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
 import { getTicketsDashboardMonthly, getTicketsDashboardRanking, } from "../../controllers/tickets-rids/dashboard/ticketDashboard.controller.js";
 import { getSlaConfig, updateSlaConfig, } from "../../controllers/tickets-rids/tickets-sla/sla-config.controller.js";
 const ticketeraRouter = Router();
@@ -42,6 +42,7 @@ ticketeraRouter.get("/contactos", buscarContactos);
 // MÉTRICAS TÉCNICOS
 // =======================
 ticketeraRouter.get("/tecnicos/metrics", getTicketMetricsByTecnico);
+ticketeraRouter.get("/tecnicos/worst-closed", getWorstClosedTicketsByTecnico);
 // =======================
 // MÉTRICAS TICKETS
 // =======================
