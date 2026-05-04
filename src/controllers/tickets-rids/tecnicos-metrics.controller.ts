@@ -17,19 +17,24 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
         const from = req.query.from ? new Date(req.query.from as string) : undefined;
         const to = req.query.to ? new Date(req.query.to as string) : undefined;
 
-        // ✅ Resolver config SLA una sola vez antes del loop
         const slaConfig = await getSlaConfigFromDB();
 
         const tickets = await prisma.ticket.findMany({
             where: {
+                deletedAt: null,
                 assigneeId: tecnicoId ? tecnicoId : { not: null },
                 ...(empresaId && { empresaId }),
-                ...(from || to ? {
-                    createdAt: {
-                        ...(from && { gte: from }),
-                        ...(to && { lte: to }),
-                    },
-                } : {}),
+
+                status: TicketStatus.CLOSED,
+
+                ...(from || to
+                    ? {
+                        closedAt: {
+                            ...(from && { gte: from }),
+                            ...(to && { lt: to }),
+                        },
+                    }
+                    : {}),
             },
             select: {
                 id: true,
@@ -52,7 +57,7 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                     select: { type: true },
                 },
             },
-            orderBy: { createdAt: "desc" },
+            orderBy: { closedAt: "desc" },
         });
 
         const byTecnico = new Map<number, any>();
@@ -88,19 +93,10 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
 
             const row = byTecnico.get(key);
 
-            // ✅ Pasar slaConfig como segundo argumento
             const sla = buildTicketSla(ticket, slaConfig);
 
             row.assignedTickets++;
-
-            if (ticket.status === TicketStatus.NEW || ticket.status === TicketStatus.OPEN) {
-                row.openTickets++;
-            }
-            if (ticket.status === TicketStatus.PENDING || ticket.status === TicketStatus.ON_HOLD) {
-                row.pendingTickets++;
-            }
-            if (ticket.status === TicketStatus.RESOLVED) row.resolvedTickets++;
-            if (ticket.status === TicketStatus.CLOSED) row.closedTickets++;
+            row.closedTickets++;
 
             if (ticket.events?.some((e) => e.type === "REOPENED")) {
                 row.reopenedTickets++;
@@ -118,6 +114,7 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                 row.firstResponseMinutesSum += sla.firstResponse.elapsedMinutes;
                 row.firstResponseMinutesCount++;
             }
+
             if (sla.resolution.elapsedMinutes !== null) {
                 row.resolutionMinutesSum += sla.resolution.elapsedMinutes;
                 row.resolutionMinutesCount++;
@@ -126,14 +123,20 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
 
         const data = Array.from(byTecnico.values()).map((row) => {
             const firstResponseTotal =
-                row.firstResponseOk + row.firstResponseBreached + row.firstResponsePending;
+                row.firstResponseOk +
+                row.firstResponseBreached +
+                row.firstResponsePending;
+
             const resolutionTotal =
-                row.resolutionOk + row.resolutionBreached + row.resolutionPending;
+                row.resolutionOk +
+                row.resolutionBreached +
+                row.resolutionPending;
 
             return {
                 tecnicoId: row.tecnicoId,
                 nombre: row.nombre,
                 email: row.email,
+
                 assignedTickets: row.assignedTickets,
                 openTickets: row.openTickets,
                 pendingTickets: row.pendingTickets,
@@ -156,9 +159,10 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                     breached: row.firstResponseBreached,
                     pending: row.firstResponsePending,
                     total: firstResponseTotal,
-                    compliance: firstResponseTotal > 0
-                        ? Math.round((row.firstResponseOk / firstResponseTotal) * 100)
-                        : 0,
+                    compliance:
+                        firstResponseTotal > 0
+                            ? Math.round((row.firstResponseOk / firstResponseTotal) * 100)
+                            : 0,
                 },
 
                 resolution: {
@@ -166,15 +170,15 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                     breached: row.resolutionBreached,
                     pending: row.resolutionPending,
                     total: resolutionTotal,
-                    compliance: resolutionTotal > 0
-                        ? Math.round((row.resolutionOk / resolutionTotal) * 100)
-                        : 0,
+                    compliance:
+                        resolutionTotal > 0
+                            ? Math.round((row.resolutionOk / resolutionTotal) * 100)
+                            : 0,
                 },
             };
         });
 
         return res.json({ ok: true, data });
-
     } catch (error) {
         console.error("[helpdesk] getTicketMetricsByTecnico error:", error);
         return res.status(500).json({

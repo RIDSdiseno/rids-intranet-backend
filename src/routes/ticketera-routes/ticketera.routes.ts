@@ -67,7 +67,21 @@ const upload = multer({ storage: multer.memoryStorage() });
 // =======================
 // CRUD base
 // =======================
-ticketeraRouter.post("/", createTicket);
+ticketeraRouter.post(
+    "/",
+    uploadTicketAttachments.array("attachments", 10),
+    (err: any, _req: Request, res: Response, next: NextFunction) => {
+        if (err) {
+            return res.status(400).json({
+                ok: false,
+                message: err.message,
+            });
+        }
+
+        return next();
+    },
+    createTicket
+);
 ticketeraRouter.get("/", listTickets);
 
 // =======================
@@ -97,7 +111,7 @@ ticketeraRouter.get("/tecnicos/worst-closed", getWorstClosedTicketsByTecnico);
 // MÉTRICAS TICKETS
 // =======================
 ticketeraRouter.get("/dashboard-empresas/monthly", getTicketsDashboardMonthly);
-ticketeraRouter.get("/dashboard-empresas/ranking",  getTicketsDashboardRanking);
+ticketeraRouter.get("/dashboard-empresas/ranking", getTicketsDashboardRanking);
 
 // =======================
 // PLANTILLAS DE EMAIL

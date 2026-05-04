@@ -20,7 +20,15 @@ const upload = multer({ storage: multer.memoryStorage() });
 // =======================
 // CRUD base
 // =======================
-ticketeraRouter.post("/", createTicket);
+ticketeraRouter.post("/", uploadTicketAttachments.array("attachments", 10), (err, _req, res, next) => {
+    if (err) {
+        return res.status(400).json({
+            ok: false,
+            message: err.message,
+        });
+    }
+    return next();
+}, createTicket);
 ticketeraRouter.get("/", listTickets);
 // =======================
 // RUTAS FIJAS (ANTES DE :id)

@@ -86,13 +86,54 @@ function buildReplyRecipients(messages, supportEmail, fallbackTo) {
         cc: [...participants],
     };
 }
+async function uploadWebTicketAttachmentToSupabase(params) {
+    const safeName = sanitizeFilename(params.filename);
+    const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storagePath = `tickets/${params.ticketId}/messages/${params.messageId}/${uniqueName}`;
+    const { error } = await supabaseAdmin
+        .storage
+        .from(TICKET_ATTACHMENTS_BUCKET)
+        .upload(storagePath, params.buffer, {
+        contentType: params.mimeType || "application/octet-stream",
+        upsert: false,
+    });
+    if (error) {
+        console.error("❌ Error subiendo adjunto web a Supabase:", {
+            ticketId: params.ticketId,
+            messageId: params.messageId,
+            filename: safeName,
+            bucket: TICKET_ATTACHMENTS_BUCKET,
+            storagePath,
+            error,
+        });
+        throw error;
+    }
+    return {
+        safeName,
+        storagePath,
+    };
+}
 // Crear ticket
 export async function createTicket(req, res) {
     try {
         const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail, } = req.body;
-        let empresaIdFinal = empresaId;
+        const empresaIdBody = empresaId ? Number(empresaId) : undefined;
+        const requesterIdBody = requesterId ? Number(requesterId) : undefined;
+        const assigneeIdBody = assigneeId ? Number(assigneeId) : undefined;
+        let empresaIdFinal = Number.isFinite(empresaIdBody) && empresaIdBody > 0
+            ? empresaIdBody
+            : undefined;
+        const requesterIdFinal = Number.isFinite(requesterIdBody) && requesterIdBody > 0
+            ? requesterIdBody
+            : undefined;
+        const assigneeIdFinal = Number.isFinite(assigneeIdBody) && assigneeIdBody > 0
+            ? assigneeIdBody
+            : undefined;
+        const subjectFinal = String(subject ?? "").trim();
+        const messageFinal = String(message ?? "").trim();
+        const fromEmailFinal = String(bodyFromEmail ?? "").trim();
         // Si no se envió empresaId pero sí un correo manual, asignamos a "SIN CLASIFICAR" para no bloquear la creación del ticket (el agente luego puede editar el ticket y asignar la empresa correcta).
-        if (!empresaIdFinal && bodyFromEmail?.trim()) {
+        if (!empresaIdFinal && fromEmailFinal) {
             const empresaSinClasificar = await prisma.empresa.findFirst({
                 where: {
                     nombre: {
@@ -112,46 +153,41 @@ export async function createTicket(req, res) {
             empresaIdFinal = empresaSinClasificar.id_empresa;
         }
         // Validaciones básicas
-        if (!empresaIdFinal || !subject) {
+        if (!empresaIdFinal || !subjectFinal) {
             return res.status(400).json({
                 ok: false,
                 message: "empresaId y subject son obligatorios",
             });
         }
-        if (!requesterId && !bodyFromEmail?.trim()) {
+        if (!requesterIdFinal && !fromEmailFinal) {
             return res.status(400).json({
                 ok: false,
                 message: "Debes seleccionar un contacto o ingresar un correo manual",
             });
         }
         const publicId = crypto.randomUUID();
-        // Creamos el ticket dentro de una transacción para asegurar que la creación del ticket, 
-        // el evento de creación y el mensaje inicial (si existe) se creen de forma atómica. 
-        // Luego emitimos un evento "ticket.created" para que otros sistemas puedan reaccionar a
-        //  la creación del ticket (como enviar notificaciones, actualizar dashboards, etc). 
-        // Finalmente, si el ticket tiene un correo de origen válido, intentamos enviar 
-        // un auto-reply al cliente con un template personalizado.
+        const files = req.files;
         const ticket = await prisma.$transaction(async (tx) => {
             const ticket = await tx.ticket.create({
                 data: {
                     publicId,
-                    subject,
+                    subject: subjectFinal,
                     status: TicketStatus.OPEN,
                     priority: priority ?? TicketPriority.NORMAL,
                     channel: "WEB",
                     lastActivityAt: new Date(),
-                    fromEmail: bodyFromEmail?.trim() || null,
+                    fromEmail: fromEmailFinal || null,
                     empresa: {
                         connect: { id_empresa: empresaIdFinal },
                     },
-                    ...(requesterId && {
+                    ...(requesterIdFinal && {
                         requester: {
-                            connect: { id_solicitante: requesterId },
+                            connect: { id_solicitante: requesterIdFinal },
                         },
                     }),
-                    ...(assigneeId && {
+                    ...(assigneeIdFinal && {
                         assignee: {
-                            connect: { id_tecnico: assigneeId },
+                            connect: { id_tecnico: assigneeIdFinal },
                         },
                     }),
                 },
@@ -163,17 +199,42 @@ export async function createTicket(req, res) {
                     actorType: TicketActorType.SYSTEM,
                 },
             });
-            if (message?.trim()) {
-                await tx.ticketMessage.create({
+            if (messageFinal || files?.length) {
+                const createdMessage = await tx.ticketMessage.create({
                     data: {
                         ticketId: ticket.id,
                         direction: MessageDirection.OUTBOUND,
-                        bodyText: message.trim(),
+                        bodyText: messageFinal || "",
                         isInternal: false,
                         fromEmail: null,
-                        toEmail: bodyFromEmail?.trim() || null,
+                        toEmail: fromEmailFinal || null,
                     },
                 });
+                if (files?.length) {
+                    for (const file of files) {
+                        if (!file.buffer) {
+                            throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
+                        }
+                        const uploaded = await uploadWebTicketAttachmentToSupabase({
+                            ticketId: ticket.id,
+                            messageId: createdMessage.id,
+                            filename: file.originalname,
+                            mimeType: file.mimetype,
+                            buffer: file.buffer,
+                        });
+                        await tx.ticketAttachment.create({
+                            data: {
+                                messageId: createdMessage.id,
+                                filename: uploaded.safeName,
+                                mimeType: file.mimetype || "application/octet-stream",
+                                url: uploaded.storagePath,
+                                bytes: file.size || file.buffer.length,
+                                isInline: false,
+                                contentId: null,
+                            },
+                        });
+                    }
+                }
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: ticket.id,
@@ -262,11 +323,24 @@ export async function createTicket(req, res) {
                         areaTecnico: tecnico?.area || "Soporte Técnico",
                     },
                 });
+                const emailAttachments = files?.length
+                    ? files.map((file) => {
+                        if (!file.buffer) {
+                            throw new Error(`El archivo ${file.originalname} no tiene buffer`);
+                        }
+                        return {
+                            name: file.originalname,
+                            contentType: file.mimetype || "application/octet-stream",
+                            contentBytes: Buffer.from(file.buffer).toString("base64"),
+                        };
+                    })
+                    : [];
                 if (rendered.isEnabled) {
                     await graphReaderService.sendReplyEmail({
                         to: normalizedFromEmail,
                         subject: rendered.subject,
                         bodyHtml: rendered.bodyHtml,
+                        attachments: emailAttachments,
                     });
                 }
             }
@@ -369,31 +443,6 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
             createdMessageId = createdMessage.id;
-            if (files?.length) {
-                for (const file of files) {
-                    if (!file.buffer) {
-                        throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
-                    }
-                    const uploaded = await uploadAgentAttachmentToSupabase({
-                        ticketId,
-                        messageId: createdMessage.id,
-                        filename: file.originalname,
-                        mimeType: file.mimetype,
-                        buffer: file.buffer,
-                    });
-                    await tx.ticketAttachment.create({
-                        data: {
-                            messageId: createdMessage.id,
-                            filename: uploaded.safeName,
-                            mimeType: file.mimetype || "application/octet-stream",
-                            url: uploaded.storagePath,
-                            bytes: file.size || file.buffer.length,
-                            isInline: false,
-                            contentId: null,
-                        },
-                    });
-                }
-            }
             const updateData = {
                 lastActivityAt: new Date(),
             };
@@ -417,6 +466,31 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
         });
+        if (createdMessageId && files?.length) {
+            for (const file of files) {
+                if (!file.buffer) {
+                    throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
+                }
+                const uploaded = await uploadAgentAttachmentToSupabase({
+                    ticketId,
+                    messageId: createdMessageId,
+                    filename: file.originalname,
+                    mimeType: file.mimetype,
+                    buffer: file.buffer,
+                });
+                await prisma.ticketAttachment.create({
+                    data: {
+                        messageId: createdMessageId,
+                        filename: uploaded.safeName,
+                        mimeType: file.mimetype || "application/octet-stream",
+                        url: uploaded.storagePath,
+                        bytes: file.size || file.buffer.length,
+                        isInline: false,
+                        contentId: null,
+                    },
+                });
+            }
+        }
         //  Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
             const tecnico = ticket.assignee ?? null;
@@ -1071,7 +1145,7 @@ export async function inboundEmail(req, res) {
             data: {
                 publicId: crypto.randomUUID(),
                 subject: subject || "Sin asunto",
-                status: TicketStatus.NEW,
+                status: TicketStatus.OPEN,
                 priority: TicketPriority.NORMAL,
                 channel: "EMAIL",
                 ...(empresa?.id_empresa && {

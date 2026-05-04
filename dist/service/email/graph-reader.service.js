@@ -1,3 +1,4 @@
+// src/service/email/graph-reader.service.ts
 import { Client } from '@microsoft/microsoft-graph-client';
 import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
