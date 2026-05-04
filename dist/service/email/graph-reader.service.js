@@ -121,14 +121,61 @@ class GraphReaderService {
             console.log("📥 Resultado downloadAttachment:", att.filename, buffer ? `OK (${buffer.length} bytes)` : "NULL");
             if (!buffer)
                 continue;
-            // Subir adjunto a Supabase Storage
             const safeName = att.filename
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "")
                 .replace(/[^\w.\-]+/g, "_");
+            const isInlineImage = (att.isInline || Boolean(att.contentId)) &&
+                (att.mimeType || "").startsWith("image/");
+            /*
+             * CASO 1:
+             * Imagen inline pegada dentro del correo.
+             * Se guarda en Cloudinary para que el HTML pueda mostrarla directo.
+             */
+            if (isInlineImage) {
+                console.log("🖼️ Subiendo imagen inline a Cloudinary:", {
+                    ticketId,
+                    messageId,
+                    filename: safeName,
+                    contentId: att.contentId,
+                });
+                const baseName = safeName.replace(/\.[^.]+$/, "");
+                const uploadResult = await new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream({
+                        folder: `rids/helpdesk/tickets/${ticketId}/inline`,
+                        resource_type: "image",
+                        public_id: `inline_${ticketId}_${messageId}_${Date.now()}_${baseName}`,
+                        use_filename: false,
+                        unique_filename: false,
+                    }, (error, result) => {
+                        if (error)
+                            reject(error);
+                        else
+                            resolve(result);
+                    });
+                    Readable.from(buffer).pipe(stream);
+                });
+                await prisma.ticketAttachment.create({
+                    data: {
+                        messageId,
+                        filename: safeName,
+                        mimeType: att.mimeType || "image/png",
+                        bytes: att.bytes || buffer.length,
+                        url: uploadResult.secure_url,
+                        isInline: true,
+                        contentId: att.contentId,
+                    },
+                });
+                continue;
+            }
+            /*
+             * CASO 2:
+             * Adjuntos normales: PDF, Word, Excel, imágenes adjuntas, etc.
+             * Se guardan en Supabase.
+             */
             const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
             const storagePath = `tickets/${ticketId}/messages/${messageId}/${uniqueName}`;
-            console.log("☁️ SUPABASE SAVE_ATTACHMENTS ACTIVO:", {
+            console.log("☁️ Subiendo adjunto normal a Supabase:", {
                 ticketId,
                 messageId,
                 filename: safeName,
@@ -160,7 +207,7 @@ class GraphReaderService {
                     mimeType: att.mimeType || "application/octet-stream",
                     bytes: att.bytes || buffer.length,
                     url: storagePath,
-                    isInline: att.isInline,
+                    isInline: false,
                     contentId: att.contentId,
                 },
             });

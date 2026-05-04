@@ -29,6 +29,14 @@ declare global {
     }
 }
 
+// Helper para sanitizar nombres de archivos y evitar problemas con caracteres especiales
+function sanitizeFilename(filename: string) {
+    return filename
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\w.\-]+/g, "_");
+}
+
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str: string): string {
     return str
@@ -473,13 +481,27 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 
             if (files?.length) {
                 for (const file of files) {
+                    if (!file.buffer) {
+                        throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
+                    }
+
+                    const uploaded = await uploadAgentAttachmentToSupabase({
+                        ticketId,
+                        messageId: createdMessage.id,
+                        filename: file.originalname,
+                        mimeType: file.mimetype,
+                        buffer: file.buffer,
+                    });
+
                     await tx.ticketAttachment.create({
                         data: {
                             messageId: createdMessage.id,
-                            filename: file.originalname,
-                            mimeType: file.mimetype,
-                            url: file.path,
-                            bytes: file.size,
+                            filename: uploaded.safeName,
+                            mimeType: file.mimetype || "application/octet-stream",
+                            url: uploaded.storagePath,
+                            bytes: file.size || file.buffer.length,
+                            isInline: false,
+                            contentId: null,
                         },
                     });
                 }
@@ -547,24 +569,17 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             });
 
             const emailAttachments = files?.length
-                ? await Promise.all(
-                    files.map(async (file) => {
-                        const response = await fetch(file.path);
+                ? files.map((file) => {
+                    if (!file.buffer) {
+                        throw new Error(`El archivo ${file.originalname} no tiene buffer`);
+                    }
 
-                        if (!response.ok) {
-                            throw new Error(`No se pudo descargar adjunto: ${file.originalname}`);
-                        }
-
-                        const arrayBuffer = await response.arrayBuffer();
-                        const fileBuffer = Buffer.from(arrayBuffer);
-
-                        return {
-                            name: file.originalname,
-                            contentType: file.mimetype || "application/octet-stream",
-                            contentBytes: fileBuffer.toString("base64"),
-                        };
-                    })
-                )
+                    return {
+                        name: file.originalname,
+                        contentType: file.mimetype || "application/octet-stream",
+                        contentBytes: Buffer.from(file.buffer).toString("base64"),
+                    };
+                })
                 : [];
 
             if (rendered.isEnabled) {
@@ -639,6 +654,34 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             message: "Error al responder ticket",
         });
     }
+}
+
+// Helper para subir adjuntos de agente a Supabase Storage y obtener la URL pública
+async function uploadAgentAttachmentToSupabase(params: {
+    ticketId: number;
+    messageId: number;
+    filename: string;
+    mimeType?: string;
+    buffer: Buffer;
+}) {
+    const safeName = sanitizeFilename(params.filename);
+    const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const storagePath = `tickets/${params.ticketId}/messages/${params.messageId}/${uniqueName}`;
+
+    const { error } = await supabaseAdmin
+        .storage
+        .from(TICKET_ATTACHMENTS_BUCKET)
+        .upload(storagePath, params.buffer, {
+            contentType: params.mimeType || "application/octet-stream",
+            upsert: false,
+        });
+
+    if (error) throw error;
+
+    return {
+        safeName,
+        storagePath,
+    };
 }
 
 // Listar tickets con filtros
@@ -1425,6 +1468,106 @@ export async function downloadTicketAttachment(req: Request, res: Response) {
         return res.status(500).json({
             ok: false,
             message: "Error al descargar adjunto",
+        });
+    }
+}
+
+// GET /helpdesk/tickets/attachments/:attachmentId/inline
+// Endpoint para mostrar adjuntos inline, como imágenes pegadas en el correo
+export async function inlineTicketAttachment(req: Request, res: Response) {
+    try {
+        const attachmentId = Number(req.params.attachmentId);
+
+        if (!attachmentId || Number.isNaN(attachmentId)) {
+            return res.status(400).json({
+                ok: false,
+                message: "Adjunto inválido",
+            });
+        }
+
+        const att = await prisma.ticketAttachment.findUnique({
+            where: { id: attachmentId },
+            include: {
+                message: {
+                    include: {
+                        ticket: {
+                            select: {
+                                id: true,
+                                empresaId: true,
+                                deletedAt: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!att || att.message.ticket.deletedAt) {
+            return res.status(404).json({
+                ok: false,
+                message: "Adjunto no encontrado",
+            });
+        }
+
+        const storagePath = att.url;
+
+        if (!storagePath) {
+            return res.status(400).json({
+                ok: false,
+                message: "El adjunto no tiene ruta de almacenamiento",
+            });
+        }
+
+        let buffer: Buffer;
+
+        if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
+            const response = await fetch(storagePath);
+
+            if (!response.ok) {
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo externo",
+                });
+            }
+
+            buffer = Buffer.from(await response.arrayBuffer());
+        } else {
+            const { data, error } = await supabaseAdmin
+                .storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .download(storagePath);
+
+            if (error || !data) {
+                console.error("❌ Supabase inline download error:", {
+                    attachmentId,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    storagePath,
+                    error,
+                });
+
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo",
+                });
+            }
+
+            buffer = Buffer.from(await data.arrayBuffer());
+        }
+
+        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
+        res.setHeader(
+            "Content-Disposition",
+            `inline; filename*=UTF-8''${encodeURIComponent(att.filename)}`
+        );
+        res.setHeader("Content-Length", String(buffer.length));
+        res.setHeader("Cache-Control", "private, max-age=300");
+
+        return res.send(buffer);
+    } catch (error) {
+        console.error("[helpdesk] inlineTicketAttachment error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al mostrar adjunto",
         });
     }
 }
