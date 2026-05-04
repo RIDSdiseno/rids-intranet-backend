@@ -2,7 +2,8 @@ import { Client } from '@microsoft/microsoft-graph-client';
 import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
 import { prisma } from '../../lib/prisma.js';
-import crypto from 'crypto';
+import crypto from "crypto";
+import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET, } from "../../lib/supabase/supabase.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection, TicketChannel, } from '@prisma/client';
 import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
@@ -103,8 +104,8 @@ class GraphReaderService {
         }
     }
     /* ======================================================
-       Guardar adjuntos
-    ====================================================== */
+   Guardar adjuntos
+====================================================== */
     async saveAttachments(ticketId, messageId, data) {
         if (!data.attachmentsMeta?.length)
             return;
@@ -120,49 +121,45 @@ class GraphReaderService {
             console.log("📥 Resultado downloadAttachment:", att.filename, buffer ? `OK (${buffer.length} bytes)` : "NULL");
             if (!buffer)
                 continue;
-            //  Subir a Cloudinary usando stream
-            const safeName = att.filename.replace(/[^\w.\-]/g, "_");
-            const extension = safeName.split(".").pop()?.toLowerCase() || "";
-            const rawExtensions = [
-                "xlsx",
-                "xls",
-                "csv",
-                "doc",
-                "docx",
-                "ppt",
-                "pptx",
-                "zip",
-                "rar",
-                "7z",
-                "txt",
-                "pdf",
-            ];
-            const resourceType = rawExtensions.includes(extension) ? "raw" : "auto";
-            const baseName = safeName.replace(/\.[^.]+$/, "");
-            const uploadOptions = {
-                folder: `rids/helpdesk/tickets/${ticketId}`,
-                resource_type: resourceType,
-                public_id: `email_${ticketId}_${Date.now()}_${baseName}`,
-                use_filename: false,
-                unique_filename: false,
-                ...(resourceType === "raw" ? { format: extension } : {}),
-            };
-            const uploadResult = await new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
-                    if (error)
-                        reject(error);
-                    else
-                        resolve(result);
-                });
-                Readable.from(buffer).pipe(stream);
+            // Subir adjunto a Supabase Storage
+            const safeName = att.filename
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^\w.\-]+/g, "_");
+            const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+            const storagePath = `tickets/${ticketId}/messages/${messageId}/${uniqueName}`;
+            console.log("☁️ SUPABASE SAVE_ATTACHMENTS ACTIVO:", {
+                ticketId,
+                messageId,
+                filename: safeName,
+                bucket: TICKET_ATTACHMENTS_BUCKET,
+                storagePath,
             });
+            const { error: uploadError } = await supabaseAdmin
+                .storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .upload(storagePath, buffer, {
+                contentType: att.mimeType || "application/octet-stream",
+                upsert: false,
+            });
+            if (uploadError) {
+                console.error("❌ Error subiendo adjunto a Supabase:", {
+                    ticketId,
+                    messageId,
+                    filename: safeName,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    storagePath,
+                    error: uploadError,
+                });
+                throw uploadError;
+            }
             await prisma.ticketAttachment.create({
                 data: {
                     messageId,
                     filename: safeName,
-                    mimeType: att.mimeType,
-                    bytes: att.bytes,
-                    url: uploadResult.secure_url,
+                    mimeType: att.mimeType || "application/octet-stream",
+                    bytes: att.bytes || buffer.length,
+                    url: storagePath,
                     isInline: att.isInline,
                     contentId: att.contentId,
                 },

@@ -8,6 +8,7 @@ import { sendTicketAssignedEmail } from "./ticket-assignment-mailer.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
+import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET } from "../../lib/supabase/supabase.js";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str
@@ -1087,28 +1088,83 @@ export async function inboundEmail(req, res) {
         });
     }
 }
-// GET /helpdesk/attachments/:id/download
-// Endpoint para descargar adjuntos de tickets (firmas, archivos, etc.)
+// GET /helpdesk/attachments/:attachmentId/download
 export async function downloadTicketAttachment(req, res) {
     try {
         const attachmentId = Number(req.params.attachmentId);
         if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
+            return res.status(400).json({
+                ok: false,
+                message: "Adjunto inválido",
+            });
         }
         const att = await prisma.ticketAttachment.findUnique({
             where: { id: attachmentId },
+            include: {
+                message: {
+                    include: {
+                        ticket: {
+                            select: {
+                                id: true,
+                                empresaId: true,
+                                deletedAt: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
-        if (!att) {
-            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
-        }
-        const response = await fetch(att.url);
-        if (!response.ok) {
+        if (!att || att.message.ticket.deletedAt) {
             return res.status(404).json({
                 ok: false,
-                message: "No se pudo obtener el archivo",
+                message: "Adjunto no encontrado",
             });
         }
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const storagePath = att.url;
+        if (!storagePath) {
+            return res.status(400).json({
+                ok: false,
+                message: "El adjunto no tiene ruta de almacenamiento",
+            });
+        }
+        let buffer;
+        // Caso 1: adjuntos antiguos o actuales en Cloudinary / URL externa
+        if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
+            const response = await fetch(storagePath);
+            if (!response.ok) {
+                console.error("❌ Error descargando archivo externo:", {
+                    attachmentId,
+                    url: storagePath,
+                    status: response.status,
+                    statusText: response.statusText,
+                });
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo externo",
+                });
+            }
+            buffer = Buffer.from(await response.arrayBuffer());
+        }
+        else {
+            // Caso 2: adjuntos nuevos en Supabase Storage privado
+            const { data, error } = await supabaseAdmin
+                .storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .download(storagePath);
+            if (error || !data) {
+                console.error("❌ Supabase download error:", {
+                    attachmentId,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    storagePath,
+                    error,
+                });
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo",
+                });
+            }
+            buffer = Buffer.from(await data.arrayBuffer());
+        }
         res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
         res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
         res.setHeader("Content-Length", String(buffer.length));

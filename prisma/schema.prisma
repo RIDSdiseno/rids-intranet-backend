@@ -925,19 +925,21 @@ model TicketMessage {
 }
 
 model TicketAttachment {
-  id        Int           @id @default(autoincrement())
-  messageId Int
-  filename  String
-  mimeType  String
-  url       String
-  bytes     Int
-  createdAt DateTime      @default(now())
-  contentId String?
-  isInline  Boolean       @default(false)
-  message   TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  id          Int           @id @default(autoincrement())
+  messageId   Int
+  filename    String
+  mimeType    String
+  url         String
+  storagePath String?
+  bytes       Int
+  createdAt   DateTime      @default(now())
+  contentId   String?
+  isInline    Boolean       @default(false)
+  message     TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
   @@index([contentId])
+  @@index([storagePath])
 }
 
 model TicketEvent {

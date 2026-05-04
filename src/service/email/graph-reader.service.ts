@@ -3,7 +3,12 @@ import { ClientSecretCredential } from '@azure/identity';
 import 'isomorphic-fetch';
 
 import { prisma } from '../../lib/prisma.js';
-import crypto from 'crypto';
+import crypto from "crypto";
+
+import {
+    supabaseAdmin,
+    TICKET_ATTACHMENTS_BUCKET,
+} from "../../lib/supabase/supabase.js";
 
 import {
     TicketStatus,
@@ -176,8 +181,8 @@ class GraphReaderService {
     }
 
     /* ======================================================
-       Guardar adjuntos
-    ====================================================== */
+   Guardar adjuntos
+====================================================== */
     private async saveAttachments(
         ticketId: number,
         messageId: number,
@@ -207,58 +212,52 @@ class GraphReaderService {
 
             if (!buffer) continue;
 
-            //  Subir a Cloudinary usando stream
-            const safeName = att.filename.replace(/[^\w.\-]/g, "_");
-            const extension = safeName.split(".").pop()?.toLowerCase() || "";
+            // Subir adjunto a Supabase Storage
+            const safeName = att.filename
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^\w.\-]+/g, "_");
 
-            const rawExtensions = [
-                "xlsx",
-                "xls",
-                "csv",
-                "doc",
-                "docx",
-                "ppt",
-                "pptx",
-                "zip",
-                "rar",
-                "7z",
-                "txt",
-                "pdf",
-            ];
+            const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
 
-            const resourceType: "raw" | "auto" =
-                rawExtensions.includes(extension) ? "raw" : "auto";
+            const storagePath = `tickets/${ticketId}/messages/${messageId}/${uniqueName}`;
 
-            const baseName = safeName.replace(/\.[^.]+$/, "");
-
-            const uploadOptions = {
-                folder: `rids/helpdesk/tickets/${ticketId}`,
-                resource_type: resourceType,
-                public_id: `email_${ticketId}_${Date.now()}_${baseName}`,
-                use_filename: false,
-                unique_filename: false,
-                ...(resourceType === "raw" ? { format: extension } : {}),
-            };
-
-            const uploadResult = await new Promise<any>((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(
-                    uploadOptions,
-                    (error, result) => {
-                        if (error) reject(error);
-                        else resolve(result);
-                    }
-                );
-
-                Readable.from(buffer).pipe(stream);
+            console.log("☁️ SUPABASE SAVE_ATTACHMENTS ACTIVO:", {
+                ticketId,
+                messageId,
+                filename: safeName,
+                bucket: TICKET_ATTACHMENTS_BUCKET,
+                storagePath,
             });
+
+            const { error: uploadError } = await supabaseAdmin
+                .storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .upload(storagePath, buffer, {
+                    contentType: att.mimeType || "application/octet-stream",
+                    upsert: false,
+                });
+
+            if (uploadError) {
+                console.error("❌ Error subiendo adjunto a Supabase:", {
+                    ticketId,
+                    messageId,
+                    filename: safeName,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    storagePath,
+                    error: uploadError,
+                });
+
+                throw uploadError;
+            }
 
             await prisma.ticketAttachment.create({
                 data: {
                     messageId,
                     filename: safeName,
-                    mimeType: att.mimeType,
-                    bytes: att.bytes,
-                    url: uploadResult.secure_url,
+                    mimeType: att.mimeType || "application/octet-stream",
+                    bytes: att.bytes || buffer.length,
+                    url: storagePath,
                     isInline: att.isInline,
                     contentId: att.contentId,
                 },
