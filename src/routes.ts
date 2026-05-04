@@ -80,6 +80,9 @@ import simpleapiRouter from "./routes/Simpleapi.routes.js";
 /* ===================== SII API ===================== */
 import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
 
+/* ===================== Clientes ===================== */
+import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
@@ -171,6 +174,9 @@ api.use("/facturas", simpleapiRouter);
 
 /* ===================== SII API ===================== */
 api.use("/sii", siiApiRoutes);
+
+/* ===================== Clientes ===================== */
+api.use("/clientes-ext", clientesExtRouter);
 
 /* ===================== Export ===================== */
 export default api;

@@ -1,14 +1,15 @@
 // src/routes/simpleapi.routes.ts
 import { Router } from "express";
 import { getVentasRCV, getResumenVentasRCV, getComprasRCV, getResumenComprasRCV, } from "../controllers/Simpleapi.controller.js";
+import { auth } from "../middlewares/auth.js";
 const router = Router();
 // GET /api/facturas/ventas?mes=04&ano=2025
-router.get("/ventas", getVentasRCV);
+router.get("/ventas", auth(), getVentasRCV);
 // GET /api/facturas/ventas/resumen?mes=04&ano=2025
-router.get("/ventas/resumen", getResumenVentasRCV);
+router.get("/ventas/resumen", auth(), getResumenVentasRCV);
 // GET /api/facturas/compras?mes=04&ano=2025
-router.get("/compras", getComprasRCV);
+router.get("/compras", auth(), getComprasRCV);
 // GET /api/facturas/compras/resumen?mes=04&ano=2025
-router.get("/compras/resumen", getResumenComprasRCV);
+router.get("/compras/resumen", auth(), getResumenComprasRCV);
 export default router;
 //# sourceMappingURL=Simpleapi.routes.js.map
