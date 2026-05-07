@@ -12,3 +12,16 @@ export function onlyRole(...roles: string[]) {
     next();
   };
 }
+
+export function onlyEmail(...emails: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const userEmail = (req as any).user?.email as string | undefined;
+
+    if (!userEmail || !emails.includes(userEmail)) {
+      res.status(403).json({ message: "No tienes permisos" });
+      return;
+    }
+
+    next();
+  };
+}
