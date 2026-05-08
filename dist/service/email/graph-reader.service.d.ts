@@ -4,6 +4,9 @@ declare class GraphReaderService {
     private client;
     private supportEmail;
     private normalizeSubject;
+    private extractEmailAddress;
+    private getDomainFromEmail;
+    private findEmpresaByEmail;
     constructor();
     getClient(): Promise<Client>;
     readInboxEmails(): Promise<void>;

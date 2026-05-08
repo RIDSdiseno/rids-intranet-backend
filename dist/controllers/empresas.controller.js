@@ -1,5 +1,23 @@
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+// Util para normalizar dominios ingresados (string o array) a formato consistente
+function normalizeDominios(input) {
+    if (input === undefined || input === null)
+        return [];
+    const raw = Array.isArray(input)
+        ? input
+        : String(input).split(",");
+    const dominios = raw
+        .map((d) => String(d).trim().toLowerCase())
+        .map((d) => d.replace(/^@+/, ""))
+        .map((d) => d.replace(/^https?:\/\//, ""))
+        .map((d) => d.replace(/^www\./, ""))
+        .map((d) => d.split("/")[0] ?? "")
+        .map((d) => d.split(":")[0] ?? "")
+        .map((d) => d.trim())
+        .filter((d) => d.length > 0);
+    return Array.from(new Set(dominios));
+}
 /* =======================================================
    GET /api/empresas  (rápido por defecto)
    Query flags:
@@ -216,7 +234,10 @@ export async function getEmpresas(req, res) {
         const data = empresasBase.map((e) => ({
             id_empresa: e.id_empresa,
             nombre: e.nombre,
-            detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null, // 👈 clave
+            tieneSucursales: e.tieneSucursales,
+            dominios: e.dominios ?? [],
+            dominioPrincipal: e.dominios?.[0] ?? null,
+            detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
             estadisticas: {
                 totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
                 totalEquipos: equiposPorEmpresa.get(e.id_empresa) ?? 0,
@@ -365,7 +386,14 @@ export async function getEmpresaById(req, res) {
    ======================================================= */
 export async function createEmpresa(req, res) {
     try {
-        const { nombre, rut, direccion, telefono, email } = req.body;
+        const { nombre, rut, direccion, telefono, email, dominios } = req.body;
+        if (!nombre || !String(nombre).trim()) {
+            res.status(400).json({
+                success: false,
+                error: "El nombre de la empresa es obligatorio",
+            });
+            return;
+        }
         if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
             res.status(400).json({
                 success: false,
@@ -373,15 +401,30 @@ export async function createEmpresa(req, res) {
             });
             return;
         }
+        const dominiosNormalizados = normalizeDominios(dominios);
         const result = await prisma.$transaction(async (tx) => {
             const nueva = await tx.empresa.create({
-                data: { nombre },
-                select: { id_empresa: true, nombre: true, tieneSucursales: true },
+                data: {
+                    nombre: String(nombre).trim(),
+                    dominios: dominiosNormalizados,
+                },
+                select: {
+                    id_empresa: true,
+                    nombre: true,
+                    tieneSucursales: true,
+                    dominios: true,
+                },
             });
             let detalle = null;
             if (rut && direccion && telefono && email) {
                 detalle = await tx.detalleEmpresa.create({
-                    data: { rut, direccion, telefono, email, empresa_id: nueva.id_empresa },
+                    data: {
+                        rut,
+                        direccion,
+                        telefono,
+                        email,
+                        empresa_id: nueva.id_empresa,
+                    },
                 });
             }
             return { nueva, detalle };
@@ -410,7 +453,11 @@ export async function createEmpresa(req, res) {
 export async function updateEmpresa(req, res) {
     try {
         const id = Number(req.params.id);
-        const { nombre, rut, direccion, telefono, email } = req.body;
+        const { nombre, rut, direccion, telefono, email, dominios } = req.body;
+        if (!Number.isInteger(id) || id <= 0) {
+            res.status(400).json({ success: false, error: "ID inválido" });
+            return;
+        }
         if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
             res.status(400).json({
                 success: false,
@@ -427,12 +474,23 @@ export async function updateEmpresa(req, res) {
             return;
         }
         const result = await prisma.$transaction(async (tx) => {
+            const dataEmpresa = {};
             if (typeof nombre === "string") {
-                await tx.empresa.update({ where: { id_empresa: id }, data: { nombre } });
+                dataEmpresa.nombre = nombre.trim();
             }
-            let detalle = await tx.detalleEmpresa.findUnique({ where: { empresa_id: id } });
+            if (dominios !== undefined) {
+                dataEmpresa.dominios = normalizeDominios(dominios);
+            }
+            if (Object.keys(dataEmpresa).length > 0) {
+                await tx.empresa.update({
+                    where: { id_empresa: id },
+                    data: dataEmpresa,
+                });
+            }
+            let detalle = await tx.detalleEmpresa.findUnique({
+                where: { empresa_id: id },
+            });
             if (rut && direccion && telefono && email) {
-                // upsert manual
                 if (detalle) {
                     detalle = await tx.detalleEmpresa.update({
                         where: { empresa_id: id },
@@ -441,13 +499,24 @@ export async function updateEmpresa(req, res) {
                 }
                 else {
                     detalle = await tx.detalleEmpresa.create({
-                        data: { rut, direccion, telefono, email, empresa_id: id },
+                        data: {
+                            rut,
+                            direccion,
+                            telefono,
+                            email,
+                            empresa_id: id,
+                        },
                     });
                 }
             }
             const empresaAct = await tx.empresa.findUnique({
                 where: { id_empresa: id },
-                select: { id_empresa: true, nombre: true, tieneSucursales: true },
+                select: {
+                    id_empresa: true,
+                    nombre: true,
+                    tieneSucursales: true,
+                    dominios: true,
+                },
             });
             return { empresaAct, detalle };
         });

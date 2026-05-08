@@ -4,6 +4,27 @@ import type { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
+// Util para normalizar dominios ingresados (string o array) a formato consistente
+function normalizeDominios(input: unknown): string[] {
+  if (input === undefined || input === null) return [];
+
+  const raw = Array.isArray(input)
+    ? input
+    : String(input).split(",");
+
+  const dominios = raw
+    .map((d) => String(d).trim().toLowerCase())
+    .map((d) => d.replace(/^@+/, ""))
+    .map((d) => d.replace(/^https?:\/\//, ""))
+    .map((d) => d.replace(/^www\./, ""))
+    .map((d) => d.split("/")[0] ?? "")
+    .map((d) => d.split(":")[0] ?? "")
+    .map((d) => d.trim())
+    .filter((d): d is string => d.length > 0);
+
+  return Array.from(new Set(dominios));
+}
+
 /* =======================================================
    GET /api/empresas  (rápido por defecto)
    Query flags:
@@ -288,7 +309,10 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     const data = empresasBase.map((e) => ({
       id_empresa: e.id_empresa,
       nombre: e.nombre,
-      detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null, // 👈 clave
+      tieneSucursales: e.tieneSucursales,
+      dominios: e.dominios ?? [],
+      dominioPrincipal: e.dominios?.[0] ?? null,
+      detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
       estadisticas: {
         totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
         totalEquipos: equiposPorEmpresa.get(e.id_empresa) ?? 0,
@@ -465,7 +489,15 @@ export async function createEmpresa(
   res: Response
 ): Promise<void> {
   try {
-    const { nombre, rut, direccion, telefono, email } = req.body;
+    const { nombre, rut, direccion, telefono, email, dominios } = req.body;
+
+    if (!nombre || !String(nombre).trim()) {
+      res.status(400).json({
+        success: false,
+        error: "El nombre de la empresa es obligatorio",
+      });
+      return;
+    }
 
     if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
       res.status(400).json({
@@ -476,19 +508,34 @@ export async function createEmpresa(
       return;
     }
 
+    const dominiosNormalizados = normalizeDominios(dominios);
+
     const result = await prisma.$transaction(async (tx) => {
       const nueva = await tx.empresa.create({
-        data: { nombre },
-        select: { id_empresa: true, nombre: true, tieneSucursales: true },
+        data: {
+          nombre: String(nombre).trim(),
+          dominios: dominiosNormalizados,
+        },
+        select: {
+          id_empresa: true,
+          nombre: true,
+          tieneSucursales: true,
+          dominios: true,
+        },
       });
 
-      // Tipado seguro con GetPayload
       type DetalleEmpresaRow = Prisma.DetalleEmpresaGetPayload<{}>;
       let detalle: DetalleEmpresaRow | null = null;
 
       if (rut && direccion && telefono && email) {
         detalle = await tx.detalleEmpresa.create({
-          data: { rut, direccion, telefono, email, empresa_id: nueva.id_empresa },
+          data: {
+            rut,
+            direccion,
+            telefono,
+            email,
+            empresa_id: nueva.id_empresa,
+          },
         });
       }
 
@@ -501,15 +548,18 @@ export async function createEmpresa(
     });
   } catch (error: any) {
     console.error("Error al crear empresa:", error);
+
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
       const errorMessage =
         field === "nombre"
           ? "El nombre de la empresa ya existe"
           : "El RUT de la empresa ya existe";
+
       res.status(400).json({ success: false, error: errorMessage });
       return;
     }
+
     res.status(500).json({ success: false, error: "Error al crear empresa" });
   }
 }
@@ -520,7 +570,12 @@ export async function createEmpresa(
 export async function updateEmpresa(req: Request, res: Response): Promise<void> {
   try {
     const id = Number(req.params.id);
-    const { nombre, rut, direccion, telefono, email } = req.body;
+    const { nombre, rut, direccion, telefono, email, dominios } = req.body;
+
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ success: false, error: "ID inválido" });
+      return;
+    }
 
     if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
       res.status(400).json({
@@ -535,20 +590,35 @@ export async function updateEmpresa(req: Request, res: Response): Promise<void> 
       where: { id_empresa: id },
       select: { id_empresa: true },
     });
+
     if (!empresaExistente) {
       res.status(404).json({ success: false, error: "Empresa no encontrada" });
       return;
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const dataEmpresa: Prisma.EmpresaUpdateInput = {};
+
       if (typeof nombre === "string") {
-        await tx.empresa.update({ where: { id_empresa: id }, data: { nombre } });
+        dataEmpresa.nombre = nombre.trim();
       }
 
-      let detalle = await tx.detalleEmpresa.findUnique({ where: { empresa_id: id } });
+      if (dominios !== undefined) {
+        dataEmpresa.dominios = normalizeDominios(dominios);
+      }
+
+      if (Object.keys(dataEmpresa).length > 0) {
+        await tx.empresa.update({
+          where: { id_empresa: id },
+          data: dataEmpresa,
+        });
+      }
+
+      let detalle = await tx.detalleEmpresa.findUnique({
+        where: { empresa_id: id },
+      });
 
       if (rut && direccion && telefono && email) {
-        // upsert manual
         if (detalle) {
           detalle = await tx.detalleEmpresa.update({
             where: { empresa_id: id },
@@ -556,14 +626,25 @@ export async function updateEmpresa(req: Request, res: Response): Promise<void> 
           });
         } else {
           detalle = await tx.detalleEmpresa.create({
-            data: { rut, direccion, telefono, email, empresa_id: id },
+            data: {
+              rut,
+              direccion,
+              telefono,
+              email,
+              empresa_id: id,
+            },
           });
         }
       }
 
       const empresaAct = await tx.empresa.findUnique({
         where: { id_empresa: id },
-        select: { id_empresa: true, nombre: true, tieneSucursales: true },
+        select: {
+          id_empresa: true,
+          nombre: true,
+          tieneSucursales: true,
+          dominios: true,
+        },
       });
 
       return { empresaAct, detalle };
@@ -575,15 +656,18 @@ export async function updateEmpresa(req: Request, res: Response): Promise<void> 
     });
   } catch (error: any) {
     console.error("Error al actualizar empresa:", error);
+
     if (error.code === "P2002") {
       const field = error.meta?.target?.[0];
       const errorMessage =
         field === "nombre"
           ? "El nombre de la empresa ya existe"
           : "El RUT de la empresa ya existe";
+
       res.status(400).json({ success: false, error: errorMessage });
       return;
     }
+
     res.status(500).json({ success: false, error: "Error al actualizar empresa" });
   }
 }

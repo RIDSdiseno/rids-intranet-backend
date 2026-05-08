@@ -8,14 +8,6 @@ import { sendTicketAssignedEmail } from "./ticket-assignment-mailer.js";
 import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
-import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET } from "../../lib/supabase/supabase.js";
-// Helper para sanitizar nombres de archivos y evitar problemas con caracteres especiales
-function sanitizeFilename(filename) {
-    return filename
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^\w.\-]+/g, "_");
-}
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str
@@ -86,54 +78,35 @@ function buildReplyRecipients(messages, supportEmail, fallbackTo) {
         cc: [...participants],
     };
 }
-async function uploadWebTicketAttachmentToSupabase(params) {
-    const safeName = sanitizeFilename(params.filename);
-    const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-    const storagePath = `tickets/${params.ticketId}/messages/${params.messageId}/${uniqueName}`;
-    const { error } = await supabaseAdmin
-        .storage
-        .from(TICKET_ATTACHMENTS_BUCKET)
-        .upload(storagePath, params.buffer, {
-        contentType: params.mimeType || "application/octet-stream",
-        upsert: false,
+// agregar aquí técnicos permitidos
+const HELPDESK_ASSIGN_ALLOWED_EMAILS = [
+    "dbravo@rids.cl",
+    "rcalsin@rids.cl",
+    "carenas@rids.cl",
+    "igonzalez@rids.cl",
+    "mahumada@rids.cl"
+];
+async function canAssignTickets(agentId) {
+    if (!agentId)
+        return false;
+    const tecnico = await prisma.tecnico.findUnique({
+        where: { id_tecnico: agentId },
+        select: {
+            email: true,
+            status: true,
+        },
     });
-    if (error) {
-        console.error("❌ Error subiendo adjunto web a Supabase:", {
-            ticketId: params.ticketId,
-            messageId: params.messageId,
-            filename: safeName,
-            bucket: TICKET_ATTACHMENTS_BUCKET,
-            storagePath,
-            error,
-        });
-        throw error;
-    }
-    return {
-        safeName,
-        storagePath,
-    };
+    if (!tecnico?.status || !tecnico.email)
+        return false;
+    return HELPDESK_ASSIGN_ALLOWED_EMAILS.includes(tecnico.email.trim().toLowerCase());
 }
 // Crear ticket
 export async function createTicket(req, res) {
     try {
         const { empresaId, requesterId, subject, message, priority, assigneeId, fromEmail: bodyFromEmail, } = req.body;
-        const empresaIdBody = empresaId ? Number(empresaId) : undefined;
-        const requesterIdBody = requesterId ? Number(requesterId) : undefined;
-        const assigneeIdBody = assigneeId ? Number(assigneeId) : undefined;
-        let empresaIdFinal = Number.isFinite(empresaIdBody) && empresaIdBody > 0
-            ? empresaIdBody
-            : undefined;
-        const requesterIdFinal = Number.isFinite(requesterIdBody) && requesterIdBody > 0
-            ? requesterIdBody
-            : undefined;
-        const assigneeIdFinal = Number.isFinite(assigneeIdBody) && assigneeIdBody > 0
-            ? assigneeIdBody
-            : undefined;
-        const subjectFinal = String(subject ?? "").trim();
-        const messageFinal = String(message ?? "").trim();
-        const fromEmailFinal = String(bodyFromEmail ?? "").trim();
+        let empresaIdFinal = empresaId;
         // Si no se envió empresaId pero sí un correo manual, asignamos a "SIN CLASIFICAR" para no bloquear la creación del ticket (el agente luego puede editar el ticket y asignar la empresa correcta).
-        if (!empresaIdFinal && fromEmailFinal) {
+        if (!empresaIdFinal && bodyFromEmail?.trim()) {
             const empresaSinClasificar = await prisma.empresa.findFirst({
                 where: {
                     nombre: {
@@ -153,41 +126,46 @@ export async function createTicket(req, res) {
             empresaIdFinal = empresaSinClasificar.id_empresa;
         }
         // Validaciones básicas
-        if (!empresaIdFinal || !subjectFinal) {
+        if (!empresaIdFinal || !subject) {
             return res.status(400).json({
                 ok: false,
                 message: "empresaId y subject son obligatorios",
             });
         }
-        if (!requesterIdFinal && !fromEmailFinal) {
+        if (!requesterId && !bodyFromEmail?.trim()) {
             return res.status(400).json({
                 ok: false,
                 message: "Debes seleccionar un contacto o ingresar un correo manual",
             });
         }
         const publicId = crypto.randomUUID();
-        const files = req.files;
+        // Creamos el ticket dentro de una transacción para asegurar que la creación del ticket, 
+        // el evento de creación y el mensaje inicial (si existe) se creen de forma atómica. 
+        // Luego emitimos un evento "ticket.created" para que otros sistemas puedan reaccionar a
+        //  la creación del ticket (como enviar notificaciones, actualizar dashboards, etc). 
+        // Finalmente, si el ticket tiene un correo de origen válido, intentamos enviar 
+        // un auto-reply al cliente con un template personalizado.
         const ticket = await prisma.$transaction(async (tx) => {
             const ticket = await tx.ticket.create({
                 data: {
                     publicId,
-                    subject: subjectFinal,
+                    subject,
                     status: TicketStatus.OPEN,
                     priority: priority ?? TicketPriority.NORMAL,
                     channel: "WEB",
                     lastActivityAt: new Date(),
-                    fromEmail: fromEmailFinal || null,
+                    fromEmail: bodyFromEmail?.trim() || null,
                     empresa: {
                         connect: { id_empresa: empresaIdFinal },
                     },
-                    ...(requesterIdFinal && {
+                    ...(requesterId && {
                         requester: {
-                            connect: { id_solicitante: requesterIdFinal },
+                            connect: { id_solicitante: requesterId },
                         },
                     }),
-                    ...(assigneeIdFinal && {
+                    ...(assigneeId && {
                         assignee: {
-                            connect: { id_tecnico: assigneeIdFinal },
+                            connect: { id_tecnico: assigneeId },
                         },
                     }),
                 },
@@ -199,42 +177,17 @@ export async function createTicket(req, res) {
                     actorType: TicketActorType.SYSTEM,
                 },
             });
-            if (messageFinal || files?.length) {
-                const createdMessage = await tx.ticketMessage.create({
+            if (message?.trim()) {
+                await tx.ticketMessage.create({
                     data: {
                         ticketId: ticket.id,
                         direction: MessageDirection.OUTBOUND,
-                        bodyText: messageFinal || "",
+                        bodyText: message.trim(),
                         isInternal: false,
                         fromEmail: null,
-                        toEmail: fromEmailFinal || null,
+                        toEmail: bodyFromEmail?.trim() || null,
                     },
                 });
-                if (files?.length) {
-                    for (const file of files) {
-                        if (!file.buffer) {
-                            throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
-                        }
-                        const uploaded = await uploadWebTicketAttachmentToSupabase({
-                            ticketId: ticket.id,
-                            messageId: createdMessage.id,
-                            filename: file.originalname,
-                            mimeType: file.mimetype,
-                            buffer: file.buffer,
-                        });
-                        await tx.ticketAttachment.create({
-                            data: {
-                                messageId: createdMessage.id,
-                                filename: uploaded.safeName,
-                                mimeType: file.mimetype || "application/octet-stream",
-                                url: uploaded.storagePath,
-                                bytes: file.size || file.buffer.length,
-                                isInline: false,
-                                contentId: null,
-                            },
-                        });
-                    }
-                }
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: ticket.id,
@@ -323,24 +276,11 @@ export async function createTicket(req, res) {
                         areaTecnico: tecnico?.area || "Soporte Técnico",
                     },
                 });
-                const emailAttachments = files?.length
-                    ? files.map((file) => {
-                        if (!file.buffer) {
-                            throw new Error(`El archivo ${file.originalname} no tiene buffer`);
-                        }
-                        return {
-                            name: file.originalname,
-                            contentType: file.mimetype || "application/octet-stream",
-                            contentBytes: Buffer.from(file.buffer).toString("base64"),
-                        };
-                    })
-                    : [];
                 if (rendered.isEnabled) {
                     await graphReaderService.sendReplyEmail({
                         to: normalizedFromEmail,
                         subject: rendered.subject,
                         bodyHtml: rendered.bodyHtml,
-                        attachments: emailAttachments,
                     });
                 }
             }
@@ -443,6 +383,19 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
             createdMessageId = createdMessage.id;
+            if (files?.length) {
+                for (const file of files) {
+                    await tx.ticketAttachment.create({
+                        data: {
+                            messageId: createdMessage.id,
+                            filename: file.originalname,
+                            mimeType: file.mimetype,
+                            url: file.path,
+                            bytes: file.size,
+                        },
+                    });
+                }
+            }
             const updateData = {
                 lastActivityAt: new Date(),
             };
@@ -466,31 +419,6 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
         });
-        if (createdMessageId && files?.length) {
-            for (const file of files) {
-                if (!file.buffer) {
-                    throw new Error(`El archivo ${file.originalname} no tiene buffer. Revisa multer.memoryStorage().`);
-                }
-                const uploaded = await uploadAgentAttachmentToSupabase({
-                    ticketId,
-                    messageId: createdMessageId,
-                    filename: file.originalname,
-                    mimeType: file.mimetype,
-                    buffer: file.buffer,
-                });
-                await prisma.ticketAttachment.create({
-                    data: {
-                        messageId: createdMessageId,
-                        filename: uploaded.safeName,
-                        mimeType: file.mimetype || "application/octet-stream",
-                        url: uploaded.storagePath,
-                        bytes: file.size || file.buffer.length,
-                        isInline: false,
-                        contentId: null,
-                    },
-                });
-            }
-        }
         //  Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
             const tecnico = ticket.assignee ?? null;
@@ -519,16 +447,19 @@ export async function replyTicketAsAgent(req, res) {
                 },
             });
             const emailAttachments = files?.length
-                ? files.map((file) => {
-                    if (!file.buffer) {
-                        throw new Error(`El archivo ${file.originalname} no tiene buffer`);
+                ? await Promise.all(files.map(async (file) => {
+                    const response = await fetch(file.path);
+                    if (!response.ok) {
+                        throw new Error(`No se pudo descargar adjunto: ${file.originalname}`);
                     }
+                    const arrayBuffer = await response.arrayBuffer();
+                    const fileBuffer = Buffer.from(arrayBuffer);
                     return {
                         name: file.originalname,
                         contentType: file.mimetype || "application/octet-stream",
-                        contentBytes: Buffer.from(file.buffer).toString("base64"),
+                        contentBytes: fileBuffer.toString("base64"),
                     };
-                })
+                }))
                 : [];
             if (rendered.isEnabled) {
                 const lastInboundMessage = [...ticket.messages]
@@ -593,25 +524,6 @@ export async function replyTicketAsAgent(req, res) {
             message: "Error al responder ticket",
         });
     }
-}
-// Helper para subir adjuntos de agente a Supabase Storage y obtener la URL pública
-async function uploadAgentAttachmentToSupabase(params) {
-    const safeName = sanitizeFilename(params.filename);
-    const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-    const storagePath = `tickets/${params.ticketId}/messages/${params.messageId}/${uniqueName}`;
-    const { error } = await supabaseAdmin
-        .storage
-        .from(TICKET_ATTACHMENTS_BUCKET)
-        .upload(storagePath, params.buffer, {
-        contentType: params.mimeType || "application/octet-stream",
-        upsert: false,
-    });
-    if (error)
-        throw error;
-    return {
-        safeName,
-        storagePath,
-    };
 }
 // Listar tickets con filtros
 export async function listTickets(req, res) {
@@ -881,7 +793,8 @@ export async function getTicketById(req, res) {
             })
             : null;
         let ticketFinal = ticket;
-        if (!ticket.assigneeId && tecnicoActual?.status) {
+        const puedeAutoAsignar = await canAssignTickets(agentId);
+        if (!ticket.assigneeId && tecnicoActual?.status && puedeAutoAsignar) {
             try {
                 ticketFinal = await prisma.ticket.update({
                     where: { id: ticket.id },
@@ -976,6 +889,16 @@ export async function updateTicket(req, res) {
                 ok: false,
                 message: "Ticket no encontrado",
             });
+        }
+        const isTryingToAssign = assigneeId !== undefined && assigneeId !== ticket.assigneeId;
+        if (isTryingToAssign) {
+            const allowed = await canAssignTickets(agentId);
+            if (!allowed) {
+                return res.status(403).json({
+                    ok: false,
+                    message: "No tienes permisos para asignar o reasignar tickets",
+                });
+            }
         }
         const updateData = {};
         const events = [];
@@ -1145,7 +1068,7 @@ export async function inboundEmail(req, res) {
             data: {
                 publicId: crypto.randomUUID(),
                 subject: subject || "Sin asunto",
-                status: TicketStatus.OPEN,
+                status: TicketStatus.NEW,
                 priority: TicketPriority.NORMAL,
                 channel: "EMAIL",
                 ...(empresa?.id_empresa && {
@@ -1197,83 +1120,28 @@ export async function inboundEmail(req, res) {
         });
     }
 }
-// GET /helpdesk/attachments/:attachmentId/download
+// GET /helpdesk/attachments/:id/download
+// Endpoint para descargar adjuntos de tickets (firmas, archivos, etc.)
 export async function downloadTicketAttachment(req, res) {
     try {
         const attachmentId = Number(req.params.attachmentId);
         if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({
-                ok: false,
-                message: "Adjunto inválido",
-            });
+            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
         }
         const att = await prisma.ticketAttachment.findUnique({
             where: { id: attachmentId },
-            include: {
-                message: {
-                    include: {
-                        ticket: {
-                            select: {
-                                id: true,
-                                empresaId: true,
-                                deletedAt: true,
-                            },
-                        },
-                    },
-                },
-            },
         });
-        if (!att || att.message.ticket.deletedAt) {
+        if (!att) {
+            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
+        }
+        const response = await fetch(att.url);
+        if (!response.ok) {
             return res.status(404).json({
                 ok: false,
-                message: "Adjunto no encontrado",
+                message: "No se pudo obtener el archivo",
             });
         }
-        const storagePath = att.url;
-        if (!storagePath) {
-            return res.status(400).json({
-                ok: false,
-                message: "El adjunto no tiene ruta de almacenamiento",
-            });
-        }
-        let buffer;
-        // Caso 1: adjuntos antiguos o actuales en Cloudinary / URL externa
-        if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
-            const response = await fetch(storagePath);
-            if (!response.ok) {
-                console.error("❌ Error descargando archivo externo:", {
-                    attachmentId,
-                    url: storagePath,
-                    status: response.status,
-                    statusText: response.statusText,
-                });
-                return res.status(404).json({
-                    ok: false,
-                    message: "No se pudo obtener el archivo externo",
-                });
-            }
-            buffer = Buffer.from(await response.arrayBuffer());
-        }
-        else {
-            // Caso 2: adjuntos nuevos en Supabase Storage privado
-            const { data, error } = await supabaseAdmin
-                .storage
-                .from(TICKET_ATTACHMENTS_BUCKET)
-                .download(storagePath);
-            if (error || !data) {
-                console.error("❌ Supabase download error:", {
-                    attachmentId,
-                    bucket: TICKET_ATTACHMENTS_BUCKET,
-                    storagePath,
-                    error,
-                });
-                return res.status(404).json({
-                    ok: false,
-                    message: "No se pudo obtener el archivo",
-                });
-            }
-            buffer = Buffer.from(await data.arrayBuffer());
-        }
+        const buffer = Buffer.from(await response.arrayBuffer());
         res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
         res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
         res.setHeader("Content-Length", String(buffer.length));
@@ -1284,90 +1152,6 @@ export async function downloadTicketAttachment(req, res) {
         return res.status(500).json({
             ok: false,
             message: "Error al descargar adjunto",
-        });
-    }
-}
-// GET /helpdesk/tickets/attachments/:attachmentId/inline
-// Endpoint para mostrar adjuntos inline, como imágenes pegadas en el correo
-export async function inlineTicketAttachment(req, res) {
-    try {
-        const attachmentId = Number(req.params.attachmentId);
-        if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({
-                ok: false,
-                message: "Adjunto inválido",
-            });
-        }
-        const att = await prisma.ticketAttachment.findUnique({
-            where: { id: attachmentId },
-            include: {
-                message: {
-                    include: {
-                        ticket: {
-                            select: {
-                                id: true,
-                                empresaId: true,
-                                deletedAt: true,
-                            },
-                        },
-                    },
-                },
-            },
-        });
-        if (!att || att.message.ticket.deletedAt) {
-            return res.status(404).json({
-                ok: false,
-                message: "Adjunto no encontrado",
-            });
-        }
-        const storagePath = att.url;
-        if (!storagePath) {
-            return res.status(400).json({
-                ok: false,
-                message: "El adjunto no tiene ruta de almacenamiento",
-            });
-        }
-        let buffer;
-        if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
-            const response = await fetch(storagePath);
-            if (!response.ok) {
-                return res.status(404).json({
-                    ok: false,
-                    message: "No se pudo obtener el archivo externo",
-                });
-            }
-            buffer = Buffer.from(await response.arrayBuffer());
-        }
-        else {
-            const { data, error } = await supabaseAdmin
-                .storage
-                .from(TICKET_ATTACHMENTS_BUCKET)
-                .download(storagePath);
-            if (error || !data) {
-                console.error("❌ Supabase inline download error:", {
-                    attachmentId,
-                    bucket: TICKET_ATTACHMENTS_BUCKET,
-                    storagePath,
-                    error,
-                });
-                return res.status(404).json({
-                    ok: false,
-                    message: "No se pudo obtener el archivo",
-                });
-            }
-            buffer = Buffer.from(await data.arrayBuffer());
-        }
-        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
-        res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
-        res.setHeader("Content-Length", String(buffer.length));
-        res.setHeader("Cache-Control", "private, max-age=300");
-        return res.send(buffer);
-    }
-    catch (error) {
-        console.error("[helpdesk] inlineTicketAttachment error:", error);
-        return res.status(500).json({
-            ok: false,
-            message: "Error al mostrar adjunto",
         });
     }
 }
@@ -1401,6 +1185,16 @@ export async function proxyExternalImage(req, res) {
 export async function bulkUpdateTickets(req, res) {
     try {
         const { ticketIds, status, assigneeId } = req.body;
+        const agentId = req.user?.id ?? null;
+        if (assigneeId !== undefined) {
+            const allowed = await canAssignTickets(agentId);
+            if (!allowed) {
+                return res.status(403).json({
+                    ok: false,
+                    message: "No tienes permisos para asignar o reasignar tickets",
+                });
+            }
+        }
         if (!ticketIds?.length) {
             return res.status(400).json({ ok: false });
         }
@@ -1412,6 +1206,7 @@ export async function bulkUpdateTickets(req, res) {
             where: { id: { in: ticketIds } },
             data: {
                 ...(status && { status }),
+                ...(status && { lastActivityAt: new Date() }),
                 ...(status === TicketStatus.CLOSED && { closedAt: new Date() }),
                 ...(status === TicketStatus.CLOSED && { resolvedAt: new Date() }),
                 ...(assigneeId !== undefined && { assigneeId }),

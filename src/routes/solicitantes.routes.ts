@@ -5,6 +5,7 @@ import {
   listSolicitantesByEmpresa,
   solicitantesMetrics,
   createSolicitante,
+  checkSolicitanteEmail,
   getSolicitanteById,
   updateSolicitante,
   deleteSolicitante,
@@ -22,6 +23,7 @@ solicitantesRouter.use(auth());
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));
+solicitantesRouter.get("/check-email", asyncHandler(checkSolicitanteEmail));
 solicitantesRouter.post("/", asyncHandler(createSolicitante));
 solicitantesRouter.get("/:id", asyncHandler(getSolicitanteById));
 solicitantesRouter.patch("/:id", asyncHandler(updateSolicitante));

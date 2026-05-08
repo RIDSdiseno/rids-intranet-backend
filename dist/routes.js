@@ -61,6 +61,8 @@ import simpleapiRouter from "./routes/Simpleapi.routes.js";
 import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
+/* ===================== Permisos y Roles ===================== */
+import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
@@ -70,6 +72,7 @@ api.use(onlyOwnEmpresa());
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/agenda", agendaRouter);
+api.use("/role-permissions", rolePermissionsRoutes);
 // ✅ Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta
 // Entonces se monta sin prefijo extra para que quede: POST /api/solicitantes/cleanup/no-cuenta

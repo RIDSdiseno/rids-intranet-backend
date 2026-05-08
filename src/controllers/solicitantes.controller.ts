@@ -13,6 +13,15 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 type OrderByKey = "empresa" | "nombre" | "id";
 type OrderDir = "asc" | "desc";
 
+const normalizeEmail = (v: unknown): string | null => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s.length > 0 ? s : null;
+};
+
+const isValidEmail = (email: string) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 /** ✅ Empresas donde los solicitantes pueden ser "boxes" sin cuenta */
 const BOX_CLINIC_EMPRESA_IDS = new Set([6, 7, 22, 29, 31]); // Clínica Alameda, Providencia
 
@@ -72,13 +81,43 @@ const buildWhereOnlyWithAccount = (): Prisma.SolicitanteWhereInput => ({
   ],
 });
 
+const buildSolicitanteSearchWhere = (
+  rawSearch: unknown,
+  includeEmpresa = true
+): Prisma.SolicitanteWhereInput => {
+  const search = String(rawSearch ?? "").trim();
+
+  if (!search) return {};
+
+  const INS: Prisma.QueryMode = "insensitive";
+
+  const terms = search
+    .split(/\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if (terms.length === 0) return {};
+
+  return {
+    AND: terms.map((term) => ({
+      OR: [
+        { nombre: { contains: term, mode: INS } },
+        { email: { contains: term, mode: INS } },
+        { telefono: { contains: term, mode: INS } },
+        ...(includeEmpresa
+          ? [{ empresa: { nombre: { contains: term, mode: INS } } }]
+          : []),
+      ],
+    })),
+  };
+};
 
 /* ============================================================
  * GET /solicitantes
  * ============================================================ */
 export const listSolicitantes = async (req: Request, res: Response) => {
   try {
-    const q = (req.query.q as string | undefined)?.trim();
+    const q = String(req.query.q ?? req.query.search ?? "").trim();
     const empresaId = toInt(req.query.empresaId);
     const page = clamp(toInt(req.query.page, 1), 1, 1_000_000);
     const pageSize = clamp(toInt(req.query.pageSize, 10), 1, 100);
@@ -111,8 +150,6 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const orderByKey = parseOrderBy(req.query.orderBy);
     const orderDir = parseOrderDir(req.query.orderDir);
 
-    const INS: Prisma.QueryMode = "insensitive";
-
     const where: Prisma.SolicitanteWhereInput = {
       isActive: true,
       ...(user?.rol === "CLIENTE"
@@ -120,15 +157,9 @@ export const listSolicitantes = async (req: Request, res: Response) => {
         : empresaId > 0
           ? { empresaId }
           : {}),
-      ...(q
-        ? {
-          OR: [
-            { nombre: { contains: q, mode: INS } },
-            { email: { contains: q, mode: INS } },
-            { empresa: { nombre: { contains: q, mode: INS } } },
-          ],
-        }
-        : {}),
+
+      ...buildSolicitanteSearchWhere(q, true),
+
       ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] as any } } : {}),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
@@ -253,7 +284,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
 export const listSolicitantesByEmpresa = async (req: Request, res: Response) => {
   try {
     const empresaId = toInt(req.query.empresaId);
-    const q = (req.query.q as string | undefined)?.trim();
+    const q = String(req.query.q ?? req.query.search ?? "").trim();
 
     const user = (req as any).user;
 
@@ -281,7 +312,7 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
     const where: Prisma.SolicitanteWhereInput = {
       isActive: true,
       empresaId,
-      ...(q ? { nombre: { contains: q, mode: "insensitive" } } : {}),
+      ...buildSolicitanteSearchWhere(q, false),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
 
@@ -333,25 +364,16 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
 
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
     const includeEmpresa = String(req.query.includeEmpresa ?? "").toLowerCase() === "true";
-    const q = (req.query.q as string | undefined)?.trim();
+    const q = String(req.query.q ?? req.query.search ?? "").trim();
 
     const limit = clamp(toInt(req.query.limit, 100), 1, 500);
 
-    const INS: Prisma.QueryMode = "insensitive";
     const effectiveEmpresaId = userEmpresaId ?? (empresaId > 0 ? empresaId : null);
 
     const where: Prisma.SolicitanteWhereInput = {
       isActive: true,
       ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
-      ...(q
-        ? {
-          OR: [
-            { nombre: { contains: q, mode: INS } },
-            { email: { contains: q, mode: INS } },
-            { empresa: { nombre: { contains: q, mode: INS } } },
-          ],
-        }
-        : {}),
+      ...buildSolicitanteSearchWhere(q, true),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
 
@@ -390,7 +412,7 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
  * ============================================================ */
 export const solicitantesMetrics = async (req: Request, res: Response) => {
   try {
-    const q = (req.query.q as string | undefined)?.trim();
+    const q = String(req.query.q ?? req.query.search ?? "").trim();
     const empresaId = toInt(req.query.empresaId);
 
     const user = (req as any).user;
@@ -406,19 +428,10 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     );
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
 
-    const INS: Prisma.QueryMode = "insensitive";
     const where: Prisma.SolicitanteWhereInput = {
       isActive: true,
       ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
-      ...(q
-        ? {
-          OR: [
-            { nombre: { contains: q, mode: INS } },
-            { email: { contains: q, mode: INS } },
-            { empresa: { nombre: { contains: q, mode: INS } } },
-          ],
-        }
-        : {}),
+      ...buildSolicitanteSearchWhere(q, true),
       ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
 
@@ -460,28 +473,144 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
   }
 };
 
+/* ============================================================
+ * GET /solicitantes/check-email
+ * Valida si ya existe un solicitante activo con ese correo
+ * ============================================================ */
+export const checkSolicitanteEmail = async (req: Request, res: Response) => {
+  try {
+    const email = normalizeEmail(req.query.email);
+    const excludeId = req.query.excludeId ? toInt(req.query.excludeId) : null;
+
+    if (!email) {
+      return res.json({
+        exists: false,
+        solicitante: null,
+        message: null,
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        error: "El correo no tiene un formato válido",
+      });
+    }
+
+    const existing = await prisma.solicitante.findFirst({
+      where: {
+        isActive: true,
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+        ...(excludeId && excludeId > 0
+          ? {
+            NOT: {
+              id_solicitante: excludeId,
+            },
+          }
+          : {}),
+      },
+      select: {
+        id_solicitante: true,
+        nombre: true,
+        email: true,
+        empresaId: true,
+        empresa: {
+          select: {
+            id_empresa: true,
+            nombre: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      exists: !!existing,
+      solicitante: existing,
+      message: existing
+        ? `Ya existe un solicitante con el correo ${email}. Pertenece a: ${existing.nombre}${existing.empresa?.nombre ? ` (${existing.empresa.nombre})` : ""
+        }.`
+        : null,
+    });
+  } catch (err: unknown) {
+    console.error("[solicitantes.checkEmail] error:", err);
+    return res.status(500).json({
+      error: "No se pudo validar el correo",
+    });
+  }
+};
+
 /* ===================== CREATE ===================== */
 export const createSolicitante = async (req: Request, res: Response) => {
   try {
     const nombre = String(req.body?.nombre ?? "").trim();
-    const emailRaw = (req.body?.email ?? null) as string | null;
-    const email = emailRaw ? String(emailRaw).trim() : null;
+
+    const email = normalizeEmail(req.body?.email);
+
     const telefonoRaw = (req.body?.telefono ?? null) as string | null;
     const telefono = telefonoRaw ? String(telefonoRaw).trim() : null;
 
     const empresaId = toInt(req.body?.empresaId);
 
-    if (!nombre) return res.status(400).json({ error: "El nombre es obligatorio" });
-    if (empresaId <= 0) return res.status(400).json({ error: "empresaId inválido" });
+    if (!nombre) {
+      return res.status(400).json({ error: "El nombre es obligatorio" });
+    }
+
+    if (empresaId <= 0) {
+      return res.status(400).json({ error: "empresaId inválido" });
+    }
+
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({ error: "El correo no tiene un formato válido" });
+    }
 
     const empresa = await prisma.empresa.findUnique({
       where: { id_empresa: empresaId },
       select: { id_empresa: true },
     });
-    if (!empresa) return res.status(404).json({ error: "La empresa no existe" });
+
+    if (!empresa) {
+      return res.status(404).json({ error: "La empresa no existe" });
+    }
+
+    if (email) {
+      const existing = await prisma.solicitante.findFirst({
+        where: {
+          isActive: true,
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
+        },
+        select: {
+          id_solicitante: true,
+          nombre: true,
+          email: true,
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+        },
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: `Ya existe un solicitante con el correo ${email}. Pertenece a: ${existing.nombre}${existing.empresa?.nombre ? ` (${existing.empresa.nombre})` : ""}.`,
+          duplicate: existing,
+        });
+      }
+    }
 
     const created = await prisma.solicitante.create({
-      data: { nombre, email, telefono, empresaId },
+      data: {
+        nombre,
+        email,
+        telefono,
+        empresaId,
+      },
       select: {
         id_solicitante: true,
         nombre: true,
@@ -496,9 +625,13 @@ export const createSolicitante = async (req: Request, res: Response) => {
     return res.status(201).json(created);
   } catch (err: unknown) {
     const e = err as { code?: string };
+
     if (e?.code === "P2002") {
-      return res.status(409).json({ error: "Ya existe un solicitante con ese valor único" });
+      return res.status(409).json({
+        error: "Ya existe un solicitante con ese correo electrónico",
+      });
     }
+
     console.error("[solicitantes.create] error:", err);
     return res.status(500).json({ error: "No se pudo crear el solicitante" });
   }
@@ -570,18 +703,21 @@ export const updateSolicitante = async (req: Request, res: Response) => {
     if (id <= 0) return res.status(400).json({ error: "ID inválido" });
 
     const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim() : undefined;
+
     const email =
       req.body?.email === null
         ? null
         : typeof req.body?.email === "string"
-          ? req.body.email.trim()
+          ? normalizeEmail(req.body.email)
           : undefined;
+
     const telefono =
       req.body?.telefono === null
         ? null
         : typeof req.body?.telefono === "string"
           ? req.body.telefono.trim()
           : undefined;
+
     const empresaId =
       typeof req.body?.empresaId !== "undefined" ? toInt(req.body.empresaId) : undefined;
     if (empresaId !== undefined && empresaId <= 0) {
@@ -592,7 +728,45 @@ export const updateSolicitante = async (req: Request, res: Response) => {
       where: { id_solicitante: id },
       select: { id_solicitante: true },
     });
+
     if (!current) return res.status(404).json({ error: "No encontrado" });
+
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({ error: "El correo no tiene un formato válido" });
+    }
+
+    if (email) {
+      const existing = await prisma.solicitante.findFirst({
+        where: {
+          isActive: true,
+          email: {
+            equals: email,
+            mode: "insensitive",
+          },
+          NOT: {
+            id_solicitante: id,
+          },
+        },
+        select: {
+          id_solicitante: true,
+          nombre: true,
+          email: true,
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+        },
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: `Ya existe otro solicitante con el correo ${email}. Pertenece a: ${existing.nombre}${existing.empresa?.nombre ? ` (${existing.empresa.nombre})` : ""}.`,
+          duplicate: existing,
+        });
+      }
+    }
 
     if (typeof empresaId === "number") {
       const emp = await prisma.empresa.findUnique({
@@ -624,9 +798,13 @@ export const updateSolicitante = async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (err: unknown) {
     const e = err as { code?: string };
+
     if (e?.code === "P2002") {
-      return res.status(409).json({ error: "Conflicto de unicidad (email u otro campo único)" });
+      return res.status(409).json({
+        error: "Ya existe otro solicitante con ese correo electrónico",
+      });
     }
+
     console.error("[solicitantes.update] error:", err);
     return res.status(500).json({ error: "No se pudo actualizar el solicitante" });
   }
@@ -677,6 +855,7 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
         data: { nombre: "S/A", email: null, telefono: null, empresaId },
         select: { id_solicitante: true },
       });
+
       return created.id_solicitante;
     };
 

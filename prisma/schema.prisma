@@ -570,6 +570,20 @@ model Tecnico {
   @@index([empresaId])
 }
 
+model RolePermission {
+  id        Int     @id @default(autoincrement())
+  rol       String
+  permiso   String
+  permitido Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rol, permiso])
+  @@index([rol])
+  @@index([permiso])
+}
+
 model Visita {
   id_visita          Int          @id @default(autoincrement())
   empresaId          Int
@@ -930,11 +944,11 @@ model TicketAttachment {
   filename    String
   mimeType    String
   url         String
-  storagePath String?
   bytes       Int
   createdAt   DateTime      @default(now())
   contentId   String?
   isInline    Boolean       @default(false)
+  storagePath String?
   message     TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
@@ -1262,7 +1276,6 @@ model SiiApiCache {
   @@index([tipo])
 }
 
-// Enums
 enum TipoAgenda {
   SEMANA
   SABADO
@@ -1422,6 +1435,7 @@ enum ItemTipoGestioo {
 enum TipoEvidenciaEntrega {
   FOTO
   FIRMA
+  PDF
 }
 
 enum TipoEquipo {

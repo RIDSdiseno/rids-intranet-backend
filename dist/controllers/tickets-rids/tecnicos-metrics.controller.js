@@ -13,10 +13,49 @@ export async function getTicketMetricsByTecnico(req, res) {
         const from = req.query.from ? new Date(req.query.from) : undefined;
         const to = req.query.to ? new Date(req.query.to) : undefined;
         const slaConfig = await getSlaConfigFromDB();
+        const EXCLUDED_TECNICOS_EMAILS = [
+            "hcabrera@rids.cl",
+            "nrubio@rids.cl",
+            "soporte@rids.cl",
+            "ventas@econnet.cl",
+            "diseno@rids.cl",
+            "informaticap@rids.cl",
+        ];
+        const tecnicosActivos = await prisma.tecnico.findMany({
+            where: {
+                status: true,
+                rol: {
+                    in: ["ADMIN", "TECNICO"],
+                },
+                email: {
+                    notIn: EXCLUDED_TECNICOS_EMAILS,
+                },
+                ...(tecnicoId && {
+                    id_tecnico: tecnicoId,
+                }),
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+            },
+            orderBy: {
+                nombre: "asc",
+            },
+        });
+        const tecnicoIdsPermitidos = tecnicosActivos.map((t) => t.id_tecnico);
+        if (!tecnicoIdsPermitidos.length) {
+            return res.json({
+                ok: true,
+                data: [],
+            });
+        }
         const tickets = await prisma.ticket.findMany({
             where: {
                 deletedAt: null,
-                assigneeId: tecnicoId ? tecnicoId : { not: null },
+                assigneeId: {
+                    in: tecnicoIdsPermitidos,
+                },
                 ...(empresaId && { empresaId }),
                 status: TicketStatus.CLOSED,
                 ...(from || to
@@ -38,13 +77,6 @@ export async function getTicketMetricsByTecnico(req, res) {
                 resolvedAt: true,
                 closedAt: true,
                 assigneeId: true,
-                assignee: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
-                    },
-                },
                 events: {
                     select: { type: true },
                 },
@@ -52,34 +84,35 @@ export async function getTicketMetricsByTecnico(req, res) {
             orderBy: { closedAt: "desc" },
         });
         const byTecnico = new Map();
+        for (const tecnico of tecnicosActivos) {
+            byTecnico.set(tecnico.id_tecnico, {
+                tecnicoId: tecnico.id_tecnico,
+                nombre: tecnico.nombre,
+                email: tecnico.email,
+                assignedTickets: 0,
+                openTickets: 0,
+                pendingTickets: 0,
+                resolvedTickets: 0,
+                closedTickets: 0,
+                reopenedTickets: 0,
+                firstResponseOk: 0,
+                firstResponseBreached: 0,
+                firstResponsePending: 0,
+                resolutionOk: 0,
+                resolutionBreached: 0,
+                resolutionPending: 0,
+                firstResponseMinutesSum: 0,
+                firstResponseMinutesCount: 0,
+                resolutionMinutesSum: 0,
+                resolutionMinutesCount: 0,
+            });
+        }
         for (const ticket of tickets) {
-            if (!ticket.assigneeId || !ticket.assignee)
+            if (!ticket.assigneeId)
                 continue;
-            const key = ticket.assigneeId;
-            if (!byTecnico.has(key)) {
-                byTecnico.set(key, {
-                    tecnicoId: ticket.assignee.id_tecnico,
-                    nombre: ticket.assignee.nombre,
-                    email: ticket.assignee.email,
-                    assignedTickets: 0,
-                    openTickets: 0,
-                    pendingTickets: 0,
-                    resolvedTickets: 0,
-                    closedTickets: 0,
-                    reopenedTickets: 0,
-                    firstResponseOk: 0,
-                    firstResponseBreached: 0,
-                    firstResponsePending: 0,
-                    resolutionOk: 0,
-                    resolutionBreached: 0,
-                    resolutionPending: 0,
-                    firstResponseMinutesSum: 0,
-                    firstResponseMinutesCount: 0,
-                    resolutionMinutesSum: 0,
-                    resolutionMinutesCount: 0,
-                });
-            }
-            const row = byTecnico.get(key);
+            const row = byTecnico.get(ticket.assigneeId);
+            if (!row)
+                continue;
             const sla = buildTicketSla(ticket, slaConfig);
             row.assignedTickets++;
             row.closedTickets++;
@@ -107,7 +140,8 @@ export async function getTicketMetricsByTecnico(req, res) {
                 row.resolutionMinutesCount++;
             }
         }
-        const data = Array.from(byTecnico.values()).map((row) => {
+        const data = Array.from(byTecnico.values())
+            .map((row) => {
             const firstResponseTotal = row.firstResponseOk +
                 row.firstResponseBreached +
                 row.firstResponsePending;
@@ -172,7 +206,6 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
         const EXCLUDED_TECNICOS_EMAILS = [
             "hcabrera@rids.cl",
             "nrubio@rids.cl",
-            "ncanales@rids.cl",
             "soporte@rids.cl",
             "ventas@econnet.cl",
             "diseno@rids.cl",

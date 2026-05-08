@@ -1,3 +1,4 @@
+// src/middlewares/roles.ts
 import type { Request, Response, NextFunction } from "express";
 
 export function onlyRole(...roles: string[]) {
@@ -5,7 +6,10 @@ export function onlyRole(...roles: string[]) {
     const userRole = req.user?.rol;
 
     if (!userRole || !roles.includes(userRole)) {
-      res.status(403).json({ message: "No tienes permisos" });
+      res.status(403).json({
+        ok: false,
+        message: "No tienes permisos",
+      });
       return;
     }
 

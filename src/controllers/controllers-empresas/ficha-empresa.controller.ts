@@ -1,3 +1,4 @@
+// src/controllers/controllers-empresas/ficha-empresa.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { Prisma } from "@prisma/client";

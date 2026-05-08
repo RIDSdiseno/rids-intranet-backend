@@ -23,6 +23,101 @@ class GraphReaderService {
             .trim()
             .toLowerCase();
     }
+    extractEmailAddress(raw) {
+        if (!raw)
+            return null;
+        const value = String(raw).trim().toLowerCase();
+        const match = value.match(/<([^>]+)>/);
+        if (match?.[1]) {
+            return match[1].trim().toLowerCase();
+        }
+        return value;
+    }
+    getDomainFromEmail(rawEmail) {
+        const email = this.extractEmailAddress(rawEmail);
+        if (!email || !email.includes("@")) {
+            return null;
+        }
+        return email.split("@").pop()?.trim().toLowerCase() ?? null;
+    }
+    async findEmpresaByEmail(fromEmail) {
+        const domain = this.getDomainFromEmail(fromEmail);
+        if (!domain) {
+            return null;
+        }
+        // 1) Primero buscar por Empresa.dominios
+        const empresaPorDominio = await prisma.empresa.findFirst({
+            where: {
+                dominios: {
+                    has: domain,
+                },
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                tieneSucursales: true,
+                razonSocial: true,
+                dominios: true,
+            },
+        });
+        if (empresaPorDominio) {
+            return empresaPorDominio;
+        }
+        // 2) Soporte para subdominios, por ejemplo mail.bdk-spa.cl
+        const empresasConDominios = await prisma.empresa.findMany({
+            where: {
+                NOT: {
+                    dominios: {
+                        isEmpty: true,
+                    },
+                },
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                tieneSucursales: true,
+                razonSocial: true,
+                dominios: true,
+            },
+        });
+        const empresaPorSubdominio = empresasConDominios.find((empresa) => empresa.dominios.some((d) => {
+            const cleanDomain = String(d).trim().toLowerCase();
+            return domain === cleanDomain || domain.endsWith(`.${cleanDomain}`);
+        }));
+        if (empresaPorSubdominio) {
+            return empresaPorSubdominio;
+        }
+        // 3) Fallback legado Freshdesk
+        const mapping = await prisma.fdSourceMap.findFirst({
+            where: { domain },
+        });
+        if (mapping?.ticketOrgId) {
+            const org = await prisma.ticketOrg.findUnique({
+                where: { id: mapping.ticketOrgId },
+            });
+            if (org) {
+                const empresa = await prisma.empresa.findFirst({
+                    where: {
+                        nombre: {
+                            contains: org.name,
+                            mode: "insensitive",
+                        },
+                    },
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        tieneSucursales: true,
+                        razonSocial: true,
+                        dominios: true,
+                    },
+                });
+                if (empresa) {
+                    return empresa;
+                }
+            }
+        }
+        return null;
+    }
     constructor() {
         this.supportEmail = (process.env.EMAIL_USER || '').toLowerCase();
         console.log('📧 Graph API Config:');
@@ -532,50 +627,44 @@ class GraphReaderService {
         /* =============================
            2️⃣ VALIDAR EMPRESA
         ============================= */
-        const domain = data.fromEmail
-            .split("@")[1]
-            ?.replace(/[>"\s]/g, "")
-            ?.toLowerCase();
-        if (!domain)
+        const cleanFromEmail = this.extractEmailAddress(data.fromEmail);
+        const domain = this.getDomainFromEmail(cleanFromEmail);
+        if (!cleanFromEmail || !domain) {
+            console.warn("⚠️ Email remitente inválido:", data.fromEmail);
             return;
-        let empresa = null;
-        const mapping = await prisma.fdSourceMap.findFirst({
-            where: { domain }
-        });
-        if (mapping?.ticketOrgId) {
-            const org = await prisma.ticketOrg.findUnique({
-                where: { id: mapping.ticketOrgId }
-            });
-            if (org) {
-                empresa = await prisma.empresa.findFirst({
-                    where: {
-                        nombre: {
-                            contains: org.name,
-                            mode: "insensitive"
-                        }
-                    }
-                });
-            }
         }
+        let empresa = await this.findEmpresaByEmail(cleanFromEmail);
         if (!empresa) {
             console.warn(`⚠️ Dominio ${domain} no reconocido`);
             empresa = await prisma.empresa.findFirst({
-                where: { nombre: 'SIN CLASIFICAR' },
+                where: {
+                    nombre: {
+                        equals: "SIN CLASIFICAR",
+                        mode: "insensitive",
+                    },
+                },
+                select: {
+                    id_empresa: true,
+                    nombre: true,
+                    tieneSucursales: true,
+                    razonSocial: true,
+                    dominios: true,
+                },
             });
             if (!empresa) {
-                throw new Error('Empresa SIN CLASIFICAR no existe');
+                throw new Error("Empresa SIN CLASIFICAR no existe");
             }
             console.log(`⚠️ Dominio ${domain} → SIN CLASIFICAR`);
         }
-        if (!empresa) {
-            throw new Error('Empresa SIN CLASIFICAR no existe');
+        else {
+            console.log(`✅ Dominio ${domain} reconocido como empresa ${empresa.nombre}`);
         }
         /* =============================
            3️⃣ SOLICITANTE
         ============================= */
         let requester = await prisma.solicitante.findFirst({
             where: {
-                email: data.fromEmail,
+                email: cleanFromEmail,
             },
         });
         // SI EXISTE PERO ESTÁ EN OTRA EMPRESA → CORREGIR
@@ -587,7 +676,7 @@ class GraphReaderService {
             });
         }
         if (!requester) {
-            console.warn(`⚠️ Solicitante no registrado: ${data.fromEmail}`);
+            console.warn(`⚠️ Solicitante no registrado: ${cleanFromEmail}`);
         }
         /* =============================
    3️⃣.5 DETECTAR TÉCNICO
@@ -620,7 +709,7 @@ class GraphReaderService {
                         empresaId: empresa.id_empresa,
                         requesterId: requester?.id_solicitante ?? null,
                         assigneeId: null,
-                        fromEmail: data.fromEmail,
+                        fromEmail: cleanFromEmail,
                         inboxEmail: this.supportEmail,
                         lastActivityAt: new Date(),
                     },
@@ -632,7 +721,7 @@ class GraphReaderService {
                         bodyText: data.bodyText,
                         bodyHtml: data.bodyHtml,
                         isInternal: false,
-                        fromEmail: data.fromEmail,
+                        fromEmail: cleanFromEmail,
                         cc: data.cc.length ? data.cc.join(",") : null,
                         toEmail: data.to.length ? data.to.join(",") : this.supportEmail,
                         sourceMessageId: data.messageId, // 🔥 unique → protege contra duplicados
@@ -649,7 +738,7 @@ class GraphReaderService {
                     sourceMessageId: data.messageId,
                     graphMessageId: data.graphMessageId,
                     conversationId: data.conversationId || null,
-                    fromEmail: data.fromEmail,
+                    fromEmail: cleanFromEmail,
                     subject: data.subject,
                     ticketId: ticket.id,
                 },
@@ -686,7 +775,7 @@ class GraphReaderService {
             empresaId: ticket.empresaId,
             priority: ticket.priority,
             channel: TicketChannel.EMAIL,
-            from: data.fromEmail,
+            from: cleanFromEmail,
         });
         /* =============================
            8️⃣  AUTO-REPLY (ROBUSTO)
@@ -694,11 +783,11 @@ class GraphReaderService {
         try {
             console.log("📤 Preparando auto-reply...");
             // ✅ 1. Validar destinatario
-            if (!data.fromEmail || !data.fromEmail.includes("@")) {
+            if (!cleanFromEmail || !cleanFromEmail.includes("@")) {
                 console.warn("⚠️ Email inválido, no se envía:", data.fromEmail);
                 return;
             }
-            if (data.fromEmail === this.supportEmail) {
+            if (cleanFromEmail === this.supportEmail) {
                 console.warn("⚠️ Email es soporte, no se envía auto-reply");
                 return;
             }
@@ -770,7 +859,7 @@ class GraphReaderService {
                 if (originalGraphMessageId) {
                     const sent = await this.replyToGraphMessage({
                         originalGraphMessageId,
-                        to: [data.fromEmail],
+                        to: [cleanFromEmail],
                         cc: [],
                         bodyHtml: rendered.bodyHtml,
                         attachments: [],
@@ -779,7 +868,7 @@ class GraphReaderService {
                 }
                 else {
                     await this.sendReplyEmail({
-                        to: data.fromEmail,
+                        to: cleanFromEmail,
                         subject: rendered.subject,
                         bodyHtml: rendered.bodyHtml,
                         attachments: [],
@@ -793,13 +882,13 @@ class GraphReaderService {
                         bodyHtml: rendered.bodyHtml,
                         isInternal: false,
                         fromEmail: this.supportEmail,
-                        toEmail: data.fromEmail,
+                        toEmail: cleanFromEmail,
                         sourceMessageId: sentInternetMessageId,
                         sourceInReplyTo: lastInboundMessage?.sourceMessageId ?? data.messageId,
                     },
                 });
             }
-            console.log(`✅ Auto-reply enviado correctamente a ${data.fromEmail}`);
+            console.log(`✅ Auto-reply enviado correctamente a ${cleanFromEmail}`);
         }
         catch (err) {
             console.error("❌ ERROR REAL GRAPH:");

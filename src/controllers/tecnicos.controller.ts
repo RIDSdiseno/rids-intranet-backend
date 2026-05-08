@@ -2,6 +2,20 @@ import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
 import type { Request, Response } from "express";
 
+const VALID_ROLES = ["ADMIN", "TECNICO", "CLIENTE", "VENTAS"] as const;
+
+function normalizeRole(rol: unknown): string | undefined {
+    if (!rol) return undefined;
+
+    const value = String(rol).trim().toUpperCase();
+
+    if (!VALID_ROLES.includes(value as any)) {
+        return undefined;
+    }
+
+    return value;
+}
+
 // Listar técnicos válidos para selects / asignaciones
 export async function listTecnicos(_req: Request, res: Response) {
     try {
@@ -61,13 +75,25 @@ export async function updateTecnico(req: Request, res: Response) {
         const id = Number(req.params.id);
         const { nombre, email, status, rol } = req.body;
 
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ error: "ID inválido" });
+        }
+
+        const normalizedRole = normalizeRole(rol);
+
+        if (rol && !normalizedRole) {
+            return res.status(400).json({
+                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+            });
+        }
+
         const tecnico = await prisma.tecnico.update({
             where: { id_tecnico: id },
             data: {
-                ...(nombre && { nombre }),
-                ...(email && { email }),
-                ...(status !== undefined && { status }),
-                ...(rol && { rol }),
+                ...(nombre !== undefined && { nombre: String(nombre).trim() }),
+                ...(email !== undefined && { email: String(email).trim().toLowerCase() }),
+                ...(status !== undefined && { status: Boolean(status) }),
+                ...(normalizedRole && { rol: normalizedRole }),
             },
             select: {
                 id_tecnico: true,
@@ -90,6 +116,10 @@ export async function deleteTecnico(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
 
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ error: "ID inválido" });
+        }
+
         await prisma.refreshToken.deleteMany({
             where: { userId: id },
         });
@@ -111,11 +141,23 @@ export async function createTecnico(req: Request, res: Response) {
         const { nombre, email, password, rol, status } = req.body;
 
         if (!nombre || !email || !password) {
-            return res.status(400).json({ error: "Nombre, email y contraseña son requeridos" });
+            return res.status(400).json({
+                error: "Nombre, email y contraseña son requeridos",
+            });
         }
 
+        const normalizedRole = normalizeRole(rol) ?? "TECNICO";
+
+        if (rol && !normalizeRole(rol)) {
+            return res.status(400).json({
+                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+            });
+        }
+
+        const cleanEmail = String(email).trim().toLowerCase();
+
         const exists = await prisma.tecnico.findUnique({
-            where: { email: email.trim().toLowerCase() },
+            where: { email: cleanEmail },
         });
 
         if (exists) {
@@ -131,10 +173,10 @@ export async function createTecnico(req: Request, res: Response) {
 
         const tecnico = await prisma.tecnico.create({
             data: {
-                nombre: nombre.trim(),
-                email: email.trim().toLowerCase(),
+                nombre: String(nombre).trim(),
+                email: cleanEmail,
                 passwordHash,
-                rol: rol ?? "TECNICO",
+                rol: normalizedRole,
                 status: status ?? true,
             },
             select: {
