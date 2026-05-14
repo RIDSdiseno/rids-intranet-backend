@@ -86,10 +86,14 @@ import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
 /* ===================== Permisos y Roles ===================== */
 import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 
+import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
 export const api = Router();
+
+api.use("/equipos/agent", equipoAgentRoutes);
 
 api.use(auth(false));
 api.use(onlyOwnEmpresa());

@@ -424,16 +424,33 @@ model ModeloGestioo {
 }
 
 model Equipo {
-  id_equipo              Int                     @id @default(autoincrement())
-  idSolicitante          Int?
-  serial                 String?                 @unique
-  marca                  String
-  modelo                 String
-  procesador             String?
-  ram                    String?
-  disco                  String?
-  propiedad              String                  @default("Empresa")
-  tipo                   TipoEquipo              @default(GENERICO)
+  id_equipo     Int        @id @default(autoincrement())
+  idSolicitante Int?
+  serial        String?    @unique
+  marca         String
+  modelo        String
+  procesador    String?
+  ram           String?
+  disco         String?
+  propiedad     String     @default("Empresa")
+  tipo          TipoEquipo @default(GENERICO)
+
+  /// ===================== Agente Windows / Inventario automático =====================
+  hostname      String?
+  usuarioActual String?
+  dominio       String?
+  localIp       String?
+  publicIp      String?
+  macAddress    String?
+  ramGb         Float?
+  diskTotalGb   Float?
+  diskFreeGb    Float?
+  lastBootAt    DateTime?
+  lastSeenAt    DateTime?
+  agenteVersion String?
+  agenteActivo  Boolean            @default(false)
+  estadoAgente  EstadoAgenteEquipo @default(SIN_AGENTE)
+
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
   deletedAt              DateTime?
@@ -448,12 +465,18 @@ model Equipo {
   origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
   cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
   adicionales            EquipoAdicional[]
+  softwares              EquipoSoftware[]
+  agenteEventos          EquipoAgenteEvento[]
 
   @@index([empresaId])
   @@index([productoId])
   @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
+  @@index([hostname])
+  @@index([lastSeenAt])
+  @@index([estadoAgente])
+  @@index([agenteActivo])
 }
 
 model EquipoAdicional {
@@ -488,9 +511,50 @@ model DetalleEquipo {
   usuarioEmpresa    String?
   usuarioPersonal   String?
   redEthernet       String?
-  equipo            Equipo  @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+
+  /// ===================== Agente Windows / Seguridad =====================
+  antivirusNombre   String?
+  antivirusActivo   Boolean?
+  firewallActivo    Boolean?
+  bitlockerEstado   String?
+  windowsUpdate     String?
+  observacionAgente String?
+
+  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
+}
+
+model EquipoSoftware {
+  id          Int       @id @default(autoincrement())
+  equipoId    Int
+  nombre      String
+  version     String?
+  publisher   String?
+  installDate DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+
+  @@unique([equipoId, nombre, version])
+  @@index([equipoId])
+  @@index([nombre])
+}
+
+model EquipoAgenteEvento {
+  id        Int      @id @default(autoincrement())
+  equipoId  Int
+  tipo      String
+  mensaje   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+
+  @@index([equipoId])
+  @@index([tipo])
+  @@index([createdAt])
 }
 
 model Historial {
@@ -571,11 +635,10 @@ model Tecnico {
 }
 
 model RolePermission {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   rol       String
   permiso   String
-  permitido Boolean @default(false)
-
+  permitido Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1276,6 +1339,33 @@ model SiiApiCache {
   @@index([tipo])
 }
 
+model RcvConciliacion {
+  id                 String    @id
+  empresaKey         String
+  tipoRcv            String
+  tipoDoc            String
+  folio              String
+  rutContraparte     String
+  razonSocial        String?
+  fechaDocto         DateTime?
+  montoNeto          Int       @default(0)
+  montoIva           Int       @default(0)
+  montoTotal         Int       @default(0)
+  estadoRcv          String?
+  origenRcv          String?
+  estadoConciliacion String    @default("NO_CONCILIADA")
+  formaPago          String?
+  observacion        String?
+  responsable        String?
+  conciliadoAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime
+
+  @@unique([empresaKey, tipoRcv, tipoDoc, rutContraparte, folio])
+  @@index([empresaKey, tipoRcv, estadoConciliacion])
+  @@index([empresaKey, tipoRcv])
+}
+
 enum TipoAgenda {
   SEMANA
   SABADO
@@ -1462,4 +1552,12 @@ enum TipoEquipo {
 enum OrigenTrabajo {
   INDEPENDIENTE
   DESDE_COTIZACION
+}
+
+enum EstadoAgenteEquipo {
+  SIN_AGENTE
+  ACTIVO
+  SIN_CONEXION
+  ADVERTENCIA
+  CRITICO
 }
