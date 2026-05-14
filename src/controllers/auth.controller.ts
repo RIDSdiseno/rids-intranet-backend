@@ -11,7 +11,12 @@ import nodemailer from "nodemailer";
 
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
+
+// Sesión normal
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
+
+// Sesión con “Recordarme”
+const REFRESH_TTL_REMEMBER = process.env.REFRESH_TTL_REMEMBER || "30d";
 
 // ✅ Rol fijo para Tecnico (evita depender de campo inexistente en Prisma)
 const ROL_DEFAULT = "TECNICO";
@@ -27,6 +32,15 @@ const ARGON_REFRESH_TOKEN_OPTIONS = {
 // Pre-calcular valores que no cambian
 const REFRESH_MS = ttlToMs(REFRESH_TTL);
 const IS_PROD = process.env.NODE_ENV === "production";
+
+function getRefreshConfig(rememberMe?: boolean) {
+  const ttl = rememberMe ? REFRESH_TTL_REMEMBER : REFRESH_TTL;
+
+  return {
+    ttl,
+    ms: ttlToMs(ttl),
+  };
+}
 
 // CORRECCIÓN: Declarar variables con tipos correctos
 let JWT_SECRET: string;
@@ -63,6 +77,7 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
   password: z.string().min(1, "Password requerido"),
+  rememberMe: z.boolean().optional().default(false),
 });
 
 /* ================ UTILS OPTIMIZADOS ================ */
@@ -114,14 +129,29 @@ function signAccessToken(
 }
 
 // CORRECCIÓN: Configuración del transporter con tipos correctos
-function signRefreshToken(userId: number, tokenId?: number): string {
-  const payload = tokenId ? { tid: tokenId } : {};
+function signRefreshToken(
+  userId: number,
+  rememberMe = false,
+  tokenId?: number
+): string {
+  const payload: Record<string, unknown> = {};
+
+  if (tokenId) {
+    payload.tid = tokenId;
+  }
+
+  if (rememberMe) {
+    payload.rememberMe = true;
+  }
+
+  const { ttl } = getRefreshConfig(rememberMe);
+
   return jwt.sign(
     payload,
     getRefreshSecret(),
     {
       subject: String(userId),
-      expiresIn: REFRESH_TTL,
+      expiresIn: ttl,
       algorithm: "HS256",
     } as jwt.SignOptions
   );
@@ -150,13 +180,17 @@ function getRefreshFromRequest(req: Request): string | null {
 }
 
 // CORRECCIÓN: Configuración del transporter con tipos correctos
-function setRefreshCookie(res: Response, token: string): void {
+function setRefreshCookie(
+  res: Response,
+  token: string,
+  maxAgeMs = REFRESH_MS
+): void {
   res.cookie("rt", token, {
     httpOnly: true,
     secure: IS_PROD,
     sameSite: IS_PROD ? "none" : "lax",
     path: "/",
-    maxAge: REFRESH_MS,
+    maxAge: maxAgeMs,
   });
 }
 
@@ -247,6 +281,7 @@ export const login = async (req: Request, res: Response) => {
 
     const emailNorm = parsed.data.email.trim().toLowerCase();
     const password = parsed.data.password;
+    const rememberMe = parsed.data.rememberMe;
 
     // ✅ Traer solo lo necesario (sin rol, porque Tecnico no lo tiene)
     const tecnico = await prisma.tecnico.findUnique({
@@ -296,14 +331,20 @@ export const login = async (req: Request, res: Response) => {
       rol,
       tecnico.empresaId
     );
-    const refreshRaw = signRefreshToken(tecnico.id_tecnico);
+
+    const { ms: refreshMs } = getRefreshConfig(rememberMe);
+
+    const refreshRaw = signRefreshToken(
+      tecnico.id_tecnico,
+      rememberMe
+    );
 
     const hashStart = Date.now();
     const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
     const hashEnd = Date.now();
 
     const { userAgent, ip } = getClientInfo(req);
-    const expiresAt = new Date(Date.now() + REFRESH_MS);
+    const expiresAt = new Date(Date.now() + refreshMs);
 
     // Insertar token sin bloquear la respuesta
     prisma.refreshToken
@@ -319,7 +360,7 @@ export const login = async (req: Request, res: Response) => {
       })
       .catch(console.error);
 
-    setRefreshCookie(res, refreshRaw);
+    setRefreshCookie(res, refreshRaw, refreshMs);
 
     const end = Date.now();
     console.log(`⏱️ Tiempo hash Argon2 refresh: ${hashEnd - hashStart}ms`);
@@ -345,12 +386,13 @@ export const login = async (req: Request, res: Response) => {
 // Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const refresh = async (req: Request, res: Response) => {
   const token = getRefreshFromRequest(req);
+
   if (!token) {
     return res.status(401).json({ error: "Refresh token requerido" });
   }
 
   try {
-    // Verificar token JWT primero (más rápido que consultar DB)
+    // Verificar token JWT primero
     const decoded = jwt.verify(token, getRefreshSecret()) as jwt.JwtPayload;
     const userId = Number(decoded.sub);
 
@@ -358,18 +400,25 @@ export const refresh = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Refresh inválido" });
     }
 
-    // Consulta optimizada con límite más pequeño
+    // Mantener si la sesión original fue "Recordarme"
+    const rememberMe = decoded.rememberMe === true;
+    const { ms: refreshMs } = getRefreshConfig(rememberMe);
+
     const candidates = await prisma.refreshToken.findMany({
       where: {
         userId,
         expiresAt: { gt: new Date() },
       },
-      select: { id: true, rtHash: true, revokedAt: true, replacedByTokenId: true },
+      select: {
+        id: true,
+        rtHash: true,
+        revokedAt: true,
+        replacedByTokenId: true,
+      },
       orderBy: { id: "desc" },
       take: 10,
     });
 
-    // Buscar token válido
     let matchedToken: { id: number } | null = null;
 
     for (const rt of candidates) {
@@ -380,11 +429,15 @@ export const refresh = async (req: Request, res: Response) => {
     }
 
     if (!matchedToken) {
-      // Revocar tokens en segundo plano sin bloquear respuesta
       prisma.refreshToken
         .updateMany({
-          where: { userId, revokedAt: null },
-          data: { revokedAt: new Date() },
+          where: {
+            userId,
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: new Date(),
+          },
         })
         .catch(console.error);
 
@@ -393,13 +446,16 @@ export const refresh = async (req: Request, res: Response) => {
         .json({ error: "Refresh no reconocido (revocados los activos)" });
     }
 
-    // ✅ Obtener datos mínimos para generar access token (sin rol)
     const tecnico = await prisma.tecnico.findUnique({
-      where: { id_tecnico: userId },
+      where: {
+        id_tecnico: userId,
+      },
       select: {
         id_tecnico: true,
         email: true,
         empresaId: true,
+        rol: true,
+        status: true,
       },
     });
 
@@ -407,14 +463,23 @@ export const refresh = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Usuario no encontrado" });
     }
 
+    if (!tecnico.status) {
+      return res.status(401).json({ error: "Usuario inactivo" });
+    }
+
+    const rol = tecnico.rol ?? ROL_DEFAULT;
+
     const newAccess = signAccessToken(
       tecnico.id_tecnico,
       tecnico.email,
-      ROL_DEFAULT,
+      rol,
       tecnico.empresaId
     );
 
-    const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
+    const newRefreshRaw = signRefreshToken(
+      tecnico.id_tecnico,
+      rememberMe
+    );
 
     const newHash = await argon2.hash(
       newRefreshRaw,
@@ -422,14 +487,17 @@ export const refresh = async (req: Request, res: Response) => {
     );
 
     const { userAgent, ip } = getClientInfo(req);
-    const expiresAt2 = new Date(Date.now() + REFRESH_MS);
+    const expiresAt2 = new Date(Date.now() + refreshMs);
 
-    // Transacción optimizada
     await prisma.$transaction(
       async (tx) => {
         await tx.refreshToken.update({
-          where: { id: matchedToken!.id },
-          data: { revokedAt: new Date() },
+          where: {
+            id: matchedToken!.id,
+          },
+          data: {
+            revokedAt: new Date(),
+          },
         });
 
         await tx.refreshToken.create({
@@ -442,10 +510,13 @@ export const refresh = async (req: Request, res: Response) => {
           },
         });
       },
-      { timeout: 10000 }
+      {
+        timeout: 10000,
+      }
     );
 
-    setRefreshCookie(res, newRefreshRaw);
+    setRefreshCookie(res, newRefreshRaw, refreshMs);
+
     return res.json({
       accessToken: newAccess,
       refreshToken: newRefreshRaw,
@@ -568,6 +639,7 @@ export const me = async (req: Request, res: Response) => {
       email: true,
       status: true,
       empresaId: true,
+      rol: true,
     },
   });
 
@@ -578,7 +650,7 @@ export const me = async (req: Request, res: Response) => {
   return res.json({
     tecnico: {
       ...tecnico,
-      rol: ROL_DEFAULT,
+      rol: tecnico.rol ?? ROL_DEFAULT,
     },
   });
 };

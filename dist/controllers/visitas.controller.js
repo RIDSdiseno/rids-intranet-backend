@@ -519,8 +519,20 @@ export const visitasMetrics = async (req, res) => {
 export const getVisitasFilters = async (_req, res) => {
     const [tecnicos, empresas] = await Promise.all([
         prisma.tecnico.findMany({
+            where: {
+                status: true,
+                rol: {
+                    in: ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"],
+                },
+            },
             orderBy: { nombre: "asc" },
-            select: { id_tecnico: true, nombre: true },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+            },
         }),
         prisma.empresa.findMany({
             orderBy: { nombre: "asc" },
@@ -528,8 +540,17 @@ export const getVisitasFilters = async (_req, res) => {
         }),
     ]);
     res.json({
-        tecnicos: tecnicos.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
-        empresas: empresas.map((e) => ({ id: e.id_empresa, nombre: e.nombre })),
+        tecnicos: tecnicos.map((t) => ({
+            id: t.id_tecnico,
+            nombre: t.nombre,
+            email: t.email,
+            rol: t.rol,
+            status: t.status,
+        })),
+        empresas: empresas.map((e) => ({
+            id: e.id_empresa,
+            nombre: e.nombre,
+        })),
     });
 };
 /* ------------------------------------ */

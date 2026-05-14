@@ -119,14 +119,10 @@ function buildReplyRecipients(
     };
 }
 
-// agregar aquí técnicos permitidos
-const HELPDESK_ASSIGN_ALLOWED_EMAILS = [
-    "dbravo@rids.cl",
-    "rcalsin@rids.cl",
-    "carenas@rids.cl",
-    "igonzalez@rids.cl",
-    "mahumada@rids.cl"
-];
+const HELPDESK_ASSIGN_ALLOWED_ROLES = [
+    "ADMIN",
+    "ADMINISTRACION",
+] as const;
 
 async function canAssignTickets(agentId?: number | null): Promise<boolean> {
     if (!agentId) return false;
@@ -134,15 +130,17 @@ async function canAssignTickets(agentId?: number | null): Promise<boolean> {
     const tecnico = await prisma.tecnico.findUnique({
         where: { id_tecnico: agentId },
         select: {
-            email: true,
             status: true,
+            rol: true,
         },
     });
 
-    if (!tecnico?.status || !tecnico.email) return false;
+    if (!tecnico?.status) return false;
 
-    return HELPDESK_ASSIGN_ALLOWED_EMAILS.includes(
-        tecnico.email.trim().toLowerCase()
+    const rol = String(tecnico.rol ?? "").toUpperCase().trim();
+
+    return HELPDESK_ASSIGN_ALLOWED_ROLES.includes(
+        rol as typeof HELPDESK_ASSIGN_ALLOWED_ROLES[number]
     );
 }
 

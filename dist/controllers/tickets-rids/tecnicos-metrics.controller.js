@@ -20,12 +20,14 @@ export async function getTicketMetricsByTecnico(req, res) {
             "ventas@econnet.cl",
             "diseno@rids.cl",
             "informaticap@rids.cl",
+            "ncanales@rids.cl",
+            "carenas@rids.cl"
         ];
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
                 },
                 email: {
                     notIn: EXCLUDED_TECNICOS_EMAILS,
@@ -210,12 +212,14 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
             "ventas@econnet.cl",
             "diseno@rids.cl",
             "informaticap@rids.cl",
+            "ncanales@rids.cl",
+            "carenas@rids.cl"
         ];
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
                 },
                 email: {
                     notIn: EXCLUDED_TECNICOS_EMAILS,

@@ -86,6 +86,11 @@ import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
 /* ===================== Permisos y Roles ===================== */
 import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 
+/* ===================== BaseAPI RCV ===================== */
+import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
+
+import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
 
@@ -181,6 +186,10 @@ api.use("/sii", siiApiRoutes);
 
 /* ===================== Clientes ===================== */
 api.use("/clientes-ext", clientesExtRouter);
+
+/* ===================== BaseAPI RCV ===================== */
+api.use("/baseapi/rcv", baseApiRcvRoutes);
+api.use("/baseapi/dte", baseApiDteRoutes);
 
 /* ===================== Export ===================== */
 export default api;

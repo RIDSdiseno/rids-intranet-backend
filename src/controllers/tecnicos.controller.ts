@@ -1,8 +1,14 @@
+// src/controllers/tecnicos.controller.ts
 import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
 import type { Request, Response } from "express";
 
-const VALID_ROLES = ["ADMIN", "TECNICO", "CLIENTE", "VENTAS"] as const;
+const VALID_ROLES = [
+    "ADMIN",
+    "TECNICO",
+    "VENTAS",
+    "ADMINISTRACION",
+] as const;
 
 function normalizeRole(rol: unknown): string | undefined {
     if (!rol) return undefined;
@@ -23,7 +29,7 @@ export async function listTecnicos(_req: Request, res: Response) {
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION","VENTAS"],
                 },
             },
             select: {
@@ -42,7 +48,6 @@ export async function listTecnicos(_req: Request, res: Response) {
         return res.status(500).json({ error: "Error al listar técnicos" });
     }
 }
-
 // Listar todos los usuarios
 export async function listUsuarios(_req: Request, res: Response) {
     try {
@@ -83,7 +88,7 @@ export async function updateTecnico(req: Request, res: Response) {
 
         if (rol && !normalizedRole) {
             return res.status(400).json({
-                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS, ADMINISTRACION",
             });
         }
 

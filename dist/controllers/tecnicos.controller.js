@@ -1,6 +1,12 @@
+// src/controllers/tecnicos.controller.ts
 import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
-const VALID_ROLES = ["ADMIN", "TECNICO", "CLIENTE", "VENTAS"];
+const VALID_ROLES = [
+    "ADMIN",
+    "TECNICO",
+    "VENTAS",
+    "ADMINISTRACION",
+];
 function normalizeRole(rol) {
     if (!rol)
         return undefined;
@@ -17,7 +23,7 @@ export async function listTecnicos(_req, res) {
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION", "VENTAS"],
                 },
             },
             select: {
@@ -71,7 +77,7 @@ export async function updateTecnico(req, res) {
         const normalizedRole = normalizeRole(rol);
         if (rol && !normalizedRole) {
             return res.status(400).json({
-                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS, ADMINISTRACION",
             });
         }
         const tecnico = await prisma.tecnico.update({

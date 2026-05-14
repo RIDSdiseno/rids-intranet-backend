@@ -22,18 +22,18 @@ visitasRouter.get("/dashboard", auth(), onlyOwnEmpresa(), (req, res, next) => {
 visitasRouter.get("/", (req, res, next) => {
     Promise.resolve(listVisitas(req, res)).catch(next);
 });
-/* ========= Crear (solo admin) ========= */
-visitasRouter.post("/", auth(), onlyRole("ADMIN"), (req, res, next) => {
+/* ========= Crear: todos menos CLIENTE ========= */
+visitasRouter.post("/", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), (req, res, next) => {
     Promise.resolve(createVisita(req, res)).catch(next);
 });
 /* ========= Rutas con :id ========= */
 visitasRouter.get("/:id", (req, res, next) => {
     Promise.resolve(getVisitaById(req, res)).catch(next);
 });
-visitasRouter.patch("/:id", auth(), onlyRole("ADMIN"), (req, res, next) => {
+visitasRouter.patch("/:id", auth(), onlyRole("ADMIN", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(updateVisita(req, res)).catch(next);
 });
-visitasRouter.delete("/:id", auth(), onlyRole("ADMIN"), (req, res, next) => {
+visitasRouter.delete("/:id", auth(), onlyRole("ADMIN", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(deleteVisita(req, res)).catch(next);
 });
 visitasRouter.post("/:id/close", auth(), (req, res, next) => {
