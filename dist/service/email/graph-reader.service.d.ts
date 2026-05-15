@@ -23,6 +23,9 @@ declare class GraphReaderService {
     private addMessageToTicket;
     private detectPriority;
     private downloadAttachment;
+    private normalizeEmail;
+    private isBasicValidEmail;
+    technicianHasValidOutlookMailbox(email?: string | null): Promise<boolean>;
     sendReplyEmail(params: {
         to: string | string[];
         cc?: string[];

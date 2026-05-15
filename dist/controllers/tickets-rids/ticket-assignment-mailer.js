@@ -1,3 +1,4 @@
+// src/controller/tickets-rids/ticket-assignment-mailer.ts
 // Este módulo se encarga de enviar correos electrónicos a los técnicos cuando se les asigna un ticket.
 import { prisma } from "../../lib/prisma.js";
 import { MessageDirection } from "@prisma/client";
@@ -94,6 +95,17 @@ export async function sendTicketAssignedEmail(ticketId) {
         console.warn(`⚠️ No se pudo enviar correo de asignación: ticket ${ticketId} sin técnico con email`);
         return;
     }
+    const assigneeEmail = ticket.assignee.email.trim().toLowerCase();
+    const hasMailbox = await graphReaderService.technicianHasValidOutlookMailbox(assigneeEmail);
+    if (!hasMailbox) {
+        console.warn("⏭️ No se envía correo de asignación: técnico sin casilla Outlook válida", {
+            ticketId,
+            tecnicoId: ticket.assignee.id_tecnico,
+            tecnico: ticket.assignee.nombre,
+            email: ticket.assignee.email,
+        });
+        return;
+    }
     // Construir la URL del ticket en el frontend para incluirla en el correo.
     const frontendUrl = process.env.FRONTEND_URL?.trim() ||
         process.env.CORS_ORIGIN?.split(",")[0]?.trim() ||
@@ -131,10 +143,10 @@ export async function sendTicketAssignedEmail(ticketId) {
         </div>
     `;
     await graphReaderService.sendReplyEmail({
-        to: ticket.assignee.email,
+        to: assigneeEmail,
         subject,
         bodyHtml,
     });
-    console.log(`✅ Correo de asignación enviado a ${ticket.assignee.email} para ticket #${ticket.id}`);
+    console.log(`✅ Correo de asignación enviado a ${assigneeEmail} para ticket #${ticket.id}`);
 }
 //# sourceMappingURL=ticket-assignment-mailer.js.map

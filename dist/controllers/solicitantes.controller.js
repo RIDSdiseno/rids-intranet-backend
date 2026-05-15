@@ -12,6 +12,36 @@ const normalizeEmail = (v) => {
 const isValidEmail = (email) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
+const normalizeRut = (v) => {
+    const s = String(v ?? "")
+        .trim()
+        .replace(/\./g, "")
+        .replace(/\s/g, "")
+        .toUpperCase();
+    if (!s)
+        return null;
+    const clean = s.replace(/-/g, "");
+    if (!/^\d{7,8}[0-9K]$/.test(clean)) {
+        return s;
+    }
+    return `${clean.slice(0, -1)}-${clean.slice(-1)}`;
+};
+const isValidRut = (rut) => {
+    const clean = rut.replace(/\./g, "").replace(/-/g, "").toUpperCase();
+    if (!/^\d{7,8}[0-9K]$/.test(clean))
+        return false;
+    const cuerpo = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+    let suma = 0;
+    let multiplo = 2;
+    for (let i = cuerpo.length - 1; i >= 0; i--) {
+        suma += Number(cuerpo[i]) * multiplo;
+        multiplo = multiplo < 7 ? multiplo + 1 : 2;
+    }
+    const dvEsperadoNum = 11 - (suma % 11);
+    const dvEsperado = dvEsperadoNum === 11 ? "0" : dvEsperadoNum === 10 ? "K" : String(dvEsperadoNum);
+    return dv === dvEsperado;
+};
 /** ✅ Empresas donde los solicitantes pueden ser "boxes" sin cuenta */
 const BOX_CLINIC_EMPRESA_IDS = new Set([6, 7, 22, 29, 31]); // Clínica Alameda, Providencia
 const parseOrderBy = (v) => {
@@ -82,6 +112,7 @@ const buildSolicitanteSearchWhere = (rawSearch, includeEmpresa = true) => {
         AND: terms.map((term) => ({
             OR: [
                 { nombre: { contains: term, mode: INS } },
+                { rut: { contains: term.replace(/\./g, "").replace(/\s/g, ""), mode: INS } },
                 { email: { contains: term, mode: INS } },
                 { telefono: { contains: term, mode: INS } },
                 ...(includeEmpresa
@@ -137,6 +168,7 @@ export const listSolicitantes = async (req, res) => {
                 select: {
                     id_solicitante: true,
                     nombre: true,
+                    rut: true,
                     email: true,
                     telefono: true,
                     empresaId: true,
@@ -262,6 +294,7 @@ export const listSolicitantesByEmpresa = async (req, res) => {
             select: {
                 id_solicitante: true,
                 nombre: true,
+                rut: true,
                 email: true,
                 telefono: true,
             },
@@ -270,6 +303,7 @@ export const listSolicitantesByEmpresa = async (req, res) => {
             items: rows.map((s) => ({
                 id: s.id_solicitante,
                 nombre: s.nombre,
+                rut: s.rut ?? null,
                 email: s.email ?? null,
                 telefono: s.telefono ?? null,
             })),
@@ -451,12 +485,44 @@ export const checkSolicitanteEmail = async (req, res) => {
 export const createSolicitante = async (req, res) => {
     try {
         const nombre = String(req.body?.nombre ?? "").trim();
+        const rut = normalizeRut(req.body?.rut);
         const email = normalizeEmail(req.body?.email);
         const telefonoRaw = (req.body?.telefono ?? null);
         const telefono = telefonoRaw ? String(telefonoRaw).trim() : null;
         const empresaId = toInt(req.body?.empresaId);
         if (!nombre) {
             return res.status(400).json({ error: "El nombre es obligatorio" });
+        }
+        if (rut && !isValidRut(rut)) {
+            return res.status(400).json({ error: "El RUT no tiene un formato válido" });
+        }
+        if (rut) {
+            const existingRut = await prisma.solicitante.findFirst({
+                where: {
+                    isActive: true,
+                    rut: {
+                        equals: rut,
+                        mode: "insensitive",
+                    },
+                },
+                select: {
+                    id_solicitante: true,
+                    nombre: true,
+                    rut: true,
+                    empresa: {
+                        select: {
+                            id_empresa: true,
+                            nombre: true,
+                        },
+                    },
+                },
+            });
+            if (existingRut) {
+                return res.status(409).json({
+                    error: `Ya existe un solicitante con el RUT ${rut}. Pertenece a: ${existingRut.nombre}${existingRut.empresa?.nombre ? ` (${existingRut.empresa.nombre})` : ""}.`,
+                    duplicate: existingRut,
+                });
+            }
         }
         if (empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
@@ -502,6 +568,7 @@ export const createSolicitante = async (req, res) => {
         const created = await prisma.solicitante.create({
             data: {
                 nombre,
+                rut,
                 email,
                 telefono,
                 empresaId,
@@ -509,6 +576,7 @@ export const createSolicitante = async (req, res) => {
             select: {
                 id_solicitante: true,
                 nombre: true,
+                rut: true,
                 email: true,
                 telefono: true,
                 empresaId: true,
@@ -521,8 +589,12 @@ export const createSolicitante = async (req, res) => {
     catch (err) {
         const e = err;
         if (e?.code === "P2002") {
+            const meta = err?.meta;
+            const target = Array.isArray(meta?.target) ? meta.target.join(",") : "";
             return res.status(409).json({
-                error: "Ya existe un solicitante con ese correo electrónico",
+                error: target.includes("rut")
+                    ? "Ya existe un solicitante con ese RUT"
+                    : "Ya existe un solicitante con ese correo electrónico",
             });
         }
         console.error("[solicitantes.create] error:", err);
@@ -540,6 +612,7 @@ export const getSolicitanteById = async (req, res) => {
             select: {
                 id_solicitante: true,
                 nombre: true,
+                rut: true,
                 email: true,
                 telefono: true,
                 empresaId: true,
@@ -590,6 +663,45 @@ export const updateSolicitante = async (req, res) => {
         if (id <= 0)
             return res.status(400).json({ error: "ID inválido" });
         const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim() : undefined;
+        const rut = req.body?.rut === null
+            ? null
+            : typeof req.body?.rut === "string"
+                ? normalizeRut(req.body.rut)
+                : undefined;
+        if (rut && !isValidRut(rut)) {
+            return res.status(400).json({ error: "El RUT no tiene un formato válido" });
+        }
+        if (rut) {
+            const existingRut = await prisma.solicitante.findFirst({
+                where: {
+                    isActive: true,
+                    rut: {
+                        equals: rut,
+                        mode: "insensitive",
+                    },
+                    NOT: {
+                        id_solicitante: id,
+                    },
+                },
+                select: {
+                    id_solicitante: true,
+                    nombre: true,
+                    rut: true,
+                    empresa: {
+                        select: {
+                            id_empresa: true,
+                            nombre: true,
+                        },
+                    },
+                },
+            });
+            if (existingRut) {
+                return res.status(409).json({
+                    error: `Ya existe otro solicitante con el RUT ${rut}. Pertenece a: ${existingRut.nombre}${existingRut.empresa?.nombre ? ` (${existingRut.empresa.nombre})` : ""}.`,
+                    duplicate: existingRut,
+                });
+            }
+        }
         const email = req.body?.email === null
             ? null
             : typeof req.body?.email === "string"
@@ -656,6 +768,7 @@ export const updateSolicitante = async (req, res) => {
             where: { id_solicitante: id },
             data: {
                 ...(nombre !== undefined ? { nombre } : {}),
+                ...(rut !== undefined ? { rut } : {}),
                 ...(email !== undefined ? { email } : {}),
                 ...(telefono !== undefined ? { telefono } : {}),
                 ...(empresaId !== undefined ? { empresaId } : {}),
@@ -663,6 +776,7 @@ export const updateSolicitante = async (req, res) => {
             select: {
                 id_solicitante: true,
                 nombre: true,
+                rut: true,
                 email: true,
                 telefono: true,
                 empresaId: true,
@@ -722,7 +836,13 @@ export const deleteSolicitante = async (req, res) => {
             if (existing)
                 return existing.id_solicitante;
             const created = await prisma.solicitante.create({
-                data: { nombre: "S/A", email: null, telefono: null, empresaId },
+                data: {
+                    nombre: "S/A",
+                    rut: null,
+                    email: null,
+                    telefono: null,
+                    empresaId,
+                },
                 select: { id_solicitante: true },
             });
             return created.id_solicitante;

@@ -3,7 +3,7 @@ import { sincronizarAgendaAutomaticaOutlook } from "../../service/agenda.service
 export function startAgendaOutlookSyncCron() {
     const EXPRESION_CRON = "*/10 * * * *";
     let isRunning = false;
-    console.log("[AGENDA OUTLOOK AUTO CRON] Ejecutando sync inicial...");
+    // console.log("[AGENDA OUTLOOK AUTO CRON] Ejecutando sync inicial...");
     sincronizarAgendaAutomaticaOutlook()
         .then(r => console.log("[AGENDA OUTLOOK AUTO CRON] Resultado inicial:", JSON.stringify(r, null, 2)))
         .catch(e => console.error("[AGENDA OUTLOOK AUTO CRON] Error inicial:", e));
@@ -13,15 +13,15 @@ export function startAgendaOutlookSyncCron() {
         isRunning = true;
         try {
             const resultado = await sincronizarAgendaAutomaticaOutlook();
-            console.log("[AGENDA OUTLOOK AUTO CRON] Resultado:", JSON.stringify(resultado));
+            // console.log("[AGENDA OUTLOOK AUTO CRON] Resultado:", JSON.stringify(resultado));
         }
         catch (e) {
-            console.error("[AGENDA OUTLOOK AUTO CRON] Error:", e);
+            // console.error("[AGENDA OUTLOOK AUTO CRON] Error:", e);
         }
         finally {
             isRunning = false;
         }
     });
-    console.log(`[AGENDA OUTLOOK AUTO CRON] Programado con expresion: "${EXPRESION_CRON}"`);
+    // console.log(`[AGENDA OUTLOOK AUTO CRON] Programado con expresion: "${EXPRESION_CRON}"`);
 }
 //# sourceMappingURL=agenda-outlook-sync.cron.js.map

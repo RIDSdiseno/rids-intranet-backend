@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 // Importa solo lo que Prisma sí está exportando correctamente
-import { Prisma, TipoEquipo } from "@prisma/client";
+import { Prisma, TipoEquipo, EstadoEquipo } from "@prisma/client";
 
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
 enum AuditAction {
@@ -38,11 +38,14 @@ const listQuerySchema = z.object({
 
   mode: z.enum(["full", "selector"]).default("full").optional(),
 
+  estado: z.nativeEnum(EstadoEquipo).optional(),
+
   sortBy: z
     .enum([
       "id_equipo",
       "serial",
       "tipo",
+      "estado",
       "marca",
       "modelo",
       "procesador",
@@ -77,6 +80,7 @@ const createEquipoSchema = z.object({
   ram: z.string().trim().min(1),
   disco: z.string().trim().min(1),
   propiedad: z.string().trim().min(1),
+  estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
 
   macWifi: z.string().optional(),
   redEthernet: z.string().optional(),
@@ -119,6 +123,8 @@ const equipoUpdateSchema = z.object({
   propiedad: z.string().trim().min(1).optional(),
 
   adicionales: z.array(adicionalSchema).optional(),
+
+  estado: z.nativeEnum(EstadoEquipo).optional(),
 
   // NUEVOS
   macWifi: z.string().optional(),
@@ -167,6 +173,7 @@ function mapOrderBy(
     "propiedad",
     "createdAt",
     "updatedAt",
+    "estado",
   ];
 
   const key = allowed.includes(sortBy as any)
@@ -217,6 +224,8 @@ function flattenRow(e: any) {
     passwordPersonal: detalle?.passwordPersonal ?? null,
 
     adicionales: e.adicionales ?? [],
+
+    estado: e.estado,
   };
 }
 
@@ -359,6 +368,12 @@ export async function listEquipos(req: Request, res: Response) {
       ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
       ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
 
+      ...(q.estado
+        ? {
+          estado: q.estado,
+        }
+        : {}),
+
       ...(q.createdFrom || q.createdTo
         ? {
           createdAt: {
@@ -423,6 +438,7 @@ export async function listEquipos(req: Request, res: Response) {
           marca: true,
           modelo: true,
           tipo: true,
+          estado: true,
         },
         orderBy,
         skip,
@@ -518,6 +534,7 @@ export async function createEquipo(req: Request, res: Response) {
             disco: data.disco,
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
+            estado: data.estado,
 
             detalle: {
               create: {
@@ -754,6 +771,7 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.disco ? { disco: equipoData.disco } : {}),
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
         ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
+        ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
 
         detalle: {
           upsert: {

@@ -144,7 +144,7 @@ export async function getAgendaDesdeOutlookController(req: Request, res: Respons
     const resultado = await getAgendaDesdeOutlook(year, month);
     return res.json(resultado);
   } catch (error) {
-    console.error("[AGENDA OUTLOOK CONTROLLER ERROR]:", error);
+    //console.error("[AGENDA OUTLOOK CONTROLLER ERROR]:", error);
     return res.status(500).json({ message: "Error obteniendo agenda desde Outlook" });
   }
 }
@@ -167,7 +167,7 @@ export async function syncAgendaOutlook(req: Request, res: Response) {
     });
 
   } catch (error) {
-    console.error("[AGENDA SYNC CONTROLLER ERROR]", error);
+    //console.error("[AGENDA SYNC CONTROLLER ERROR]", error);
 
     return res.status(500).json({
       error: "Error al sincronizar agenda con Outlook"

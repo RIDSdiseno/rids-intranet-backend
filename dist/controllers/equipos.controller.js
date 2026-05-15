@@ -1,7 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 // Importa solo lo que Prisma sí está exportando correctamente
-import { Prisma, TipoEquipo } from "@prisma/client";
+import { Prisma, TipoEquipo, EstadoEquipo } from "@prisma/client";
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
 var AuditAction;
 (function (AuditAction) {
@@ -20,15 +20,21 @@ const listQuerySchema = z.object({
     createdTo: z.coerce.date().optional(),
     updatedFrom: z.coerce.date().optional(),
     updatedTo: z.coerce.date().optional(),
+    auditTecnicoId: z.coerce.number().int().positive().optional(),
+    auditFrom: z.coerce.date().optional(),
+    auditTo: z.coerce.date().optional(),
+    auditAction: z.enum(["CREATE", "UPDATE", "ALL"]).default("ALL").optional(),
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
     mode: z.enum(["full", "selector"]).default("full").optional(),
+    estado: z.nativeEnum(EstadoEquipo).optional(),
     sortBy: z
         .enum([
         "id_equipo",
         "serial",
         "tipo",
+        "estado",
         "marca",
         "modelo",
         "procesador",
@@ -60,6 +66,7 @@ const createEquipoSchema = z.object({
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
+    estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -97,6 +104,7 @@ const equipoUpdateSchema = z.object({
     disco: z.string().trim().min(1).optional(),
     propiedad: z.string().trim().min(1).optional(),
     adicionales: z.array(adicionalSchema).optional(),
+    estado: z.nativeEnum(EstadoEquipo).optional(),
     // NUEVOS
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
@@ -134,6 +142,7 @@ function mapOrderBy(sortBy, sortDir) {
         "propiedad",
         "createdAt",
         "updatedAt",
+        "estado",
     ];
     const key = allowed.includes(sortBy)
         ? sortBy
@@ -175,6 +184,7 @@ function flattenRow(e) {
         usuarioPersonal: detalle?.usuarioPersonal ?? null,
         passwordPersonal: detalle?.passwordPersonal ?? null,
         adicionales: e.adicionales ?? [],
+        estado: e.estado,
     };
 }
 // Asegura que exista un solicitante placeholder para la empresa dada, y devuelve su ID
@@ -198,6 +208,72 @@ export async function listEquipos(req, res) {
         const q = listQuerySchema.parse(req.query);
         const INS = "insensitive";
         const user = req.user;
+        let auditEquipoIds = null;
+        const tieneFiltroAuditoria = Boolean(q.auditTecnicoId) ||
+            Boolean(q.auditFrom) ||
+            Boolean(q.auditTo) ||
+            (Boolean(q.auditAction) && q.auditAction !== "ALL");
+        if (tieneFiltroAuditoria) {
+            const auditWhere = {
+                entity: {
+                    in: ["Equipo", "DetalleEquipo"],
+                },
+                ...(q.auditTecnicoId
+                    ? {
+                        actorId: q.auditTecnicoId,
+                    }
+                    : {}),
+                ...(q.auditAction && q.auditAction !== "ALL"
+                    ? {
+                        action: q.auditAction,
+                    }
+                    : {
+                        action: {
+                            in: [AuditAction.CREATE, AuditAction.UPDATE],
+                        },
+                    }),
+                ...(q.auditFrom || q.auditTo
+                    ? {
+                        createdAt: {
+                            ...(q.auditFrom ? { gte: q.auditFrom } : {}),
+                            ...(q.auditTo ? { lte: q.auditTo } : {}),
+                        },
+                    }
+                    : {}),
+            };
+            const logs = await prisma.auditLog.findMany({
+                where: auditWhere,
+                select: {
+                    entity: true,
+                    entityId: true,
+                },
+            });
+            const equipoIdsDirectos = logs
+                .filter((l) => l.entity === "Equipo")
+                .map((l) => Number(l.entityId))
+                .filter((n) => Number.isFinite(n));
+            const detalleIds = logs
+                .filter((l) => l.entity === "DetalleEquipo")
+                .map((l) => Number(l.entityId))
+                .filter((n) => Number.isFinite(n));
+            let equipoIdsDesdeDetalle = [];
+            if (detalleIds.length > 0) {
+                const detalles = await prisma.detalleEquipo.findMany({
+                    where: {
+                        id: {
+                            in: detalleIds,
+                        },
+                    },
+                    select: {
+                        idEquipo: true,
+                    },
+                });
+                equipoIdsDesdeDetalle = detalles
+                    .map((d) => d.idEquipo)
+                    .filter((n) => Number.isFinite(Number(n)));
+            }
+            auditEquipoIds = Array.from(new Set([...equipoIdsDirectos, ...equipoIdsDesdeDetalle]));
+        }
         const where = {
             ...(user?.rol === "CLIENTE"
                 ? {
@@ -225,6 +301,11 @@ export async function listEquipos(req, res) {
                 : {}),
             ...(q.solicitanteId ? { idSolicitante: q.solicitanteId } : {}),
             ...(q.marca ? { marca: { equals: q.marca, mode: INS } } : {}),
+            ...(q.estado
+                ? {
+                    estado: q.estado,
+                }
+                : {}),
             ...(q.createdFrom || q.createdTo
                 ? {
                     createdAt: {
@@ -262,6 +343,13 @@ export async function listEquipos(req, res) {
                     ],
                 }
                 : {}),
+            ...(auditEquipoIds
+                ? {
+                    id_equipo: {
+                        in: auditEquipoIds.length > 0 ? auditEquipoIds : [-1],
+                    },
+                }
+                : {}),
         };
         // Si el cliente está filtrando por empresaId, forzamos que solo vea esa empresa (incluso si intenta usar empresaName para evadirlo)
         const orderBy = mapOrderBy(q.sortBy, q.sortDir);
@@ -276,6 +364,7 @@ export async function listEquipos(req, res) {
                     marca: true,
                     modelo: true,
                     tipo: true,
+                    estado: true,
                 },
                 orderBy,
                 skip,
@@ -359,6 +448,7 @@ export async function createEquipo(req, res) {
                         disco: data.disco,
                         propiedad: data.propiedad,
                         idSolicitante: idSolicitanteFinal,
+                        estado: data.estado,
                         detalle: {
                             create: {
                                 macWifi: data.macWifi ?? null,
@@ -496,6 +586,32 @@ export async function updateEquipo(req, res) {
         if (!equipoActual) {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
+        const serialNuevo = equipoData.serial?.trim().toUpperCase();
+        if (serialNuevo && serialNuevo !== equipoActual.serial?.trim().toUpperCase()) {
+            const serialDuplicado = await prisma.equipo.findFirst({
+                where: {
+                    serial: serialNuevo,
+                    NOT: {
+                        id_equipo: id,
+                    },
+                },
+                select: {
+                    id_equipo: true,
+                    serial: true,
+                },
+            });
+            if (serialDuplicado) {
+                return res.status(409).json({
+                    ok: false,
+                    code: "SERIAL_DUPLICADO",
+                    field: "serial",
+                    serial: serialNuevo,
+                    error: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+                    message: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+                });
+            }
+            equipoData.serial = serialNuevo;
+        }
         let solicitanteUpdate;
         // Si se dio idSolicitante, conectamos al solicitante indicado (puede ser null para desasignar)
         if (data.idSolicitante !== undefined) {
@@ -526,6 +642,7 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.disco ? { disco: equipoData.disco } : {}),
                 ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
+                ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
                 detalle: {
                     upsert: {
                         create: {
@@ -593,6 +710,15 @@ export async function updateEquipo(req, res) {
         console.error("updateEquipo error:", err);
         if (err?.code === "P2025") {
             return res.status(404).json({ error: "Equipo no encontrado" });
+        }
+        if (err?.code === "P2002") {
+            return res.status(409).json({
+                ok: false,
+                code: "SERIAL_DUPLICADO",
+                field: "serial",
+                error: "Ya existe un equipo registrado con ese serial",
+                message: "Ya existe un equipo registrado con ese serial",
+            });
         }
         if (err instanceof z.ZodError) {
             return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });

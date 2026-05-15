@@ -451,7 +451,7 @@ export async function generarMallaMensual(
     ]);
 
     if (tecnicos.length === 0 || (empresas.length === 0 && !includeOficina)) {
-        console.log("[AGENDA] Sin técnicos activos o sin empresas — nada que generar.");
+       // console.log("[AGENDA] Sin técnicos activos o sin empresas — nada que generar.");
         return { creadas: 0, omitidas: 0 };
     }
 
@@ -616,7 +616,7 @@ export async function generarMallaMensual(
     }
 
     if (nuevas.length === 0) {
-        console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} ya existía completa | omitidas: ${omitidas}`);
+      //  console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} ya existía completa | omitidas: ${omitidas}`);
         return { creadas: 0, omitidas };
     }
 
@@ -668,9 +668,9 @@ export async function generarMallaMensual(
 
     await prisma.agendaTecnico.createMany({ data: relaciones, skipDuplicates: true });
 
-    console.log(
-        `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} generada | creadas: ${nuevas.length} | omitidas: ${omitidas}`
-    );
+    //console.log(
+       // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} generada | creadas: ${nuevas.length} | omitidas: ${omitidas}`
+    //);
 
     return { creadas: nuevas.length, omitidas };
 }
@@ -1206,9 +1206,8 @@ export async function sincronizarAgendaDesdeOutlook(
             },
         });
 
-        console.log(
-            `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}`
-        );
+      //  console.log(
+           // `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}` );
     }
 
     let creadas = 0;
@@ -1317,7 +1316,7 @@ export async function sincronizarAgendaDesdeOutlook(
 
             creadas++;
         } catch (error) {
-            console.error(`[AGENDA OUTLOOK SYNC] Error procesando evento ${event.id || "(sin id)"}:`, error);
+          ////  console.error(`[AGENDA OUTLOOK SYNC] Error procesando evento ${event.id || "(sin id)"}:`, error);
             errores++;
         }
     }
@@ -1528,7 +1527,7 @@ export async function actualizarAgendaVisita(
                 }
             }
         } catch (error) {
-            console.error(`[AGENDA OUTLOOK] Error sincronizando agenda #${visita.id}:`, error);
+            ////console.error(`[AGENDA OUTLOOK] Error sincronizando agenda #${visita.id}:`, error);
         }
     } else if (actual?.outlookEventId) {
         try {
@@ -1539,7 +1538,7 @@ export async function actualizarAgendaVisita(
             });
             visita.outlookEventId = null;
         } catch (error) {
-            console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
+           // console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
         }
     }
 
@@ -1560,7 +1559,7 @@ export async function cerrarAgendasPendientesDelDia(): Promise<number> {
         },
     });
 
-    console.log(`[AGENDA] Cierre automatico ejecutado - agendas cerradas: ${resultado.count}`);
+   // console.log(`[AGENDA] Cierre automatico ejecutado - agendas cerradas: ${resultado.count}`);
 
     return resultado.count;
 }
@@ -1631,7 +1630,7 @@ export async function reasignarTecnicos(
 
                 await graphReaderService.updateCalendarEvent(visitaActualizada.outlookEventId, eventData);
             } catch (error) {
-                console.error(`[AGENDA OUTLOOK] Error sincronizando reasignación agenda #${agendaId}:`, error);
+               // console.error(`[AGENDA OUTLOOK] Error sincronizando reasignación agenda #${agendaId}:`, error);
             }
         }
     }
@@ -1672,11 +1671,11 @@ export async function eliminarAgendaVisita(id: number) {
                     : null;
 
             if (errorCode === "ErrorItemNotFound") {
-                console.warn(
-                    `[AGENDA OUTLOOK] Evento no encontrado en Outlook para agenda #${id} (${visita.outlookEventId}). Se elimina solo en BD.`
-                );
+               // console.warn(
+                  ////  `[AGENDA OUTLOOK] Evento no encontrado en Outlook para agenda #${id} (${visita.outlookEventId}). Se elimina solo en BD.`
+                //);
             } else {
-                console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${id}:`, error);
+                //console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${id}:`, error);
                 throw error;
             }
         }
@@ -1700,7 +1699,7 @@ export async function eliminarMallaMensual(
     const manana = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() + 1));
 
     if (manana > fin) {
-        console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} — nada futuro que eliminar`);
+        //console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} — nada futuro que eliminar`);
         return { eliminadas: 0 };
     }
 
@@ -1708,9 +1707,9 @@ export async function eliminarMallaMensual(
         where: { fecha: { gte: manana, lte: fin }, outlookEventId: null },
     });
 
-    console.log(
-        `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} eliminada | visitas borradas: ${count}`
-    );
+    //console.log(
+       // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} eliminada | visitas borradas: ${count}`
+   // );
 
     return { eliminadas: count };
 }
@@ -1801,7 +1800,7 @@ export async function crearAgendaVisitaManual(data: {
                 return serializarAgendaVisita(visitaActualizada);
             }
         } catch (error) {
-            console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
+            //console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
         }
     }
 
@@ -1839,7 +1838,7 @@ export async function enviarNotificacionesPendientes(): Promise<number> {
         },
     });
 
-    console.log(`[AGENDA] Agendas pendientes para ${fechaHoy.toISOString().slice(0, 10)}: ${pendientes.length}`);
+    //console.log(`[AGENDA] Agendas pendientes para ${fechaHoy.toISOString().slice(0, 10)}: ${pendientes.length}`);
 
     let enviadas = 0;
 
@@ -1928,7 +1927,7 @@ ${tecnicosHtml}
             .filter((email): email is string => Boolean(email));
 
         if (destinatarios.length === 0) {
-            console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos validos`);
+            //console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos validos`);
             continue;
         }
 
@@ -1945,11 +1944,11 @@ ${tecnicosHtml}
 
             enviadas++;
         } catch (error) {
-            console.error(`[AGENDA] Error al enviar correos de agenda #${visita.id}:`, error);
+            //console.error(`[AGENDA] Error al enviar correos de agenda #${visita.id}:`, error);
         }
     }
 
-    console.log(`[AGENDA] Notificaciones completadas — agendas procesadas: ${enviadas}/${pendientes.length}`);
+    //console.log(`[AGENDA] Notificaciones completadas — agendas procesadas: ${enviadas}/${pendientes.length}`);
 
     return enviadas;
 }
@@ -1983,7 +1982,7 @@ export async function enviarRecordatoriosPendientes(): Promise<number> {
         },
     });
 
-    console.log(`[AGENDA RECORDATORIOS] Agendas candidatas: ${candidatas.length}`);
+    //console.log(`[AGENDA RECORDATORIOS] Agendas candidatas: ${candidatas.length}`);
 
     let agendasProcesadas = 0;
     let correosEnviados = 0;
@@ -2076,7 +2075,7 @@ ${tecnicosHtml}
             .filter((email): email is string => Boolean(email));
 
         if (destinatarios.length === 0) {
-            console.warn(`[AGENDA RECORDATORIOS] Agenda omitida sin email - agenda #${visita.id}`);
+            //console.warn(`[AGENDA RECORDATORIOS] Agenda omitida sin email - agenda #${visita.id}`);
 
             await prisma.agendaVisita.update({
                 where: { id: visita.id },
@@ -2090,7 +2089,7 @@ ${tecnicosHtml}
         try {
             for (const to of destinatarios) {
                 await graphReaderService.sendReplyEmail({ to, subject, bodyHtml });
-                console.log(`[AGENDA RECORDATORIOS] Recordatorio enviado -> ${to}`);
+                //console.log(`[AGENDA RECORDATORIOS] Recordatorio enviado -> ${to}`);
                 correosEnviados++;
             }
 
@@ -2101,13 +2100,13 @@ ${tecnicosHtml}
 
             agendasProcesadas++;
         } catch (error) {
-            console.error(`[AGENDA RECORDATORIOS] Error al enviar agenda #${visita.id}:`, error);
+            //console.error(`[AGENDA RECORDATORIOS] Error al enviar agenda #${visita.id}:`, error);
         }
     }
 
-    console.log(
-        `[AGENDA RECORDATORIOS] Agendas procesadas: ${agendasProcesadas} | Correos enviados: ${correosEnviados}`
-    );
+    //console.log(
+       // `[AGENDA RECORDATORIOS] Agendas procesadas: ${agendasProcesadas} | Correos enviados: ${correosEnviados}`
+    //);
 
     return correosEnviados;
 }
@@ -2221,10 +2220,10 @@ ${tecnicosHtml}
     for (const to of destinatarios) {
         await graphReaderService.sendReplyEmail({ to, subject, bodyHtml });
         enviados++;
-        console.log(`[AGENDA NOTA] Nota enviada -> ${to} (agenda #${visita.id})`);
+        //console.log(`[AGENDA NOTA] Nota enviada -> ${to} (agenda #${visita.id})`);
     }
 
-    console.log(`[AGENDA NOTA] Total correos enviados para agenda #${visita.id}: ${enviados}`);
+    //console.log(`[AGENDA NOTA] Total correos enviados para agenda #${visita.id}: ${enviados}`);
 
     return enviados;
 }
@@ -2246,10 +2245,10 @@ export async function sincronizarAgendaAutomaticaOutlook(): Promise<{
 
     try {
         resultadoActual = await sincronizarAgendaDesdeOutlook(yearActual, monthActual);
-        console.log(`[AGENDA OUTLOOK AUTO] Mes actual (${yearActual}-${monthActual}) sincronizado:`, resultadoActual);
+        //console.log(`[AGENDA OUTLOOK AUTO] Mes actual (${yearActual}-${monthActual}) sincronizado:`, resultadoActual);
     } catch (err) {
         errorActual = err instanceof Error ? err.message : String(err);
-        console.error(`[AGENDA OUTLOOK AUTO] Error en mes actual (${yearActual}-${monthActual}):`, errorActual);
+        //console.error(`[AGENDA OUTLOOK AUTO] Error en mes actual (${yearActual}-${monthActual}):`, errorActual);
     }
 
     let resultadoSiguiente: { creadas: number; actualizadas: number; omitidas: number; errores: number } | null = null;
@@ -2257,10 +2256,10 @@ export async function sincronizarAgendaAutomaticaOutlook(): Promise<{
 
     try {
         resultadoSiguiente = await sincronizarAgendaDesdeOutlook(yearSiguiente, monthSiguiente);
-        console.log(`[AGENDA OUTLOOK AUTO] Mes siguiente (${yearSiguiente}-${monthSiguiente}) sincronizado:`, resultadoSiguiente);
+        //console.log(`[AGENDA OUTLOOK AUTO] Mes siguiente (${yearSiguiente}-${monthSiguiente}) sincronizado:`, resultadoSiguiente);
     } catch (err) {
         errorSiguiente = err instanceof Error ? err.message : String(err);
-        console.error(`[AGENDA OUTLOOK AUTO] Error en mes siguiente (${yearSiguiente}-${monthSiguiente}):`, errorSiguiente);
+       // console.error(`[AGENDA OUTLOOK AUTO] Error en mes siguiente (${yearSiguiente}-${monthSiguiente}):`, errorSiguiente);
     }
 
     return {
