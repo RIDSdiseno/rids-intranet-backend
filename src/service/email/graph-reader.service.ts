@@ -1478,6 +1478,72 @@ class GraphReaderService {
         return null;
     }
 
+    private normalizeEmail(email?: string | null): string | null {
+        if (!email) return null;
+
+        const clean = String(email).trim().toLowerCase();
+
+        if (!clean) return null;
+
+        return clean;
+    }
+
+    private isBasicValidEmail(email?: string | null): boolean {
+        const clean = this.normalizeEmail(email);
+
+        if (!clean) return false;
+
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+    }
+
+    async technicianHasValidOutlookMailbox(email?: string | null): Promise<boolean> {
+        const cleanEmail = this.normalizeEmail(email);
+
+        if (!cleanEmail || !this.isBasicValidEmail(cleanEmail)) {
+            return false;
+        }
+
+        try {
+            const client = await this.getClient();
+
+            const user = await client
+                .api(`/users/${encodeURIComponent(cleanEmail)}`)
+                .select("id,mail,userPrincipalName,accountEnabled")
+                .get();
+
+            if (!user) return false;
+
+            if (user.accountEnabled === false) {
+                return false;
+            }
+
+            const mail = String(user.mail ?? "").trim().toLowerCase();
+            const upn = String(user.userPrincipalName ?? "").trim().toLowerCase();
+
+            return mail === cleanEmail || upn === cleanEmail;
+        } catch (error: any) {
+            const code = error?.code;
+            const statusCode = error?.statusCode || error?.response?.status;
+
+            if (
+                statusCode === 404 ||
+                code === "Request_ResourceNotFound" ||
+                code === "ResourceNotFound"
+            ) {
+                return false;
+            }
+
+            console.warn("⚠️ No se pudo validar casilla Outlook del técnico:", {
+                email: cleanEmail,
+                code,
+                statusCode,
+                message: error?.message,
+            });
+
+            return false;
+        }
+    }
+
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params: {
         to: string | string[];

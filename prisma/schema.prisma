@@ -571,11 +571,10 @@ model Tecnico {
 }
 
 model RolePermission {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   rol       String
   permiso   String
-  permitido Boolean @default(false)
-
+  permitido Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1242,31 +1241,26 @@ model RCVResumen {
 }
 
 model RcvConciliacion {
-  id String @id @default(cuid())
-
-  empresaKey     String
-  tipoRcv        String // ventas | compras
-  tipoDoc        String
-  folio          String
-  rutContraparte String
-  razonSocial    String?
-
-  fechaDocto DateTime?
-  montoNeto  Int       @default(0)
-  montoIva   Int       @default(0)
-  montoTotal Int       @default(0)
-
-  estadoRcv String?
-  origenRcv String?
-
+  id                 String    @id @default(cuid())
+  empresaKey         String
+  tipoRcv            String
+  tipoDoc            String
+  folio              String
+  rutContraparte     String
+  razonSocial        String?
+  fechaDocto         DateTime?
+  montoNeto          Int       @default(0)
+  montoIva           Int       @default(0)
+  montoTotal         Int       @default(0)
+  estadoRcv          String?
+  origenRcv          String?
   estadoConciliacion String    @default("NO_CONCILIADA")
   formaPago          String?
   observacion        String?
   responsable        String?
   conciliadoAt       DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@unique([empresaKey, tipoRcv, tipoDoc, rutContraparte, folio])
   @@index([empresaKey, tipoRcv])

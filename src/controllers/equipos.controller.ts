@@ -27,6 +27,11 @@ const listQuerySchema = z.object({
   updatedFrom: z.coerce.date().optional(),
   updatedTo: z.coerce.date().optional(),
 
+  auditTecnicoId: z.coerce.number().int().positive().optional(),
+  auditFrom: z.coerce.date().optional(),
+  auditTo: z.coerce.date().optional(),
+  auditAction: z.enum(["CREATE", "UPDATE", "ALL"]).default("ALL").optional(),
+
   empresaId: z.coerce.number().int().optional(),
   empresaName: z.string().trim().optional(),
   solicitanteId: z.coerce.number().int().optional(),
@@ -242,6 +247,88 @@ export async function listEquipos(req: Request, res: Response) {
 
     const user = (req as any).user;
 
+    let auditEquipoIds: number[] | null = null;
+
+    const tieneFiltroAuditoria =
+      Boolean(q.auditTecnicoId) ||
+      Boolean(q.auditFrom) ||
+      Boolean(q.auditTo) ||
+      (Boolean(q.auditAction) && q.auditAction !== "ALL");
+
+    if (tieneFiltroAuditoria) {
+      const auditWhere: Prisma.AuditLogWhereInput = {
+        entity: {
+          in: ["Equipo", "DetalleEquipo"],
+        },
+
+        ...(q.auditTecnicoId
+          ? {
+            actorId: q.auditTecnicoId,
+          }
+          : {}),
+
+        ...(q.auditAction && q.auditAction !== "ALL"
+          ? {
+            action: q.auditAction as any,
+          }
+          : {
+            action: {
+              in: [AuditAction.CREATE, AuditAction.UPDATE],
+            } as any,
+          }),
+
+        ...(q.auditFrom || q.auditTo
+          ? {
+            createdAt: {
+              ...(q.auditFrom ? { gte: q.auditFrom } : {}),
+              ...(q.auditTo ? { lte: q.auditTo } : {}),
+            },
+          }
+          : {}),
+      };
+
+      const logs = await prisma.auditLog.findMany({
+        where: auditWhere,
+        select: {
+          entity: true,
+          entityId: true,
+        },
+      });
+
+      const equipoIdsDirectos = logs
+        .filter((l) => l.entity === "Equipo")
+        .map((l) => Number(l.entityId))
+        .filter((n) => Number.isFinite(n));
+
+      const detalleIds = logs
+        .filter((l) => l.entity === "DetalleEquipo")
+        .map((l) => Number(l.entityId))
+        .filter((n) => Number.isFinite(n));
+
+      let equipoIdsDesdeDetalle: number[] = [];
+
+      if (detalleIds.length > 0) {
+        const detalles = await prisma.detalleEquipo.findMany({
+          where: {
+            id: {
+              in: detalleIds,
+            },
+          },
+          select: {
+            idEquipo: true,
+          },
+        });
+
+        equipoIdsDesdeDetalle = detalles
+          .map((d) => d.idEquipo)
+          .filter((n): n is number => Number.isFinite(Number(n)));
+      }
+
+      auditEquipoIds = Array.from(
+        new Set([...equipoIdsDirectos, ...equipoIdsDesdeDetalle])
+      );
+    }
+
     const where: Prisma.EquipoWhereInput = {
       ...(user?.rol === "CLIENTE"
         ? {
@@ -309,6 +396,14 @@ export async function listEquipos(req: Request, res: Response) {
               ? [{ id_equipo: Number(q.search) }]
               : []),
           ],
+        }
+        : {}),
+
+      ...(auditEquipoIds
+        ? {
+          id_equipo: {
+            in: auditEquipoIds.length > 0 ? auditEquipoIds : [-1],
+          },
         }
         : {}),
     };
@@ -596,6 +691,36 @@ export async function updateEquipo(req: Request, res: Response) {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }
 
+    const serialNuevo = equipoData.serial?.trim().toUpperCase();
+
+    if (serialNuevo && serialNuevo !== equipoActual.serial?.trim().toUpperCase()) {
+      const serialDuplicado = await prisma.equipo.findFirst({
+        where: {
+          serial: serialNuevo,
+          NOT: {
+            id_equipo: id,
+          },
+        },
+        select: {
+          id_equipo: true,
+          serial: true,
+        },
+      });
+
+      if (serialDuplicado) {
+        return res.status(409).json({
+          ok: false,
+          code: "SERIAL_DUPLICADO",
+          field: "serial",
+          serial: serialNuevo,
+          error: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+          message: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+        });
+      }
+
+      equipoData.serial = serialNuevo;
+    }
+
     let solicitanteUpdate: Prisma.SolicitanteUpdateOneWithoutEquiposNestedInput | undefined;
 
     // Si se dio idSolicitante, conectamos al solicitante indicado (puede ser null para desasignar)
@@ -699,6 +824,16 @@ export async function updateEquipo(req: Request, res: Response) {
 
     if ((err as { code?: string })?.code === "P2025") {
       return res.status(404).json({ error: "Equipo no encontrado" });
+    }
+
+    if ((err as { code?: string })?.code === "P2002") {
+      return res.status(409).json({
+        ok: false,
+        code: "SERIAL_DUPLICADO",
+        field: "serial",
+        error: "Ya existe un equipo registrado con ese serial",
+        message: "Ya existe un equipo registrado con ese serial",
+      });
     }
 
     if (err instanceof z.ZodError) {
