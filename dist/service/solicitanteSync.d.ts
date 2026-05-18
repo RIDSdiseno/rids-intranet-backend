@@ -11,10 +11,10 @@ export type GoogleUser = {
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
     id_solicitante: number;
-    rut: string | null;
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;
@@ -27,10 +27,10 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
 export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
     id_solicitante: number;
-    rut: string | null;
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;

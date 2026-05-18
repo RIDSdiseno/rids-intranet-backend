@@ -33,6 +33,7 @@ model Empresa {
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
+  entidadGestioos      EntidadGestioo[]
 }
 
 model Sucursal {
@@ -246,7 +247,6 @@ model AccesoRouterSucursal {
 model Solicitante {
   id_solicitante       Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
   nombre               String
-  rut                  String?                 @unique
   email                String?
   telefono             String?
   empresaId            Int
@@ -256,6 +256,7 @@ model Solicitante {
   microsoftUserId      String?                 @unique
   accountType          AccountType?
   deletedAt            DateTime?
+  rut                  String?                 @unique
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")
@@ -296,14 +297,20 @@ model SolicitanteMsLicense {
 }
 
 model EntidadGestioo {
-  id               Int                     @id @default(autoincrement())
-  nombre           String
-  rut              String?                 @unique
-  correo           String?
-  telefono         String?
-  direccion        String?
-  tipo             TipoEntidadGestioo      @default(EMPRESA)
-  origen           OrigenGestioo           @default(RIDS)
+  id        Int                @id @default(autoincrement())
+  nombre    String
+  rut       String?            @unique
+  correo    String?
+  telefono  String?
+  direccion String?
+  tipo      TipoEntidadGestioo @default(EMPRESA)
+  origen    OrigenGestioo      @default(RIDS)
+
+  // ── NUEVO ───────────────────────────────────────────────
+  empresaId Int?
+  empresa   Empresa? @relation(fields: [empresaId], references: [id_empresa])
+  // ────────────────────────────────────────────────────────
+
   productos        ProductoGestioo[]
   trabajos         DetalleTrabajoGestioo[]
   servicioGestioos ServicioGestioo[]
@@ -430,18 +437,20 @@ model Equipo {
   serial                 String?                 @unique
   marca                  String
   modelo                 String
+  anioPc                 Int?
+  anioPcOrigen           String?                 @default("AUTO")
   procesador             String?
   ram                    String?
   disco                  String?
   propiedad              String                  @default("Empresa")
   tipo                   TipoEquipo              @default(GENERICO)
-  estado                 EstadoEquipo            @default(ACTIVO)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
   deletedAt              DateTime?
   empresaId              Int?
   origenCotizacionId     Int?
   productoId             Int?                    @unique
+  estado                 EstadoEquipo            @default(ACTIVO)
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")

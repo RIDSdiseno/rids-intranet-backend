@@ -29,6 +29,8 @@ export declare function getInventarioByEmpresa(params: {
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
+    anioPc: number | null;
+    anioPcOrigen: string | null;
     procesador: string | null;
     ram: string | null;
     disco: string | null;

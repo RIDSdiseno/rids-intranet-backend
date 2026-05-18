@@ -10,7 +10,8 @@ import {
   updateEquipo,
   deleteEquipo,
   reassignEquipos,
-  getEquipoHistorial
+  getEquipoHistorial,
+  recalcularAnioPcEquipos
 } from "../controllers/equipos.controller.js";
 import { auth } from "../middlewares/auth.js";
 
@@ -44,6 +45,8 @@ equiposRouter.get("/", asyncHandler(listEquipos));
 equiposRouter.post("/", asyncHandler(createEquipo));
 
 equiposRouter.patch("/reasignar",asyncHandler(reassignEquipos));
+
+equiposRouter.post("/recalcular-anio-pc",recalcularAnioPcEquipos);
 
 equiposRouter.get("/:id/historial", getEquipoHistorial);
 

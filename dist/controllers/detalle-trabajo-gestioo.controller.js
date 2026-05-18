@@ -1,5 +1,15 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, EstadoEquipo } from "@prisma/client";
 const prisma = new PrismaClient();
+const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
+function estadoEquipoPorArea(area) {
+    if (area === "ENTRADA")
+        return EstadoEquipo.EN_TALLER;
+    if (area === "REPARACION")
+        return EstadoEquipo.EN_TALLER;
+    if (area === "SALIDA")
+        return EstadoEquipo.ACTIVO;
+    return null;
+}
 // Función para generar número de orden único por año, con formato "OT-YYYY-XXXX", donde XXXX es un contador secuencial que se reinicia cada año. Consulta la última orden creada para el año actual y genera el siguiente número en secuencia.
 async function generarNumeroOrdenOT() {
     const year = new Date().getFullYear();
@@ -28,7 +38,6 @@ async function generarNumeroOrdenOT() {
 export async function createDetalleTrabajo(req, res) {
     try {
         const data = req.body;
-        // Validar técnico si viene
         if (data.tecnicoId) {
             const tecnico = await prisma.tecnico.findUnique({
                 where: { id_tecnico: Number(data.tecnicoId) },
@@ -42,80 +51,87 @@ export async function createDetalleTrabajo(req, res) {
             numeroOrden = await generarNumeroOrdenOT();
         }
         const fechaTrabajo = data.fecha ? new Date(data.fecha) : new Date();
-        // SI ES SALIDA → cerrar órdenes de entrada del mismo equipo
-        if (data.area === "SALIDA" && data.equipoId) {
-            await prisma.detalleTrabajoGestioo.updateMany({
-                where: {
-                    equipoId: Number(data.equipoId),
-                    area: "ENTRADA",
-                    estado: { not: "COMPLETADA" },
-                },
-                data: {
-                    estado: "COMPLETADA",
-                },
-            });
-        }
+        // Resolver numeroOrden para areas distintas de ENTRADA
         if (data.area !== "ENTRADA" && data.ordenGrupoId) {
             const ordenGrupo = await prisma.detalleTrabajoGestioo.findUnique({
                 where: { id: Number(data.ordenGrupoId) },
-                select: { numeroOrden: true }
+                select: { numeroOrden: true },
             });
             numeroOrden = ordenGrupo?.numeroOrden ?? null;
         }
-        // Crear trabajo
-        const nuevoTrabajo = await prisma.detalleTrabajoGestioo.create({
-            data: {
-                fecha: fechaTrabajo,
-                numeroOrden,
-                ordenGrupoId: data.ordenGrupoId ?? null,
-                fechaIngreso: data.area === "ENTRADA"
-                    ? fechaTrabajo
-                    : data.fechaIngreso
-                        ? new Date(data.fechaIngreso)
-                        : null,
-                tipoTrabajo: data.tipoTrabajo || "General",
-                descripcion: data.descripcion ?? null,
-                notas: data.notas ?? null,
-                area: data.area ?? "ENTRADA",
-                estado: data.area === "SALIDA"
-                    ? "COMPLETADA"
-                    : data.estado ?? "PENDIENTE",
-                prioridad: data.prioridad ?? "NORMAL",
-                entidadId: data.entidadId ? Number(data.entidadId) : null,
-                productoId: data.productoId ? Number(data.productoId) : null,
-                servicioId: data.servicioId ? Number(data.servicioId) : null,
-                equipoId: data.equipoId ? Number(data.equipoId) : null,
-                tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
-                incluyeCargador: data.incluyeCargador ?? false,
-            },
-        });
-        // SI ES ENTRADA → usar su ID como grupo
-        if (nuevoTrabajo.area === "ENTRADA") {
-            await prisma.detalleTrabajoGestioo.update({
-                where: { id: nuevoTrabajo.id },
-                data: { ordenGrupoId: nuevoTrabajo.id },
-            });
+        const equipoIdFinal = data.equipoId ? Number(data.equipoId) : null;
+        const estadoEquipoSolicitado = data.estadoEquipo && ESTADOS_EQUIPO_VALIDOS.includes(data.estadoEquipo)
+            ? data.estadoEquipo
+            : null;
+        if (data.estadoEquipo && !estadoEquipoSolicitado) {
+            return res.status(400).json({ error: "Estado de equipo no válido" });
         }
-        // Recargar con relaciones
-        const trabajoFinal = await prisma.detalleTrabajoGestioo.findUnique({
-            where: { id: nuevoTrabajo.id },
-            include: {
-                entidad: true,
-                producto: true,
-                servicio: true,
-                equipo: {
-                    include: {
-                        solicitante: true
-                    }
+        // Si viene estadoEquipo del frontend usarlo, si no calcular por área
+        const estadoEquipoFinal = estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
+        const trabajoFinal = await prisma.$transaction(async (tx) => {
+            // Cerrar entradas previas si es SALIDA — solo una vez, dentro de la transacción
+            if (data.area === "SALIDA" && equipoIdFinal) {
+                await tx.detalleTrabajoGestioo.updateMany({
+                    where: {
+                        equipoId: equipoIdFinal,
+                        area: "ENTRADA",
+                        estado: { not: "COMPLETADA" },
+                    },
+                    data: { estado: "COMPLETADA" },
+                });
+            }
+            const nuevoTrabajo = await tx.detalleTrabajoGestioo.create({
+                data: {
+                    fecha: fechaTrabajo,
+                    numeroOrden,
+                    ordenGrupoId: data.ordenGrupoId ?? null,
+                    fechaIngreso: data.area === "ENTRADA"
+                        ? fechaTrabajo
+                        : data.fechaIngreso
+                            ? new Date(data.fechaIngreso)
+                            : null,
+                    tipoTrabajo: data.tipoTrabajo || "General",
+                    descripcion: data.descripcion ?? null,
+                    notas: data.notas ?? null,
+                    area: data.area ?? "ENTRADA",
+                    estado: data.area === "SALIDA"
+                        ? "COMPLETADA"
+                        : data.estado ?? "PENDIENTE",
+                    prioridad: data.prioridad ?? "NORMAL",
+                    entidadId: data.entidadId ? Number(data.entidadId) : null,
+                    productoId: data.productoId ? Number(data.productoId) : null,
+                    servicioId: data.servicioId ? Number(data.servicioId) : null,
+                    equipoId: equipoIdFinal,
+                    tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
+                    incluyeCargador: data.incluyeCargador ?? false,
                 },
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+            });
+            // Autoasignar ordenGrupoId para órdenes de ENTRADA
+            if (nuevoTrabajo.area === "ENTRADA") {
+                await tx.detalleTrabajoGestioo.update({
+                    where: { id: nuevoTrabajo.id },
+                    data: { ordenGrupoId: nuevoTrabajo.id },
+                });
+            }
+            // Actualizar estado del equipo
+            if (equipoIdFinal && estadoEquipoFinal) {
+                await tx.equipo.update({
+                    where: { id_equipo: equipoIdFinal },
+                    data: { estado: estadoEquipoFinal },
+                });
+            }
+            return tx.detalleTrabajoGestioo.findUnique({
+                where: { id: nuevoTrabajo.id },
+                include: {
+                    entidad: true,
+                    producto: true,
+                    servicio: true,
+                    equipo: { include: { solicitante: true } },
+                    tecnico: {
+                        select: { id_tecnico: true, nombre: true, email: true },
                     },
                 },
-            },
+            });
         });
         return res.status(201).json(trabajoFinal);
     }
@@ -124,25 +140,26 @@ export async function createDetalleTrabajo(req, res) {
         return res.status(500).json({ error: "Error al crear detalle de trabajo" });
     }
 }
-// Obtener todos los trabajos
-export async function getDetallesTrabajo(_req, res) {
+export async function getDetallesTrabajo(req, res) {
     try {
+        const user = req.user;
+        const isCliente = user?.rol === "CLIENTE";
+        if (isCliente && !user.empresaId) {
+            return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+        }
+        const where = isCliente
+            ? { entidad: { empresaId: user.empresaId } }
+            : {};
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
+            where,
             orderBy: { fecha: "desc" },
             include: {
                 entidad: true,
-                equipo: {
-                    include: {
-                        solicitante: true
-                    }
-                },
-                tecnico: true,
-                cotizacion: {
-                    select: {
-                        id: true,
-                        estado: true
-                    }
-                }
+                equipo: { include: { solicitante: true } },
+                tecnico: isCliente
+                    ? false
+                    : { select: { id_tecnico: true, nombre: true } },
+                cotizacion: { select: { id: true, estado: true } },
             },
         });
         return res.json(detalles);
@@ -152,26 +169,32 @@ export async function getDetallesTrabajo(_req, res) {
         return res.status(500).json({ error: "Error al obtener órdenes" });
     }
 }
-// Obtener trabajo por ID
 export async function getDetalleTrabajoById(req, res) {
     try {
         const id = Number(req.params.id);
+        const user = req.user;
         const detalle = await prisma.detalleTrabajoGestioo.findUnique({
             where: { id },
             include: {
                 entidad: true,
                 producto: true,
                 servicio: true,
-                equipo: {
-                    include: {
-                        solicitante: true
-                    }
-                },
+                equipo: { include: { solicitante: true } },
                 tecnico: true,
             },
         });
         if (!detalle) {
             return res.status(404).json({ error: "Detalle de trabajo no encontrado" });
+        }
+        // Verificar pertenencia para CLIENTE
+        if (user?.rol === "CLIENTE") {
+            if (!user.empresaId) {
+                return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+            }
+            // La entidad debe pertenecer a la empresa del cliente
+            if (detalle.entidad?.empresaId !== user.empresaId) {
+                return res.status(403).json({ error: "No autorizado" });
+            }
         }
         return res.json(detalle);
     }
@@ -244,21 +267,61 @@ export async function updateDetalleTrabajo(req, res) {
         if (data.incluyeCargador !== undefined) {
             updateData.incluyeCargador = Boolean(data.incluyeCargador);
         }
-        const detalleActualizado = await prisma.detalleTrabajoGestioo.update({
-            where: { id },
-            data: updateData,
-            include: {
-                entidad: true,
-                producto: true,
-                servicio: true,
-                equipo: {
-                    include: {
-                        solicitante: true
-                    }
+        const equipoIdFinal = data.equipoId !== undefined
+            ? data.equipoId
+                ? Number(data.equipoId)
+                : null
+            : existing.equipoId;
+        const estadoEquipoSolicitado = data.estadoEquipo && ESTADOS_EQUIPO_VALIDOS.includes(data.estadoEquipo)
+            ? data.estadoEquipo
+            : null;
+        if (data.estadoEquipo && !estadoEquipoSolicitado) {
+            return res.status(400).json({
+                error: "Estado de equipo no válido",
+            });
+        }
+        const estadoEquipoFinal = estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
+        const detalleActualizado = await prisma.$transaction(async (tx) => {
+            if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
+                await tx.detalleTrabajoGestioo.updateMany({
+                    where: {
+                        equipoId: existing.equipoId,
+                        area: "ENTRADA",
+                        estado: { not: "COMPLETADA" },
+                    },
+                    data: {
+                        estado: "COMPLETADA",
+                    },
+                });
+            }
+            const detalle = await tx.detalleTrabajoGestioo.update({
+                where: { id },
+                data: updateData,
+                include: {
+                    entidad: true,
+                    producto: true,
+                    servicio: true,
+                    equipo: {
+                        include: {
+                            solicitante: true,
+                        },
+                    },
+                    tecnico: true,
                 },
-                tecnico: true,
-            },
+            });
+            if (equipoIdFinal && estadoEquipoFinal) {
+                await tx.equipo.update({
+                    where: {
+                        id_equipo: equipoIdFinal,
+                    },
+                    data: {
+                        estado: estadoEquipoFinal,
+                    },
+                });
+            }
+            return detalle;
         });
+        return res.json(detalleActualizado);
         return res.json(detalleActualizado);
     }
     catch (error) {

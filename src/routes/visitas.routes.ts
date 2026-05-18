@@ -31,7 +31,7 @@ visitasRouter.get("/filters", (req, res, next) => {
   Promise.resolve(getVisitasFilters(req, res)).catch(next);
 });
 
-// ← NUEVO: debe ir antes de /:id
+// debe ir antes de /:id
 visitasRouter.get("/dashboard", auth(), onlyOwnEmpresa(), (req, res, next) => {
   Promise.resolve(getVisitasDashboard(req, res)).catch(next);
 });
