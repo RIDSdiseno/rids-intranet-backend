@@ -15,6 +15,7 @@ import {
     cambiarEstadoFactura,
     vincularEquipoAItem
 } from "../controllers/cotizaciones.controller.js";
+import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../controllers/cotizaciones-enviadas.controller.js";
 
 const cotizacionesRouter = Router();
 
@@ -28,11 +29,14 @@ cotizacionesRouter.use(auth());
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem)
 cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);
+cotizacionesRouter.get("/enviadas", listCotizacionesEnviadas);
 cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
 cotizacionesRouter.post("/:id/anular", anularFactura);
 cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);
 cotizacionesRouter.get("/:id", getCotizacionById);
 cotizacionesRouter.post("/", createCotizacion);
+cotizacionesRouter.post("/enviadas", createCotizacionEnvio);
+cotizacionesRouter.delete("/enviadas/:id", deleteCotizacionEnvio);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
 cotizacionesRouter.patch("/facturas/:id/estado", cambiarEstadoFactura);

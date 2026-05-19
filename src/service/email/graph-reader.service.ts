@@ -1498,33 +1498,134 @@ class GraphReaderService {
         const ccRecipients = (params.cc ?? []).filter(Boolean);
 
         console.log("📤 Enviando email vía Graph a:", toRecipients);
+        // If attachments are small enough, send directly via sendMail.
+        const attachments = params.attachments ?? [];
+        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
+        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
 
-        await client
-            .api(`/users/${this.supportEmail}/sendMail`)
-            .post({
-                message: {
-                    subject: params.subject,
-                    body: {
-                        contentType: "HTML",
-                        content: params.bodyHtml,
+        const hasLarge = attachments.some(a => approxBytes(a.contentBytes) > LARGE_THRESHOLD);
+
+        if (!hasLarge) {
+            await client
+                .api(`/users/${this.supportEmail}/sendMail`)
+                .post({
+                    message: {
+                        subject: params.subject,
+                        body: {
+                            contentType: "HTML",
+                            content: params.bodyHtml,
+                        },
+                        toRecipients: toRecipients.map(address => ({
+                            emailAddress: { address }
+                        })),
+                        ccRecipients: ccRecipients.map(address => ({
+                            emailAddress: { address }
+                        })),
+                        attachments: attachments.map(att => ({
+                            "@odata.type": "#microsoft.graph.fileAttachment",
+                            name: att.name,
+                            contentType: att.contentType,
+                            contentBytes: att.contentBytes,
+                        })),
                     },
-                    toRecipients: toRecipients.map(address => ({
-                        emailAddress: { address }
-                    })),
-                    ccRecipients: ccRecipients.map(address => ({
-                        emailAddress: { address }
-                    })),
-                    attachments: (params.attachments ?? []).map(att => ({
+                    saveToSentItems: true,
+                });
+
+            console.log("✅ Graph sendMail ejecutado (adjuntos pequeños)");
+            return;
+        }
+
+        // For large attachments: create a draft, upload attachments with upload sessions when needed, then send the draft.
+        console.log("⚠️ Algunos adjuntos son grandes, usando upload session para attachments");
+
+        // 1) create draft message
+        const draftPayload: any = {
+            subject: params.subject,
+            body: { contentType: 'HTML', content: params.bodyHtml },
+            toRecipients: toRecipients.map(address => ({ emailAddress: { address } })),
+            ccRecipients: ccRecipients.map(address => ({ emailAddress: { address } })),
+        };
+
+        const draft = await client.api(`/users/${this.supportEmail}/messages`).post(draftPayload);
+        const draftId = draft?.id;
+
+        if (!draftId) throw new Error('No se pudo crear borrador para adjuntos grandes');
+
+        // helper: convert base64 string to Buffer
+        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
+
+        // helper: upload large attachment using upload session
+        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
+            const totalBytes = approxBytes(att.contentBytes);
+
+            const sessionReq = await client
+                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
+                .post({
+                    AttachmentItem: {
+                        attachmentType: 'file',
+                        name: att.name,
+                        size: totalBytes,
+                        contentType: att.contentType || 'application/octet-stream'
+                    }
+                });
+
+            const uploadUrl = sessionReq.uploadUrl;
+            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
+
+            const buffer = base64ToBuffer(att.contentBytes);
+            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+            let offset = 0;
+
+            while (offset < buffer.length) {
+                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
+                const chunk = buffer.slice(offset, chunkEnd);
+                const start = offset;
+                const end = chunkEnd - 1;
+
+                const res = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Length': String(chunk.length),
+                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
+                    },
+                    body: chunk,
+                });
+
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
+                }
+
+                // If finished, Graph may return 201/200 with uploadedAttachment info
+                if (res.status === 201 || res.status === 200) {
+                    // uploaded
+                    break;
+                }
+
+                offset = chunkEnd;
+            }
+        };
+
+        // 2) attach small files via attachments endpoint, large via upload session
+        for (const att of attachments) {
+            const size = approxBytes(att.contentBytes);
+            if (size <= LARGE_THRESHOLD) {
+                await client
+                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                    .post({
                         "@odata.type": "#microsoft.graph.fileAttachment",
                         name: att.name,
                         contentType: att.contentType,
                         contentBytes: att.contentBytes,
-                    })),
-                },
-                saveToSentItems: true,
-            });
+                    });
+            } else {
+                await uploadLargeAttachmentToDraft(att);
+            }
+        }
 
-        console.log("✅ Graph sendMail ejecutado");
+        // 3) send draft
+        await client.api(`/users/${this.supportEmail}/messages/${draftId}/send`).post({});
+        console.log('✅ Draft enviado con adjuntos grandes');
     }
 
     async replyToGraphMessage(params: {
@@ -1581,15 +1682,76 @@ class GraphReaderService {
                     : {}),
             });
 
-        for (const att of params.attachments ?? []) {
-            await client
-                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+        // Attach files: if any are large, use upload session
+        const attachments = params.attachments ?? [];
+        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
+        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
+
+        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
+
+        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
+            const totalBytes = approxBytes(att.contentBytes);
+
+            const sessionReq = await client
+                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
                 .post({
-                    "@odata.type": "#microsoft.graph.fileAttachment",
-                    name: att.name,
-                    contentType: att.contentType,
-                    contentBytes: att.contentBytes,
+                    AttachmentItem: {
+                        attachmentType: 'file',
+                        name: att.name,
+                        size: totalBytes,
+                        contentType: att.contentType || 'application/octet-stream'
+                    }
                 });
+
+            const uploadUrl = sessionReq.uploadUrl;
+            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
+
+            const buffer = base64ToBuffer(att.contentBytes);
+            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+            let offset = 0;
+
+            while (offset < buffer.length) {
+                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
+                const chunk = buffer.slice(offset, chunkEnd);
+                const start = offset;
+                const end = chunkEnd - 1;
+
+                const res = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Length': String(chunk.length),
+                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
+                    },
+                    body: chunk,
+                });
+
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
+                }
+
+                if (res.status === 201 || res.status === 200) {
+                    break;
+                }
+
+                offset = chunkEnd;
+            }
+        };
+
+        for (const att of attachments) {
+            const size = approxBytes(att.contentBytes);
+            if (size <= LARGE_THRESHOLD) {
+                await client
+                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                    .post({
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        name: att.name,
+                        contentType: att.contentType,
+                        contentBytes: att.contentBytes,
+                    });
+            } else {
+                await uploadLargeAttachmentToDraft(att);
+            }
         }
 
         const draftWithIds = await client

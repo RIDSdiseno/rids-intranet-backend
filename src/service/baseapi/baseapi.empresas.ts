@@ -31,6 +31,8 @@ const EMPRESAS_BASEAPI: Record<EmpresaBaseApiKey, EmpresaBaseApiConfig> = {
         passwordSii:
             process.env.ECONNET_SII_PASSWORD ??
             process.env.ECONNET_SII_CLAVE ??
+            process.env.ECONNET_CLAVE_SII ??
+            process.env.ECCONET_SII_PASSWORD ??
             "",
     },
 
@@ -54,6 +56,7 @@ const EMPRESAS_BASEAPI: Record<EmpresaBaseApiKey, EmpresaBaseApiConfig> = {
         passwordSii:
             process.env.RIDS_SII_PASSWORD ??
             process.env.RIDS_SII_CLAVE ??
+            process.env.RIDS_CLAVE_SII ??
             "",
     },
 };
