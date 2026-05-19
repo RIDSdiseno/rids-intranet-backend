@@ -1,3 +1,4 @@
+// src/controllers/tickets-rids/tickets-sla/ticket-sla-alert-mailer.ts
 import { graphReaderService } from "../../../service/email/graph-reader.service.js";
 
 type TicketSlaAlertEmailParams = {
@@ -8,10 +9,10 @@ type TicketSlaAlertEmailParams = {
     priority: string;
     status: string;
     alertType:
-        | "FIRST_RESPONSE_SOON"
-        | "FIRST_RESPONSE_BREACHED"
-        | "RESOLUTION_SOON"
-        | "RESOLUTION_BREACHED";
+    | "FIRST_RESPONSE_SOON"
+    | "FIRST_RESPONSE_BREACHED"
+    | "RESOLUTION_SOON"
+    | "RESOLUTION_BREACHED";
     firstResponseRemaining?: number | null;
     resolutionRemaining?: number | null;
 };
@@ -67,8 +68,25 @@ export async function sendTicketSlaAlertEmail(params: TicketSlaAlertEmailParams)
         </div>
     `;
 
+    const toEmail = params.to?.trim().toLowerCase();
+
+    const hasMailbox = await graphReaderService.technicianHasValidOutlookMailbox(
+        toEmail
+    );
+
+    if (!hasMailbox) {
+        console.warn("⏭️ No se envía alerta SLA: técnico sin casilla Outlook válida", {
+            ticketId: params.ticketId,
+            tecnicoNombre: params.tecnicoNombre,
+            email: params.to,
+            alertType: params.alertType,
+        });
+
+        return;
+    }
+
     await graphReaderService.sendReplyEmail({
-        to: params.to,
+        to: toEmail,
         subject: `[SLA] Ticket #${params.ticketId} - ${title}`,
         bodyHtml,
     });

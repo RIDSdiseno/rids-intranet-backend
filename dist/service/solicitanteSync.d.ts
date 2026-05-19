@@ -14,6 +14,7 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;
@@ -29,6 +30,7 @@ export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empre
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;

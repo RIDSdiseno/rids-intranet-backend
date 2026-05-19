@@ -5,22 +5,22 @@ export function startAgendaRecordatoriosCron() {
     let isRunning = false;
     cron.schedule(EXPRESION_CRON, async () => {
         if (isRunning) {
-            console.log("[AGENDA RECORDATORIOS CRON] ⚠️ Ya hay una ejecución en curso, se omite este ciclo.");
+            //  console.log("[AGENDA RECORDATORIOS CRON] ⚠️ Ya hay una ejecución en curso, se omite este ciclo.");
             return;
         }
         isRunning = true;
-        console.log("[AGENDA RECORDATORIOS CRON] Buscando recordatorios...");
+        // console.log("[AGENDA RECORDATORIOS CRON] Buscando recordatorios...");
         try {
             const total = await enviarRecordatoriosPendientes();
-            console.log(`[AGENDA RECORDATORIOS CRON] Correos enviados: ${total}`);
+            // console.log(`[AGENDA RECORDATORIOS CRON] Correos enviados: ${total}`);
         }
         catch (error) {
-            console.error("[AGENDA RECORDATORIOS CRON] Error:", error);
+            // console.error("[AGENDA RECORDATORIOS CRON] Error:", error);
         }
         finally {
             isRunning = false;
         }
     });
-    console.log(`[AGENDA RECORDATORIOS CRON] Programado con expresion: "${EXPRESION_CRON}"`);
+    //console.log(`[AGENDA RECORDATORIOS CRON] Programado con expresion: "${EXPRESION_CRON}"`);
 }
 //# sourceMappingURL=agenda-recordatorios.cron.js.map

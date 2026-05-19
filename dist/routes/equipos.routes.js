@@ -1,6 +1,6 @@
 // src/routes/equipos.routes.ts
 import { Router, } from "express";
-import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, getEquipoHistorial } from "../controllers/equipos.controller.js";
+import { listEquipos, createEquipo, getEquipoById, updateEquipo, deleteEquipo, reassignEquipos, getEquipoHistorial, recalcularAnioPcEquipos } from "../controllers/equipos.controller.js";
 import { auth } from "../middlewares/auth.js";
 export const equiposRouter = Router();
 /* ============ Helpers ============ */
@@ -24,6 +24,7 @@ equiposRouter.get("/", asyncHandler(listEquipos));
 // Crear
 equiposRouter.post("/", asyncHandler(createEquipo));
 equiposRouter.patch("/reasignar", asyncHandler(reassignEquipos));
+equiposRouter.post("/recalcular-anio-pc", recalcularAnioPcEquipos);
 equiposRouter.get("/:id/historial", getEquipoHistorial);
 // Leer uno
 equiposRouter.get("/:id", requireNumericId, asyncHandler(getEquipoById));

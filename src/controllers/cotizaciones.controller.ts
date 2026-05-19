@@ -43,6 +43,13 @@ function mapEstadoSimpleAPIToEnum(estado: string): EstadoDTE {
 ===================================================== */
 export async function getCotizacionesPaginadas(req: Request, res: Response) {
     try {
+        const user = (req as any).user;
+        const isCliente = user?.rol === "CLIENTE";
+
+        if (isCliente && !user.empresaId) {
+            return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+        }
+
         const page = Math.max(1, Number(req.query.page) || 1);
         const limitRaw = Number(req.query.limit) || 15;
         const limit = Math.min(Math.max(1, limitRaw), 100);
@@ -60,14 +67,32 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
 
         const AND: any[] = [];
 
+        if (isCliente) {
+            // Filtro directo — sin queries extra
+            AND.push({ entidad: { empresaId: user.empresaId } });
+        } else {
+            // Filtros internos opcionales
+            const { fechaDesde, fechaHasta, estado, tipo, origen, tecnico } = req.query;
+
+            if (fechaDesde || fechaHasta) {
+                const fechaFilter: any = {};
+                if (fechaDesde) fechaFilter.gte = new Date(String(fechaDesde));
+                if (fechaHasta) fechaFilter.lte = new Date(String(fechaHasta));
+                AND.push({ fecha: fechaFilter });
+            }
+            if (estado) AND.push({ estado: String(estado) });
+            if (tipo) AND.push({ tipo: String(tipo) });
+            if (origen) AND.push({ entidad: { origen: String(origen) } });
+            if (tecnico) AND.push({ tecnicoId: Number(tecnico) });
+        }
+
         /* ==========================
            FILTRO POR FECHAS
         ========================== */
-        if (fechaDesde || fechaHasta) {
+        if (isCliente && (fechaDesde || fechaHasta)) {
             const fechaFilter: any = {};
             if (fechaDesde) fechaFilter.gte = new Date(String(fechaDesde));
             if (fechaHasta) fechaFilter.lte = new Date(String(fechaHasta));
-
             AND.push({ fecha: fechaFilter });
         }
 
@@ -97,8 +122,8 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
         }
 
         /* ==========================
-   FILTRO POR TÉCNICO
-========================== */
+            FILTRO POR TÉCNICO 
+         ========================== */
         if (tecnico) {
             AND.push({
                 tecnicoId: Number(tecnico)
@@ -130,18 +155,12 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
             OR.push(
                 {
                     entidad: {
-                        nombre: {
-                            contains: searchValue,
-                            mode: "insensitive"
-                        }
+                        nombre: { contains: searchValue, mode: "insensitive" }
                     }
                 },
                 {
                     entidad: {
-                        rut: {
-                            contains: searchValue,
-                            mode: "insensitive"
-                        }
+                        rut: { contains: searchValue, mode: "insensitive" }
                     }
                 },
                 {
@@ -152,32 +171,20 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                 },
                 {
                     items: {
-                        some: {
-                            nombre: {
-                                contains: searchValue,
-                                mode: "insensitive"
-                            }
-                        }
+                        some: { nombre: { contains: searchValue, mode: "insensitive" } }
                     }
                 },
                 {
                     items: {
-                        some: {
-                            sku: {
-                                contains: searchValue,
-                                mode: "insensitive"
-                            }
-                        }
+                        some: { sku: { contains: searchValue, mode: "insensitive" } }
                     }
                 },
-                {
+                // Búsqueda por técnico solo para roles internos
+                ...(!isCliente ? [{
                     tecnico: {
-                        nombre: {
-                            contains: searchValue,
-                            mode: "insensitive"
-                        }
+                        nombre: { contains: searchValue, mode: "insensitive" }
                     }
-                }
+                }] : [])
             );
 
             AND.push({ OR });
@@ -196,42 +203,27 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                 orderBy: { fecha: "desc" },
                 include: {
                     entidad: true,
-                    tecnico: {
-                        select: { id_tecnico: true, nombre: true }
-                    },
+                    tecnico: isCliente
+                        ? false
+                        : { select: { id_tecnico: true, nombre: true } },
                     items: {
                         orderBy: { id: "asc" },
                         include: {
                             equipo: {
-                                select: {
-                                    id_equipo: true,
-                                    serial: true,
-                                    marca: true,
-                                    modelo: true,
-                                }
-                            }
-                        }
+                                select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                            },
+                        },
                     },
                     facturas: {
                         select: {
-                            id_factura: true,
-                            folioSII: true,
-                            tipoDTE: true,
-                            numeroFactura: true,
-                            estado: true,
-                            fechaEmision: true,
-                            total: true
-                        }
+                            id_factura: true, folioSII: true, tipoDTE: true,
+                            numeroFactura: true, estado: true, fechaEmision: true, total: true,
+                        },
                     },
-                    _count: {
-                        select: {
-                            items: true,
-                            facturas: true
-                        }
-                    }
-                }
+                    _count: { select: { items: true, facturas: true } },
+                },
             }),
-            prisma.cotizacionGestioo.count({ where })
+            prisma.cotizacionGestioo.count({ where }),
         ]);
 
         const pages = Math.ceil(total / limit);
@@ -358,6 +350,7 @@ export async function getCotizaciones(req: Request, res: Response) {
 export async function getCotizacionById(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
+        const user = (req as any).user;
 
         const cot = await prisma.cotizacionGestioo.findUnique({
             where: { id },
@@ -367,22 +360,11 @@ export async function getCotizacionById(req: Request, res: Response) {
                     orderBy: { id: "asc" },
                     include: {
                         equipo: {
-                            select: {
-                                id_equipo: true,
-                                serial: true,
-                                marca: true,
-                                modelo: true,
-                            }
-                        }
-                    }
-                },
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+                            select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                        },
                     },
                 },
+                tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
             },
         });
 
@@ -390,17 +372,19 @@ export async function getCotizacionById(req: Request, res: Response) {
             return res.status(404).json({ error: "Cotización no encontrada" });
         }
 
-        // Asegurar que items sea un array
-        const cotConItems = {
-            ...cot,
-            imagen: cot.imagen ?? null,
-            items: cot.items || []
-        };
+        if (user?.rol === "CLIENTE") {
+            if (!user.empresaId) {
+                return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+            }
+            if (cot.entidad?.empresaId !== user.empresaId) {
+                return res.status(403).json({ error: "No autorizado" });
+            }
+        }
 
-        return res.json({ data: cotConItems });  // ← RETURN agregado
+        return res.json({ data: { ...cot, imagen: cot.imagen ?? null, items: cot.items || [] } });
     } catch (error: any) {
         console.error("❌ Error getCotizacionById:", error);
-        return res.status(500).json({ error: "Error al obtener cotización" }); // ← RETURN agregado
+        return res.status(500).json({ error: "Error al obtener cotización" });
     }
 }
 
@@ -531,7 +515,7 @@ export async function updateCotizacion(req: Request, res: Response) {
         }
 
         const data = normalizeCotizacionData(rest);
-        
+
         // 1️⃣ Preparar filtro para items: SOLO LOS QUE EXISTEN EN DB (con ID numérico válido)
         await prisma.$transaction(async (tx) => {
             await tx.cotizacionGestioo.update({
@@ -547,8 +531,8 @@ export async function updateCotizacion(req: Request, res: Response) {
                         imagen: req.body.imagen,
                     }),
                 },
-            }); 
-            
+            });
+
             // 2️⃣ Si se incluyen items, procesar actualizaciones, eliminaciones y creaciones
             if (items !== undefined) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
@@ -573,7 +557,7 @@ export async function updateCotizacion(req: Request, res: Response) {
                         },
                     });
                 }
-                
+
                 // ACTUALIZAR items existentes (con ID numérico válido y que existan en DB)
                 for (const i of itemsConIdNumerico) {
                     await tx.cotizacionItemGestioo.update({
@@ -604,7 +588,7 @@ export async function updateCotizacion(req: Request, res: Response) {
                 const itemsNuevos = items.filter(
                     (i: any) => !(typeof i.id === "number" && i.id > 0)
                 );
-                
+
                 // CREAR nuevos items (SIN ID numérico válido)
                 if (itemsNuevos.length > 0) {
                     await tx.cotizacionItemGestioo.createMany({
@@ -633,7 +617,7 @@ export async function updateCotizacion(req: Request, res: Response) {
                 }
             }
         });
-        
+
         // 3️⃣ Retornar cotización actualizada con items
         const updated = await prisma.cotizacionGestioo.findUnique({
             where: { id },

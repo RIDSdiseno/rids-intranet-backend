@@ -48,6 +48,13 @@ export async function upsertSolicitanteFromGoogle_min(
       if (byGoogle.email !== email) changes.email = email;
       if (byGoogle.empresaId !== empresaId) changes.empresaId = empresaId;
       if (byGoogle.isActive !== activo) changes.isActive = activo;
+
+      if (activo) {
+        changes.deletedAt = null;
+        changes.deactivatedAt = null;
+      } else {
+        changes.deactivatedAt = new Date();
+      }
       if (byGoogle.accountType !== "google") changes.accountType = "google";
 
       if (Object.keys(changes).length === 0) return byGoogle;
@@ -184,6 +191,13 @@ export async function upsertSolicitanteFromGoogle_full(
       if (!match.googleUserId && user.id) changes.googleUserId = user.id;
       if (match.nombre !== nombre) changes.nombre = nombre;
       if (match.isActive !== activo) changes.isActive = activo;
+
+      if (activo) {
+        changes.deletedAt = null;
+        changes.deactivatedAt = null;
+      } else {
+        changes.deactivatedAt = new Date();
+      }
       if (match.accountType !== "google") changes.accountType = "google";
 
       if (Object.keys(changes).length === 0) return match;
@@ -206,6 +220,8 @@ export async function upsertSolicitanteFromGoogle_full(
       googleUserId: user.id,
       isActive: activo,
       accountType: "google",
+      deletedAt: null,
+      deactivatedAt: activo ? null : new Date(),
     } as any,
   });
 
@@ -257,6 +273,7 @@ export async function deactivateMissingGoogleSolicitantes(
     },
     data: {
       isActive: false,
+      deactivatedAt: new Date(),
     } as any,
   });
 

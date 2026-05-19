@@ -4,7 +4,10 @@ import { listTecnicos, listUsuarios, updateTecnico, deleteTecnico, createTecnico
 import { auth } from "../middlewares/auth.js";
 import { onlyRole } from "../middlewares/roles.js";
 const router = express.Router();
-// Lectura: ADMIN, ADMINISTRACION, TECNICO y VENTAS
+// Selector de técnicos para filtros.
+// Lo puede usar CLIENTE, pero el controller solo devuelve datos básicos.
+router.get("/select", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), listTecnicos);
+// Lectura administración: ADMIN, ADMINISTRACION, TECNICO y VENTAS
 router.get("/", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), listTecnicos);
 router.get("/usuarios", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), listUsuarios);
 // Escritura: solo ADMIN y ADMINISTRACION

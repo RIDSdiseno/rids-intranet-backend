@@ -21,6 +21,7 @@ export declare function getInventarioByEmpresa(params: {
     empresaId: number | null;
     deletedAt: Date | null;
     createdAt: Date;
+    estado: import("@prisma/client").$Enums.EstadoEquipo;
     tipo: import("@prisma/client").$Enums.TipoEquipo;
     marca: string;
     modelo: string;
@@ -28,6 +29,8 @@ export declare function getInventarioByEmpresa(params: {
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
+    anioPc: number | null;
+    anioPcOrigen: string | null;
     procesador: string | null;
     ram: string | null;
     disco: string | null;

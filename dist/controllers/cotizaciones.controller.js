@@ -31,16 +31,45 @@ function mapEstadoSimpleAPIToEnum(estado) {
 ===================================================== */
 export async function getCotizacionesPaginadas(req, res) {
     try {
+        const user = req.user;
+        const isCliente = user?.rol === "CLIENTE";
+        if (isCliente && !user.empresaId) {
+            return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+        }
         const page = Math.max(1, Number(req.query.page) || 1);
         const limitRaw = Number(req.query.limit) || 15;
         const limit = Math.min(Math.max(1, limitRaw), 100);
         const skip = (page - 1) * limit;
         const { fechaDesde, fechaHasta, search, estado, tipo, origen, tecnico } = req.query;
         const AND = [];
+        if (isCliente) {
+            // Filtro directo — sin queries extra
+            AND.push({ entidad: { empresaId: user.empresaId } });
+        }
+        else {
+            // Filtros internos opcionales
+            const { fechaDesde, fechaHasta, estado, tipo, origen, tecnico } = req.query;
+            if (fechaDesde || fechaHasta) {
+                const fechaFilter = {};
+                if (fechaDesde)
+                    fechaFilter.gte = new Date(String(fechaDesde));
+                if (fechaHasta)
+                    fechaFilter.lte = new Date(String(fechaHasta));
+                AND.push({ fecha: fechaFilter });
+            }
+            if (estado)
+                AND.push({ estado: String(estado) });
+            if (tipo)
+                AND.push({ tipo: String(tipo) });
+            if (origen)
+                AND.push({ entidad: { origen: String(origen) } });
+            if (tecnico)
+                AND.push({ tecnicoId: Number(tecnico) });
+        }
         /* ==========================
            FILTRO POR FECHAS
         ========================== */
-        if (fechaDesde || fechaHasta) {
+        if (isCliente && (fechaDesde || fechaHasta)) {
             const fechaFilter = {};
             if (fechaDesde)
                 fechaFilter.gte = new Date(String(fechaDesde));
@@ -71,8 +100,8 @@ export async function getCotizacionesPaginadas(req, res) {
             });
         }
         /* ==========================
-   FILTRO POR TÉCNICO
-========================== */
+            FILTRO POR TÉCNICO
+         ========================== */
         if (tecnico) {
             AND.push({
                 tecnicoId: Number(tecnico)
@@ -95,17 +124,11 @@ export async function getCotizacionesPaginadas(req, res) {
             }
             OR.push({
                 entidad: {
-                    nombre: {
-                        contains: searchValue,
-                        mode: "insensitive"
-                    }
+                    nombre: { contains: searchValue, mode: "insensitive" }
                 }
             }, {
                 entidad: {
-                    rut: {
-                        contains: searchValue,
-                        mode: "insensitive"
-                    }
+                    rut: { contains: searchValue, mode: "insensitive" }
                 }
             }, {
                 comentariosCotizacion: {
@@ -114,30 +137,19 @@ export async function getCotizacionesPaginadas(req, res) {
                 }
             }, {
                 items: {
-                    some: {
-                        nombre: {
-                            contains: searchValue,
-                            mode: "insensitive"
-                        }
-                    }
+                    some: { nombre: { contains: searchValue, mode: "insensitive" } }
                 }
             }, {
                 items: {
-                    some: {
-                        sku: {
-                            contains: searchValue,
-                            mode: "insensitive"
-                        }
-                    }
+                    some: { sku: { contains: searchValue, mode: "insensitive" } }
                 }
-            }, {
-                tecnico: {
-                    nombre: {
-                        contains: searchValue,
-                        mode: "insensitive"
+            }, 
+            // Búsqueda por técnico solo para roles internos
+            ...(!isCliente ? [{
+                    tecnico: {
+                        nombre: { contains: searchValue, mode: "insensitive" }
                     }
-                }
-            });
+                }] : []));
             AND.push({ OR });
         }
         const where = AND.length > 0 ? { AND } : {};
@@ -152,42 +164,27 @@ export async function getCotizacionesPaginadas(req, res) {
                 orderBy: { fecha: "desc" },
                 include: {
                     entidad: true,
-                    tecnico: {
-                        select: { id_tecnico: true, nombre: true }
-                    },
+                    tecnico: isCliente
+                        ? false
+                        : { select: { id_tecnico: true, nombre: true } },
                     items: {
                         orderBy: { id: "asc" },
                         include: {
                             equipo: {
-                                select: {
-                                    id_equipo: true,
-                                    serial: true,
-                                    marca: true,
-                                    modelo: true,
-                                }
-                            }
-                        }
+                                select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                            },
+                        },
                     },
                     facturas: {
                         select: {
-                            id_factura: true,
-                            folioSII: true,
-                            tipoDTE: true,
-                            numeroFactura: true,
-                            estado: true,
-                            fechaEmision: true,
-                            total: true
-                        }
+                            id_factura: true, folioSII: true, tipoDTE: true,
+                            numeroFactura: true, estado: true, fechaEmision: true, total: true,
+                        },
                     },
-                    _count: {
-                        select: {
-                            items: true,
-                            facturas: true
-                        }
-                    }
-                }
+                    _count: { select: { items: true, facturas: true } },
+                },
             }),
-            prisma.cotizacionGestioo.count({ where })
+            prisma.cotizacionGestioo.count({ where }),
         ]);
         const pages = Math.ceil(total / limit);
         return res.json({
@@ -302,6 +299,7 @@ export async function getCotizaciones(req, res) {
 export async function getCotizacionById(req, res) {
     try {
         const id = Number(req.params.id);
+        const user = req.user;
         const cot = await prisma.cotizacionGestioo.findUnique({
             where: { id },
             include: {
@@ -310,38 +308,29 @@ export async function getCotizacionById(req, res) {
                     orderBy: { id: "asc" },
                     include: {
                         equipo: {
-                            select: {
-                                id_equipo: true,
-                                serial: true,
-                                marca: true,
-                                modelo: true,
-                            }
-                        }
-                    }
-                },
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+                            select: { id_equipo: true, serial: true, marca: true, modelo: true },
+                        },
                     },
                 },
+                tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
             },
         });
         if (!cot) {
             return res.status(404).json({ error: "Cotización no encontrada" });
         }
-        // Asegurar que items sea un array
-        const cotConItems = {
-            ...cot,
-            imagen: cot.imagen ?? null,
-            items: cot.items || []
-        };
-        return res.json({ data: cotConItems }); // ← RETURN agregado
+        if (user?.rol === "CLIENTE") {
+            if (!user.empresaId) {
+                return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+            }
+            if (cot.entidad?.empresaId !== user.empresaId) {
+                return res.status(403).json({ error: "No autorizado" });
+            }
+        }
+        return res.json({ data: { ...cot, imagen: cot.imagen ?? null, items: cot.items || [] } });
     }
     catch (error) {
         console.error("❌ Error getCotizacionById:", error);
-        return res.status(500).json({ error: "Error al obtener cotización" }); // ← RETURN agregado
+        return res.status(500).json({ error: "Error al obtener cotización" });
     }
 }
 /* =====================================================

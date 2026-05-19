@@ -33,6 +33,7 @@ model Empresa {
   mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
+  entidadGestioos      EntidadGestioo[]
 }
 
 model Sucursal {
@@ -244,17 +245,23 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante       Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre               String
-  email                String?
-  telefono             String?
-  empresaId            Int
-  clienteId            Int?                    @unique
-  googleUserId         String?                 @unique
-  isActive             Boolean                 @default(true)
-  microsoftUserId      String?                 @unique
-  accountType          AccountType?
-  deletedAt            DateTime?
+  id_solicitante  Int          @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre          String
+  email           String?
+  telefono        String?
+  empresaId       Int
+  clienteId       Int?         @unique
+  googleUserId    String?      @unique
+  isActive        Boolean      @default(true)
+  microsoftUserId String?      @unique
+  accountType     AccountType?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  deactivatedAt DateTime?
+
+  rut                  String?                 @unique
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")
@@ -303,6 +310,8 @@ model EntidadGestioo {
   direccion        String?
   tipo             TipoEntidadGestioo      @default(EMPRESA)
   origen           OrigenGestioo           @default(RIDS)
+  empresaId        Int?
+  empresa          Empresa?                @relation(fields: [empresaId], references: [id_empresa])
   productos        ProductoGestioo[]
   trabajos         DetalleTrabajoGestioo[]
   servicioGestioos ServicioGestioo[]
@@ -440,6 +449,9 @@ model Equipo {
   empresaId              Int?
   origenCotizacionId     Int?
   productoId             Int?                    @unique
+  estado                 EstadoEquipo            @default(ACTIVO)
+  anioPc                 Int?
+  anioPcOrigen           String?                 @default("AUTO")
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -454,6 +466,7 @@ model Equipo {
   @@index([origenCotizacionId])
   @@index([idSolicitante])
   @@index([deletedAt])
+  @@index([estado])
 }
 
 model EquipoAdicional {
@@ -571,11 +584,10 @@ model Tecnico {
 }
 
 model RolePermission {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   rol       String
   permiso   String
-  permitido Boolean @default(false)
-
+  permitido Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1242,31 +1254,26 @@ model RCVResumen {
 }
 
 model RcvConciliacion {
-  id String @id @default(cuid())
-
-  empresaKey     String
-  tipoRcv        String // ventas | compras
-  tipoDoc        String
-  folio          String
-  rutContraparte String
-  razonSocial    String?
-
-  fechaDocto DateTime?
-  montoNeto  Int       @default(0)
-  montoIva   Int       @default(0)
-  montoTotal Int       @default(0)
-
-  estadoRcv String?
-  origenRcv String?
-
+  id                 String    @id @default(cuid())
+  empresaKey         String
+  tipoRcv            String
+  tipoDoc            String
+  folio              String
+  rutContraparte     String
+  razonSocial        String?
+  fechaDocto         DateTime?
+  montoNeto          Int       @default(0)
+  montoIva           Int       @default(0)
+  montoTotal         Int       @default(0)
+  estadoRcv          String?
+  origenRcv          String?
   estadoConciliacion String    @default("NO_CONCILIADA")
   formaPago          String?
   observacion        String?
   responsable        String?
   conciliadoAt       DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@unique([empresaKey, tipoRcv, tipoDoc, rutContraparte, folio])
   @@index([empresaKey, tipoRcv])
@@ -1489,6 +1496,13 @@ enum TipoEquipo {
   INSUMOS_COMPUTACIONALES
   RELOJ_CONTROL
   OTRO
+}
+
+enum EstadoEquipo {
+  ACTIVO
+  EN_STOCK
+  DADO_DE_BAJA
+  EN_RIDS
 }
 
 enum OrigenTrabajo {

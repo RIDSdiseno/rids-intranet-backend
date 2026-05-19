@@ -10,7 +10,10 @@ import {
   getSolicitanteById,
   updateSolicitante,
   deleteSolicitante,
-} from "../controllers/solicitantes.controller.js"; // <-- PLURAL y .js en runtime
+  getSolicitantesDashboardMensual,
+  getSolicitantesEliminadosDetalle,
+  getSolicitantesNuevosDetalle
+} from "../controllers/solicitantes.controller.js";
 import { auth } from "../middlewares/auth.js";
 
 export const solicitantesRouter = Router();
@@ -27,6 +30,9 @@ solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));
 solicitantesRouter.get("/check-email", asyncHandler(checkSolicitanteEmail));
 solicitantesRouter.post("/", asyncHandler(createSolicitante));
+solicitantesRouter.get("/dashboard/mensual", asyncHandler(getSolicitantesDashboardMensual));
+solicitantesRouter.get("/dashboard/nuevos", asyncHandler(getSolicitantesNuevosDetalle));
+solicitantesRouter.get("/dashboard/eliminados", asyncHandler(getSolicitantesEliminadosDetalle));
 solicitantesRouter.get("/:id", asyncHandler(getSolicitanteById));
 solicitantesRouter.patch("/:id", asyncHandler(updateSolicitante));
 solicitantesRouter.delete("/:id", asyncHandler(deleteSolicitante));

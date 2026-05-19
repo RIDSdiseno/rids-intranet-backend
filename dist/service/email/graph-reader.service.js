@@ -165,9 +165,9 @@ class GraphReaderService {
                 .orderby('receivedDateTime desc')
                 .get();
             const messages = response.value ?? [];
-            console.log(`📥 Correos recientes encontrados: ${messages.length}`);
+            //console.log(`📥 Correos recientes encontrados: ${messages.length}`);
             if (messages.length === 0) {
-                console.log('📭 No hay correos recientes');
+                // console.log('📭 No hay correos recientes');
                 return;
             }
             // Deduplicar mensajes por internetMessageId (o id de Graph si no hay internetMessageId), para evitar reprocesar el mismo correo si la función se ejecuta varias veces en paralelo o si Microsoft envía duplicados.
@@ -182,10 +182,12 @@ class GraphReaderService {
                 }
                 return true;
             });
-            console.log(`📥 Correos únicos a procesar: ${uniqueMessages.length}`);
+            //console.log(`📥 Correos únicos a procesar: ${uniqueMessages.length}`);
             for (const message of uniqueMessages) {
                 try {
-                    console.log(`📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`);
+                    //console.log(
+                    // `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
+                    //);
                     await this.processMessage(message);
                 }
                 catch (err) {
@@ -419,7 +421,7 @@ class GraphReaderService {
             select: { id: true },
         });
         if (existingProcessed) {
-            console.log(`⏭️ Ignorado: email ya procesado en ProcessedInboundEmail (${graphMessageId})`);
+            //console.log(`⏭️ Ignorado: email ya procesado en ProcessedInboundEmail (${graphMessageId})`);
             return;
         }
         const existingMsg = await prisma.ticketMessage.findUnique({
@@ -427,7 +429,7 @@ class GraphReaderService {
             select: { id: true },
         });
         if (existingMsg) {
-            console.log(`⏭️ Ignorado: email ya procesado en TicketMessage (${graphMessageId})`);
+            //console.log(`⏭️ Ignorado: email ya procesado en TicketMessage (${graphMessageId})`);
             return;
         }
         /* =============================
@@ -435,12 +437,12 @@ class GraphReaderService {
         ============================= */
         const fromEmailRaw = message.from?.emailAddress?.address;
         if (!fromEmailRaw) {
-            console.warn("⚠️ Email sin remitente, se ignora");
+            //console.warn("⚠️ Email sin remitente, se ignora");
             return;
         }
         const fromEmail = fromEmailRaw.toLowerCase();
         if (fromEmail === this.supportEmail) {
-            console.log(`⏭️ Ignorado: mensaje enviado por soporte (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: mensaje enviado por soporte (${fromEmail})`);
             return;
         }
         const fromName = message.from?.emailAddress?.name ||
@@ -458,15 +460,15 @@ class GraphReaderService {
         ============================= */
         const toAddresses = message.toRecipients?.map((r) => (r.emailAddress.address || "").trim().toLowerCase()).filter(Boolean) || [];
         const ccAddresses = message.ccRecipients?.map((r) => (r.emailAddress.address || "").trim().toLowerCase()).filter(Boolean) || [];
-        console.log("📨 To:", toAddresses);
-        console.log("📨 Cc:", ccAddresses);
-        console.log("📨 SupportEmail:", this.supportEmail);
+        //console.log("📨 To:", toAddresses);
+        //console.log("📨 Cc:", ccAddresses);
+        ////console.log("📨 SupportEmail:", this.supportEmail);
         const isToSupport = toAddresses.includes(this.supportEmail) ||
             ccAddresses.includes(this.supportEmail);
         // Si el correo ya está en el inbox del buzón de soporte, no lo descartes solo por no venir explícito en To/Cc.
         // Esto ayuda con alias, redirecciones, shared mailbox y BCC.
         if (!isToSupport) {
-            console.warn(`⚠️ Email recibido en inbox pero no coincide en To/Cc con soporte. Se procesará igual.`);
+            //console.warn(`⚠️ Email recibido en inbox pero no coincide en To/Cc con soporte. Se procesará igual.`);
         }
         /* =============================
            4️⃣ FILTRO SPAM / SISTEMA (SENDER)
@@ -477,7 +479,7 @@ class GraphReaderService {
             'postmaster',
         ];
         if (blockedSenders.some(b => fromEmail.includes(b))) {
-            console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
             return;
         }
         /* =============================
@@ -501,7 +503,7 @@ class GraphReaderService {
         if (autoPatterns.some(p => bodyLower.includes(p)) ||
             subjectLower.includes('assigned to your group') ||
             subjectLower.includes('ticket has been assigned')) {
-            console.log(`⏭️ Ignorado: notificación automática (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: notificación automática (${fromEmail})`);
             return;
         }
         /* =============================
@@ -537,7 +539,7 @@ class GraphReaderService {
         if (isInternal &&
             !existingTicket &&
             !allowedInternalCreators.includes(fromEmail)) {
-            console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
+            //console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
             return;
         }
         /* =============================
@@ -1171,6 +1173,57 @@ class GraphReaderService {
             console.warn(`⚠️ No se pudo descargar attachment ${attachmentId} por $value`);
         }
         return null;
+    }
+    normalizeEmail(email) {
+        if (!email)
+            return null;
+        const clean = String(email).trim().toLowerCase();
+        if (!clean)
+            return null;
+        return clean;
+    }
+    isBasicValidEmail(email) {
+        const clean = this.normalizeEmail(email);
+        if (!clean)
+            return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+    }
+    async technicianHasValidOutlookMailbox(email) {
+        const cleanEmail = this.normalizeEmail(email);
+        if (!cleanEmail || !this.isBasicValidEmail(cleanEmail)) {
+            return false;
+        }
+        try {
+            const client = await this.getClient();
+            const user = await client
+                .api(`/users/${encodeURIComponent(cleanEmail)}`)
+                .select("id,mail,userPrincipalName,accountEnabled")
+                .get();
+            if (!user)
+                return false;
+            if (user.accountEnabled === false) {
+                return false;
+            }
+            const mail = String(user.mail ?? "").trim().toLowerCase();
+            const upn = String(user.userPrincipalName ?? "").trim().toLowerCase();
+            return mail === cleanEmail || upn === cleanEmail;
+        }
+        catch (error) {
+            const code = error?.code;
+            const statusCode = error?.statusCode || error?.response?.status;
+            if (statusCode === 404 ||
+                code === "Request_ResourceNotFound" ||
+                code === "ResourceNotFound") {
+                return false;
+            }
+            console.warn("⚠️ No se pudo validar casilla Outlook del técnico:", {
+                email: cleanEmail,
+                code,
+                statusCode,
+                message: error?.message,
+            });
+            return false;
+        }
     }
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params) {

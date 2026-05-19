@@ -680,6 +680,9 @@ export async function listTickets(req: Request, res: Response) {
             to,
         } = req.query;
 
+        const user = (req as any).user;
+        const isCliente = user?.rol === "CLIENTE";
+
         const pageNum = Math.max(Number(page), 1);
         const take = Math.min(Number(pageSize) || 30, 100);
         const skip = (pageNum - 1) * take;
@@ -689,6 +692,22 @@ export async function listTickets(req: Request, res: Response) {
             AND: [],
         };
 
+        // ── Filtro de empresa ─────────────────────────────────────────────────
+        if (isCliente) {
+            // CLIENTE: forzar su empresa, ignorar cualquier query param
+            if (!user.empresaId) {
+                return res.status(403).json({
+                    ok: false,
+                    message: "Tu cuenta no tiene empresa asociada",
+                });
+            }
+            whereActual.empresaId = user.empresaId;
+        } else {
+            // Roles internos: filtro opcional por empresaId en query
+            if (empresaId) whereActual.empresaId = Number(empresaId);
+        }
+
+        // ── Filtros internos (ignorados para CLIENTE) ─────────────────────────
         const validStatuses = Object.values(TicketStatus);
 
         if (
@@ -699,79 +718,34 @@ export async function listTickets(req: Request, res: Response) {
             whereActual.status = status as TicketStatus;
         }
 
-        // Agregamos filtros de prioridad, técnico asignado y empresa si vienen en la query
-        if (priority) whereActual.priority = priority as TicketPriority;
-        if (assigneeId) whereActual.assigneeId = Number(assigneeId);
-        if (empresaId) whereActual.empresaId = Number(empresaId);
+        if (!isCliente) {
+            if (priority) whereActual.priority = priority as TicketPriority;
+            if (assigneeId) whereActual.assigneeId = Number(assigneeId);
+        }
 
-        // Si viene el filtro de área, lo dejamos para filtrar después de traer los tickets, ya que
-        // el área se detecta con lógica personalizada y no es un campo directo en la base de datos
-        // Esto nos permite evitar joins complejos o consultas pesadas.
+        // ── Búsqueda (disponible para todos) ──────────────────────────────────
         if (search) {
             const searchValue = String(search).trim();
             const searchNumber = Number(searchValue);
 
             whereActual.OR = [
-                {
-                    subject: {
-                        contains: searchValue,
-                        mode: "insensitive",
-                    },
-                },
-                {
-                    fromEmail: {
-                        contains: searchValue,
-                        mode: "insensitive",
-                    },
-                },
-                {
-                    empresa: {
-                        nombre: {
-                            contains: searchValue,
-                            mode: "insensitive",
-                        },
-                    },
-                },
-                {
-                    requester: {
-                        nombre: {
-                            contains: searchValue,
-                            mode: "insensitive",
-                        },
-                    },
-                },
-                {
-                    requester: {
-                        email: {
-                            contains: searchValue,
-                            mode: "insensitive",
-                        },
-                    },
-                },
+                { subject: { contains: searchValue, mode: "insensitive" } },
+                { fromEmail: { contains: searchValue, mode: "insensitive" } },
+                { empresa: { nombre: { contains: searchValue, mode: "insensitive" } } },
+                { requester: { nombre: { contains: searchValue, mode: "insensitive" } } },
+                { requester: { email: { contains: searchValue, mode: "insensitive" } } },
                 {
                     messages: {
                         some: {
-                            OR: [
-                                {
-                                    bodyText: {
-                                        contains: searchValue,
-                                        mode: "insensitive",
-                                    },
-                                },
-                            ],
+                            bodyText: { contains: searchValue, mode: "insensitive" },
                         },
                     },
                 },
-                ...(Number.isInteger(searchNumber)
-                    ? [
-                        {
-                            id: searchNumber,
-                        },
-                    ]
-                    : []),
+                ...(Number.isInteger(searchNumber) ? [{ id: searchNumber }] : []),
             ];
         }
 
+        // ── Rango de fechas (disponible para todos) ───────────────────────────
         if (from || to) {
             whereActual.lastActivityAt = {
                 ...(from && { gte: new Date(from as string) }),
@@ -779,28 +753,21 @@ export async function listTickets(req: Request, res: Response) {
             };
         }
 
-        const parsedArea = parseArea(area);
+        // ── Área (solo roles internos) ────────────────────────────────────────
+        const parsedArea = !isCliente ? parseArea(area) : null;
 
         const isClosedFilter = status === TicketStatus.CLOSED;
 
         const orderBy: Prisma.TicketOrderByWithRelationInput[] = isClosedFilter
-            ? [
-                {
-                    closedAt: {
-                        sort: "desc",
-                        nulls: "last",
-                    },
-                },
-                { createdAt: "desc" },
-            ]
-            : [
-                { createdAt: "desc" },
-            ];
+            ? [{ closedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
+            : [{ createdAt: "desc" }];
 
+        // ── Ejecutar query ────────────────────────────────────────────────────
         let tickets: any[] = [];
         let total = 0;
 
         if (parsedArea) {
+            // Filtrado por área requiere traer todos y filtrar en memoria
             const areaCandidates = await prisma.ticket.findMany({
                 where: whereActual,
                 include: {
@@ -825,7 +792,7 @@ export async function listTickets(req: Request, res: Response) {
             });
 
             const filteredByArea = areaCandidates.filter(
-                (ticket) => detectArea(ticket) === parsedArea
+                (t) => detectArea(t) === parsedArea
             );
 
             total = filteredByArea.length;
@@ -859,56 +826,38 @@ export async function listTickets(req: Request, res: Response) {
             total = result[1];
         }
 
-        const whereCounts: Prisma.TicketWhereInput = {
-            ...whereActual,
-        };
-
+        // ── Conteos por estado (con mismo where base, sin filtro de status) ───
+        const whereCounts: Prisma.TicketWhereInput = { ...whereActual };
         delete (whereCounts as any).status;
 
         const statusCounts = await prisma.ticket.groupBy({
             by: ["status"],
             where: whereCounts,
-            _count: {
-                status: true,
-            },
+            _count: { status: true },
         });
 
         const counts: Record<string, number> = {};
-
-        statusCounts.forEach(s => {
-            counts[s.status] = s._count.status;
-        });
+        statusCounts.forEach(s => { counts[s.status] = s._count.status; });
 
         const slaConfig = await getSlaConfigFromDB();
 
-        // Formateamos la respuesta para incluir solo los primeros 2 mensajes de cada ticket y 
-        // construir el campo sla con la información de SLA calculada según la lógica definida en 
-        // buildTicketSla. También agregamos el campo lastMessageDirection para indicar la dirección del último mensaje (INBOUND, OUTBOUND o INTERNAL) y facilitar el renderizado en el frontend.
         const formattedTickets = tickets.map((ticket) => {
             const sla = buildTicketSla(ticket, slaConfig);
-
-            const messages = (ticket.messages ?? []).map((message: any) => ({
-                direction: message.direction,
-                isInternal: message.isInternal,
-                createdAt: message.createdAt,
+            const messages = (ticket.messages ?? []).map((m: any) => ({
+                direction: m.direction,
+                isInternal: m.isInternal,
+                createdAt: m.createdAt,
             }));
 
             const lastMsg = messages[0];
-
             let lastMessageDirection: MessageDirection | "INTERNAL" | null = null;
-
             if (lastMsg) {
                 lastMessageDirection = lastMsg.isInternal
                     ? "INTERNAL"
                     : lastMsg.direction ?? null;
             }
 
-            return {
-                ...ticket,
-                messages,
-                lastMessageDirection,
-                sla,
-            };
+            return { ...ticket, messages, lastMessageDirection, sla };
         });
 
         return res.json({
@@ -922,10 +871,7 @@ export async function listTickets(req: Request, res: Response) {
         });
     } catch (error) {
         console.error("[helpdesk] listTickets error:", error);
-        return res.status(500).json({
-            ok: false,
-            message: "Error al listar tickets",
-        });
+        return res.status(500).json({ ok: false, message: "Error al listar tickets" });
     }
 }
 
@@ -935,17 +881,11 @@ export async function getTicketById(req: Request, res: Response) {
         const ticketId = Number(req.params.id);
 
         if (!ticketId || Number.isNaN(ticketId)) {
-            return res.status(400).json({
-                ok: false,
-                message: "ID de ticket inválido",
-            });
+            return res.status(400).json({ ok: false, message: "ID de ticket inválido" });
         }
 
         const ticket = await prisma.ticket.findFirst({
-            where: {
-                id: ticketId,
-                deletedAt: null,
-            },
+            where: { id: ticketId, deletedAt: null },
             include: {
                 empresa: true,
                 requester: true,
@@ -954,81 +894,82 @@ export async function getTicketById(req: Request, res: Response) {
                     orderBy: { createdAt: "desc" },
                     include: { attachments: true },
                 },
-                events: {
-                    orderBy: { createdAt: "desc" },
-                },
+                events: { orderBy: { createdAt: "desc" } },
             },
         });
 
         if (!ticket) {
-            return res.status(404).json({
-                ok: false,
-                message: "Ticket no encontrado",
-            });
+            return res.status(404).json({ ok: false, message: "Ticket no encontrado" });
         }
 
-        // Asignar automaticamente a tecnico al abrir el ticket
+        // ── Verificar que CLIENTE solo vea tickets de su empresa ──────────────
+        const user = (req as any).user;
+        if (user?.rol === "CLIENTE") {
+            if (ticket.empresaId !== user.empresaId) {
+                return res.status(403).json({ ok: false, message: "No autorizado" });
+            }
+        }
+
+        // ── Auto-asignación (solo para roles internos) ────────────────────────
         const agentId = req.user?.id ?? null;
-
-        const tecnicoActual = agentId
-            ? await prisma.tecnico.findUnique({
-                where: { id_tecnico: agentId },
-                select: { id_tecnico: true, status: true },
-            })
-            : null;
-
+        const isCliente = user?.rol === "CLIENTE";
         let ticketFinal = ticket;
 
-        const puedeAutoAsignar = await canAssignTickets(agentId);
+        if (!isCliente) {
+            const tecnicoActual = agentId
+                ? await prisma.tecnico.findUnique({
+                    where: { id_tecnico: agentId },
+                    select: { id_tecnico: true, status: true },
+                })
+                : null;
 
-        if (!ticket.assigneeId && tecnicoActual?.status && puedeAutoAsignar) {
-            try {
-                ticketFinal = await prisma.ticket.update({
-                    where: { id: ticket.id },
-                    data: {
-                        assigneeId: tecnicoActual.id_tecnico,
-                        lastActivityAt: new Date(),
-                    },
-                    include: {
-                        empresa: true,
-                        requester: true,
-                        assignee: true,
-                        messages: {
-                            orderBy: { createdAt: "desc" },
-                            include: { attachments: true },
-                        },
-                        events: {
-                            orderBy: { createdAt: "desc" },
-                        },
-                    },
-                });
+            const puedeAutoAsignar = await canAssignTickets(agentId);
 
-                await prisma.ticketEvent.create({
-                    data: {
-                        ticketId: ticket.id,
-                        type: TicketEventType.ASSIGNED,
-                        oldValue: null,
-                        newValue: String(tecnicoActual.id_tecnico),
-                        actorType: TicketActorType.AGENT,
-                        actorId: tecnicoActual.id_tecnico,
-                    },
-                });
-
-                bus.emit("ticket.updated", {
-                    ticketId: ticket.id,
-                    changes: {
-                        assigneeId: tecnicoActual.id_tecnico,
-                    },
-                    source: "auto_assign_on_open",
-                });
-
+            if (!ticket.assigneeId && tecnicoActual?.status && puedeAutoAsignar) {
                 try {
-                    await sendTicketAssignedEmail(ticket.id);
-                } catch (err) {
-                    console.error("⚠️ Error enviando correo de autoasignación:", err);
+                    ticketFinal = await prisma.ticket.update({
+                        where: { id: ticket.id },
+                        data: {
+                            assigneeId: tecnicoActual.id_tecnico,
+                            lastActivityAt: new Date(),
+                        },
+                        include: {
+                            empresa: true,
+                            requester: true,
+                            assignee: true,
+                            messages: {
+                                orderBy: { createdAt: "desc" },
+                                include: { attachments: true },
+                            },
+                            events: { orderBy: { createdAt: "desc" } },
+                        },
+                    });
+
+                    await prisma.ticketEvent.create({
+                        data: {
+                            ticketId: ticket.id,
+                            type: TicketEventType.ASSIGNED,
+                            oldValue: null,
+                            newValue: String(tecnicoActual.id_tecnico),
+                            actorType: TicketActorType.AGENT,
+                            actorId: tecnicoActual.id_tecnico,
+                        },
+                    });
+
+                    bus.emit("ticket.updated", {
+                        ticketId: ticket.id,
+                        changes: { assigneeId: tecnicoActual.id_tecnico },
+                        source: "auto_assign_on_open",
+                    });
+
+                    try {
+                        await sendTicketAssignedEmail(ticket.id);
+                    } catch (err) {
+                        console.error("⚠️ Error enviando correo de autoasignación:", err);
+                    }
+                } catch (error) {
+                    console.error("[helpdesk] auto assign on open error:", error);
                 }
-            } catch (error) {
-                console.error("[helpdesk] auto assign on open error:", error);
             }
         }
 
@@ -1050,19 +991,11 @@ export async function getTicketById(req: Request, res: Response) {
 
         return res.json({
             ok: true,
-            ticket: {
-                ...ticketFinal,
-                sla,
-                replyRecipients,
-            },
+            ticket: { ...ticketFinal, sla, replyRecipients },
         });
-
     } catch (error) {
         console.error("[helpdesk] getTicketById error:", error);
-        return res.status(500).json({
-            ok: false,
-            message: "Error al obtener ticket",
-        });
+        return res.status(500).json({ ok: false, message: "Error al obtener ticket" });
     }
 }
 

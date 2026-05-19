@@ -22,20 +22,20 @@ router.get("/:id", auth(), (req, res, next) => {
     Promise.resolve(getMantencionRemotaById(req, res)).catch(next);
 });
 /* ========= CRUD solo interno ========= */
-router.post("/", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+router.post("/", auth(), onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(createMantencionRemota(req, res)).catch(next);
 });
-router.put("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+router.put("/:id", auth(), onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(updateMantencionRemota(req, res)).catch(next);
 });
-router.patch("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+router.patch("/:id", auth(), onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(updateMantencionRemota(req, res)).catch(next);
 });
-router.delete("/:id", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+router.delete("/:id", auth(), onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(deleteMantencionRemota(req, res)).catch(next);
 });
 /* ========= Acción rápida solo interno ========= */
-router.post("/:id/close", auth(), onlyRole("ADMIN", "TECNICO", "SOPORTE"), (req, res, next) => {
+router.post("/:id/close", auth(), onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"), (req, res, next) => {
     Promise.resolve(closeMantencionRemota(req, res)).catch(next);
 });
 export default router;
