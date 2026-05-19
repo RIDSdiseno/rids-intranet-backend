@@ -245,17 +245,22 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante       Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre               String
-  email                String?
-  telefono             String?
-  empresaId            Int
-  clienteId            Int?                    @unique
-  googleUserId         String?                 @unique
-  isActive             Boolean                 @default(true)
-  microsoftUserId      String?                 @unique
-  accountType          AccountType?
-  deletedAt            DateTime?
+  id_solicitante  Int          @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre          String
+  email           String?
+  telefono        String?
+  empresaId       Int
+  clienteId       Int?         @unique
+  googleUserId    String?      @unique
+  isActive        Boolean      @default(true)
+  microsoftUserId String?      @unique
+  accountType     AccountType?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  deactivatedAt DateTime?
+
   rut                  String?                 @unique
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
@@ -297,20 +302,16 @@ model SolicitanteMsLicense {
 }
 
 model EntidadGestioo {
-  id        Int                @id @default(autoincrement())
-  nombre    String
-  rut       String?            @unique
-  correo    String?
-  telefono  String?
-  direccion String?
-  tipo      TipoEntidadGestioo @default(EMPRESA)
-  origen    OrigenGestioo      @default(RIDS)
-
-  // ── NUEVO ───────────────────────────────────────────────
-  empresaId Int?
-  empresa   Empresa? @relation(fields: [empresaId], references: [id_empresa])
-  // ────────────────────────────────────────────────────────
-
+  id               Int                     @id @default(autoincrement())
+  nombre           String
+  rut              String?                 @unique
+  correo           String?
+  telefono         String?
+  direccion        String?
+  tipo             TipoEntidadGestioo      @default(EMPRESA)
+  origen           OrigenGestioo           @default(RIDS)
+  empresaId        Int?
+  empresa          Empresa?                @relation(fields: [empresaId], references: [id_empresa])
   productos        ProductoGestioo[]
   trabajos         DetalleTrabajoGestioo[]
   servicioGestioos ServicioGestioo[]
@@ -437,8 +438,6 @@ model Equipo {
   serial                 String?                 @unique
   marca                  String
   modelo                 String
-  anioPc                 Int?
-  anioPcOrigen           String?                 @default("AUTO")
   procesador             String?
   ram                    String?
   disco                  String?
@@ -451,6 +450,8 @@ model Equipo {
   origenCotizacionId     Int?
   productoId             Int?                    @unique
   estado                 EstadoEquipo            @default(ACTIVO)
+  anioPc                 Int?
+  anioPcOrigen           String?                 @default("AUTO")
   solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                DetalleEquipo?
   detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -1501,7 +1502,7 @@ enum EstadoEquipo {
   ACTIVO
   EN_STOCK
   DADO_DE_BAJA
-  EN_TALLER
+  EN_RIDS
 }
 
 enum OrigenTrabajo {

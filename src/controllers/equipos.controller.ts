@@ -706,7 +706,12 @@ export async function listEquipos(req: Request, res: Response) {
       items: rows.map(flattenRow),
     });
   } catch (err) {
-    console.error("listEquipos error:", err);
+    console.error("[listEquipos] error:", {
+      message: (err as any)?.message,
+      code: (err as any)?.code,
+      meta: (err as any)?.meta,
+      stack: (err as any)?.stack,
+    });
     if (err instanceof z.ZodError) {
       return res.status(400).json({
         error: "Parámetros inválidos",
