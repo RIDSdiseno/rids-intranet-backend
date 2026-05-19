@@ -35,6 +35,13 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
                 changes.empresaId = empresaId;
             if (byGoogle.isActive !== activo)
                 changes.isActive = activo;
+            if (activo) {
+                changes.deletedAt = null;
+                changes.deactivatedAt = null;
+            }
+            else {
+                changes.deactivatedAt = new Date();
+            }
             if (byGoogle.accountType !== "google")
                 changes.accountType = "google";
             if (Object.keys(changes).length === 0)
@@ -164,6 +171,13 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
                 changes.nombre = nombre;
             if (match.isActive !== activo)
                 changes.isActive = activo;
+            if (activo) {
+                changes.deletedAt = null;
+                changes.deactivatedAt = null;
+            }
+            else {
+                changes.deactivatedAt = new Date();
+            }
             if (match.accountType !== "google")
                 changes.accountType = "google";
             if (Object.keys(changes).length === 0)
@@ -185,6 +199,8 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
             googleUserId: user.id,
             isActive: activo,
             accountType: "google",
+            deletedAt: null,
+            deactivatedAt: activo ? null : new Date(),
         },
     });
     bus.emit("solicitante.created", created);
@@ -228,6 +244,7 @@ export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVi
         },
         data: {
             isActive: false,
+            deactivatedAt: new Date(),
         },
     });
     return {

@@ -29,12 +29,12 @@ export declare function getInventarioByEmpresa(params: {
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
-    anioPc: number | null;
-    anioPcOrigen: string | null;
     procesador: string | null;
     ram: string | null;
     disco: string | null;
     propiedad: string;
     origenCotizacionId: number | null;
+    anioPc: number | null;
+    anioPcOrigen: string | null;
 })[]>;
 //# sourceMappingURL=inventario.service.d.ts.map

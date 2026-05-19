@@ -13,8 +13,8 @@ declare class TicketEmailTemplateService {
     getTemplate(key: TemplateKey): Promise<import("./ticket-email-template.defaults.js").TicketEmailTemplateDefault | {
         id: number;
         updatedAt: Date;
-        name: string;
         createdAt: Date;
+        name: string;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -33,8 +33,8 @@ declare class TicketEmailTemplateService {
         template: import("./ticket-email-template.defaults.js").TicketEmailTemplateDefault | {
             id: number;
             updatedAt: Date;
-            name: string;
             createdAt: Date;
+            name: string;
             key: string;
             subjectTpl: string;
             bodyHtmlTpl: string;
@@ -47,8 +47,8 @@ declare class TicketEmailTemplateService {
     list(): Promise<{
         id: number;
         updatedAt: Date;
-        name: string;
         createdAt: Date;
+        name: string;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -63,8 +63,8 @@ declare class TicketEmailTemplateService {
     }): Promise<{
         id: number;
         updatedAt: Date;
-        name: string;
         createdAt: Date;
+        name: string;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -84,8 +84,8 @@ declare class TicketEmailTemplateService {
         nombre: string;
         email: string;
         telefono: string | null;
-        cargo: string;
         createdAt: Date;
+        cargo: string;
         area: string;
         isEnabled: boolean;
         sitioWeb1: string | null;

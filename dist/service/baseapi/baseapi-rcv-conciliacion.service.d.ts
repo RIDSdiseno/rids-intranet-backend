@@ -36,8 +36,8 @@ export declare function conciliarDocumentoRcv(params: {
 }): Promise<{
     id: string;
     updatedAt: Date;
-    razonSocial: string | null;
     createdAt: Date;
+    razonSocial: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -64,8 +64,8 @@ export declare function desconciliarDocumentoRcv(params: {
 }): Promise<{
     id: string;
     updatedAt: Date;
-    razonSocial: string | null;
     createdAt: Date;
+    razonSocial: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -94,8 +94,8 @@ export declare function observarDocumentoRcv(params: {
 }): Promise<{
     id: string;
     updatedAt: Date;
-    razonSocial: string | null;
     createdAt: Date;
+    razonSocial: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;

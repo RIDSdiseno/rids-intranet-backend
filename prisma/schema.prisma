@@ -245,23 +245,21 @@ model AccesoRouterSucursal {
 }
 
 model Solicitante {
-  id_solicitante  Int          @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
-  nombre          String
-  email           String?
-  telefono        String?
-  empresaId       Int
-  clienteId       Int?         @unique
-  googleUserId    String?      @unique
-  isActive        Boolean      @default(true)
-  microsoftUserId String?      @unique
-  accountType     AccountType?
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
-  deactivatedAt DateTime?
-
+  id_solicitante       Int                     @id @default(dbgenerated("nextval((pg_get_serial_sequence('\"Solicitante\"'::text, 'id_solicitante'::text))::regclass)"))
+  nombre               String
+  email                String?
+  telefono             String?
+  empresaId            Int
+  clienteId            Int?                    @unique
+  googleUserId         String?                 @unique
+  isActive             Boolean                 @default(true)
+  microsoftUserId      String?                 @unique
+  accountType          AccountType?
+  deletedAt            DateTime?
   rut                  String?                 @unique
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @default(now()) @updatedAt
+  deactivatedAt        DateTime?
   empresa              Empresa                 @relation(fields: [empresaId], references: [id_empresa])
   equipos              Equipo[]
   visitas              Visita[]                @relation("Solicitante_Visita")

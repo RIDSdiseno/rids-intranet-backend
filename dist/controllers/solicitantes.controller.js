@@ -1,10 +1,40 @@
 import { prisma } from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 /* Utils */
 const toInt = (v, def = 0) => {
     const n = Number(v);
     return Number.isFinite(n) && Number.isInteger(n) ? n : def;
 };
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const SOLICITANTES_CARGA_INICIAL_HASTA = process.env.SOLICITANTES_CARGA_INICIAL_HASTA ??
+    "2026-05-19 15:30:52.844";
+const parseEstadoSolicitante = (v) => {
+    const s = String(v ?? "activos").trim().toLowerCase();
+    if (s === "inactivos" || s === "inactive" || s === "false") {
+        return "inactivos";
+    }
+    if (s === "todos" || s === "all") {
+        return "todos";
+    }
+    return "activos";
+};
+const buildEstadoSolicitanteWhere = (estado) => {
+    if (estado === "inactivos") {
+        return {
+            OR: [
+                { isActive: false },
+                { deletedAt: { not: null } },
+            ],
+        };
+    }
+    if (estado === "todos") {
+        return {};
+    }
+    return {
+        isActive: true,
+        deletedAt: null,
+    };
+};
 const normalizeEmail = (v) => {
     const s = String(v ?? "").trim().toLowerCase();
     return s.length > 0 ? s : null;
@@ -131,6 +161,7 @@ export const listSolicitantes = async (req, res) => {
         const empresaId = toInt(req.query.empresaId);
         const page = clamp(toInt(req.query.page, 1), 1, 1_000_000);
         const pageSize = clamp(toInt(req.query.pageSize, 10), 1, 100);
+        const estado = parseEstadoSolicitante(req.query.estado);
         const onlyGMS = String(req.query.onlyGMS ?? "").toLowerCase() === "1" ||
             String(req.query.onlyGMS ?? "").toLowerCase() === "true";
         // default true
@@ -147,7 +178,7 @@ export const listSolicitantes = async (req, res) => {
         const orderByKey = parseOrderBy(req.query.orderBy);
         const orderDir = parseOrderDir(req.query.orderDir);
         const where = {
-            isActive: true,
+            ...buildEstadoSolicitanteWhere(estado),
             ...(user?.rol === "CLIENTE"
                 ? { empresaId: Number(user.empresaId) }
                 : empresaId > 0
@@ -155,7 +186,7 @@ export const listSolicitantes = async (req, res) => {
                     : {}),
             ...buildSolicitanteSearchWhere(q, true),
             ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] } } : {}),
-            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+            ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
         const [total, baseSolicitantes] = await Promise.all([
@@ -249,8 +280,8 @@ export const listSolicitantes = async (req, res) => {
             filters: {
                 empresaId: user?.rol === "CLIENTE" ? Number(user.empresaId) : empresaId || null,
                 q: q ?? null,
+                estado,
                 onlyGMS,
-                // ✅ devolvemos el valor final aplicado (con override)
                 onlyWithAccount,
                 includeMsDetails,
             },
@@ -373,6 +404,7 @@ export const solicitantesMetrics = async (req, res) => {
     try {
         const q = String(req.query.q ?? req.query.search ?? "").trim();
         const empresaId = toInt(req.query.empresaId);
+        const estado = parseEstadoSolicitante(req.query.estado);
         const user = req.user;
         const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
             ? parseOnlyWithAccount(req.query.onlyWithAccount)
@@ -380,35 +412,52 @@ export const solicitantesMetrics = async (req, res) => {
         const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const where = {
-            isActive: true,
+            ...buildEstadoSolicitanteWhere(estado),
             ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
             ...buildSolicitanteSearchWhere(q, true),
-            ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+            ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const solicitantes = await prisma.solicitante.count({ where });
+        const baseEmpresaWhere = {
+            ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
+            ...buildSolicitanteSearchWhere(q, true),
+        };
+        const inactivos = await prisma.solicitante.count({
+            where: {
+                ...baseEmpresaWhere,
+                ...buildEstadoSolicitanteWhere("inactivos"),
+            },
+        });
         const distinctEmpresas = await prisma.solicitante.findMany({
             where,
             select: { empresaId: true },
             distinct: ["empresaId"],
         });
         const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
-        const ids = await prisma.solicitante.findMany({
-            where,
-            select: { id_solicitante: true },
+        const equiposWhere = userEmpresaId ?? (empresaId > 0 ? empresaId : null)
+            ? {
+                deletedAt: null,
+                solicitante: {
+                    is: {
+                        empresaId: userEmpresaId ?? empresaId,
+                    },
+                },
+            }
+            : {
+                deletedAt: null,
+            };
+        const equipos = await prisma.equipo.count({
+            where: equiposWhere,
         });
-        const idList = ids.map((s) => s.id_solicitante);
-        const equipos = idList.length === 0
-            ? 0
-            : await prisma.equipo.count({
-                where: { idSolicitante: { in: idList } },
-            });
         return res.json({
             solicitantes,
             empresas,
             equipos,
+            inactivos,
             filters: {
                 empresaId: userEmpresaId ?? (empresaId > 0 ? empresaId : null),
                 q: q ?? null,
+                estado,
                 onlyWithAccount,
             },
         });
@@ -885,7 +934,10 @@ export const deleteSolicitante = async (req, res) => {
             // ======================================
             // 3️⃣ DELETE FINAL
             // ======================================
-            await tx.solicitante.delete({ where: { id_solicitante: id } });
+            await tx.solicitante.update({
+                where: { id_solicitante: id },
+                data: { isActive: false, deletedAt: new Date() },
+            });
         }, { timeout: 15000 });
         return res.json({
             ok: true,
@@ -898,4 +950,237 @@ export const deleteSolicitante = async (req, res) => {
         return res.status(500).json({ error: "No se pudo eliminar el solicitante" });
     }
 };
+export async function getSolicitantesDashboardMensual(req, res) {
+    try {
+        const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+        const cargaInicialHasta = SOLICITANTES_CARGA_INICIAL_HASTA;
+        const rows = await prisma.$queryRaw(Prisma.sql `
+      WITH base_nuevos_raw AS (
+        SELECT
+          s."empresaId",
+          DATE_TRUNC('month', s."createdAt")::date AS mes,
+          CASE
+            WHEN s."createdAt" <= ${cargaInicialHasta}::timestamp
+            THEN true
+            ELSE false
+          END AS "esCargaInicial"
+        FROM "Solicitante" s
+        WHERE s."createdAt" IS NOT NULL
+          ${empresaId ? Prisma.sql `AND s."empresaId" = ${empresaId}` : Prisma.empty}
+      ),
+      base_nuevos AS (
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          COUNT(*)::int AS nuevos
+        FROM base_nuevos_raw
+        GROUP BY
+          "empresaId",
+          mes,
+          "esCargaInicial"
+      ),
+      bajas AS (
+        SELECT
+          s."empresaId",
+          DATE_TRUNC('month', COALESCE(s."deletedAt", s."deactivatedAt"))::date AS mes,
+          false AS "esCargaInicial",
+          COUNT(*)::int AS eliminados
+        FROM "Solicitante" s
+        WHERE (
+            s."deletedAt" IS NOT NULL
+            OR s."deactivatedAt" IS NOT NULL
+          )
+          ${empresaId ? Prisma.sql `AND s."empresaId" = ${empresaId}` : Prisma.empty}
+        GROUP BY
+          s."empresaId",
+          DATE_TRUNC('month', COALESCE(s."deletedAt", s."deactivatedAt"))
+      ),
+      movimientos AS (
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          nuevos,
+          0::int AS eliminados
+        FROM base_nuevos
+
+        UNION ALL
+
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          0::int AS nuevos,
+          eliminados
+        FROM bajas
+      )
+      SELECT
+        e.id_empresa AS "empresaId",
+        e.nombre AS empresa,
+        m.mes,
+        m."esCargaInicial",
+        SUM(m.nuevos)::int AS nuevos,
+        SUM(m.eliminados)::int AS eliminados,
+        (SUM(m.nuevos) - SUM(m.eliminados))::int AS neto
+      FROM movimientos m
+      JOIN "Empresa" e
+        ON e.id_empresa = m."empresaId"
+      GROUP BY
+        e.id_empresa,
+        e.nombre,
+        m.mes,
+        m."esCargaInicial"
+      ORDER BY
+        m.mes ASC,
+        m."esCargaInicial" DESC,
+        e.nombre ASC;
+    `);
+        const activosActuales = await prisma.solicitante.count({
+            where: {
+                isActive: true,
+                deletedAt: null,
+                deactivatedAt: null,
+                ...(empresaId ? { empresaId } : {}),
+            },
+        });
+        const activosPorEmpresa = await prisma.solicitante.groupBy({
+            by: ["empresaId"],
+            where: {
+                isActive: true,
+                deletedAt: null,
+                deactivatedAt: null,
+                ...(empresaId ? { empresaId } : {}),
+            },
+            _count: { id_solicitante: true },
+        });
+        return res.json({
+            ok: true,
+            data: rows,
+            cargaInicialHasta,
+            activosActuales,
+            activosPorEmpresa: activosPorEmpresa.map((r) => ({
+                empresaId: r.empresaId,
+                activos: r._count.id_solicitante,
+            })),
+        });
+    }
+    catch (error) {
+        console.error("Error getSolicitantesDashboardMensual:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al obtener dashboard mensual de solicitantes",
+        });
+    }
+}
+// GET /solicitantes/dashboard/eliminados?desde=2026-06-01&hasta=2026-06-30&empresaId=5
+export async function getSolicitantesEliminadosDetalle(req, res) {
+    try {
+        const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+        const desdeRaw = req.query.desde ? String(req.query.desde) : null;
+        const hastaRaw = req.query.hasta ? String(req.query.hasta) : null;
+        if (!desdeRaw || !hastaRaw) {
+            return res.status(400).json({
+                ok: false,
+                message: "Parámetros 'desde' y 'hasta' son requeridos",
+            });
+        }
+        const desde = new Date(desdeRaw);
+        // Si viene como YYYY-MM-DD, usamos rango hasta el día siguiente exclusivo.
+        const hastaExclusivo = hastaRaw.length === 10
+            ? new Date(new Date(hastaRaw).getTime() + 24 * 60 * 60 * 1000)
+            : new Date(hastaRaw);
+        const rows = await prisma.$queryRaw(Prisma.sql `
+      SELECT
+        s.id_solicitante,
+        s.nombre,
+        s.rut,
+        s.email,
+        s."deletedAt",
+        s."deactivatedAt",
+        COALESCE(s."deletedAt", s."deactivatedAt") AS "fechaBaja",
+        CASE
+          WHEN s."deletedAt" IS NOT NULL THEN 'ELIMINADO'
+          ELSE 'DESACTIVADO'
+        END AS "tipoBaja",
+        json_build_object(
+          'id_empresa', e.id_empresa,
+          'nombre', e.nombre
+        ) AS empresa
+      FROM "Solicitante" s
+      LEFT JOIN "Empresa" e
+        ON e.id_empresa = s."empresaId"
+      WHERE COALESCE(s."deletedAt", s."deactivatedAt") >= ${desde}
+        AND COALESCE(s."deletedAt", s."deactivatedAt") < ${hastaExclusivo}
+        ${empresaId ? Prisma.sql `AND s."empresaId" = ${empresaId}` : Prisma.empty}
+      ORDER BY "fechaBaja" DESC;
+    `);
+        return res.json({
+            ok: true,
+            total: rows.length,
+            data: rows,
+        });
+    }
+    catch (error) {
+        console.error("Error getSolicitantesEliminadosDetalle:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al obtener detalle de bajas",
+        });
+    }
+}
+// GET /solicitantes/dashboard/nuevos?desde=2026-06-01&hasta=2026-06-19T14:32:00Z&empresaId=5
+export async function getSolicitantesNuevosDetalle(req, res) {
+    try {
+        const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+        const desde = req.query.desde ? new Date(String(req.query.desde)) : null;
+        const hasta = req.query.hasta ? new Date(String(req.query.hasta)) : null;
+        const esCargaInicialParam = req.query.esCargaInicial !== undefined
+            ? String(req.query.esCargaInicial).toLowerCase() === "true"
+            : null;
+        if (!desde || !hasta) {
+            return res.status(400).json({
+                error: "Parámetros 'desde' y 'hasta' son requeridos",
+            });
+        }
+        const cargaInicialHasta = new Date(SOLICITANTES_CARGA_INICIAL_HASTA);
+        const createdAtWhere = {
+            gte: desde,
+            lte: hasta,
+        };
+        if (esCargaInicialParam === true) {
+            createdAtWhere.lte = cargaInicialHasta < hasta ? cargaInicialHasta : hasta;
+        }
+        if (esCargaInicialParam === false) {
+            createdAtWhere.gt = cargaInicialHasta;
+        }
+        const rows = await prisma.solicitante.findMany({
+            where: {
+                createdAt: createdAtWhere,
+                ...(empresaId ? { empresaId } : {}),
+            },
+            select: {
+                id_solicitante: true,
+                nombre: true,
+                rut: true,
+                email: true,
+                createdAt: true,
+                empresa: { select: { id_empresa: true, nombre: true } },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+        return res.json({
+            ok: true,
+            total: rows.length,
+            data: rows,
+        });
+    }
+    catch (error) {
+        console.error("Error getSolicitantesNuevosDetalle:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error al obtener detalle de nuevos",
+        });
+    }
+}
 //# sourceMappingURL=solicitantes.controller.js.map
