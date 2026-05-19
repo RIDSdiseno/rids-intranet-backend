@@ -1,7 +1,7 @@
 // controllers/solicitantes.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 /* Utils */
 const toInt = (v: unknown, def = 0) => {

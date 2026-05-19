@@ -7,8 +7,10 @@ const prisma = new PrismaClient();
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
 
 function estadoEquipoPorArea(area?: string | null): EstadoEquipo | null {
-    if (area === "ENTRADA") return EstadoEquipo.EN_TALLER;
-    if (area === "REPARACION") return EstadoEquipo.EN_TALLER;
+    // El enum `EstadoEquipo` en este esquema actual no contiene `EN_TALLER`.
+    // Usar `EN_RIDS` como estado intermedio para entradas/reparaciones.
+    if (area === "ENTRADA") return EstadoEquipo.EN_RIDS as EstadoEquipo;
+    if (area === "REPARACION") return EstadoEquipo.EN_RIDS as EstadoEquipo;
     if (area === "SALIDA") return EstadoEquipo.ACTIVO;
 
     return null;

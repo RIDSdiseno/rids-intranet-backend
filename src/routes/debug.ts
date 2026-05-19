@@ -12,10 +12,10 @@ debugRouter.get("/secret", (_req, res) => {
 // Debug: consulta SimpleAPI/RCV directamente (SIN AUTH) para inspección rápida
 debugRouter.get("/facturas/ventas", async (req, res) => {
   try {
-    const mes = String(req.query.mes ?? "");
-    const ano = String(req.query.ano ?? "");
-    const empresa = String((req.query.empresa ?? "").toLowerCase() ?? "");
-    const force = req.query.refresh === "true" || req.query.force === "true";
+      const mes = String(req.query.mes ?? "");
+      const ano = String(req.query.ano ?? "");
+      const empresa = String(req.query.empresa ?? "").toLowerCase();
+      const force = String(req.query.refresh ?? req.query.force ?? "false") === "true";
 
     if (!mes || !ano || !empresa) {
       return res.status(400).json({ ok: false, error: "Parámetros requeridos: mes, ano, empresa" });

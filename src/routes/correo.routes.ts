@@ -525,7 +525,10 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
   validTargets.forEach((t, idx) => {
     const when = idx * delayMs;
     setTimeout(async () => {
-      mailerJobs[jobId].status = 'processing';
+      const jobRef = mailerJobs[jobId];
+      if (!jobRef) return;
+
+      jobRef.status = 'processing';
       try {
         const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
         const attachments = [...globalAttachments, ...perTargetAttachments].map((a: any) => ({
@@ -535,13 +538,13 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
         }));
 
         await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
-        mailerJobs[jobId].successes.push(t.email);
+        jobRef.successes.push(t.email);
       } catch (err: any) {
-        mailerJobs[jobId].failures.push({ to: t.email, error: err?.message ?? String(err) });
+        jobRef.failures.push({ to: t.email, error: err?.message ?? String(err) });
       } finally {
-        mailerJobs[jobId].completed += 1;
-        if (mailerJobs[jobId].completed >= mailerJobs[jobId].total) {
-          mailerJobs[jobId].status = 'done';
+        jobRef.completed += 1;
+        if (jobRef.completed >= jobRef.total) {
+          jobRef.status = 'done';
         }
       }
     }, when);

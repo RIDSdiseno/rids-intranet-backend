@@ -537,17 +537,18 @@ export async function consultarVentasRCV(
   );
 
   const raw = resumenResult.data;
+  const rawAny = raw as any;
   const rutEmpresa = getRutEmpresa(rutEmpresaOverride);
   const mesPadded = String(mes).padStart(2, "0");
 
   const detalleRaw =
-    raw?.ventas?.detalleVentas ??
-    raw?.ventas?.DetalleVentas ??
+    rawAny?.ventas?.detalleVentas ??
+    rawAny?.ventas?.DetalleVentas ??
     [];
 
   const resumenesRaw =
-    raw?.ventas?.resumenes ??
-    raw?.ventas?.Resumenes ??
+    rawAny?.ventas?.resumenes ??
+    rawAny?.ventas?.Resumenes ??
     [];
 
   const ventas: VentaRCV[] = Array.isArray(detalleRaw)
@@ -564,7 +565,7 @@ export async function consultarVentasRCV(
   const referencedByND = new Set<number>();
 
   ventasConAliases.forEach((v) => {
-    const tipo = Number(v.tipoDTE || v.tipoDte || 0);
+    const tipo = Number((v as any).tipoDTE || (v as any).tipoDte || 0);
     if (tipo === 61 || tipo === 56) {
       try {
         const raw = v.raw ?? {};
@@ -667,7 +668,7 @@ export async function consultarVentasRCV(
       }
     } catch {}
 
-    const tipo = Number(v.tipoDTE || v.tipoDte || 0);
+    const tipo = Number((v as any).tipoDTE || (v as any).tipoDte || 0);
     if (tipo && allowedTipoDTE.has(tipo)) return true;
 
     // fallback por texto si tipoDTE no está presente

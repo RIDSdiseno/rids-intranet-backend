@@ -123,7 +123,7 @@ export async function getDtePdfPorFolioBaseApi(req: Request, res: Response) {
             forceRefresh,
         });
 
-        const factura = resultado.data?.documento ?? resultado.data?.documento ?? {};
+        const factura = (resultado.data as any)?.documento ?? {};
         const items = factura.items ?? [];
 
         const html = `
