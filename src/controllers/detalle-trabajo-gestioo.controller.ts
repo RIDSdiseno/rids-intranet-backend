@@ -7,8 +7,8 @@ const prisma = new PrismaClient();
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
 
 function estadoEquipoPorArea(area?: string | null): EstadoEquipo | null {
-    if (area === "ENTRADA") return EstadoEquipo.EN_TALLER;
-    if (area === "REPARACION") return EstadoEquipo.EN_TALLER;
+    if (area === "ENTRADA") return EstadoEquipo.EN_RIDS;
+    if (area === "REPARACION") return EstadoEquipo.EN_RIDS;
     if (area === "SALIDA") return EstadoEquipo.ACTIVO;
 
     return null;

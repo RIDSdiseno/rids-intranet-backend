@@ -1501,7 +1501,7 @@ enum EstadoEquipo {
   ACTIVO
   EN_STOCK
   DADO_DE_BAJA
-  EN_TALLER
+  EN_RIDS
 }
 
 enum OrigenTrabajo {

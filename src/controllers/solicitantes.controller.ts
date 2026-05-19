@@ -489,18 +489,23 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     });
     const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
 
-    const ids = await prisma.solicitante.findMany({
-      where,
-      select: { id_solicitante: true },
-    });
-    const idList = ids.map((s) => s.id_solicitante);
+    const equiposWhere: Prisma.EquipoWhereInput =
+      userEmpresaId ?? (empresaId > 0 ? empresaId : null)
+        ? {
+          deletedAt: null,
+          solicitante: {
+            is: {
+              empresaId: userEmpresaId ?? empresaId,
+            },
+          },
+        }
+        : {
+          deletedAt: null,
+        };
 
-    const equipos =
-      idList.length === 0
-        ? 0
-        : await prisma.equipo.count({
-          where: { idSolicitante: { in: idList } },
-        });
+    const equipos = await prisma.equipo.count({
+      where: equiposWhere,
+    });
 
     return res.json({
       solicitantes,
