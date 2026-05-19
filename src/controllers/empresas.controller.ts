@@ -1,6 +1,6 @@
 // src/controllers/empresas.controller.ts
 import type { Request, Response } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 

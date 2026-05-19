@@ -1,6 +1,6 @@
 // src/controllers/mantencionesRemotas.controller.ts
 import type { Request, Response } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 

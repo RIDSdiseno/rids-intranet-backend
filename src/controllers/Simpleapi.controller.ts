@@ -11,7 +11,7 @@ import {
 import { prisma } from "../lib/prisma.js";
 
 const EMPRESAS_PERMITIDAS: Record<string, string> = {
-  econnet: process.env.RUT_EMPRESA ?? "",
+  econnet: process.env.ECONNET_RUT_EMPRESA ?? process.env.RUT_EMPRESA ?? "",
   rids: process.env.RIDS_RUT_EMPRESA ?? "",
 };
 

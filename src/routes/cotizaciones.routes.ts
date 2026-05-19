@@ -17,6 +17,7 @@ import {
     cambiarEstadoFactura,
     vincularEquipoAItem,
 } from "../controllers/cotizaciones.controller.js";
+import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../controllers/cotizaciones-enviadas.controller.js";
 
 const cotizacionesRouter = Router();
 
@@ -26,89 +27,16 @@ const ROLES_FACTURA = ["ADMIN", "ADMINISTRACION", "VENTAS"] as const;
 
 // ── Rutas de solo lectura — CLIENTE puede acceder (filtrado en controller) ───
 
-cotizacionesRouter.get(
-    "/paginacion",
-    auth(),
-    onlyOwnEmpresa(),
-    getCotizacionesPaginadas
-);
-
-cotizacionesRouter.get(
-    "/",
-    auth(),
-    onlyOwnEmpresa(),
-    getCotizaciones
-);
-
-cotizacionesRouter.get(
-    "/:id",
-    auth(),
-    onlyOwnEmpresa(),
-    getCotizacionById
-);
-
-// ── Creación y edición — solo internos ───────────────────────────────────────
-
-cotizacionesRouter.post(
-    "/",
-    auth(),
-    onlyRole(...ROLES_INTERNOS),
-    createCotizacion
-);
-
-cotizacionesRouter.put(
-    "/:id",
-    auth(),
-    onlyRole(...ROLES_INTERNOS),
-    updateCotizacion
-);
-
-// ── Eliminar — solo ADMIN ────────────────────────────────────────────────────
-
-cotizacionesRouter.delete(
-    "/:id",
-    auth(),
-    onlyRole(...ROLES_ADMIN),
-    deleteCotizacion
-);
-
-// ── Facturación — solo roles de facturación ──────────────────────────────────
-
-cotizacionesRouter.post(
-    "/:id/facturar",
-    auth(),
-    onlyRole(...ROLES_FACTURA),
-    facturarCotizacion
-);
-
-cotizacionesRouter.post(
-    "/:id/anular",
-    auth(),
-    onlyRole(...ROLES_FACTURA),
-    anularFactura
-);
-
-cotizacionesRouter.post(
-    "/facturas/:id/pagar",
-    auth(),
-    onlyRole(...ROLES_FACTURA),
-    pagarFactura
-);
-
-cotizacionesRouter.patch(
-    "/facturas/:id/estado",
-    auth(),
-    onlyRole(...ROLES_FACTURA),
-    cambiarEstadoFactura
-);
-
-// ── Vincular equipo a item — solo internos ───────────────────────────────────
-
-cotizacionesRouter.patch(
-    "/items/:itemId/equipo",
-    auth(),
-    onlyRole(...ROLES_INTERNOS),
-    vincularEquipoAItem
-);
+cotizacionesRouter.get("/", getCotizaciones);
+cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem)
+cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);
+cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
+cotizacionesRouter.post("/:id/anular", anularFactura);
+cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);
+cotizacionesRouter.get("/:id", getCotizacionById);
+cotizacionesRouter.post("/", createCotizacion);
+cotizacionesRouter.put("/:id", updateCotizacion);
+cotizacionesRouter.delete("/:id", deleteCotizacion);
+cotizacionesRouter.patch("/facturas/:id/estado", cambiarEstadoFactura);
 
 export default cotizacionesRouter;

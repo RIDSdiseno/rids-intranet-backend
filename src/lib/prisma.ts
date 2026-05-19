@@ -2,6 +2,30 @@ import { PrismaClient } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 
 type AuditAction = "CREATE" | "UPDATE" | "DELETE";
+
+const CONNECTION_ERROR_CODES = new Set(["P1001", "P1002", "P1008", "P1017"]);
+
+export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1500): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const code: string | undefined = err?.code;
+      if (code && CONNECTION_ERROR_CODES.has(code)) {
+        lastErr = err;
+        console.warn(`[prisma] connection error ${code}, retry ${i + 1}/${retries} in ${delayMs}ms`);
+        await prismaBase.$disconnect().catch(() => {});
+        await new Promise(r => setTimeout(r, delayMs));
+        await prismaBase.$connect().catch(() => {});
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 const prismaBase = new PrismaClient({
   //log:
   //process.env.NODE_ENV === "development"

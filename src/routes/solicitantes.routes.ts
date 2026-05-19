@@ -3,6 +3,7 @@ import { Router, type RequestHandler } from "express";
 import {
   listSolicitantes,
   listSolicitantesByEmpresa,
+  listSolicitantesMailer,
   solicitantesMetrics,
   createSolicitante,
   checkSolicitanteEmail,
@@ -24,6 +25,7 @@ const asyncHandler =
 solicitantesRouter.use(auth());
 
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
+solicitantesRouter.get("/mailer", asyncHandler(listSolicitantesMailer));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));
 solicitantesRouter.get("/check-email", asyncHandler(checkSolicitanteEmail));
