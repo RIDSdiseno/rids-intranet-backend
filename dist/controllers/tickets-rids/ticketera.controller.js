@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { detectArea, parseArea } from "./ticket-area.utils.js";
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
 import { buildTicketSla } from "./tickets-sla/ticketera-sla.controller.js";

@@ -37,5 +37,5 @@ debugRouter.get("/facturas/ventas", async (req, res) => {
   } catch (err: any) {
     console.error("[DEBUG] error facturas/ventas:", err);
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });
-  }
+  } return {}
 });

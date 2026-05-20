@@ -189,9 +189,14 @@ export const listSolicitantes = async (req, res) => {
             ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
         };
         const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
-        const [total, baseSolicitantes] = await Promise.all([
-            prisma.solicitante.count({ where }),
-            prisma.solicitante.findMany({
+        // Ejecutar la consulta de manera tolerante: primero intentar la consulta principal,
+        // si `count()` falla (p. ej. respuesta vacía del engine) devolvemos los items
+        // y usamos su longitud como total para no romper la API.
+        let baseSolicitantes = [];
+        let total = 0;
+        try {
+            // intentamos obtener los rows (findMany). Si falla, saltamos al fallback.
+            baseSolicitantes = await prisma.solicitante.findMany({
                 where,
                 skip,
                 take: pageSize,
@@ -207,12 +212,51 @@ export const listSolicitantes = async (req, res) => {
                     googleUserId: true,
                     microsoftUserId: true,
                 },
-            }),
-        ]);
+            });
+            // intentar contar; si falla, usar fallback al tamaño del array
+            try {
+                total = await prisma.solicitante.count({ where });
+            }
+            catch (countErr) {
+                console.warn('[solicitantes.list] count() falló, usando fallback total = items.length', countErr instanceof Error ? countErr.message : countErr);
+                total = baseSolicitantes.length;
+            }
+        }
+        catch (mainErr) {
+            console.warn('[solicitantes.list] consulta principal falló, intentando fallback ligero:', mainErr instanceof Error ? mainErr.message : mainErr);
+            // Fallback: ejecutar una consulta más simple (similar a /solicitantes/mailer) para no romper la ruta
+            try {
+                baseSolicitantes = await prisma.solicitante.findMany({
+                    where: {
+                        isActive: true,
+                        ...(empresaId > 0 ? { empresaId } : {}),
+                        ...buildSolicitanteSearchWhere(q, true),
+                    },
+                    select: {
+                        id_solicitante: true,
+                        nombre: true,
+                        email: true,
+                        telefono: true,
+                        empresaId: true,
+                        accountType: true,
+                        googleUserId: true,
+                        microsoftUserId: true,
+                    },
+                    orderBy: buildSolicitanteOrderBy(orderByKey, orderDir),
+                    skip,
+                    take: pageSize,
+                });
+                total = baseSolicitantes.length;
+            }
+            catch (fbErr) {
+                console.error('[solicitantes.list] fallback también falló:', fbErr);
+                throw fbErr; // será capturado por el catch exterior y devolverá 500
+            }
+        }
         // Enriquecer con empresa, equipos y licencias MS
         const empresaIdSet = new Set(baseSolicitantes.map((s) => s.empresaId).filter((x) => typeof x === "number"));
         const solicitanteIdSet = new Set(baseSolicitantes.map((s) => s.id_solicitante));
-        const [empresas, equipos, msLinks] = await Promise.all([
+        const [empresas, equipos] = await Promise.all([
             prisma.empresa.findMany({
                 where: { id_empresa: { in: Array.from(empresaIdSet) } },
                 select: { id_empresa: true, nombre: true },
@@ -232,7 +276,10 @@ export const listSolicitantes = async (req, res) => {
                 },
                 orderBy: { id_equipo: "asc" },
             }),
-            prisma.solicitanteMsLicense.findMany({
+        ]);
+        let msLinks = [];
+        try {
+            msLinks = await prisma.solicitanteMsLicense.findMany({
                 where: { solicitanteId: { in: Array.from(solicitanteIdSet) } },
                 select: {
                     solicitanteId: true,
@@ -240,8 +287,11 @@ export const listSolicitantes = async (req, res) => {
                     sku: { select: { skuId: true, skuPartNumber: true, displayName: true } },
                 },
                 orderBy: { skuId: "asc" },
-            }),
-        ]);
+            });
+        }
+        catch (msErr) {
+            console.warn("[solicitantes.list] msLicense query failed (tabla puede no existir):", msErr instanceof Error ? msErr.message : msErr);
+        }
         const empresaMap = new Map(empresas.map((e) => [e.id_empresa, e]));
         const equiposBySolic = new Map();
         for (const eq of equipos) {
@@ -290,7 +340,38 @@ export const listSolicitantes = async (req, res) => {
     }
     catch (err) {
         console.error("[solicitantes.list] error:", err);
-        return res.status(500).json({ error: "No se pudieron listar los solicitantes" });
+        const detail = err instanceof Error ? err.message : String(err);
+        return res.status(500).json({ error: "No se pudieron listar los solicitantes", detail });
+    }
+};
+/* ============================================================
+ * GET /solicitantes/mailer
+ * Endpoint simple: solo datos de la tabla Solicitante (isActive=true)
+ * con nombre de empresa incluido. Una sola query, sin joins pesados.
+ * ============================================================ */
+export const listSolicitantesMailer = async (req, res) => {
+    try {
+        const empresaId = toInt(req.query.empresaId);
+        const items = await prisma.solicitante.findMany({
+            where: {
+                isActive: true,
+                ...(empresaId > 0 ? { empresaId } : {}),
+            },
+            select: {
+                id_solicitante: true,
+                nombre: true,
+                email: true,
+                empresaId: true,
+                empresa: { select: { id_empresa: true, nombre: true } },
+            },
+            orderBy: [{ empresa: { nombre: "asc" } }, { nombre: "asc" }],
+        });
+        return res.json({ items, total: items.length });
+    }
+    catch (err) {
+        console.error("[solicitantes.mailer] error:", err);
+        const detail = err instanceof Error ? err.message : String(err);
+        return res.status(500).json({ error: "No se pudieron listar los solicitantes", detail });
     }
 };
 /* ============================================================

@@ -15,6 +15,8 @@ const EMPRESAS_BASEAPI = {
         // Clave tributaria SII del rutSii
         passwordSii: process.env.ECONNET_SII_PASSWORD ??
             process.env.ECONNET_SII_CLAVE ??
+            process.env.ECONNET_CLAVE_SII ??
+            process.env.ECCONET_SII_PASSWORD ??
             "",
     },
     rids: {
@@ -31,6 +33,7 @@ const EMPRESAS_BASEAPI = {
         // Clave tributaria SII del rutSii
         passwordSii: process.env.RIDS_SII_PASSWORD ??
             process.env.RIDS_SII_CLAVE ??
+            process.env.RIDS_CLAVE_SII ??
             "",
     },
 };

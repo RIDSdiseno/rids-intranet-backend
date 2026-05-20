@@ -1,3 +1,4 @@
+export declare function withRetry<T>(fn: () => Promise<T>, retries?: number, delayMs?: number): Promise<T>;
 export declare const prisma: import("@prisma/client/runtime/library").DynamicClientExtensionThis<import("@prisma/client").Prisma.TypeMap<import("@prisma/client/runtime/library").InternalArgs & {
     result: {};
     model: {};

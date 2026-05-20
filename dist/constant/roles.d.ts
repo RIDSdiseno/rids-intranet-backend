@@ -5,11 +5,11 @@ export declare const ROLES: {
     readonly VENTAS: "VENTAS";
 };
 export declare const ROLE_GROUPS: {
-    ADMIN_ONLY: "ADMIN"[];
-    FACTURACION: ("ADMIN" | "VENTAS")[];
-    COTIZACIONES: ("ADMIN" | "VENTAS")[];
-    HELPDESK: ("TECNICO" | "ADMIN")[];
-    VISITAS: ("TECNICO" | "ADMIN")[];
-    EMPRESAS_READ: ("TECNICO" | "ADMIN" | "VENTAS")[];
+    ADMIN_ONLY: string[];
+    FACTURACION: string[];
+    COTIZACIONES: string[];
+    HELPDESK: string[];
+    VISITAS: string[];
+    EMPRESAS_READ: string[];
 };
 //# sourceMappingURL=roles.d.ts.map

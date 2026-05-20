@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 export declare const listSolicitantes: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const listSolicitantesMailer: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const listSolicitantesByEmpresa: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const listSolicitantesForSelect: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const solicitantesMetrics: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;

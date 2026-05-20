@@ -2,7 +2,7 @@
 import { consultarVentasRCV, consultarResumenVentasRCV, consultarComprasRCV, consultarResumenComprasRCV, } from "../service/simple-api/simpleapi.service.js";
 import { prisma } from "../lib/prisma.js";
 const EMPRESAS_PERMITIDAS = {
-    econnet: process.env.RUT_EMPRESA ?? "",
+    econnet: process.env.ECONNET_RUT_EMPRESA ?? process.env.RUT_EMPRESA ?? "",
     rids: process.env.RIDS_RUT_EMPRESA ?? "",
 };
 function getAuthUser(req) {

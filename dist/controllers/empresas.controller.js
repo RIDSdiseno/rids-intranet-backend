@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 // Util para normalizar dominios ingresados (string o array) a formato consistente

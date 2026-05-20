@@ -1,11 +1,12 @@
 // routes/solicitantes.routes.ts
 import { Router } from "express";
-import { listSolicitantes, listSolicitantesByEmpresa, solicitantesMetrics, createSolicitante, checkSolicitanteEmail, getSolicitanteById, updateSolicitante, deleteSolicitante, getSolicitantesDashboardMensual, getSolicitantesEliminadosDetalle, getSolicitantesNuevosDetalle } from "../controllers/solicitantes.controller.js";
+import { listSolicitantes, listSolicitantesByEmpresa, listSolicitantesMailer, solicitantesMetrics, createSolicitante, checkSolicitanteEmail, getSolicitanteById, updateSolicitante, deleteSolicitante, getSolicitantesDashboardMensual, getSolicitantesEliminadosDetalle, getSolicitantesNuevosDetalle } from "../controllers/solicitantes.controller.js";
 import { auth } from "../middlewares/auth.js";
 export const solicitantesRouter = Router();
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 solicitantesRouter.use(auth());
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
+solicitantesRouter.get("/mailer", asyncHandler(listSolicitantesMailer));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));
 solicitantesRouter.get("/check-email", asyncHandler(checkSolicitanteEmail));
