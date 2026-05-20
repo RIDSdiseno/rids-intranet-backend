@@ -10,30 +10,31 @@ datasource db {
 }
 
 model Empresa {
-  id_empresa           Int                   @id @default(autoincrement())
-  nombre               String                @unique
-  tieneSucursales      Boolean               @default(false)
-  razonSocial          String?
-  dominios             String[]              @default([])
-  solicitantes         Solicitante[]
-  visitas              Visita[]              @relation("Empresa_Visita")
-  tickets              FreshdeskTicket[]
-  companyMaps          FreshdeskCompanyMap[]
-  detalleEmpresa       DetalleEmpresa?
-  sucursales           Sucursal[]
-  contactoEmpresas     ContactoEmpresa[]
-  fichaEmpresa         FichaEmpresa?
-  fichaTecnicaEmpresa  FichaTecnicaEmpresa?
-  historials           Historial[]
-  ticketsRids          Ticket[]
-  empresaISP           EmpresaISP[]
-  servidors            Servidor[]
-  tecnicos             Tecnico[]
-  equipos              Equipo[]
-  mantencionesRemotas  MantencionRemota[]    @relation("EmpresaMantencionesRemotas")
-  teamViewerDeviceMaps TeamViewerDeviceMap[]
-  agendasVisita        AgendaVisita[]        @relation("Empresa_AgendaVisita")
-  entidadGestioos      EntidadGestioo[]
+  id_empresa            Int                    @id @default(autoincrement())
+  nombre                String                 @unique
+  tieneSucursales       Boolean                @default(false)
+  razonSocial           String?
+  dominios              String[]               @default([])
+  solicitantes          Solicitante[]
+  visitas               Visita[]               @relation("Empresa_Visita")
+  tickets               FreshdeskTicket[]
+  companyMaps           FreshdeskCompanyMap[]
+  detalleEmpresa        DetalleEmpresa?
+  sucursales            Sucursal[]
+  contactoEmpresas      ContactoEmpresa[]
+  fichaEmpresa          FichaEmpresa?
+  fichaTecnicaEmpresa   FichaTecnicaEmpresa?
+  historials            Historial[]
+  ticketsRids           Ticket[]
+  empresaISP            EmpresaISP[]
+  servidors             Servidor[]
+  tecnicos              Tecnico[]
+  equipos               Equipo[]
+  mantencionesRemotas   MantencionRemota[]     @relation("EmpresaMantencionesRemotas")
+  teamViewerDeviceMaps  TeamViewerDeviceMap[]
+  agendasVisita         AgendaVisita[]         @relation("Empresa_AgendaVisita")
+  entidadGestioos       EntidadGestioo[]
+  analisisInventarioIAs AnalisisInventarioIA[]
 }
 
 model Sucursal {
@@ -553,30 +554,31 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico          Int                     @id @default(autoincrement())
-  nombre              String
-  email               String                  @unique
-  passwordHash        String
-  status              Boolean                 @default(true)
-  empresaId           Int?
-  rol                 String                  @default("TECNICO")
-  teamviewerUserId    String?                 @unique
-  firmaTexto          String?
-  area                String?
-  cargo               String?
-  empresa             Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  tokens              RefreshToken[]
-  historiales         Historial[]
-  visitas             Visita[]
-  detalleTrabajos     DetalleTrabajoGestioo[]
-  entregas            Entrega[]
-  tickets             Ticket[]
-  firma               Firma?
-  cotizaciones        CotizacionGestioo[]
-  auditLogs           AuditLog[]
-  mantencionesRemotas MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
-  passwordResetTokens PasswordResetToken[]
-  agendasAsignadas    AgendaTecnico[]
+  id_tecnico            Int                     @id @default(autoincrement())
+  nombre                String
+  email                 String                  @unique
+  passwordHash          String
+  status                Boolean                 @default(true)
+  empresaId             Int?
+  rol                   String                  @default("TECNICO")
+  teamviewerUserId      String?                 @unique
+  firmaTexto            String?
+  area                  String?
+  cargo                 String?
+  empresa               Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  tokens                RefreshToken[]
+  historiales           Historial[]
+  visitas               Visita[]
+  detalleTrabajos       DetalleTrabajoGestioo[]
+  entregas              Entrega[]
+  tickets               Ticket[]
+  firma                 Firma?
+  cotizaciones          CotizacionGestioo[]
+  auditLogs             AuditLog[]
+  mantencionesRemotas   MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
+  passwordResetTokens   PasswordResetToken[]
+  agendasAsignadas      AgendaTecnico[]
+  analisisInventarioIAs AnalisisInventarioIA[]
 
   @@index([empresaId])
 }
@@ -1311,6 +1313,30 @@ model SiiApiCache {
   @@index([empresaKey])
   @@index([rutEmpresa])
   @@index([tipo])
+}
+
+model AnalisisInventarioIA {
+  id        Int @id @default(autoincrement())
+  empresaId Int
+  mes       Int
+  ano       Int
+
+  totalEquipos    Int     @default(0)
+  resumen         String?
+  hallazgos       Json?
+  riesgos         Json?
+  recomendaciones Json?
+
+  generadoPorId Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa     Empresa  @relation(fields: [empresaId], references: [id_empresa])
+  generadoPor Tecnico? @relation(fields: [generadoPorId], references: [id_tecnico])
+
+  @@unique([empresaId, mes, ano])
+  @@index([empresaId])
+  @@index([mes, ano])
 }
 
 enum TipoAgenda {

@@ -220,6 +220,140 @@ function rutWithDash(value?: string | null): string | null {
   return `${cuerpo}-${dv}`;
 }
 
+function normalizeMacSearch(value?: string | null): string {
+  return String(value ?? "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+}
+
+function buildDetalleEquipoSearchOR(
+  searchText: string,
+  INS: Prisma.QueryMode
+): Prisma.EquipoWhereInput[] {
+  return [
+    {
+      detalle: {
+        is: {
+          macWifi: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          redEthernet: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          so: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          tipoDd: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          estadoAlm: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          office: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          teamViewer: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          claveTv: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          revisado: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          adminRidsUsuario: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          usuarioEmpresa: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          usuarioPersonal: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+  ];
+}
+
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e: any) {
   const detalle = e.detalle ?? null;
@@ -383,6 +517,7 @@ export async function listEquipos(req: Request, res: Response) {
     const searchText = String(q.search ?? "").trim();
     const searchRutClean = normalizeRutSearch(searchText);
     const searchRutDash = rutWithDash(searchText);
+    const searchMacClean = normalizeMacSearch(searchText);
 
     let solicitanteIdsByRut: number[] = [];
 
@@ -517,6 +652,7 @@ export async function listEquipos(req: Request, res: Response) {
     ========================= */
     if (searchText) {
       const orConditions: Prisma.EquipoWhereInput[] = [
+        // Datos principales del equipo
         {
           serial: {
             contains: searchText,
@@ -541,6 +677,67 @@ export async function listEquipos(req: Request, res: Response) {
             mode: INS,
           },
         },
+        {
+          ram: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          disco: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          propiedad: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          anioPcOrigen: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+
+        // Detalle técnico del equipo
+        ...buildDetalleEquipoSearchOR(searchText, INS),
+
+        // Adicionales del equipo
+        {
+          adicionales: {
+            some: {
+              tipo: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          adicionales: {
+            some: {
+              descripcion: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          adicionales: {
+            some: {
+              serialAdicional: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+
+        // Solicitante
         {
           solicitante: {
             is: {
@@ -571,6 +768,8 @@ export async function listEquipos(req: Request, res: Response) {
             },
           },
         },
+
+        // Empresa
         {
           solicitante: {
             is: {
@@ -613,6 +812,31 @@ export async function listEquipos(req: Request, res: Response) {
         });
       }
 
+      if (searchMacClean.length >= 6) {
+        orConditions.push(
+          {
+            detalle: {
+              is: {
+                macWifi: {
+                  contains: searchMacClean,
+                  mode: INS,
+                },
+              },
+            },
+          },
+          {
+            detalle: {
+              is: {
+                redEthernet: {
+                  contains: searchMacClean,
+                  mode: INS,
+                },
+              },
+            },
+          }
+        );
+      }
+
       if (solicitanteIdsByRut.length > 0) {
         orConditions.push({
           idSolicitante: {
@@ -624,6 +848,16 @@ export async function listEquipos(req: Request, res: Response) {
       if (Number.isFinite(Number(searchText))) {
         orConditions.push({
           id_equipo: Number(searchText),
+        });
+      }
+
+      const estadoMatch = Object.values(EstadoEquipo).find((estado) =>
+        estado.toLowerCase().includes(searchText.toLowerCase())
+      );
+
+      if (estadoMatch) {
+        orConditions.push({
+          estado: estadoMatch,
         });
       }
 
