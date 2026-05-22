@@ -15,6 +15,19 @@ import { ROLE_GROUPS } from "../constant/roles.js";
 
 const router = Router();
 
+// GET /api/facturas -> ayuda rápida sobre endpoints disponibles
+router.get(
+  "/",
+  auth(),
+  onlyRole(...ROLE_GROUPS.FACTURACION),
+  async (req, res) => {
+    return res.json({
+      message: "Use subroutes: /ventas, /ventas/resumen, /compras, /compras/resumen",
+      available: ["/ventas", "/ventas/resumen", "/compras", "/compras/resumen"],
+    });
+  }
+);
+
 // GET /api/facturas/ventas?mes=04&ano=2025
 router.get(
   "/ventas",
