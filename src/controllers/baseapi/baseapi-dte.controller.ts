@@ -81,6 +81,11 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
             forceRefresh,
         });
 
+        // Exponer timbre_base64 a nivel superior también para depuración rápida
+        const timbreBase64 = (
+            (resultado.data && (resultado.data.data?.documento?.timbre_base64 ?? resultado.data.data?.documento?.TED?.FRMT)) ?? null
+        ) as string | null;
+
         res.json({
             ok: true,
             provider: "baseapi",
@@ -89,6 +94,7 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
             folio,
             tipoDTE,
             cached: resultado.cached,
+            timbre_base64: timbreBase64,
             data: resultado.data,
         });
     } catch (error) {
@@ -123,7 +129,7 @@ export async function getDtePdfPorFolioBaseApi(req: Request, res: Response) {
             forceRefresh,
         });
 
-        const factura = (resultado.data as any)?.documento ?? {};
+        const factura = (resultado.data as any)?.data?.documento ?? {};
         const items = factura.items ?? [];
 
         const html = `
@@ -244,7 +250,9 @@ export async function getDtePdfPorFolioBaseApi(req: Request, res: Response) {
                     </div>
 
                     <div class="timbre">
-                        <div class="box"></div>
+                        <div class="box">
+                            ${factura.timbre_base64 ? `<img src="data:image/png;base64,${factura.timbre_base64}" style="width:120px;height:80px;object-fit:contain"/>` : ``}
+                        </div>
                         <div class="verify">Timbre Electrónico SII<br/>Verifique documento: www.sii.cl</div>
                     </div>
 
