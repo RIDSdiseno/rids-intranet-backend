@@ -120,6 +120,17 @@ function normalizeNombreEntidad(value?: string | null): string {
         .toUpperCase();
 }
 
+function normalizeTipoEntidad(value?: string | null): TipoEntidadGestioo {
+    if (value === "PERSONA") return TipoEntidadGestioo.PERSONA;
+    return TipoEntidadGestioo.EMPRESA;
+}
+
+function normalizeOrigenEntidad(value?: string | null): OrigenGestioo {
+    if (value === "RIDS") return OrigenGestioo.RIDS;
+    if (value === "ECONNET") return OrigenGestioo.ECONNET;
+    return OrigenGestioo.OTRO;
+}
+
 // Crear entidad
 export async function createEntidad(req: Request, res: Response) {
     try {
@@ -127,6 +138,8 @@ export async function createEntidad(req: Request, res: Response) {
 
         const rutNormalizado = normalizeRutGestioo(data.rut);
         const nombreNormalizado = normalizeNombreEntidad(data.nombre);
+        const tipoNormalizado = normalizeTipoEntidad(data.tipo);
+        const origenNormalizado = normalizeOrigenEntidad(data.origen);
 
         if (!nombreNormalizado) {
             return res.status(400).json({
@@ -145,6 +158,7 @@ export async function createEntidad(req: Request, res: Response) {
                     id: true,
                     nombre: true,
                     rut: true,
+                    tipo: true,
                     origen: true,
                 },
             });
@@ -168,8 +182,8 @@ export async function createEntidad(req: Request, res: Response) {
                 correo: data.correo || null,
                 telefono: data.telefono || null,
                 direccion: data.direccion || null,
-                tipo: data.tipo ?? TipoEntidadGestioo.EMPRESA,
-                origen: data.origen ?? OrigenGestioo.OTRO,
+                tipo: tipoNormalizado,
+                origen: origenNormalizado,
             },
         });
 
@@ -186,7 +200,6 @@ export async function createEntidad(req: Request, res: Response) {
     }
 }
 
-// Obtener todas
 // Obtener todas
 export async function getEntidades(req: Request, res: Response) {
     try {
@@ -228,14 +241,21 @@ export async function getEntidades(req: Request, res: Response) {
                         mode: "insensitive",
                     },
                 },
+                {
+                    telefono: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
             ];
         }
 
         const entidades = await prisma.entidadGestioo.findMany({
             where,
-            orderBy: {
-                nombre: "asc",
-            },
+            orderBy: [
+                { tipo: "asc" },
+                { nombre: "asc" },
+            ],
             include: {
                 productos: true,
             },
@@ -271,14 +291,33 @@ export async function getEntidadById(req: Request, res: Response) {
 }
 
 // Actualizar
-// Actualizar
 export async function updateEntidad(req: Request, res: Response) {
     try {
         const id = Number(req.params.id);
         const data = req.body;
 
+        const entidadActual = await prisma.entidadGestioo.findUnique({
+            where: { id },
+        });
+
+        if (!entidadActual) {
+            return res.status(404).json({
+                error: "Entidad no encontrada",
+            });
+        }
+
         const rutNormalizado = normalizeRutGestioo(data.rut);
         const nombreNormalizado = normalizeNombreEntidad(data.nombre);
+
+        const tipoNormalizado =
+            data.tipo === "EMPRESA" || data.tipo === "PERSONA"
+                ? normalizeTipoEntidad(data.tipo)
+                : entidadActual.tipo;
+
+        const origenNormalizado =
+            data.origen === "RIDS" || data.origen === "ECONNET" || data.origen === "OTRO"
+                ? normalizeOrigenEntidad(data.origen)
+                : entidadActual.origen;
 
         if (!nombreNormalizado) {
             return res.status(400).json({
@@ -297,6 +336,7 @@ export async function updateEntidad(req: Request, res: Response) {
                     id: true,
                     nombre: true,
                     rut: true,
+                    tipo: true,
                     origen: true,
                 },
             });
@@ -323,8 +363,8 @@ export async function updateEntidad(req: Request, res: Response) {
                 correo: data.correo || null,
                 telefono: data.telefono || null,
                 direccion: data.direccion || null,
-                tipo: data.tipo ?? TipoEntidadGestioo.EMPRESA,
-                origen: data.origen ?? OrigenGestioo.OTRO,
+                tipo: tipoNormalizado,
+                origen: origenNormalizado,
             },
         });
 

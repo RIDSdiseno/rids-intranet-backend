@@ -1316,23 +1316,20 @@ model SiiApiCache {
 }
 
 model AnalisisInventarioIA {
-  id        Int @id @default(autoincrement())
-  empresaId Int
-  mes       Int
-  ano       Int
-
-  totalEquipos    Int     @default(0)
+  id              Int      @id @default(autoincrement())
+  empresaId       Int
+  mes             Int
+  ano             Int
+  totalEquipos    Int      @default(0)
   resumen         String?
   hallazgos       Json?
   riesgos         Json?
   recomendaciones Json?
-
-  generadoPorId Int?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  empresa     Empresa  @relation(fields: [empresaId], references: [id_empresa])
-  generadoPor Tecnico? @relation(fields: [generadoPorId], references: [id_tecnico])
+  generadoPorId   Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  empresa         Empresa  @relation(fields: [empresaId], references: [id_empresa])
+  generadoPor     Tecnico? @relation(fields: [generadoPorId], references: [id_tecnico])
 
   @@unique([empresaId, mes, ano])
   @@index([empresaId])
