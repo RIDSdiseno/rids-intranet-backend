@@ -29,7 +29,7 @@ export async function listTecnicos(_req: Request, res: Response) {
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO", "ADMINISTRACION","VENTAS"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION", "VENTAS"],
                 },
             },
             select: {
@@ -48,12 +48,23 @@ export async function listTecnicos(_req: Request, res: Response) {
         return res.status(500).json({ error: "Error al listar técnicos" });
     }
 }
+
 // Listar todos los usuarios
-export async function listUsuarios(_req: Request, res: Response) {
+export const listUsuarios = async (req: Request, res: Response) => {
     try {
-        const tecnicos = await prisma.tecnico.findMany({
-            where: {
-                status: true,
+        const statusQ = String(req.query.status ?? "activo").toLowerCase();
+
+        const where =
+            statusQ === "todos"
+                ? {}
+                : statusQ === "inactivo"
+                    ? { status: false }
+                    : { status: true };
+
+        const usuarios = await prisma.tecnico.findMany({
+            where,
+            orderBy: {
+                nombre: "asc",
             },
             select: {
                 id_tecnico: true,
@@ -62,15 +73,16 @@ export async function listUsuarios(_req: Request, res: Response) {
                 status: true,
                 rol: true,
             },
-            orderBy: { nombre: "asc" },
         });
 
-        return res.status(200).json(tecnicos);
+        return res.json(usuarios);
     } catch (error) {
-        console.error("Error al listar usuarios:", error);
-        return res.status(500).json({ error: "Error al listar usuarios" });
+        console.error("[listUsuarios] error:", error);
+        return res.status(500).json({
+            error: "Error al listar usuarios técnicos",
+        });
     }
-}
+};
 
 // Actualizar técnico
 export async function updateTecnico(req: Request, res: Response) {

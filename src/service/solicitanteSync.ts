@@ -1,16 +1,24 @@
+// src/service/solicitanteSync.ts
 import { prisma } from "../lib/prisma.js";
 import { bus } from "../lib/events.js";
 
 /** Shape mínimo que usamos del Directory API */
 export type GoogleUser = {
-  id: string; // Google Directory user id
+  id: string;
   primaryEmail: string;
   name?: { fullName?: string; givenName?: string; familyName?: string };
   suspended?: boolean;
+  archived?: boolean;
+  deleted?: boolean;
 };
 
 /* ========== Helpers ========== */
 const norm = (e?: string | null) => (e ? e.trim().toLowerCase() : null);
+
+const isGoogleUserActivo = (u: GoogleUser) =>
+  !(u.suspended ?? false) &&
+  !(u.archived ?? false) &&
+  !(u.deleted ?? false);
 
 const buildNombre = (u: GoogleUser, emailNorm?: string | null) =>
   u.name?.fullName ||
@@ -34,7 +42,7 @@ export async function upsertSolicitanteFromGoogle_min(
   if (!email) return null;
 
   const nombre = buildNombre(user, email);
-  const activo = !(user.suspended ?? false);
+  const activo = isGoogleUserActivo(user);
 
   // 1) Buscar primero por googleUserId
   if (user.id) {
@@ -168,6 +176,13 @@ export async function upsertSolicitanteFromGoogle_full(
       if (byGoogle.isActive !== activo) changes.isActive = activo;
       if (byGoogle.accountType !== "google") changes.accountType = "google";
 
+      if (activo) {
+        if (byGoogle.deletedAt !== null) changes.deletedAt = null;
+        if (byGoogle.deactivatedAt !== null) changes.deactivatedAt = null;
+      } else {
+        changes.deactivatedAt = new Date();
+      }
+
       if (Object.keys(changes).length === 0) return byGoogle;
 
       const updated = await prisma.solicitante.update({
@@ -232,9 +247,9 @@ export async function upsertSolicitanteFromGoogle_full(
 // Función de retry genérica para operaciones con prisma, con backoff exponencial
 export async function deactivateMissingGoogleSolicitantes(
   empresaId: number,
-  googleIdsVigentes: string[]
+  googleIdsActivos: string[]
 ) {
-  const ids = googleIdsVigentes
+  const ids = googleIdsActivos
     .map((x) => x?.trim())
     .filter(Boolean);
 
@@ -248,11 +263,9 @@ export async function deactivateMissingGoogleSolicitantes(
       accountType: "google",
       googleUserId: { not: null },
       isActive: true,
+      deletedAt: null,
       NOT: {
         googleUserId: { in: ids },
-      },
-      equipos: {
-        none: {},
       },
     },
     select: {
@@ -264,6 +277,10 @@ export async function deactivateMissingGoogleSolicitantes(
     },
     orderBy: { nombre: "asc" },
   });
+
+  if (usersToDeactivate.length === 0) {
+    return { count: 0, users: [] };
+  }
 
   const result = await prisma.solicitante.updateMany({
     where: {

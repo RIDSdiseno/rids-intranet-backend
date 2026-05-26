@@ -17,8 +17,8 @@ export type MsUserInput = {
 async function retry<T>(
   fn: () => Promise<T>,
   {
-    retries = 3,
-    baseDelayMs = 200,
+    retries = 5,
+    baseDelayMs = 500,
   }: { retries?: number; baseDelayMs?: number } = {}
 ): Promise<T> {
   let lastErr: unknown;
@@ -34,7 +34,9 @@ async function retry<T>(
       const transient =
         msg.includes("deadlock detected") ||
         msg.includes("Transaction already closed") ||
-        pgCode === "40P01";
+        msg.includes("Unable to start a transaction") ||
+        pgCode === "40P01" ||
+        e?.code === "P2028";
 
       if (!transient || i === retries) break;
 
@@ -185,8 +187,8 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
         return { solicitante, created };
       },
       {
-        maxWait: 8_000,
-        timeout: 10_000,
+        maxWait: 20_000,
+        timeout: 30_000,
         isolationLevel: "ReadCommitted",
       }
     );
@@ -196,9 +198,9 @@ export async function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId: 
 // Función para desactivar solicitantes vinculados a Microsoft que ya no están en el listado de usuarios de MS
 export async function deactivateMissingMicrosoftSolicitantes(
   empresaId: number,
-  microsoftIdsVigentes: string[]
+  microsoftIdsActivos: string[]
 ) {
-  const ids = microsoftIdsVigentes
+  const ids = microsoftIdsActivos
     .map((x) => x?.trim())
     .filter(Boolean);
 
@@ -212,11 +214,9 @@ export async function deactivateMissingMicrosoftSolicitantes(
       accountType: "microsoft",
       microsoftUserId: { not: null },
       isActive: true,
+      deletedAt: null,
       NOT: {
         microsoftUserId: { in: ids },
-      },
-      equipos: {
-        none: {},
       },
     },
     select: {
@@ -228,6 +228,10 @@ export async function deactivateMissingMicrosoftSolicitantes(
     },
     orderBy: { nombre: "asc" },
   });
+
+  if (usersToDeactivate.length === 0) {
+    return { count: 0, users: [] };
+  }
 
   const result = await prisma.solicitante.updateMany({
     where: {
