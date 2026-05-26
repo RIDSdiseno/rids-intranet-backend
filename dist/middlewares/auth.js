@@ -23,6 +23,10 @@ export function auth(required = true) {
         try {
             const payload = jwt.verify(token, process.env.JWT_SECRET);
             const userId = Number(payload.sub);
+            if (!userId || Number.isNaN(userId)) {
+                res.status(401).json({ error: "INVALID_TOKEN_PAYLOAD" });
+                return;
+            }
             const requestId = randomUUID();
             req.user = {
                 id: userId,
