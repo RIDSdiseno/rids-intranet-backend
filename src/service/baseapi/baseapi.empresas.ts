@@ -85,5 +85,26 @@ export function getEmpresaBaseApiConfig(
         throw new Error(`No existe password SII configurada para ${empresa}`);
     }
 
+    // Validación adicional: para el flujo MiPyME de BaseAPI, el rut que autentica (rutSii)
+    // debe ser distinto al rut de la empresa (rutEmpresa). Detectar malconfiguraciones
+    // en variables de entorno y producir un error descriptivo en lugar del 400 de BaseAPI.
+    const normalize = (v: string) => String(v ?? "").replace(/\.|\-|\s/g, "").toUpperCase();
+
+    try {
+        const rSii = normalize(config.rutSii);
+        const rEmp = normalize(config.rutEmpresa);
+
+        if (rSii && rEmp && rSii === rEmp) {
+            throw new Error(
+                `Configuración inválida BaseAPI para ${empresa}: 'rutSii' (SII login) ` +
+                    `es igual a 'rutEmpresa'. Para el flujo MiPyME ambos deben ser distintos. ` +
+                    `Revisa las variables de entorno (ECONNET_SII_RUT / ECONNET_RUT_EMPRESA o RIDS_SII_RUT / RIDS_RUT_EMPRESA).`
+            );
+        }
+    } catch (e) {
+        // Re-lanzar error descriptivo
+        if (e instanceof Error) throw e;
+    }
+
     return config;
 }

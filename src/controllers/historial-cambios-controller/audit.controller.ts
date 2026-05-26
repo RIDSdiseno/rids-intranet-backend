@@ -1,6 +1,7 @@
 // src/controllers/audit.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
+import { getCurrentUserId } from "../../lib/request-context.js";
 
 // Controlador para listar logs de auditoría con filtros y paginación
 export const listAuditLogs = async (req: Request, res: Response) => {
@@ -154,5 +155,30 @@ export const listAuditByEmpresa = async (req: Request, res: Response) => {
     } catch (error) {
         console.error("Error listAuditByEmpresa:", error);
         return res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+// Crear un log de auditoría manual (útil para registrar envíos de recordatorios)
+export const createAuditLog = async (req: Request, res: Response) => {
+    try {
+        const { entity, entityId, empresaId, action, changes, description } = req.body as any;
+
+        const actorId = getCurrentUserId();
+
+        const created = await prisma.auditLog.create({
+            data: {
+                entity: entity ? String(entity) : 'Recordatorio',
+                entityId: entityId ? String(entityId) : 'unknown',
+                empresaId: empresaId ? Number(empresaId) : null,
+                action: action ? String(action) : 'REMINDER',
+                changes: changes ? changes : { description: description ?? 'Recordatorio enviado' },
+                actorId: actorId ?? null,
+            },
+        });
+
+        return res.json({ ok: true, data: created });
+    } catch (error) {
+        console.error('Error createAuditLog:', error);
+        return res.status(500).json({ ok: false, error: 'Error interno al crear audit log' });
     }
 };
