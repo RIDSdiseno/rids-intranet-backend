@@ -8,6 +8,8 @@ export type GoogleUser = {
         familyName?: string;
     };
     suspended?: boolean;
+    archived?: boolean;
+    deleted?: boolean;
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
     updatedAt: Date;
@@ -45,7 +47,7 @@ export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empre
     createdAt: Date;
     deactivatedAt: Date | null;
 }>;
-export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsVigentes: string[]): Promise<{
+export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsActivos: string[]): Promise<{
     count: number;
     users: {
         id_solicitante: number;

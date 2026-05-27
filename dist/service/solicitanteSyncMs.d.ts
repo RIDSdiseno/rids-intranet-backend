@@ -22,7 +22,7 @@ export declare function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId
     solicitante: any;
     created: boolean;
 }>;
-export declare function deactivateMissingMicrosoftSolicitantes(empresaId: number, microsoftIdsVigentes: string[]): Promise<{
+export declare function deactivateMissingMicrosoftSolicitantes(empresaId: number, microsoftIdsActivos: string[]): Promise<{
     count: number;
     users: {
         id_solicitante: number;

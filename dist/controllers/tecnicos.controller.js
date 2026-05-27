@@ -43,11 +43,18 @@ export async function listTecnicos(_req, res) {
     }
 }
 // Listar todos los usuarios
-export async function listUsuarios(_req, res) {
+export const listUsuarios = async (req, res) => {
     try {
-        const tecnicos = await prisma.tecnico.findMany({
-            where: {
-                status: true,
+        const statusQ = String(req.query.status ?? "activo").toLowerCase();
+        const where = statusQ === "todos"
+            ? {}
+            : statusQ === "inactivo"
+                ? { status: false }
+                : { status: true };
+        const usuarios = await prisma.tecnico.findMany({
+            where,
+            orderBy: {
+                nombre: "asc",
             },
             select: {
                 id_tecnico: true,
@@ -56,15 +63,16 @@ export async function listUsuarios(_req, res) {
                 status: true,
                 rol: true,
             },
-            orderBy: { nombre: "asc" },
         });
-        return res.status(200).json(tecnicos);
+        return res.json(usuarios);
     }
     catch (error) {
-        console.error("Error al listar usuarios:", error);
-        return res.status(500).json({ error: "Error al listar usuarios" });
+        console.error("[listUsuarios] error:", error);
+        return res.status(500).json({
+            error: "Error al listar usuarios técnicos",
+        });
     }
-}
+};
 // Actualizar técnico
 export async function updateTecnico(req, res) {
     console.log("updateTecnico body:", req.body);

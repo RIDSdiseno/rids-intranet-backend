@@ -194,6 +194,38 @@ function setRefreshCookie(
   });
 }
 
+function getEmailDomain(email: string): string | null {
+  const emailNorm = email.trim().toLowerCase();
+  const parts = emailNorm.split("@");
+
+  if (parts.length !== 2) return null;
+
+  const domain = parts[1]?.trim().toLowerCase();
+
+  return domain || null;
+}
+
+function isRidsDomain(domain: string): boolean {
+  return domain === "rids.cl";
+}
+
+async function findEmpresaByEmailDomain(domain: string) {
+  const domainNorm = domain.trim().toLowerCase();
+
+  return prisma.empresa.findFirst({
+    where: {
+      dominios: {
+        has: domainNorm,
+      },
+    },
+    select: {
+      id_empresa: true,
+      nombre: true,
+      dominios: true,
+    },
+  });
+}
+
 /* ================ CONTROLADORES OPTIMIZADOS ================ */
 
 // Cache para verificación de emails existentes (short-lived)
@@ -548,77 +580,272 @@ export const logout = async (req: Request, res: Response) => {
 
 // Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const loginMicrosoft = async (req: Request, res: Response) => {
-  console.log("🔥 loginMicrosoft llamado", req.body);
-  try {
+  console.log("loginMicrosoft llamado");
 
-    const { idToken } = req.body;
+  try {
+    const { idToken, rememberMe = false } = req.body;
 
     if (!idToken) {
       return res.status(400).json({
-        error: "Token de Microsoft requerido"
+        error: "Token de Microsoft requerido",
       });
     }
 
-    // Leer el token
     const decoded: any = jwt.decode(idToken);
 
     if (!decoded) {
       return res.status(401).json({
-        error: "Token inválido"
+        error: "Token inválido",
       });
     }
 
-    const email = decoded.preferred_username;
+    const emailNorm = String(
+      decoded.preferred_username ||
+      decoded.email ||
+      decoded.upn ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
 
-    if (!email) {
+    if (!emailNorm) {
       return res.status(401).json({
-        error: "No se pudo obtener el correo del usuario"
+        error: "No se pudo obtener el correo del usuario",
       });
     }
 
-    //  Validar que sea correo de RIDS
-    if (!email.endsWith("@rids.cl")) {
+    const domain = getEmailDomain(emailNorm);
+
+    if (!domain) {
+      return res.status(401).json({
+        error: "Correo Microsoft inválido",
+      });
+    }
+
+    const nombreMicrosoft = decoded.name || emailNorm;
+
+    /*
+     * CASO 1:
+     * Usuario interno RIDS
+     */
+    if (isRidsDomain(domain)) {
+      let tecnico = await prisma.tecnico.findUnique({
+        where: { email: emailNorm },
+        select: {
+          id_tecnico: true,
+          nombre: true,
+          email: true,
+          status: true,
+          empresaId: true,
+          rol: true,
+        },
+      });
+
+      if (!tecnico) {
+        tecnico = await prisma.tecnico.create({
+          data: {
+            nombre: nombreMicrosoft,
+            email: emailNorm,
+            status: true,
+            passwordHash: "",
+            rol: ROL_DEFAULT,
+          },
+          select: {
+            id_tecnico: true,
+            nombre: true,
+            email: true,
+            status: true,
+            empresaId: true,
+            rol: true,
+          },
+        });
+      }
+
+      if (!tecnico.status) {
+        return res.status(403).json({
+          error: "Usuario inactivo, contacte al administrador.",
+        });
+      }
+
+      const rol = tecnico.rol ?? ROL_DEFAULT;
+
+      const accessToken = signAccessToken(
+        tecnico.id_tecnico,
+        tecnico.email,
+        rol,
+        tecnico.empresaId
+      );
+
+      const { ms: refreshMs } = getRefreshConfig(rememberMe);
+
+      const refreshRaw = signRefreshToken(
+        tecnico.id_tecnico,
+        rememberMe
+      );
+
+      const rtHash = await argon2.hash(
+        refreshRaw,
+        ARGON_REFRESH_TOKEN_OPTIONS
+      );
+
+      const { userAgent, ip } = getClientInfo(req);
+      const expiresAt = new Date(Date.now() + refreshMs);
+
+      await prisma.refreshToken.create({
+        data: {
+          userId: tecnico.id_tecnico,
+          rtHash,
+          expiresAt,
+          userAgent,
+          ip,
+        },
+        select: { id: true },
+      });
+
+      setRefreshCookie(res, refreshRaw, refreshMs);
+
+      return res.json({
+        accessToken,
+        refreshToken: refreshRaw,
+        tecnico: {
+          id_tecnico: tecnico.id_tecnico,
+          nombre: tecnico.nombre,
+          email: tecnico.email,
+          rol,
+          empresaId: tecnico.empresaId,
+        },
+      });
+    }
+
+    /*
+     * CASO 2:
+     * Cliente externo por dominio
+     */
+    const empresa = await findEmpresaByEmailDomain(domain);
+
+    if (!empresa) {
       return res.status(403).json({
-        error: "Acceso denegado. Solo usuarios de RIDS pueden ingresar."
+        error: "Tu dominio no está asociado a ninguna empresa registrada.",
       });
     }
 
-    //  Buscar usuario en tu base de datos
-    let tecnico = await prisma.tecnico.findUnique({
-      where: { email }
+    let cliente = await prisma.tecnico.findUnique({
+      where: { email: emailNorm },
+      select: {
+        id_tecnico: true,
+        nombre: true,
+        email: true,
+        status: true,
+        empresaId: true,
+        rol: true,
+      },
     });
 
-    if (!tecnico) {
-      tecnico = await prisma.tecnico.create({
+    if (!cliente) {
+      cliente = await prisma.tecnico.create({
         data: {
-          nombre: decoded.name || email,
-          email: email,
+          nombre: nombreMicrosoft,
+          email: emailNorm,
           status: true,
           passwordHash: "",
-        }
+          rol: "CLIENTE",
+          empresaId: empresa.id_empresa,
+        },
+        select: {
+          id_tecnico: true,
+          nombre: true,
+          email: true,
+          status: true,
+          empresaId: true,
+          rol: true,
+        },
       });
     }
 
-    //  Crear JWT de tu sistema
-    const accessToken = jwt.sign(
-      { id: tecnico.id_tecnico },
-      process.env.JWT_SECRET!,
-      { expiresIn: "8h" }
+    if (!cliente.status) {
+      return res.status(403).json({
+        error: "Usuario inactivo, contacte al administrador.",
+      });
+    }
+
+    /*
+     * Si el cliente ya existía pero no tenía empresaId,
+     * o estaba asociado a otra empresa, lo sincronizamos con el dominio.
+     */
+    if (
+      cliente.rol !== "CLIENTE" ||
+      cliente.empresaId !== empresa.id_empresa
+    ) {
+      cliente = await prisma.tecnico.update({
+        where: { id_tecnico: cliente.id_tecnico },
+        data: {
+          rol: "CLIENTE",
+          empresaId: empresa.id_empresa,
+        },
+        select: {
+          id_tecnico: true,
+          nombre: true,
+          email: true,
+          status: true,
+          empresaId: true,
+          rol: true,
+        },
+      });
+    }
+
+    const accessToken = signAccessToken(
+      cliente.id_tecnico,
+      cliente.email,
+      "CLIENTE",
+      empresa.id_empresa
     );
+
+    const { ms: refreshMs } = getRefreshConfig(rememberMe);
+
+    const refreshRaw = signRefreshToken(
+      cliente.id_tecnico,
+      rememberMe
+    );
+
+    const rtHash = await argon2.hash(
+      refreshRaw,
+      ARGON_REFRESH_TOKEN_OPTIONS
+    );
+
+    const { userAgent, ip } = getClientInfo(req);
+    const expiresAt = new Date(Date.now() + refreshMs);
+
+    await prisma.refreshToken.create({
+      data: {
+        userId: cliente.id_tecnico,
+        rtHash,
+        expiresAt,
+        userAgent,
+        ip,
+      },
+      select: { id: true },
+    });
+
+    setRefreshCookie(res, refreshRaw, refreshMs);
 
     return res.json({
       accessToken,
-      tecnico
+      refreshToken: refreshRaw,
+      tecnico: {
+        id_tecnico: cliente.id_tecnico,
+        nombre: cliente.nombre,
+        email: cliente.email,
+        rol: "CLIENTE",
+        empresaId: empresa.id_empresa,
+        empresaNombre: empresa.nombre,
+      },
     });
-
   } catch (error) {
-
-    console.error(error);
+    console.error("Error en loginMicrosoft:", error);
 
     return res.status(500).json({
-      error: "Error autenticando con Microsoft"
+      error: "Error autenticando con Microsoft",
     });
-
   }
 };
 
