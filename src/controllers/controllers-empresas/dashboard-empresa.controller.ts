@@ -23,53 +23,70 @@ type VisitaCalculo = {
     inicio: Date | null;
     fin: Date | null;
     status?: string | null;
+    empresaId?: number | null;
+    tecnico?: {
+        nombre?: string | null;
+    } | null;
 };
 
+function getDuracionMinutos(inicio?: Date | string | null, fin?: Date | string | null): number {
+    if (!inicio || !fin) return 0;
+
+    const ini = new Date(inicio).getTime();
+    const end = new Date(fin).getTime();
+
+    if (Number.isNaN(ini) || Number.isNaN(end) || end <= ini) return 0;
+
+    return Math.round((end - ini) / 60000);
+}
+
 function calcularMinutosJornadaVisitas(visitas: VisitaCalculo[]) {
-    const intervalosPorDia = new Map<string, Array<{ inicioMs: number; finMs: number }>>();
+    const jornadasMap = new Map<
+        string,
+        {
+            inicio: Date;
+            fin: Date;
+            dia: string;
+        }
+    >();
 
     for (const visita of visitas) {
         const status = String(visita.status ?? "").toUpperCase();
-        if (status && status !== "COMPLETADA") continue;
+
+        if (status !== "COMPLETADA") continue;
         if (!visita.inicio || !visita.fin) continue;
+        if (visita.fin.getTime() <= visita.inicio.getTime()) continue;
 
-        const inicioMs = visita.inicio.getTime();
-        const finMs = visita.fin.getTime();
-        if (!Number.isFinite(inicioMs) || !Number.isFinite(finMs)) continue;
-        if (finMs <= inicioMs) continue;
+        const tecnico = visita.tecnico?.nombre?.trim() || "Sin técnico";
+        const inicioStr = visita.inicio.toISOString();
+        const finStr = visita.fin.toISOString();
 
-        const dia = getLocalDateKey(visita.inicio);
-        const actual = intervalosPorDia.get(dia) ?? [];
-        actual.push({ inicioMs, finMs });
-        intervalosPorDia.set(dia, actual);
-    }
+        const key = `${visita.empresaId ?? "sin_empresa"}|${tecnico}|${inicioStr}|${finStr}`;
 
-    let totalMinutos = 0;
-    for (const intervalos of intervalosPorDia.values()) {
-        const ordenados = [...intervalos].sort((a, b) => a.inicioMs - b.inicioMs);
-        const primero = ordenados[0];
-        if (!primero) continue;
-
-        let bloqueInicio = primero.inicioMs;
-        let bloqueFin = primero.finMs;
-
-        for (let i = 1; i < ordenados.length; i++) {
-            const actual = ordenados[i];
-            if (!actual) continue;
-            if (actual.inicioMs <= bloqueFin) {
-                bloqueFin = Math.max(bloqueFin, actual.finMs);
-                continue;
-            }
-            totalMinutos += Math.round((bloqueFin - bloqueInicio) / 60000);
-            bloqueInicio = actual.inicioMs;
-            bloqueFin = actual.finMs;
+        if (!jornadasMap.has(key)) {
+            jornadasMap.set(key, {
+                inicio: visita.inicio,
+                fin: visita.fin,
+                dia: getLocalDateKey(visita.inicio),
+            });
         }
-        totalMinutos += Math.round((bloqueFin - bloqueInicio) / 60000);
     }
 
-    return { totalMinutos, diasConVisitas: intervalosPorDia.size };
-}
+    const jornadas = Array.from(jornadasMap.values());
 
+    const totalMinutos = jornadas.reduce(
+        (acc, jornada) => acc + getDuracionMinutos(jornada.inicio, jornada.fin),
+        0
+    );
+
+    const diasConVisitas = new Set(jornadas.map((j) => j.dia)).size;
+
+    return {
+        totalMinutos,
+        diasConVisitas,
+        totalJornadas: jornadas.length,
+    };
+}
 function normalizeMes(value: unknown): string {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 1 || n > 12) {
@@ -261,6 +278,7 @@ export async function getEmpresaDashboard(req: Request, res: Response) {
                 },
                 select: {
                     id_visita: true,
+                    empresaId: true,
                     inicio: true,
                     fin: true,
                     status: true,
@@ -315,9 +333,15 @@ export async function getEmpresaDashboard(req: Request, res: Response) {
                     fin: { not: null },
                 },
                 select: {
+                    empresaId: true,
                     inicio: true,
                     fin: true,
                     status: true,
+                    tecnico: {
+                        select: {
+                            nombre: true,
+                        },
+                    },
                 },
             }),
 
@@ -359,9 +383,15 @@ export async function getEmpresaDashboard(req: Request, res: Response) {
                     fin: { not: null },
                 },
                 select: {
+                    empresaId: true,
                     inicio: true,
                     fin: true,
                     status: true,
+                    tecnico: {
+                        select: {
+                            nombre: true,
+                        },
+                    },
                 },
             }),
 
