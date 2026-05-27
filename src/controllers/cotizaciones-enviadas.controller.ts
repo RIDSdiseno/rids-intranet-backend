@@ -44,21 +44,85 @@ export async function createCotizacionEnvio(req: Request, res: Response) {
       bodyPreview: JSON.stringify(req.body).slice(0, 1000),
     });
 
-    const { cotizacionId, to, subject, jobId, meta, sentBy } = req.body;
+    const { cotizacionId, to, subject, jobId, meta, sentBy: sentByBody, clienteNombre: clienteBody, creadoPor: creadoBody, fechaCreacion: fechaBody } = req.body;
+
+    // Prefer explicit sentBy in body; otherwise, resolve authenticated user's nombre desde Prisma si es posible, o usar email
+    const user = (req as any).user;
+    let sentBy: string | null = sentByBody ?? null;
+    if (!sentBy && user?.id) {
+      try {
+        const { prisma } = await import('../lib/prisma.js');
+        const u = await prisma.usuario.findUnique({ where: { id: Number(user.id) } });
+        if (u) sentBy = (u as any).nombre ?? (u as any).email ?? null;
+      } catch (err) {
+        console.warn('No se pudo resolver nombre de usuario para sentBy:', err);
+        sentBy = user?.email ?? null;
+      }
+    }
+    if (!sentBy) sentBy = user?.email ?? null;
+
+    // Enriquecer con datos de la cotización si disponemos de cotizacionId
+    let clienteNombre: string | null = null;
+    let creadoPor: string | null = null;
+    let fechaCreacion: string | null = null;
+
+    if (cotizacionId) {
+      try {
+        const { prisma } = await import("../lib/prisma.js");
+        const cot = await prisma.cotizacionGestioo.findUnique({
+          where: { id: Number(cotizacionId) },
+          include: { entidad: true, tecnico: true },
+        });
+        if (cot) {
+          clienteNombre = cot.entidad?.nombre ?? null;
+          creadoPor = cot.tecnico?.nombre ?? null;
+          fechaCreacion = (cot as any).fecha ?? (cot as any).createdAt ?? null;
+        }
+      } catch (err) {
+        console.warn('No se pudo enriquecer cotizacionId:', cotizacionId, err);
+      }
+    }
+
+    // Si el body trae explícitamente los campos, úsalos (tienen prioridad)
+    if (clienteBody) clienteNombre = clienteBody;
+    if (creadoBody) creadoPor = creadoBody;
+    if (fechaBody) fechaCreacion = fechaBody;
 
     const rows = readAll();
-    const entry = {
-      id: (rows.length ? Math.max(...rows.map((r: any) => Number(r.id) || 0)) + 1 : 1),
-      cotizacionId: cotizacionId ?? null,
-      to: to ?? null,
-      subject: subject ?? null,
-      sentBy: sentBy ?? null,
-      jobId: jobId ?? null,
-      meta: meta ?? null,
-      sentAt: new Date().toISOString(),
-    };
+    const nowIso = new Date().toISOString();
 
-    rows.unshift(entry);
+    // Evitar duplicados: si ya existe un registro con mismo jobId+to+cotizacionId, actualizarlo
+    const matchIndex = rows.findIndex((r: any) => r.jobId === jobId && r.to === (to ?? null) && (r.cotizacionId ?? null) === (cotizacionId ?? null));
+    let entry: any;
+    if (matchIndex >= 0) {
+      rows[matchIndex] = {
+        ...rows[matchIndex],
+        cotizacionId: cotizacionId ?? rows[matchIndex].cotizacionId,
+        subject: subject ?? rows[matchIndex].subject,
+        sentBy: sentBy ?? rows[matchIndex].sentBy,
+        meta: meta ?? rows[matchIndex].meta,
+        clienteNombre: clienteNombre ?? rows[matchIndex].clienteNombre,
+        creadoPor: creadoPor ?? rows[matchIndex].creadoPor,
+        fechaCreacion: fechaCreacion ?? rows[matchIndex].fechaCreacion,
+        sentAt: nowIso,
+      };
+      entry = rows[matchIndex];
+    } else {
+      entry = {
+        id: (rows.length ? Math.max(...rows.map((r: any) => Number(r.id) || 0)) + 1 : 1),
+        cotizacionId: cotizacionId ?? null,
+        to: to ?? null,
+        subject: subject ?? null,
+        sentBy: sentBy ?? null,
+        jobId: jobId ?? null,
+        meta: meta ?? null,
+        clienteNombre,
+        creadoPor,
+        fechaCreacion,
+        sentAt: nowIso,
+      };
+      rows.unshift(entry);
+    }
     writeAll(rows);
 
     return res.status(201).json(entry);
