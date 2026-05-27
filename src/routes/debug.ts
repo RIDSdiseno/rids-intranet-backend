@@ -39,3 +39,24 @@ debugRouter.get("/facturas/ventas", async (req, res) => {
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   } return {}
 });
+
+// Debug: devolver cotizaciones enviadas (SIN AUTH) para inspección rápida (solo GET)
+debugRouter.get("/cotizaciones/enviadas", async (_req, res) => {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const DATA_PATH = path.resolve(__dirname, "../../data/cotizaciones-enviadas.json");
+
+    if (!fs.existsSync(DATA_PATH)) return res.json([]);
+
+    const raw = fs.readFileSync(DATA_PATH, 'utf8');
+    const rows = JSON.parse(raw || '[]');
+    return res.json(rows);
+  } catch (err: any) {
+    console.error('[DEBUG] error reading cotizaciones-enviadas:', err);
+    return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});

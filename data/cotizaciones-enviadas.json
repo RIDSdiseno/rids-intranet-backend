@@ -1,5 +1,35 @@
 [
   {
+    "id": 3,
+    "cotizacionId": 417,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #417 - EMPRESA T-SALES LIMITADA - Test 2",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1779896916596-0m18a9",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "EMPRESA T-SALES LIMITADA",
+    "creadoPor": "Manuel Ahumada",
+    "fechaCreacion": "2026-05-22T22:56:16.910Z",
+    "sentAt": "2026-05-27T15:48:38.683Z"
+  },
+  {
+    "id": 2,
+    "cotizacionId": 417,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #417 - EMPRESA T-SALES LIMITADA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1779894397024-bcoalw",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "EMPRESA T-SALES LIMITADA",
+    "creadoPor": "Manuel Ahumada",
+    "fechaCreacion": "2026-05-22T22:56:16.910Z",
+    "sentAt": "2026-05-27T15:06:39.045Z"
+  },
+  {
     "id": 1,
     "cotizacionId": 400,
     "to": "informaticap@rids.cl",

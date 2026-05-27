@@ -522,6 +522,88 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
   };
 
   // Schedule sends spaced by delayMs
+  // Registrar entradas iniciales para cada destinatario para garantizar que quede rastro
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const DATA_PATH = path.resolve(__dirname, "../../data/cotizaciones-enviadas.json");
+
+    const rowsRaw = fs.existsSync(DATA_PATH) ? fs.readFileSync(DATA_PATH, 'utf8') : '[]';
+    const rows = JSON.parse(rowsRaw || '[]');
+
+    for (const t of validTargets) {
+      // evitar duplicados por jobId+to+cotizacionId
+      const exists = rows.find((r: any) => r.jobId === jobId && r.to === (t.email ?? null) && (r.cotizacionId ?? null) === (cotizacionId ?? null));
+      if (exists) continue;
+
+      // intentar extraer cotizacionId de attachments
+      let cotizacionId: number | null = null;
+      const combined = [...globalAttachments, ...(Array.isArray(t.attachments) ? t.attachments : [])];
+      for (const a of combined) {
+        if (!a?.name) continue;
+        const m = String(a.name).match(/Cotizacion_(\d+)\.pdf/i);
+        if (m && m[1]) { cotizacionId = Number(m[1]); break; }
+      }
+
+      // intentar enriquecer con prisma si hay cotizacionId
+      let clienteNombre: string | null = null;
+      let creadoPor: string | null = null;
+      let fechaCreacion: string | null = null;
+      if (cotizacionId) {
+        try {
+          const { prisma } = await import("../lib/prisma.js");
+          const cot = await prisma.cotizacionGestioo.findUnique({ where: { id: Number(cotizacionId) }, include: { entidad: true, tecnico: true } });
+          if (cot) {
+            clienteNombre = cot.entidad?.nombre ?? null;
+            creadoPor = cot.tecnico?.nombre ?? null;
+            fechaCreacion = (cot as any).fecha ?? (cot as any).createdAt ?? null;
+          }
+        } catch (err) {
+          console.warn('Pre-registro: no se pudo enriquecer cotizacion', cotizacionId, err);
+        }
+      }
+
+      // resolver nombre del remitente preferentemente
+      let sentBy: string | null = null;
+      try {
+        const user = (req as any).user;
+        if (user?.id) {
+          const { prisma } = await import('../lib/prisma.js');
+          const u = await prisma.usuario.findUnique({ where: { id: Number(user.id) } });
+          sentBy = (u as any)?.nombre ?? (u as any)?.email ?? null;
+        } else {
+          sentBy = (req as any)?.user?.email ?? null;
+        }
+      } catch (err) {
+        sentBy = (req as any)?.user?.email ?? null;
+      }
+
+      const entry = {
+        id: (rows.length ? Math.max(...rows.map((r: any) => Number(r.id) || 0)) + 1 : 1),
+        cotizacionId: cotizacionId ?? null,
+        to: t.email ?? null,
+        subject: subject ?? null,
+        sentBy: sentBy ?? null,
+        jobId: jobId ?? null,
+        meta: { attachments: combined.length },
+        clienteNombre,
+        creadoPor,
+        fechaCreacion,
+        sentAt: new Date().toISOString(),
+      };
+      rows.unshift(entry);
+    }
+
+    const dir = path.dirname(DATA_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(DATA_PATH, JSON.stringify(rows, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error creando registros iniciales de envíos:', err);
+  }
+
   validTargets.forEach((t, idx) => {
     const when = idx * delayMs;
     setTimeout(async () => {
@@ -539,6 +621,97 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
 
         await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
         jobRef.successes.push(t.email);
+          // Registrar envío en archivo JSON si parece corresponder a una cotización
+          try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(__filename);
+            const DATA_PATH = path.resolve(__dirname, "../../data/cotizaciones-enviadas.json");
+
+            const rowsRaw = fs.existsSync(DATA_PATH) ? fs.readFileSync(DATA_PATH, 'utf8') : '[]';
+            const rows = JSON.parse(rowsRaw || '[]');
+
+            // intentar extraer cotizacionId desde nombres de attachments (Cotizacion_<id>.pdf)
+            let cotizacionId: number | null = null;
+            for (const a of attachments) {
+              if (!a?.name) continue;
+              const m = String(a.name).match(/Cotizacion_(\d+)\.pdf/i);
+              if (m && m[1]) {
+                cotizacionId = Number(m[1]);
+                break;
+              }
+            }
+              let sentBy: string | null = null;
+              try {
+                const user = (req as any).user;
+                if (user?.id) {
+                  const { prisma } = await import('../lib/prisma.js');
+                  const u = await prisma.usuario.findUnique({ where: { id: Number(user.id) } });
+                  sentBy = (u as any)?.nombre ?? (u as any)?.email ?? null;
+                } else {
+                  sentBy = (req as any)?.user?.email ?? null;
+                }
+              } catch (err) {
+                sentBy = (req as any)?.user?.email ?? null;
+              }
+
+              // Enriquecer con datos de la cotización si identificamos cotizacionId
+              let clienteNombre: string | null = null;
+              let creadoPor: string | null = null;
+              let fechaCreacion: string | null = null;
+
+              if (cotizacionId) {
+                try {
+                  const { prisma } = await import("../lib/prisma.js");
+                  const cot = await prisma.cotizacionGestioo.findUnique({ where: { id: Number(cotizacionId) }, include: { entidad: true, tecnico: true } });
+                  if (cot) {
+                    clienteNombre = cot.entidad?.nombre ?? null;
+                    creadoPor = cot.tecnico?.nombre ?? null;
+                    fechaCreacion = (cot as any).fecha ?? (cot as any).createdAt ?? null;
+                  }
+                } catch (err) {
+                  console.warn('No se pudo enriquecer cotizacion en mailer:', cotizacionId, err);
+                }
+              }
+
+              // Si ya existe un pre-registro para este jobId+to+cotizacionId, actualizarlo en lugar de duplicar
+              const matchIndex = rows.findIndex((r: any) => r.jobId === jobId && r.to === (t.email ?? null) && (r.cotizacionId ?? null) === (cotizacionId ?? null));
+              const nowIso = new Date().toISOString();
+              if (matchIndex >= 0) {
+                rows[matchIndex] = {
+                  ...rows[matchIndex],
+                  subject: subject ?? rows[matchIndex].subject,
+                  sentBy: sentBy ?? rows[matchIndex].sentBy,
+                  meta: { attachments: attachments.length },
+                  clienteNombre: clienteNombre ?? rows[matchIndex].clienteNombre,
+                  creadoPor: creadoPor ?? rows[matchIndex].creadoPor,
+                  fechaCreacion: fechaCreacion ?? rows[matchIndex].fechaCreacion,
+                  sentAt: nowIso,
+                };
+              } else {
+                const entry = {
+                  id: (rows.length ? Math.max(...rows.map((r: any) => Number(r.id) || 0)) + 1 : 1),
+                  cotizacionId: cotizacionId ?? null,
+                  to: t.email ?? null,
+                  subject: subject ?? null,
+                  sentBy: sentBy ?? null,
+                  jobId: jobId ?? null,
+                  meta: { attachments: attachments.length },
+                  clienteNombre,
+                  creadoPor,
+                  fechaCreacion,
+                  sentAt: nowIso,
+                };
+                rows.unshift(entry);
+              }
+            const dir = path.dirname(DATA_PATH);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(DATA_PATH, JSON.stringify(rows, null, 2), 'utf8');
+          } catch (err) {
+            console.error('Error registrando cotizacion enviada desde mailer:', err);
+          }
       } catch (err: any) {
         jobRef.failures.push({ to: t.email, error: err?.message ?? String(err) });
       } finally {
