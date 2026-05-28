@@ -15,7 +15,7 @@ import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 
-// ✅ Maintenance / Jobs
+// Maintenance / Jobs
 import solicitantesMaintenanceRouter from "./routes/solicitantesMaintenance.routes.js";
 
 // Reportes e Inventario export
@@ -92,7 +92,7 @@ import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
 import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
 
 /* ========================================================= */
-import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
+import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
 export const api = Router();
 

@@ -1,3 +1,4 @@
+// src/controllers/inventario.controller.ts
 import type { Request, Response } from "express";
 import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
@@ -129,8 +130,102 @@ function resolveSharepointPath(empresa: string): string | null {
     return map[key] ?? null;
 }
 
+function formatTipoEquipo(tipo?: string | null): string {
+    if (!tipo) return "";
+
+    const map: Record<string, string> = {
+        GENERICO: "Genérico",
+        NOTEBOOK: "Notebook",
+        ALL_IN_ONE: "All in One",
+        DESKTOP: "Desktop",
+        CPU: "CPU",
+        EQUIPO_ARMADO: "Equipo armado",
+        IMPRESORA: "Impresora",
+        SCANNER: "Scanner",
+        LASER: "Láser",
+        LED: "LED",
+        MONITOR: "Monitor",
+        NAS: "NAS",
+        ROUTER: "Router",
+        DISCO_DURO_EXTERNO: "Disco duro externo",
+        CARGADOR: "Cargador",
+        INSUMOS_COMPUTACIONALES: "Insumos computacionales",
+        RELOJ_CONTROL: "Reloj control",
+        OTRO: "Otro",
+    };
+
+    return map[tipo] ?? tipo;
+}
+
+function formatEstadoEquipo(estado?: string | null): string {
+    if (!estado) return "";
+
+    const map: Record<string, string> = {
+        ACTIVO: "Activo",
+        EN_STOCK: "En stock",
+        DADO_DE_BAJA: "Dado de baja",
+        EN_RIDS: "En RIDS",
+    };
+
+    return map[estado] ?? estado;
+}
+
+function formatFechaChile(value?: Date | string | null): string {
+    if (!value) return "";
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "";
+
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+
+    const parts = formatter.formatToParts(date);
+
+    const day = parts.find((p) => p.type === "day")?.value ?? "";
+    const month = parts.find((p) => p.type === "month")?.value ?? "";
+    const year = parts.find((p) => p.type === "year")?.value ?? "";
+
+    if (!day || !month || !year) return "";
+
+    return `${day}/${month}/${year}`;
+}
+
+function formatRevisado(value?: string | null): string {
+    if (!value) return "";
+
+    const raw = String(value).trim();
+
+    // Si viene como fecha ISO o fecha parseable, la formatea.
+    const parsed = new Date(raw);
+
+    if (!Number.isNaN(parsed.getTime())) {
+        return formatFechaChile(parsed);
+    }
+
+    // Si viene como texto tipo "SI", "NO", "Revisado", etc., lo deja igual.
+    return raw;
+}
+
+function parseDateQuery(value: unknown): Date | undefined {
+    if (typeof value !== "string") return undefined;
+    if (!value.trim()) return undefined;
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return undefined;
+    }
+
+    return date;
+}
+
 /* ======================================================
-   🧠 Construcción del Excel
+    Construcción del Excel
 ====================================================== */
 function buildInventarioExcel(
     equipos: Awaited<ReturnType<typeof getInventarioByEmpresa>>,
@@ -140,7 +235,7 @@ function buildInventarioExcel(
 
     for (const e of equipos) {
         const empresa = normalizeEmpresa(
-            e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA"
+            e.solicitante?.empresa?.nombre ?? e.empresa?.nombre ?? "SIN_EMPRESA"
         );
         porEmpresa[empresa] ??= [];
         porEmpresa[empresa].push(e);
@@ -150,40 +245,74 @@ function buildInventarioExcel(
 
     for (const [empresa, items] of Object.entries(porEmpresa)) {
         if (items.length === 0) continue;
-
         const rows = items.map((e, i) => ({
             "Código": i + 1,
+
+            // Usuario / empresa
             "USUARIO": e.solicitante?.nombre ?? "",
             "CORREO": e.solicitante?.email ?? "",
+            "USUARIO EMPRESA": e.detalle?.usuarioEmpresa ?? "",
+            "USUARIO RIDS": e.detalle?.adminRidsUsuario ?? "",
+            "PROPIEDAD": e.propiedad ?? "",
+
+            // Identificación del equipo
+            "TIPO DE EQUIPO": formatTipoEquipo(e.tipo),
+            "ESTADO EQUIPO": formatEstadoEquipo(e.estado),
+            "AÑO PC": e.anioPc ?? "",
+            "FECHA INGRESO": formatFechaChile(e.createdAt),
             "SERIAL": e.serial ?? "",
             "MARCA": e.marca ?? "",
             "MODELO": e.modelo ?? "",
+
+            // Hardware
             "CPU": e.procesador ?? "",
             "RAM": e.ram ?? "",
             "DISCO": e.disco ?? "",
+
+            // Software / licencias
             "SO": e.detalle?.so ?? "",
-            "OFFICE": e.detalle?.office ?? "",
-            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
+            "LICENCIA USUARIO": e.detalle?.office ?? "",
+
+            // Red / acceso remoto
             "MAC WIFI": e.detalle?.macWifi ?? "",
-            "PROPIEDAD": e.propiedad ?? "",
+            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
+            "CLAVE TEAMVIEWER": e.detalle?.claveTv ?? "",
+
+            // Control interno
+            "REVISADO": formatRevisado(e.detalle?.revisado),
         }));
 
         const headers = [
             "Código",
+
             "USUARIO",
             "CORREO",
+            "USUARIO EMPRESA",
+            "USUARIO RIDS",
+            "PROPIEDAD",
+
+            "TIPO DE EQUIPO",
+            "ESTADO EQUIPO",
+            "AÑO PC",
+            "FECHA INGRESO",
             "SERIAL",
             "MARCA",
             "MODELO",
+
             "CPU",
             "RAM",
             "DISCO",
+
             "SO",
-            "OFFICE",
-            "TEAMVIEWER",
+            "LICENCIA USUARIO",
+
             "MAC WIFI",
-            "PROPIEDAD",
+            "TEAMVIEWER",
+            "CLAVE TEAMVIEWER",
+
+            "REVISADO",
         ];
+
         const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
 
         styleSheet(
@@ -214,11 +343,11 @@ export async function exportInventario(req: Request, res: Response) {
 
         let empresaId: number | undefined = undefined;
 
-        // 🔒 Si es cliente → forzar su empresa
+        // Si es cliente → forzar su empresa
         if (user?.rol === "CLIENTE") {
             empresaId = user.empresaId;
         } else {
-            // 👨‍💻 Técnico puede usar filtro opcional
+            //  Técnico puede usar filtro opcional
             if (req.query.empresaId) {
                 const id = Number(req.query.empresaId);
                 if (!Number.isNaN(id)) {
@@ -227,9 +356,19 @@ export async function exportInventario(req: Request, res: Response) {
             }
         }
 
-        const equipos = await getInventarioByEmpresa(
-            empresaId ? { empresaId } : {}
-        );
+        const createdFrom = parseDateQuery(req.query.createdFrom);
+        const createdTo = parseDateQuery(req.query.createdTo);
+        const updatedFrom = parseDateQuery(req.query.updatedFrom);
+        const updatedTo = parseDateQuery(req.query.updatedTo);
+
+        const equipos = await getInventarioByEmpresa({
+            ...(empresaId ? { empresaId } : {}),
+
+            ...(createdFrom ? { createdFrom } : {}),
+            ...(createdTo ? { createdTo } : {}),
+            ...(updatedFrom ? { updatedFrom } : {}),
+            ...(updatedTo ? { updatedTo } : {}),
+        });
 
         const buffer = buildInventarioExcel(equipos, mes);
 
@@ -276,7 +415,7 @@ export async function exportInventarioForSharepoint(
         const porEmpresa: Record<string, typeof equipos> = {};
         for (const e of equipos) {
             const empresa = normalizeEmpresa(
-                e.solicitante?.empresa?.nombre ?? "SIN_EMPRESA"
+                e.solicitante?.empresa?.nombre ?? e.empresa?.nombre ?? "SIN_EMPRESA"
             );
             porEmpresa[empresa] ??= [];
             porEmpresa[empresa].push(e);
@@ -346,20 +485,32 @@ export async function getInventario(
 
         const data = equipos.map(e => ({
             id_equipo: e.id_equipo,
-            empresa: e.solicitante?.empresa?.nombre ?? null,
+            empresa: e.solicitante?.empresa?.nombre ?? e.empresa?.nombre ?? null,
             usuario: e.solicitante?.nombre ?? null,
             correo: e.solicitante?.email ?? null,
+
+            usuarioEmpresa: e.detalle?.usuarioEmpresa ?? null,
+            usuarioRids: e.detalle?.adminRidsUsuario ?? null,
+
             serial: e.serial,
             marca: e.marca,
             modelo: e.modelo,
             procesador: e.procesador,
             ram: e.ram,
             disco: e.disco,
+
             so: e.detalle?.so ?? null,
-            office: e.detalle?.office ?? null,
+            licenciaUsuario: e.detalle?.office ?? null,
             teamViewer: e.detalle?.teamViewer ?? null,
+            claveTeamViewer: e.detalle?.claveTv ?? null,
             macWifi: e.detalle?.macWifi ?? null,
-            propiedad: e.propiedad
+
+            propiedad: e.propiedad,
+            estadoEquipo: e.estado,
+            anioPc: e.anioPc ?? null,
+            tipoEquipo: e.tipo,
+            fechaIngreso: formatFechaChile(e.createdAt),
+            revisado: formatRevisado(e.detalle?.revisado),
         }));
 
         return res.json({
@@ -372,4 +523,3 @@ export async function getInventario(
         return res.status(500).json({ ok: false, error: "Error obteniendo inventario" });
     }
 }
-
