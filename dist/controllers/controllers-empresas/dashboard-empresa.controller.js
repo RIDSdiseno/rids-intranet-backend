@@ -13,45 +13,48 @@ function getLocalDateKey(date) {
         day: "2-digit",
     }).format(date);
 }
-function getDuracionMinutos(inicio, fin) {
-    if (!inicio || !fin)
-        return 0;
-    const ini = new Date(inicio).getTime();
-    const end = new Date(fin).getTime();
-    if (Number.isNaN(ini) || Number.isNaN(end) || end <= ini)
-        return 0;
-    return Math.round((end - ini) / 60000);
-}
 function calcularMinutosJornadaVisitas(visitas) {
-    const jornadasMap = new Map();
+    const intervalosPorDia = new Map();
     for (const visita of visitas) {
         const status = String(visita.status ?? "").toUpperCase();
-        if (status !== "COMPLETADA")
+        if (status && status !== "COMPLETADA")
             continue;
         if (!visita.inicio || !visita.fin)
             continue;
-        if (visita.fin.getTime() <= visita.inicio.getTime())
+        const inicioMs = visita.inicio.getTime();
+        const finMs = visita.fin.getTime();
+        if (!Number.isFinite(inicioMs) || !Number.isFinite(finMs))
             continue;
-        const tecnico = visita.tecnico?.nombre?.trim() || "Sin técnico";
-        const inicioStr = visita.inicio.toISOString();
-        const finStr = visita.fin.toISOString();
-        const key = `${visita.empresaId ?? "sin_empresa"}|${tecnico}|${inicioStr}|${finStr}`;
-        if (!jornadasMap.has(key)) {
-            jornadasMap.set(key, {
-                inicio: visita.inicio,
-                fin: visita.fin,
-                dia: getLocalDateKey(visita.inicio),
-            });
-        }
+        if (finMs <= inicioMs)
+            continue;
+        const dia = getLocalDateKey(visita.inicio);
+        const actual = intervalosPorDia.get(dia) ?? [];
+        actual.push({ inicioMs, finMs });
+        intervalosPorDia.set(dia, actual);
     }
-    const jornadas = Array.from(jornadasMap.values());
-    const totalMinutos = jornadas.reduce((acc, jornada) => acc + getDuracionMinutos(jornada.inicio, jornada.fin), 0);
-    const diasConVisitas = new Set(jornadas.map((j) => j.dia)).size;
-    return {
-        totalMinutos,
-        diasConVisitas,
-        totalJornadas: jornadas.length,
-    };
+    let totalMinutos = 0;
+    for (const intervalos of intervalosPorDia.values()) {
+        const ordenados = [...intervalos].sort((a, b) => a.inicioMs - b.inicioMs);
+        const primero = ordenados[0];
+        if (!primero)
+            continue;
+        let bloqueInicio = primero.inicioMs;
+        let bloqueFin = primero.finMs;
+        for (let i = 1; i < ordenados.length; i++) {
+            const actual = ordenados[i];
+            if (!actual)
+                continue;
+            if (actual.inicioMs <= bloqueFin) {
+                bloqueFin = Math.max(bloqueFin, actual.finMs);
+                continue;
+            }
+            totalMinutos += Math.round((bloqueFin - bloqueInicio) / 60000);
+            bloqueInicio = actual.inicioMs;
+            bloqueFin = actual.finMs;
+        }
+        totalMinutos += Math.round((bloqueFin - bloqueInicio) / 60000);
+    }
+    return { totalMinutos, diasConVisitas: intervalosPorDia.size };
 }
 function normalizeMes(value) {
     const n = Number(value);

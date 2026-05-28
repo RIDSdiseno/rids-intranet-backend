@@ -12,7 +12,7 @@ import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
-// ✅ Maintenance / Jobs
+// Maintenance / Jobs
 import solicitantesMaintenanceRouter from "./routes/solicitantesMaintenance.routes.js";
 // Reportes e Inventario export
 import inventarioRoutes from "./routes/inventario.routes.js";

@@ -22,7 +22,8 @@ export async function getTicketMetricsByTecnico(req, res) {
             "informaticap@rids.cl",
             "ncanales@rids.cl",
             "carenas@rids.cl",
-            "ventas@rids.cl"
+            "ventas@rids.cl",
+            "cespinoza@rids.cl"
         ];
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
@@ -215,7 +216,8 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
             "informaticap@rids.cl",
             "ncanales@rids.cl",
             "carenas@rids.cl",
-            "ventas@rids.cl"
+            "ventas@rids.cl",
+            "cespinoza@rids.cl"
         ];
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {

@@ -43,27 +43,32 @@ export async function getSoporteMensualPorEmpresa(req, res) {
             ? Prisma.sql `WHERE e.id_empresa = ${user.empresaId}`
             : Prisma.empty;
         const rows = await prisma.$queryRaw(Prisma.sql `
-      WITH visitas_mes AS (
-        SELECT
+      WITH visitas_unicas AS (
+        SELECT DISTINCT
           v."empresaId",
-          COUNT(*)::int AS visitas,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN v.status = 'COMPLETADA'
-                  AND v.inicio IS NOT NULL
-                  AND v.fin IS NOT NULL
-                  AND v.fin > v.inicio
-                THEN EXTRACT(EPOCH FROM (v.fin - v.inicio)) / 60
-                ELSE 0
-              END
-            ),
-            0
-          )::int AS minutos_visitas
+          v."tecnicoId",
+          v.inicio,
+          v.fin,
+          DATE(v.inicio AT TIME ZONE 'America/Santiago') AS dia
         FROM "Visita" v
         WHERE v.inicio >= ${desde}
           AND v.inicio < ${hasta}
-        GROUP BY v."empresaId"
+          AND v.status = 'COMPLETADA'
+          AND v.fin IS NOT NULL
+          AND v.fin > v.inicio
+      ),
+
+      visitas_mes AS (
+        SELECT
+          vu."empresaId",
+          COUNT(*)::int AS visitas,
+          COUNT(DISTINCT vu.dia)::int AS dias_con_visitas,
+          COALESCE(
+            SUM(EXTRACT(EPOCH FROM (vu.fin - vu.inicio)) / 60),
+            0
+          )::int AS minutos_visitas
+        FROM visitas_unicas vu
+        GROUP BY vu."empresaId"
       ),
 
       remotas_mes AS (
@@ -132,6 +137,8 @@ export async function getSoporteMensualPorEmpresa(req, res) {
         e.nombre AS empresa,
 
         COALESCE(v.visitas, 0) AS visitas,
+        COALESCE(v.dias_con_visitas, 0) AS "diasConVisitas",
+
         COALESCE(r.remotas, 0) AS remotas,
         COALESCE(t.tickets, 0) AS tickets,
         COALESCE(t.tickets_resueltos, 0) AS "ticketsResueltos",
@@ -156,6 +163,7 @@ export async function getSoporteMensualPorEmpresa(req, res) {
     `);
         const data = rows.map((row) => {
             const visitas = Number(row.visitas ?? 0);
+            const diasConVisitas = Number(row.diasConVisitas ?? 0);
             const remotas = Number(row.remotas ?? 0);
             const tickets = Number(row.tickets ?? 0);
             const ticketsResueltos = Number(row.ticketsResueltos ?? 0);
@@ -168,22 +176,27 @@ export async function getSoporteMensualPorEmpresa(req, res) {
                 empresaId: Number(row.empresaId),
                 empresa: row.empresa,
                 visitas,
+                visitasPresenciales: visitas,
+                diasConVisitas,
                 remotas,
+                sesionesRemotas: remotas,
                 tickets,
+                ticketsTotal: tickets,
                 ticketsResueltos,
                 ticketsAbiertos,
                 minutosVisitas,
                 minutosRemotos,
                 minutosTickets,
                 totalMinutos,
-                totalHoras: Math.round(totalMinutos / 60),
-                horasVisitas: Math.round(minutosVisitas / 60),
-                horasRemotas: Math.round(minutosRemotos / 60),
-                horasTickets: Math.round(minutosTickets / 60),
+                totalHoras: Math.round((totalMinutos / 60) * 10) / 10,
+                horasVisitas: Math.round((minutosVisitas / 60) * 10) / 10,
+                horasRemotas: Math.round((minutosRemotos / 60) * 10) / 10,
+                horasTickets: Math.round((minutosTickets / 60) * 10) / 10,
             };
         });
         return res.json({
             ok: true,
+            versionCalculo: "SOPORTE_MENSUAL_VISITAS_UNICAS_V2",
             periodo: {
                 mes,
                 ano,

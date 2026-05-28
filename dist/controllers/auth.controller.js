@@ -51,6 +51,15 @@ function getJwtSecret() {
 function getRefreshSecret() {
     return REFRESH_SECRET;
 }
+const MICROSOFT_LOGIN_BLOCKED_DOMAINS = [
+    "t-sales.cl",
+    "vprime.cl",
+    "infinet.cl",
+];
+function isMicrosoftLoginBlockedDomain(domain) {
+    const domainNorm = domain.trim().toLowerCase();
+    return MICROSOFT_LOGIN_BLOCKED_DOMAINS.includes(domainNorm);
+}
 /* ================ SCHEMAS CACHEADOS ================ */
 const registerSchema = z.object({
     nombre: z.string().min(2, "Nombre demasiado corto"),
@@ -481,14 +490,83 @@ export const loginMicrosoft = async (req, res) => {
                 error: "Correo Microsoft inválido",
             });
         }
+        if (isMicrosoftLoginBlockedDomain(domain)) {
+            return res.status(403).json({
+                error: "El inicio de sesión con Microsoft no está habilitado para este dominio.",
+                code: "MICROSOFT_LOGIN_DOMAIN_BLOCKED",
+                domain,
+            });
+        }
         const nombreMicrosoft = decoded.name || emailNorm;
         /*
          * CASO 1:
-         * Usuario interno RIDS
+         * El usuario ya existe en el sistema.
+         * En este caso SIEMPRE respetamos su rol real.
+         */
+        const usuarioSistema = await prisma.tecnico.findUnique({
+            where: {
+                email: emailNorm,
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                status: true,
+                empresaId: true,
+                rol: true,
+            },
+        });
+        if (usuarioSistema) {
+            if (!usuarioSistema.status) {
+                return res.status(403).json({
+                    error: "Usuario inactivo, contacte al administrador.",
+                });
+            }
+            const rol = usuarioSistema.rol ?? ROL_DEFAULT;
+            const accessToken = signAccessToken(usuarioSistema.id_tecnico, usuarioSistema.email, rol, usuarioSistema.empresaId);
+            const { ms: refreshMs } = getRefreshConfig(rememberMe);
+            const refreshRaw = signRefreshToken(usuarioSistema.id_tecnico, rememberMe);
+            const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+            const { userAgent, ip } = getClientInfo(req);
+            const expiresAt = new Date(Date.now() + refreshMs);
+            await prisma.refreshToken.create({
+                data: {
+                    userId: usuarioSistema.id_tecnico,
+                    rtHash,
+                    expiresAt,
+                    userAgent,
+                    ip,
+                },
+                select: { id: true },
+            });
+            setRefreshCookie(res, refreshRaw, refreshMs);
+            return res.json({
+                accessToken,
+                refreshToken: refreshRaw,
+                tecnico: {
+                    id_tecnico: usuarioSistema.id_tecnico,
+                    nombre: usuarioSistema.nombre,
+                    email: usuarioSistema.email,
+                    rol,
+                    empresaId: usuarioSistema.empresaId ?? null,
+                },
+            });
+        }
+        /*
+         * CASO 2:
+         * Usuario RIDS que todavía no existe.
+         * Lo puedes crear como TECNICO por defecto.
          */
         if (isRidsDomain(domain)) {
-            let tecnico = await prisma.tecnico.findUnique({
-                where: { email: emailNorm },
+            const tecnico = await prisma.tecnico.create({
+                data: {
+                    nombre: nombreMicrosoft,
+                    email: emailNorm,
+                    status: true,
+                    passwordHash: "",
+                    rol: ROL_DEFAULT,
+                    empresaId: null,
+                },
                 select: {
                     id_tecnico: true,
                     nombre: true,
@@ -498,30 +576,6 @@ export const loginMicrosoft = async (req, res) => {
                     rol: true,
                 },
             });
-            if (!tecnico) {
-                tecnico = await prisma.tecnico.create({
-                    data: {
-                        nombre: nombreMicrosoft,
-                        email: emailNorm,
-                        status: true,
-                        passwordHash: "",
-                        rol: ROL_DEFAULT,
-                    },
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
-                        status: true,
-                        empresaId: true,
-                        rol: true,
-                    },
-                });
-            }
-            if (!tecnico.status) {
-                return res.status(403).json({
-                    error: "Usuario inactivo, contacte al administrador.",
-                });
-            }
             const rol = tecnico.rol ?? ROL_DEFAULT;
             const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, rol, tecnico.empresaId);
             const { ms: refreshMs } = getRefreshConfig(rememberMe);
@@ -548,13 +602,14 @@ export const loginMicrosoft = async (req, res) => {
                     nombre: tecnico.nombre,
                     email: tecnico.email,
                     rol,
-                    empresaId: tecnico.empresaId,
+                    empresaId: tecnico.empresaId ?? null,
                 },
             });
         }
         /*
-         * CASO 2:
-         * Cliente externo por dominio
+         * CASO 3:
+         * Usuario externo que no existe en el sistema.
+         * Se intenta asociar por dominio de empresa.
          */
         const empresa = await findEmpresaByEmailDomain(domain);
         if (!empresa) {
@@ -562,8 +617,15 @@ export const loginMicrosoft = async (req, res) => {
                 error: "Tu dominio no está asociado a ninguna empresa registrada.",
             });
         }
-        let cliente = await prisma.tecnico.findUnique({
-            where: { email: emailNorm },
+        const cliente = await prisma.tecnico.create({
+            data: {
+                nombre: nombreMicrosoft,
+                email: emailNorm,
+                status: true,
+                passwordHash: "",
+                rol: "CLIENTE",
+                empresaId: empresa.id_empresa,
+            },
             select: {
                 id_tecnico: true,
                 nombre: true,
@@ -573,54 +635,7 @@ export const loginMicrosoft = async (req, res) => {
                 rol: true,
             },
         });
-        if (!cliente) {
-            cliente = await prisma.tecnico.create({
-                data: {
-                    nombre: nombreMicrosoft,
-                    email: emailNorm,
-                    status: true,
-                    passwordHash: "",
-                    rol: "CLIENTE",
-                    empresaId: empresa.id_empresa,
-                },
-                select: {
-                    id_tecnico: true,
-                    nombre: true,
-                    email: true,
-                    status: true,
-                    empresaId: true,
-                    rol: true,
-                },
-            });
-        }
-        if (!cliente.status) {
-            return res.status(403).json({
-                error: "Usuario inactivo, contacte al administrador.",
-            });
-        }
-        /*
-         * Si el cliente ya existía pero no tenía empresaId,
-         * o estaba asociado a otra empresa, lo sincronizamos con el dominio.
-         */
-        if (cliente.rol !== "CLIENTE" ||
-            cliente.empresaId !== empresa.id_empresa) {
-            cliente = await prisma.tecnico.update({
-                where: { id_tecnico: cliente.id_tecnico },
-                data: {
-                    rol: "CLIENTE",
-                    empresaId: empresa.id_empresa,
-                },
-                select: {
-                    id_tecnico: true,
-                    nombre: true,
-                    email: true,
-                    status: true,
-                    empresaId: true,
-                    rol: true,
-                },
-            });
-        }
-        const accessToken = signAccessToken(cliente.id_tecnico, cliente.email, "CLIENTE", empresa.id_empresa);
+        const accessToken = signAccessToken(cliente.id_tecnico, cliente.email, cliente.rol ?? "CLIENTE", cliente.empresaId);
         const { ms: refreshMs } = getRefreshConfig(rememberMe);
         const refreshRaw = signRefreshToken(cliente.id_tecnico, rememberMe);
         const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
@@ -644,8 +659,8 @@ export const loginMicrosoft = async (req, res) => {
                 id_tecnico: cliente.id_tecnico,
                 nombre: cliente.nombre,
                 email: cliente.email,
-                rol: "CLIENTE",
-                empresaId: empresa.id_empresa,
+                rol: cliente.rol ?? "CLIENTE",
+                empresaId: cliente.empresaId ?? null,
                 empresaNombre: empresa.nombre,
             },
         });

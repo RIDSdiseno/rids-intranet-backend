@@ -1,20 +1,38 @@
 export declare function getInventarioByEmpresa(params: {
     empresaId?: number;
     empresaNombre?: string;
+    createdFrom?: Date;
+    createdTo?: Date;
+    updatedFrom?: Date;
+    updatedTo?: Date;
 }): Promise<({
+    empresa: {
+        nombre: string;
+        id_empresa: number;
+    } | null;
     solicitante: {
         nombre: string;
         email: string | null;
         empresa: {
             nombre: string;
+            id_empresa: number;
         };
     } | null;
     detalle: {
         macWifi: string | null;
         so: string | null;
+        estadoAlm: string | null;
         office: string | null;
         teamViewer: string | null;
+        claveTv: string | null;
         revisado: string | null;
+        adminRidsPassword: string | null;
+        adminRidsUsuario: string | null;
+        passwordEmpresa: string | null;
+        passwordPersonal: string | null;
+        usuarioEmpresa: string | null;
+        usuarioPersonal: string | null;
+        redEthernet: string | null;
     } | null;
 } & {
     updatedAt: Date;
