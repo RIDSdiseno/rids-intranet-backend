@@ -1524,6 +1524,8 @@ enum EstadoEquipo {
   EN_STOCK
   DADO_DE_BAJA
   EN_RIDS
+  EN_GARANTIA
+  EN_TALLER_EXTERNO
 }
 
 enum OrigenTrabajo {
