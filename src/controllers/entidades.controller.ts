@@ -7,8 +7,219 @@ import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client"
 const prisma = new PrismaClient();
 
 /* =====================================================
+   HELPERS
+===================================================== */
+
+function normalizeRutGestioo(value?: string | null): string | null {
+    if (!value) return null;
+
+    const clean = value
+        .replace(/[^0-9kK]/g, "")
+        .toUpperCase();
+
+    if (!clean) return null;
+    if (clean.length <= 1) return clean;
+
+    const cuerpo = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+
+    return `${cuerpo}-${dv}`;
+}
+
+function rutKey(value?: string | null): string {
+    return (value ?? "")
+        .replace(/[^0-9kK]/g, "")
+        .toUpperCase();
+}
+
+function normalizeNombreEntidad(value?: string | null): string {
+    return (value ?? "")
+        .normalize("NFC")
+        .trim()
+        .replace(/\s+/g, " ")
+        .replace(/[-\s]+$/g, "")
+        .toUpperCase();
+}
+
+function normalizeTipoEntidad(value?: string | null): TipoEntidadGestioo {
+    if (value === "PERSONA") return TipoEntidadGestioo.PERSONA;
+    return TipoEntidadGestioo.EMPRESA;
+}
+
+function normalizeOrigenEntidad(value?: string | null): OrigenGestioo {
+    if (value === "RIDS") return OrigenGestioo.RIDS;
+    if (value === "ECONNET") return OrigenGestioo.ECONNET;
+    return OrigenGestioo.OTRO;
+}
+
+function normalizeSearchText(value?: string | null): string {
+    return (value ?? "")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+function normalizeDigits(value?: string | null): string {
+    return (value ?? "").replace(/\D/g, "");
+}
+
+function buildEntidadSearchWhere(search: string) {
+    const q = normalizeSearchText(search);
+
+    if (!q) return {};
+
+    const terms = q
+        .split(" ")
+        .map((term) => term.trim())
+        .filter(Boolean);
+
+    const qRutKey = rutKey(q);
+    const qRutNormalizado = normalizeRutGestioo(q);
+    const qDigits = normalizeDigits(q);
+
+    return {
+        AND: [
+            ...terms.map((term) => {
+                const termRutKey = rutKey(term);
+                const termRutNormalizado = normalizeRutGestioo(term);
+                const termDigits = normalizeDigits(term);
+
+                return {
+                    OR: [
+                        {
+                            nombre: {
+                                contains: term,
+                                mode: "insensitive" as const,
+                            },
+                        },
+                        {
+                            rut: {
+                                contains: term,
+                                mode: "insensitive" as const,
+                            },
+                        },
+                        {
+                            correo: {
+                                contains: term,
+                                mode: "insensitive" as const,
+                            },
+                        },
+                        {
+                            telefono: {
+                                contains: term,
+                                mode: "insensitive" as const,
+                            },
+                        },
+                        {
+                            direccion: {
+                                contains: term,
+                                mode: "insensitive" as const,
+                            },
+                        },
+                        ...(termRutNormalizado
+                            ? [
+                                {
+                                    rut: {
+                                        contains: termRutNormalizado,
+                                        mode: "insensitive" as const,
+                                    },
+                                },
+                            ]
+                            : []),
+                        ...(termRutKey
+                            ? [
+                                {
+                                    rut: {
+                                        contains: termRutKey,
+                                        mode: "insensitive" as const,
+                                    },
+                                },
+                            ]
+                            : []),
+                        ...(termDigits
+                            ? [
+                                {
+                                    telefono: {
+                                        contains: termDigits,
+                                        mode: "insensitive" as const,
+                                    },
+                                },
+                            ]
+                            : []),
+                    ],
+                };
+            }),
+            {
+                OR: [
+                    {
+                        nombre: {
+                            contains: q,
+                            mode: "insensitive" as const,
+                        },
+                    },
+                    {
+                        rut: {
+                            contains: q,
+                            mode: "insensitive" as const,
+                        },
+                    },
+                    {
+                        correo: {
+                            contains: q,
+                            mode: "insensitive" as const,
+                        },
+                    },
+                    {
+                        telefono: {
+                            contains: q,
+                            mode: "insensitive" as const,
+                        },
+                    },
+                    {
+                        direccion: {
+                            contains: q,
+                            mode: "insensitive" as const,
+                        },
+                    },
+                    ...(qRutNormalizado
+                        ? [
+                            {
+                                rut: {
+                                    contains: qRutNormalizado,
+                                    mode: "insensitive" as const,
+                                },
+                            },
+                        ]
+                        : []),
+                    ...(qRutKey
+                        ? [
+                            {
+                                rut: {
+                                    contains: qRutKey,
+                                    mode: "insensitive" as const,
+                                },
+                            },
+                        ]
+                        : []),
+                    ...(qDigits
+                        ? [
+                            {
+                                telefono: {
+                                    contains: qDigits,
+                                    mode: "insensitive" as const,
+                                },
+                            },
+                        ]
+                        : []),
+                ],
+            },
+        ],
+    };
+}
+
+/* =====================================================
    SEED RIDS
 ===================================================== */
+
 export async function seedEntidadesRIDS(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_rids_seed.json");
@@ -36,7 +247,6 @@ export async function seedEntidadesRIDS(_req: Request, res: Response) {
                 message: `Se insertaron ${result.count} entidades RIDS.`,
             },
         });
-
     } catch (error: any) {
         console.error("❌ Error seed RIDS:", error);
         return res.status(500).json({
@@ -49,6 +259,7 @@ export async function seedEntidadesRIDS(_req: Request, res: Response) {
 /* =====================================================
    SEED ECONNET
 ===================================================== */
+
 export async function seedEntidadesECONNET(_req: Request, res: Response) {
     try {
         const filePath = path.resolve("prisma/entidades_econnet_seed.json");
@@ -76,7 +287,6 @@ export async function seedEntidadesECONNET(_req: Request, res: Response) {
                 message: `Se insertaron ${result.count} entidades ECONNET.`,
             },
         });
-
     } catch (error: any) {
         console.error("❌ Error seed ECONNET:", error);
         return res.status(500).json({
@@ -89,47 +299,6 @@ export async function seedEntidadesECONNET(_req: Request, res: Response) {
 /* =====================================================
    CRUD ENTIDADES
 ===================================================== */
-
-// Crear entidad
-function normalizeRutGestioo(value?: string | null): string | null {
-    if (!value) return null;
-
-    const clean = value
-        .replace(/[^0-9kK]/g, "")
-        .toUpperCase();
-
-    if (!clean) return null;
-    if (clean.length <= 1) return clean;
-
-    const cuerpo = clean.slice(0, -1);
-    const dv = clean.slice(-1);
-
-    return `${cuerpo}-${dv}`;
-}
-
-function rutKey(value?: string | null): string {
-    return (value ?? "")
-        .replace(/[^0-9kK]/g, "")
-        .toUpperCase();
-}
-
-function normalizeNombreEntidad(value?: string | null): string {
-    return (value ?? "")
-        .trim()
-        .replace(/\s+/g, " ")
-        .toUpperCase();
-}
-
-function normalizeTipoEntidad(value?: string | null): TipoEntidadGestioo {
-    if (value === "PERSONA") return TipoEntidadGestioo.PERSONA;
-    return TipoEntidadGestioo.EMPRESA;
-}
-
-function normalizeOrigenEntidad(value?: string | null): OrigenGestioo {
-    if (value === "RIDS") return OrigenGestioo.RIDS;
-    if (value === "ECONNET") return OrigenGestioo.ECONNET;
-    return OrigenGestioo.OTRO;
-}
 
 // Crear entidad
 export async function createEntidad(req: Request, res: Response) {
@@ -220,34 +389,7 @@ export async function getEntidades(req: Request, res: Response) {
         }
 
         if (typeof search === "string" && search.trim()) {
-            const q = search.trim();
-
-            where.OR = [
-                {
-                    nombre: {
-                        contains: q,
-                        mode: "insensitive",
-                    },
-                },
-                {
-                    rut: {
-                        contains: q,
-                        mode: "insensitive",
-                    },
-                },
-                {
-                    correo: {
-                        contains: q,
-                        mode: "insensitive",
-                    },
-                },
-                {
-                    telefono: {
-                        contains: q,
-                        mode: "insensitive",
-                    },
-                },
-            ];
+            Object.assign(where, buildEntidadSearchWhere(search));
         }
 
         const entidades = await prisma.entidadGestioo.findMany({
@@ -283,7 +425,6 @@ export async function getEntidadById(req: Request, res: Response) {
         }
 
         return res.json({ data: entidad });
-
     } catch (error: any) {
         console.error("❌ Error al obtener entidad:", error);
         return res.status(500).json({ error: "Error al obtener entidad" });
@@ -315,7 +456,9 @@ export async function updateEntidad(req: Request, res: Response) {
                 : entidadActual.tipo;
 
         const origenNormalizado =
-            data.origen === "RIDS" || data.origen === "ECONNET" || data.origen === "OTRO"
+            data.origen === "RIDS" ||
+                data.origen === "ECONNET" ||
+                data.origen === "OTRO"
                 ? normalizeOrigenEntidad(data.origen)
                 : entidadActual.origen;
 
@@ -389,10 +532,8 @@ export async function deleteEntidad(req: Request, res: Response) {
         await prisma.entidadGestioo.delete({ where: { id } });
 
         return res.json({ message: "Entidad eliminada correctamente" });
-
     } catch (error: any) {
         console.error("❌ Error al eliminar entidad:", error);
         return res.status(500).json({ error: "Error al eliminar entidad" });
     }
 }
-
