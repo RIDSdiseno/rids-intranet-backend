@@ -1107,6 +1107,7 @@ model AgendaVisita {
   recordatorioEnviado  Boolean?
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
+  fechaInicioRuta      DateTime?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   tecnicos             AgendaTecnico[]
 
@@ -1431,6 +1432,23 @@ model ManualTutorialArchivo {
   @@index([manualId])
 }
 
+model UbicacionTecnico {
+  id             Int      @id @default(autoincrement())
+  tecnicoId      Int
+  agendaId       Int?
+  latitud        Float
+  longitud       Float
+  precision      Float?
+  velocidad      Float?
+  estadoTracking String
+  createdAt      DateTime @default(now())
+
+  @@index([agendaId])
+  @@index([createdAt])
+  @@index([estadoTracking])
+  @@index([tecnicoId])
+}
+
 enum TipoBitacoraTecnico {
   SOPORTE
   TERRENO
@@ -1465,6 +1483,7 @@ enum EstadoAgenda {
   NOTIFICADA
   COMPLETADA
   CANCELADA
+  EN_RUTA
 }
 
 enum EstadoDTE {

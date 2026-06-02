@@ -96,6 +96,9 @@ import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 /* ===================== Bitacora Tecnico ===================== */
 import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
 
+/* ===================== Ubicaciones Tecnicos ===================== */
+import ubicacionesRouter from "./routes/ubicaciones.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
@@ -111,6 +114,7 @@ api.use("/agenda", agendaRouter);
 api.use("/role-permissions", rolePermissionsRoutes);
 api.use("/manuales-tutoriales", manualesTutorialesRouter);
 api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
+api.use("/ubicaciones", ubicacionesRouter);
 
 // Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta
