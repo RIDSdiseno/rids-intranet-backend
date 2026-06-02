@@ -3,7 +3,6 @@ import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
 import { buildTicketSla } from "./tickets-sla/ticketera-sla.controller.js";
@@ -281,6 +280,21 @@ export async function createTicket(req: Request, res: Response) {
                     actorType: TicketActorType.SYSTEM,
                 },
             });
+
+            if (assigneeIdFinal) {
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId: ticket.id,
+                        type: TicketEventType.ASSIGNED,
+                        oldValue: null,
+                        newValue: String(assigneeIdFinal),
+                        actorType: req.user?.id
+                            ? TicketActorType.AGENT
+                            : TicketActorType.SYSTEM,
+                        actorId: req.user?.id ?? null,
+                    },
+                });
+            }
 
             const hasMessage = Boolean(message?.trim());
             const hasFiles = Boolean(files?.length);
@@ -641,7 +655,7 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 updateData.status = TicketStatus.OPEN;
             }
 
-            if (!ticket.firstResponseAt && !isInternal && agentId) {
+            if (!ticket.firstResponseAt && !isInternal && agentId && ticket.assigneeId) {
                 updateData.firstResponseAt = new Date();
             }
 
@@ -868,8 +882,6 @@ export async function listTickets(req: Request, res: Response) {
         }
 
         // ── Área (solo roles internos) ────────────────────────────────────────
-        const parsedArea = !isCliente ? parseArea(area) : null;
-
         const isClosedFilter = status === TicketStatus.CLOSED;
 
         const orderBy: Prisma.TicketOrderByWithRelationInput[] = isClosedFilter
@@ -880,65 +892,47 @@ export async function listTickets(req: Request, res: Response) {
         let tickets: any[] = [];
         let total = 0;
 
-        if (parsedArea) {
-            // Filtrado por área requiere traer todos y filtrar en memoria
-            const areaCandidates = await prisma.ticket.findMany({
-                where: whereActual,
-                include: {
-                    empresa: { select: { nombre: true } },
-                    assignee: { select: { id_tecnico: true, nombre: true } },
-                    requester: { select: { nombre: true, email: true } },
-                    messages: {
-                        orderBy: { createdAt: "desc" },
-                        select: {
-                            direction: true,
-                            isInternal: true,
-                            createdAt: true,
-                            bodyText: true,
-                            bodyHtml: true,
-                            fromEmail: true,
-                            toEmail: true,
-                            cc: true,
-                        },
-                    },
+        const includeForList = {
+            empresa: { select: { nombre: true } },
+            assignee: { select: { id_tecnico: true, nombre: true } },
+            requester: { select: { nombre: true, email: true } },
+            messages: {
+                orderBy: { createdAt: "desc" as const },
+                take: 2,
+                select: {
+                    direction: true,
+                    isInternal: true,
+                    createdAt: true,
                 },
+            },
+            events: {
+                where: {
+                    type: TicketEventType.ASSIGNED,
+                },
+                orderBy: {
+                    createdAt: "desc" as const,
+                },
+                select: {
+                    type: true,
+                    newValue: true,
+                    createdAt: true,
+                },
+            },
+        };
+
+        const result = await Promise.all([
+            prisma.ticket.findMany({
+                where: whereActual,
+                include: includeForList,
                 orderBy,
-            });
+                skip,
+                take,
+            }),
+            prisma.ticket.count({ where: whereActual }),
+        ]);
 
-            const filteredByArea = areaCandidates.filter(
-                (t) => detectArea(t) === parsedArea
-            );
-
-            total = filteredByArea.length;
-            tickets = filteredByArea.slice(skip, skip + take);
-        } else {
-            const result = await Promise.all([
-                prisma.ticket.findMany({
-                    where: whereActual,
-                    include: {
-                        empresa: { select: { nombre: true } },
-                        assignee: { select: { id_tecnico: true, nombre: true } },
-                        requester: { select: { nombre: true, email: true } },
-                        messages: {
-                            orderBy: { createdAt: "desc" },
-                            take: 2,
-                            select: {
-                                direction: true,
-                                isInternal: true,
-                                createdAt: true,
-                            },
-                        },
-                    },
-                    orderBy,
-                    skip,
-                    take,
-                }),
-                prisma.ticket.count({ where: whereActual }),
-            ]);
-
-            tickets = result[0];
-            total = result[1];
-        }
+        tickets = result[0];
+        total = result[1];
 
         // ── Conteos por estado (con mismo where base, sin filtro de status) ───
         const whereCounts: Prisma.TicketWhereInput = { ...whereActual };
@@ -1069,6 +1063,24 @@ export async function getTicketById(req: Request, res: Response) {
                             actorId: tecnicoActual.id_tecnico,
                         },
                     });
+
+                    const refreshedTicket = await prisma.ticket.findFirst({
+                        where: { id: ticket.id, deletedAt: null },
+                        include: {
+                            empresa: true,
+                            requester: true,
+                            assignee: true,
+                            messages: {
+                                orderBy: { createdAt: "desc" },
+                                include: { attachments: true },
+                            },
+                            events: { orderBy: { createdAt: "desc" } },
+                        },
+                    });
+
+                    if (refreshedTicket) {
+                        ticketFinal = refreshedTicket;
+                    }
 
                     bus.emit("ticket.updated", {
                         ticketId: ticket.id,
@@ -1208,6 +1220,10 @@ export async function updateTicket(req: Request, res: Response) {
         /* ================== ASSIGNEE ================== */
         if (assigneeId !== undefined && assigneeId !== ticket.assigneeId) {
             updateData.assigneeId = assigneeId;
+
+            if (assigneeId && ticket.status === TicketStatus.NEW) {
+                updateData.status = TicketStatus.OPEN;
+            }
 
             events.push({
                 ticketId,

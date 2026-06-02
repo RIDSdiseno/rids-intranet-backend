@@ -29,14 +29,15 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
             "informaticap@rids.cl",
             "ncanales@rids.cl",
             "carenas@rids.cl",
-            "ventas@rids.cl"
+            "ventas@rids.cl",
+            "cespinoza@rids.cl",
         ];
 
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
                 status: true,
                 rol: {
-                     in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
                 },
                 email: {
                     notIn: EXCLUDED_TECNICOS_EMAILS,
@@ -94,7 +95,17 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                 closedAt: true,
                 assigneeId: true,
                 events: {
-                    select: { type: true },
+                    where: {
+                        type: "ASSIGNED",
+                    },
+                    select: {
+                        type: true,
+                        newValue: true,
+                        createdAt: true,
+                    },
+                    orderBy: {
+                        createdAt: "desc",
+                    },
                 },
             },
             orderBy: { closedAt: "desc" },
@@ -250,14 +261,15 @@ export async function getWorstClosedTicketsByTecnico(req: Request, res: Response
             "informaticap@rids.cl",
             "ncanales@rids.cl",
             "carenas@rids.cl",
-            "ventas@rids.cl"
+            "ventas@rids.cl",
+            "cespinoza@rids.cl",
         ];
 
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO","ADMINISTRACION"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
                 },
                 email: {
                     notIn: EXCLUDED_TECNICOS_EMAILS,
