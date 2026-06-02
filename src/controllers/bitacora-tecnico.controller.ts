@@ -162,6 +162,8 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
                         numeroOrden: true,
                         tipoTrabajo: true,
                         estado: true,
+                        area: true,
+                        destinoEquipo: true,
                     },
                 },
                 visita: {
@@ -380,9 +382,10 @@ export async function obtenerBitacorasTecnico(req: Request, res: Response) {
 
         const bitacoras = await prisma.bitacoraTecnico.findMany({
             where,
-            orderBy: {
-                fecha: "desc",
-            },
+            orderBy: [
+                { fecha: "desc" },
+                { createdAt: "desc" },
+            ],
             include: {
                 tecnico: {
                     select: {
@@ -723,6 +726,10 @@ export async function obtenerOpcionesRelacionBitacora(req: Request, res: Respons
                         descripcion: true,
                         estado: true,
                         fecha: true,
+
+                        area: true,
+                        destinoEquipo: true,
+
                         equipo: {
                             select: {
                                 id_equipo: true,
@@ -802,14 +809,26 @@ export async function obtenerOpcionesRelacionBitacora(req: Request, res: Respons
             case "equipos": {
                 const equipos = await prisma.equipo.findMany({
                     where: {
-                        empresaId,
                         deletedAt: null,
+                        OR: [
+                            {
+                                empresaId,
+                            },
+                            {
+                                solicitante: {
+                                    is: {
+                                        empresaId,
+                                    },
+                                },
+                            },
+                        ],
                     },
                     orderBy: [
                         { marca: "asc" },
                         { modelo: "asc" },
+                        { serial: "asc" },
                     ],
-                    take: 100,
+                    take: 200,
                     select: {
                         id_equipo: true,
                         serial: true,
@@ -817,9 +836,18 @@ export async function obtenerOpcionesRelacionBitacora(req: Request, res: Respons
                         modelo: true,
                         tipo: true,
                         estado: true,
+                        empresaId: true,
+                        idSolicitante: true,
                         solicitante: {
                             select: {
                                 id_solicitante: true,
+                                nombre: true,
+                                empresaId: true,
+                            },
+                        },
+                        empresa: {
+                            select: {
+                                id_empresa: true,
                                 nombre: true,
                             },
                         },
