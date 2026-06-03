@@ -71,9 +71,11 @@ import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
 /* ===================== Ubicaciones Tecnicos ===================== */
 import ubicacionesRouter from "./routes/ubicaciones.routes.js";
+import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
+api.use("/equipos/agent", equipoAgentRoutes);
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
 /* ===================== App Core ===================== */

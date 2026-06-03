@@ -9,12 +9,18 @@ export declare function getSlaTargets(priority: TicketPriority | string | null |
 };
 export declare function buildTicketSla(ticket: {
     createdAt: Date;
+    assigneeId?: number | null;
     firstResponseAt?: Date | null;
     resolvedAt?: Date | null;
     closedAt?: Date | null;
     lastReopenedAt?: Date | null;
     status?: TicketStatus | string | null;
     priority?: TicketPriority | string | null;
+    events?: Array<{
+        type?: string | null;
+        newValue?: string | null;
+        createdAt?: Date | string | null;
+    }>;
 }, slaConfig: Record<string, {
     firstResponseMinutes: number;
     resolutionMinutes: number;
@@ -23,6 +29,29 @@ export declare function buildTicketSla(ticket: {
         firstResponseMinutes: number;
         resolutionMinutes: number;
     };
+    startsAt: null;
+    waitingAssignment: boolean;
+    firstResponse: {
+        dueAt: null;
+        at: Date | null;
+        elapsedMinutes: null;
+        status: "PENDING";
+        remainingMinutes: null;
+    };
+    resolution: {
+        dueAt: null;
+        at: Date | null;
+        elapsedMinutes: null;
+        status: "PENDING";
+        remainingMinutes: null;
+    };
+} | {
+    targets: {
+        firstResponseMinutes: number;
+        resolutionMinutes: number;
+    };
+    startsAt: Date;
+    waitingAssignment: boolean;
     firstResponse: {
         dueAt: Date;
         at: Date | null;

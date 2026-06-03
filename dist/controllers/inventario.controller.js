@@ -185,57 +185,29 @@ function buildInventarioExcel(equipos, mes) {
             continue;
         const rows = items.map((e, i) => ({
             "Código": i + 1,
-            // Usuario / empresa
             "USUARIO": e.solicitante?.nombre ?? "",
             "CORREO": e.solicitante?.email ?? "",
-            "USUARIO EMPRESA": e.detalle?.usuarioEmpresa ?? "",
-            "USUARIO RIDS": e.detalle?.adminRidsUsuario ?? "",
-            "PROPIEDAD": e.propiedad ?? "",
-            // Identificación del equipo
-            "TIPO DE EQUIPO": formatTipoEquipo(e.tipo),
             "ESTADO EQUIPO": formatEstadoEquipo(e.estado),
-            "AÑO PC": e.anioPc ?? "",
-            "FECHA INGRESO": formatFechaChile(e.createdAt),
             "SERIAL": e.serial ?? "",
             "MARCA": e.marca ?? "",
             "MODELO": e.modelo ?? "",
-            // Hardware
             "CPU": e.procesador ?? "",
             "RAM": e.ram ?? "",
             "DISCO": e.disco ?? "",
-            // Software / licencias
-            "SO": e.detalle?.so ?? "",
-            "LICENCIA USUARIO": e.detalle?.office ?? "",
-            // Red / acceso remoto
-            "MAC WIFI": e.detalle?.macWifi ?? "",
-            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
-            "CLAVE TEAMVIEWER": e.detalle?.claveTv ?? "",
-            // Control interno
-            "REVISADO": formatRevisado(e.detalle?.revisado),
+            "SISTEMA OPERATIVO": e.detalle?.so ?? "",
         }));
         const headers = [
             "Código",
             "USUARIO",
             "CORREO",
-            "USUARIO EMPRESA",
-            "USUARIO RIDS",
-            "PROPIEDAD",
-            "TIPO DE EQUIPO",
             "ESTADO EQUIPO",
-            "AÑO PC",
-            "FECHA INGRESO",
             "SERIAL",
             "MARCA",
             "MODELO",
             "CPU",
             "RAM",
             "DISCO",
-            "SO",
-            "LICENCIA USUARIO",
-            "MAC WIFI",
-            "TEAMVIEWER",
-            "CLAVE TEAMVIEWER",
-            "REVISADO",
+            "SISTEMA OPERATIVO",
         ];
         const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
         styleSheet(ws, rows.length, headers.length, getEmpresaStyle(empresa));

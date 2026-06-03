@@ -62,13 +62,14 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     tipo: import("@prisma/client").$Enums.TipoAgenda;
     notas: string | null;
     fecha: Date;
+    mensaje: string | null;
     notificacionEnviada: boolean;
     horaFin: string | null;
     horaInicio: string | null;
-    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -115,13 +116,14 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     tipo: import("@prisma/client").$Enums.TipoAgenda;
     notas: string | null;
     fecha: Date;
+    mensaje: string | null;
     notificacionEnviada: boolean;
     horaFin: string | null;
     horaInicio: string | null;
-    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -161,13 +163,14 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     tipo: import("@prisma/client").$Enums.TipoAgenda;
     notas: string | null;
     fecha: Date;
+    mensaje: string | null;
     notificacionEnviada: boolean;
     horaFin: string | null;
     horaInicio: string | null;
-    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
 }, "fecha"> & {
     fecha: string;
 }>;
@@ -189,13 +192,14 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     tipo: import("@prisma/client").$Enums.TipoAgenda;
     notas: string | null;
     fecha: Date;
+    mensaje: string | null;
     notificacionEnviada: boolean;
     horaFin: string | null;
     horaInicio: string | null;
-    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
 }>;
 /**
  * Elimina todas las visitas de un mes completo.
@@ -242,13 +246,14 @@ export declare function crearAgendaVisitaManual(data: {
     tipo: import("@prisma/client").$Enums.TipoAgenda;
     notas: string | null;
     fecha: Date;
+    mensaje: string | null;
     notificacionEnviada: boolean;
     horaFin: string | null;
     horaInicio: string | null;
-    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
 }, "fecha"> & {
     fecha: string;
 }>;

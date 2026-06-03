@@ -11,4 +11,5 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
     },
 });
 export const TICKET_ATTACHMENTS_BUCKET = process.env.SUPABASE_TICKET_ATTACHMENTS_BUCKET || "ticket-attachments";
+export const MANUALES_TUTORIALES_BUCKET = process.env.SUPABASE_MANUALES_TUTORIALES_BUCKET || "manuales-tutoriales";
 //# sourceMappingURL=supabase.js.map
