@@ -466,6 +466,12 @@ model Equipo {
   agenteActivo  Boolean            @default(false)
   estadoAgente  EstadoAgenteEquipo @default(SIN_AGENTE)
 
+  /// ===================== Revisión solicitante detectado por agente =====================
+  requiereRevisionSolicitante Boolean @default(false)
+  solicitanteDetectadoEmail   String?
+  solicitanteDetectadoId      Int?
+  motivoRevisionSolicitante   String?
+
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @default(now()) @updatedAt
   deletedAt              DateTime?
@@ -496,6 +502,7 @@ model Equipo {
   @@index([lastSeenAt])
   @@index([estadoAgente])
   @@index([agenteActivo])
+  @@index([requiereRevisionSolicitante])
   @@index([estado])
 }
 
@@ -658,7 +665,7 @@ model Tecnico {
 }
 
 model RolePermission {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   rol       String
   permiso   String
   permitido Boolean  @default(false)

@@ -183,23 +183,9 @@ async function resolveSolicitanteFromAgent(
     const solicitanteId = numberOrNull(body.solicitanteId);
 
     if (solicitanteId) {
-        const solicitante = await prisma.solicitante.findUnique({
-            where: { id_solicitante: solicitanteId },
-        });
-
-        if (solicitante) return solicitante;
-    }
-
-    const email = cleanString(body.solicitanteEmail)?.toLowerCase();
-
-    if (email) {
         const solicitante = await prisma.solicitante.findFirst({
             where: {
-                email: {
-                    equals: email,
-                    mode: "insensitive",
-                },
-                ...(empresaId ? { empresaId } : {}),
+                id_solicitante: solicitanteId,
                 deletedAt: null,
             },
         });
@@ -207,7 +193,67 @@ async function resolveSolicitanteFromAgent(
         if (solicitante) return solicitante;
     }
 
-    return null;
+    const email = cleanString(body.solicitanteEmail)?.toLowerCase();
+
+    if (!email) return null;
+
+    if (empresaId) {
+        const solicitanteEmpresa = await prisma.solicitante.findFirst({
+            where: {
+                email: {
+                    equals: email,
+                    mode: "insensitive",
+                },
+                empresaId,
+                deletedAt: null,
+            },
+        });
+
+        if (solicitanteEmpresa) return solicitanteEmpresa;
+    }
+
+    const solicitanteGlobal = await prisma.solicitante.findFirst({
+        where: {
+            email: {
+                equals: email,
+                mode: "insensitive",
+            },
+            deletedAt: null,
+        },
+    });
+
+    return solicitanteGlobal;
+}
+
+async function resolveSolicitanteFallbackByEmpresa(empresaId?: number | null) {
+    if (!empresaId) return null;
+
+    const solicitanteConEmail = await prisma.solicitante.findFirst({
+        where: {
+            empresaId,
+            deletedAt: null,
+            isActive: true,
+            email: {
+                not: null,
+            },
+        },
+        orderBy: {
+            id_solicitante: "asc",
+        },
+    });
+
+    if (solicitanteConEmail) return solicitanteConEmail;
+
+    return prisma.solicitante.findFirst({
+        where: {
+            empresaId,
+            deletedAt: null,
+            isActive: true,
+        },
+        orderBy: {
+            id_solicitante: "asc",
+        },
+    });
 }
 
 /* =========================
@@ -222,37 +268,39 @@ async function syncSoftwares(
 
     const cleaned = softwares
         .map((s) => ({
+            equipoId,
             nombre: cleanString(s.nombre),
             version: cleanString(s.version) ?? "",
             publisher: cleanString(s.publisher),
             installDate: dateOrNull(s.installDate),
         }))
-        .filter((s) => Boolean(s.nombre));
+        .filter((s): s is {
+            equipoId: number;
+            nombre: string;
+            version: string;
+            publisher: string | null;
+            installDate: Date | null;
+        } => Boolean(s.nombre));
 
     if (cleaned.length === 0) return;
 
-    for (const sw of cleaned) {
-        await prisma.equipoSoftware.upsert({
-            where: {
-                equipoId_nombre_version: {
-                    equipoId,
-                    nombre: sw.nombre!,
-                    version: sw.version,
-                },
-            },
-            update: {
-                publisher: sw.publisher,
-                installDate: sw.installDate,
-            },
-            create: {
-                equipoId,
-                nombre: sw.nombre!,
-                version: sw.version,
-                publisher: sw.publisher,
-                installDate: sw.installDate,
-            },
-        });
-    }
+    const unique = Array.from(
+        new Map(
+            cleaned.map((s) => [
+                `${s.nombre.toLowerCase()}|${s.version.toLowerCase()}`,
+                s,
+            ])
+        ).values()
+    );
+
+    await prisma.equipoSoftware.deleteMany({
+        where: { equipoId },
+    });
+
+    await prisma.equipoSoftware.createMany({
+        data: unique,
+        skipDuplicates: true,
+    });
 }
 
 /* =========================
@@ -314,11 +362,23 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const osVersion = cleanString(body.osVersion);
         const osBuild = cleanString(body.osBuild);
 
-        let equipo = null as Awaited<ReturnType<typeof prisma.equipo.findFirst>>;
+        let equipo: any = null;
 
         if (serial) {
             equipo = await prisma.equipo.findUnique({
                 where: { serial },
+                include: {
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                            empresaId: true,
+                            deletedAt: true,
+                            isActive: true,
+                        },
+                    },
+                },
             });
         }
 
@@ -328,6 +388,18 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     hostname,
                     empresaId: empresaDetectada.id_empresa,
                     deletedAt: null,
+                },
+                include: {
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                            empresaId: true,
+                            deletedAt: true,
+                            isActive: true,
+                        },
+                    },
                 },
             });
         }
@@ -339,19 +411,82 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
          */
         const empresaIdFinal =
             equipo?.empresaId ??
+            solicitanteDetectado?.empresaId ??
             empresaDetectada?.id_empresa ??
+            equipo?.solicitante?.empresaId ??
             null;
 
-        const idSolicitanteFinal =
-            equipo?.idSolicitante ??
-            solicitanteDetectado?.id_solicitante ??
-            null;
+        const solicitanteActualId = equipo?.idSolicitante ?? null;
+        const solicitanteActual = equipo?.solicitante ?? null;
+
+        const solicitanteActualValido = Boolean(
+            solicitanteActualId &&
+            solicitanteActual &&
+            solicitanteActual.deletedAt === null &&
+            solicitanteActual.isActive !== false &&
+            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
+        );
+
+        const solicitanteDetectadoId =
+            solicitanteDetectado?.id_solicitante ?? null;
+
+        const solicitanteDetectadoEmailFinal =
+            solicitanteEmail ?? equipo?.solicitanteDetectadoEmail ?? null;
+
+        const solicitanteDetectadoIdFinal =
+            solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
+
+        const solicitanteDetectadoValido = Boolean(
+            solicitanteDetectadoId &&
+            solicitanteDetectado &&
+            solicitanteDetectado.deletedAt === null &&
+            solicitanteDetectado.isActive !== false &&
+            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal)
+        );
+
+        let idSolicitanteFinal: number | null = null;
+        let requiereRevisionSolicitante = false;
+        let motivoRevisionSolicitante: string | null = null;
+
+        if (solicitanteDetectadoValido && solicitanteDetectadoId) {
+            // Si el agente detectó un email real y encontró un solicitante válido,
+            // se actualiza automáticamente al solicitante detectado.
+            idSolicitanteFinal = solicitanteDetectadoId;
+
+            if (
+                solicitanteActualId &&
+                solicitanteActualId !== solicitanteDetectadoId
+            ) {
+                motivoRevisionSolicitante =
+                    "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
+            }
+        } else if (solicitanteActualValido) {
+            // Si no hubo email real detectado, conserva el solicitante actual solo si es válido.
+            idSolicitanteFinal = solicitanteActualId;
+        } else {
+            // Si no hay email real y el solicitante actual no sirve, queda pendiente.
+            idSolicitanteFinal = null;
+            requiereRevisionSolicitante = true;
+
+            if (solicitanteActualId) {
+                motivoRevisionSolicitante =
+                    "El solicitante asignado no pertenece a la empresa detectada o no es válido, y el agente no detectó un email real.";
+            } else {
+                motivoRevisionSolicitante =
+                    "El agente no detectó un email real para asignar solicitante.";
+            }
+        }
 
         const equipoUpdateData: any = {
             lastSeenAt: new Date(),
             agenteActivo: true,
             estadoAgente: "ACTIVO",
             deletedAt: null,
+
+            requiereRevisionSolicitante,
+            solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+            solicitanteDetectadoId: solicitanteDetectadoIdFinal,
+            motivoRevisionSolicitante,
         };
 
         if (serial) equipoUpdateData.serial = serial;
@@ -393,8 +528,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const agenteVersion = cleanString(body.agenteVersion);
         if (agenteVersion) equipoUpdateData.agenteVersion = agenteVersion;
 
-        if (empresaIdFinal) equipoUpdateData.empresaId = empresaIdFinal;
-        if (idSolicitanteFinal) equipoUpdateData.idSolicitante = idSolicitanteFinal;
+        if (empresaIdFinal) {
+            equipoUpdateData.empresaId = empresaIdFinal;
+        }
+
+        if (idSolicitanteFinal) {
+            equipoUpdateData.idSolicitante = idSolicitanteFinal;
+        } else if (solicitanteActualId && !solicitanteActualValido) {
+            equipoUpdateData.idSolicitante = null;
+        }
 
         if (equipo) {
             equipo = await prisma.equipo.update({
@@ -416,7 +558,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     serial: serialForCreate,
                     marca,
                     modelo,
-                    tipo: "NOTEBOOK",
+                    tipo: "GENERICO",
                     propiedad: "Empresa",
                 },
             });
@@ -468,27 +610,35 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         await prisma.equipoAgenteEvento.create({
             data: {
                 equipoId: equipo.id_equipo,
-                tipo: "INVENTORY_SYNC",
-                mensaje: "Inventario recibido desde agente Windows",
+                tipo: requiereRevisionSolicitante
+                    ? "REVISION_SOLICITANTE"
+                    : "INVENTORY_SYNC",
+                mensaje: requiereRevisionSolicitante
+                    ? "El agente detectó un solicitante distinto al asignado actualmente."
+                    : "Inventario recibido desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
-                    solicitanteEmail,
+                    solicitanteEmail: solicitanteDetectadoEmailFinal,
                     dominioEmpresa,
 
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
                     empresaDetectadaNombre: empresaDetectada?.nombre ?? null,
 
-                    solicitanteDetectadoId:
-                        solicitanteDetectado?.id_solicitante ?? null,
-                    solicitanteDetectadoNombre:
-                        solicitanteDetectado?.nombre ?? null,
+                    solicitanteActualId,
+                    solicitanteActualValido,
 
                     empresaIdFinal,
                     solicitanteIdFinal: idSolicitanteFinal,
 
-                    clasificado: Boolean(empresaIdFinal),
-                    requiereClasificacion: !empresaIdFinal,
+                    requiereRevisionSolicitante,
+                    motivoRevisionSolicitante,
+
+                    clasificado: Boolean(empresaIdFinal && idSolicitanteFinal),
+                    requiereClasificacion:
+                        !empresaIdFinal ||
+                        !idSolicitanteFinal ||
+                        requiereRevisionSolicitante,
 
                     agenteVersion,
                 },
@@ -501,8 +651,16 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             equipoId: equipo.id_equipo,
             empresaId: empresaIdFinal,
             solicitanteId: idSolicitanteFinal,
-            clasificado: Boolean(empresaIdFinal),
-            requiereClasificacion: !empresaIdFinal,
+
+            solicitanteActualId,
+            solicitanteDetectadoId: solicitanteDetectadoIdFinal,
+            solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+            requiereRevisionSolicitante,
+            motivoRevisionSolicitante,
+
+            clasificado: Boolean(empresaIdFinal && idSolicitanteFinal),
+            requiereClasificacion:
+                !empresaIdFinal || !idSolicitanteFinal || requiereRevisionSolicitante,
         });
     } catch (error) {
         console.error("❌ Error recibiendo inventario del agente:", error);
@@ -537,95 +695,109 @@ export async function listEquiposAgent(req: Request, res: Response) {
                 ? empresaIdFromUser
                 : empresaIdQuery || undefined;
 
+        const andFilters: any[] = [
+            { deletedAt: null },
+        ];
+
+        if (empresaId) {
+            andFilters.push({
+                OR: [
+                    { empresaId },
+                    {
+                        solicitante: {
+                            is: {
+                                empresaId,
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+
+        if (soloConAgente) {
+            andFilters.push({
+                lastSeenAt: {
+                    not: null,
+                },
+            });
+        }
+
+        if (pendienteClasificacion) {
+            andFilters.push({
+                lastSeenAt: {
+                    not: null,
+                },
+            });
+
+            andFilters.push({
+                OR: [
+                    { empresaId: null },
+                    { idSolicitante: null },
+                    { requiereRevisionSolicitante: true },
+                ],
+            });
+        }
+
+        if (estadoAgente) {
+            andFilters.push({
+                estadoAgente: estadoAgente as any,
+            });
+        }
+
+        if (search) {
+            andFilters.push({
+                OR: [
+                    { hostname: { contains: search, mode: "insensitive" } },
+                    { serial: { contains: search, mode: "insensitive" } },
+                    { marca: { contains: search, mode: "insensitive" } },
+                    { modelo: { contains: search, mode: "insensitive" } },
+                    { usuarioActual: { contains: search, mode: "insensitive" } },
+                    { localIp: { contains: search, mode: "insensitive" } },
+                    { macAddress: { contains: search, mode: "insensitive" } },
+                    {
+                        solicitanteDetectadoEmail: {
+                            contains: search,
+                            mode: "insensitive",
+                        },
+                    },
+                    {
+                        detalle: {
+                            is: {
+                                teamViewer: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                    },
+                    {
+                        solicitante: {
+                            is: {
+                                nombre: { contains: search, mode: "insensitive" },
+                            },
+                        },
+                    },
+                    {
+                        solicitante: {
+                            is: {
+                                email: { contains: search, mode: "insensitive" },
+                            },
+                        },
+                    },
+                    {
+                        empresa: {
+                            is: {
+                                nombre: { contains: search, mode: "insensitive" },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+
         const equipos = await prisma.equipo.findMany({
             where: {
-                deletedAt: null,
-
-                ...(empresaId
-                    ? {
-                        OR: [
-                            { empresaId },
-                            {
-                                solicitante: {
-                                    is: {
-                                        empresaId,
-                                    },
-                                },
-                            },
-                        ],
-                    }
-                    : {}),
-
-                ...(soloConAgente
-                    ? {
-                        lastSeenAt: {
-                            not: null,
-                        },
-                    }
-                    : {}),
-
-                ...(pendienteClasificacion
-                    ? {
-                        lastSeenAt: {
-                            not: null,
-                        },
-                        OR: [
-                            { empresaId: null },
-                            { idSolicitante: null },
-                        ],
-                    }
-                    : {}),
-
-                ...(estadoAgente
-                    ? {
-                        estadoAgente: estadoAgente as any,
-                    }
-                    : {}),
-
-                ...(search
-                    ? {
-                        OR: [
-                            { hostname: { contains: search, mode: "insensitive" } },
-                            { serial: { contains: search, mode: "insensitive" } },
-                            { marca: { contains: search, mode: "insensitive" } },
-                            { modelo: { contains: search, mode: "insensitive" } },
-                            { usuarioActual: { contains: search, mode: "insensitive" } },
-                            { localIp: { contains: search, mode: "insensitive" } },
-                            { macAddress: { contains: search, mode: "insensitive" } },
-                            {
-                                detalle: {
-                                    is: {
-                                        teamViewer: {
-                                            contains: search,
-                                            mode: "insensitive",
-                                        },
-                                    },
-                                },
-                            },
-                            {
-                                solicitante: {
-                                    is: {
-                                        nombre: { contains: search, mode: "insensitive" },
-                                    },
-                                },
-                            },
-                            {
-                                solicitante: {
-                                    is: {
-                                        email: { contains: search, mode: "insensitive" },
-                                    },
-                                },
-                            },
-                            {
-                                empresa: {
-                                    is: {
-                                        nombre: { contains: search, mode: "insensitive" },
-                                    },
-                                },
-                            },
-                        ],
-                    }
-                    : {}),
+                AND: andFilters,
             },
             include: {
                 empresa: {
