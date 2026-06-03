@@ -1537,33 +1537,6 @@ enum TipoManualTutorial {
   PROCEDIMIENTO
 }
 
-model RcvConciliacion {
-  id                 String    @id
-  empresaKey         String
-  tipoRcv            String
-  tipoDoc            String
-  folio              String
-  rutContraparte     String
-  razonSocial        String?
-  fechaDocto         DateTime?
-  montoNeto          Int       @default(0)
-  montoIva           Int       @default(0)
-  montoTotal         Int       @default(0)
-  estadoRcv          String?
-  origenRcv          String?
-  estadoConciliacion String    @default("NO_CONCILIADA")
-  formaPago          String?
-  observacion        String?
-  responsable        String?
-  conciliadoAt       DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime
-
-  @@unique([empresaKey, tipoRcv, tipoDoc, rutContraparte, folio])
-  @@index([empresaKey, tipoRcv, estadoConciliacion])
-  @@index([empresaKey, tipoRcv])
-}
-
 enum TipoAgenda {
   SEMANA
   SABADO
