@@ -1,7 +1,7 @@
 // src/service/solicitanteSyncMs.ts
 import { prisma } from "../lib/prisma.js";
 // Pequeño helper de retries para errores transitorios (deadlock / tx cerrada)
-async function retry(fn, { retries = 3, baseDelayMs = 200, } = {}) {
+async function retry(fn, { retries = 5, baseDelayMs = 500, } = {}) {
     let lastErr;
     for (let i = 0; i <= retries; i++) {
         try {
@@ -14,7 +14,9 @@ async function retry(fn, { retries = 3, baseDelayMs = 200, } = {}) {
             // deadlock 40P01 o transacción cerrada → reintentar
             const transient = msg.includes("deadlock detected") ||
                 msg.includes("Transaction already closed") ||
-                pgCode === "40P01";
+                msg.includes("Unable to start a transaction") ||
+                pgCode === "40P01" ||
+                e?.code === "P2028";
             if (!transient || i === retries)
                 break;
             const delay = baseDelayMs * Math.pow(2, i);
@@ -38,12 +40,6 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
     const active = !u.suspended;
     return await retry(async () => {
         return prisma.$transaction(async (tx) => {
-            // 1) Resolver target por prioridad:
-            //    a) por microsoftUserId
-            //    b) por email (misma empresa > cualquiera)
-            // 1) Resolver target por prioridad:
-            //    a) microsoftUserId
-            //    b) email + misma empresa
             const byMs = await tx.solicitante.findUnique({
                 where: { microsoftUserId: u.id },
                 select: { id_solicitante: true },
@@ -58,24 +54,27 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
                     targetId = byEmailSameEmpresa.id_solicitante;
                 }
             }
-            // 2) Crear / actualizar Solicitante
             let created = false;
             let solicitante;
             if (targetId) {
+                const updateData = {
+                    ...(byMs ? {} : { microsoftUserId: u.id }),
+                    nombre: cleanName,
+                    email: cleanEmail,
+                    empresaId,
+                    isActive: active,
+                    accountType: "microsoft",
+                    deactivatedAt: active ? null : new Date(),
+                };
+                if (active) {
+                    updateData.deletedAt = null;
+                }
                 solicitante = await tx.solicitante.update({
                     where: { id_solicitante: targetId },
-                    data: {
-                        ...(byMs ? {} : { microsoftUserId: u.id }),
-                        nombre: cleanName,
-                        email: cleanEmail,
-                        empresaId,
-                        isActive: active,
-                        accountType: "microsoft",
-                    },
+                    data: updateData,
                 });
             }
             else {
-                // Blindaje por carrera: si create choca por P2002, resolvemos con update
                 try {
                     solicitante = await tx.solicitante.create({
                         data: {
@@ -85,28 +84,34 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
                             empresaId,
                             isActive: active,
                             accountType: "microsoft",
+                            deletedAt: null,
+                            deactivatedAt: active ? null : new Date(),
                         },
                     });
                     created = true;
                 }
                 catch (e) {
                     if (e?.code === "P2002") {
-                        // Otro worker lo creó en paralelo (por microsoftUserId o PK)
                         const already = await tx.solicitante.findUnique({
                             where: { microsoftUserId: u.id },
                             select: { id_solicitante: true },
                         });
                         if (!already)
                             throw e;
+                        const updateData = {
+                            nombre: cleanName,
+                            email: cleanEmail,
+                            empresaId,
+                            isActive: active,
+                            accountType: "microsoft",
+                            deactivatedAt: active ? null : new Date(),
+                        };
+                        if (active) {
+                            updateData.deletedAt = null;
+                        }
                         solicitante = await tx.solicitante.update({
                             where: { id_solicitante: already.id_solicitante },
-                            data: {
-                                nombre: cleanName,
-                                email: cleanEmail,
-                                empresaId,
-                                isActive: active,
-                                accountType: "microsoft",
-                            },
+                            data: updateData,
                         });
                         created = false;
                     }
@@ -115,7 +120,6 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
                     }
                 }
             }
-            // 3) Diff de licencias (solo tabla relacional)
             const solicitanteId = solicitante.id_solicitante;
             const current = await tx.solicitanteMsLicense.findMany({
                 where: { solicitanteId },
@@ -132,21 +136,24 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
             const toAdd = (u.licenses ?? []).filter((l) => !currentSet.has(l.skuId));
             if (toAdd.length) {
                 await tx.solicitanteMsLicense.createMany({
-                    data: toAdd.map((l) => ({ solicitanteId, skuId: l.skuId })),
+                    data: toAdd.map((l) => ({
+                        solicitanteId,
+                        skuId: l.skuId,
+                    })),
                     skipDuplicates: true,
                 });
             }
             return { solicitante, created };
         }, {
-            maxWait: 8_000, // ms: reduce espera por slot
-            timeout: 10_000, // ms: tiempo total de la tx
+            maxWait: 20_000,
+            timeout: 30_000,
             isolationLevel: "ReadCommitted",
         });
     });
 }
 // Función para desactivar solicitantes vinculados a Microsoft que ya no están en el listado de usuarios de MS
-export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsVigentes) {
-    const ids = microsoftIdsVigentes
+export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsActivos) {
+    const ids = microsoftIdsActivos
         .map((x) => x?.trim())
         .filter(Boolean);
     if (!ids.length) {
@@ -158,11 +165,9 @@ export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsof
             accountType: "microsoft",
             microsoftUserId: { not: null },
             isActive: true,
+            deletedAt: null,
             NOT: {
                 microsoftUserId: { in: ids },
-            },
-            equipos: {
-                none: {},
             },
         },
         select: {
@@ -174,6 +179,9 @@ export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsof
         },
         orderBy: { nombre: "asc" },
     });
+    if (usersToDeactivate.length === 0) {
+        return { count: 0, users: [] };
+    }
     const result = await prisma.solicitante.updateMany({
         where: {
             id_solicitante: {
@@ -182,6 +190,7 @@ export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsof
         },
         data: {
             isActive: false,
+            deactivatedAt: new Date(),
         },
     });
     return {

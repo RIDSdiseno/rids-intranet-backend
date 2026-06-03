@@ -9,7 +9,12 @@ export function getSimpleApiKey() {
 const EMPRESA_CONFIGS = {
     econnet: () => {
         const rutEmpresa = process.env.ECONNET_RUT_EMPRESA;
-        const claveSii = process.env.ECONNET_CLAVE_SII;
+        const claveSii = process.env.ECONNET_CLAVE_SII ??
+            process.env.ECONNET_SII_CLAVE ??
+            process.env.ECONNET_SII_PASSWORD ??
+            process.env.ECONNET_SII_PASS ??
+            process.env.ECONNET_SII ??
+            "";
         const rutRepresentante = process.env.ECONNET_RUT_REPRESENTANTE;
         if (!rutEmpresa || !claveSii || !rutRepresentante) {
             throw new Error("Faltan variables de entorno para empresa 'econnet'");
@@ -18,7 +23,12 @@ const EMPRESA_CONFIGS = {
     },
     rids: () => {
         const rutEmpresa = process.env.RIDS_RUT_EMPRESA;
-        const claveSii = process.env.RIDS_CLAVE_SII;
+        const claveSii = process.env.RIDS_CLAVE_SII ??
+            process.env.RIDS_SII_CLAVE ??
+            process.env.RIDS_SII_PASSWORD ??
+            process.env.RIDS_SII_PASS ??
+            process.env.RIDS_SII ??
+            "";
         const rutRepresentante = process.env.RIDS_RUT_REPRESENTANTE;
         if (!rutEmpresa || !claveSii || !rutRepresentante) {
             throw new Error("Faltan variables de entorno para empresa 'rids'");

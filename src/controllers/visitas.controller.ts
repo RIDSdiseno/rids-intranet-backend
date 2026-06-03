@@ -1,6 +1,6 @@
 // src/controllers/visitas.controller.ts
 import type { Request, Response } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
 
@@ -584,9 +584,22 @@ export const visitasMetrics = async (req: Request, res: Response) => {
 export const getVisitasFilters = async (_req: Request, res: Response) => {
   const [tecnicos, empresas] = await Promise.all([
     prisma.tecnico.findMany({
+      where: {
+        status: true,
+        rol: {
+          in: ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"],
+        },
+      },
       orderBy: { nombre: "asc" },
-      select: { id_tecnico: true, nombre: true },
+      select: {
+        id_tecnico: true,
+        nombre: true,
+        email: true,
+        rol: true,
+        status: true,
+      },
     }),
+
     prisma.empresa.findMany({
       orderBy: { nombre: "asc" },
       select: { id_empresa: true, nombre: true },
@@ -594,8 +607,17 @@ export const getVisitasFilters = async (_req: Request, res: Response) => {
   ]);
 
   res.json({
-    tecnicos: tecnicos.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
-    empresas: empresas.map((e) => ({ id: e.id_empresa, nombre: e.nombre })),
+    tecnicos: tecnicos.map((t) => ({
+      id: t.id_tecnico,
+      nombre: t.nombre,
+      email: t.email,
+      rol: t.rol,
+      status: t.status,
+    })),
+    empresas: empresas.map((e) => ({
+      id: e.id_empresa,
+      nombre: e.nombre,
+    })),
   });
 };
 
@@ -680,11 +702,23 @@ export const getVisitasDashboard = async (req: Request, res: Response) => {
       status: string;
     }>();
 
-    for (const v of visitas) {
+    const visitasParaJornadas = visitas.filter((v) => {
+      const status = String(v.status ?? "").toUpperCase();
+
+      return (
+        status === "COMPLETADA" &&
+        v.inicio &&
+        v.fin &&
+        new Date(v.fin).getTime() > new Date(v.inicio).getTime()
+      );
+    });
+
+    for (const v of visitasParaJornadas) {
       const tecnico = v.tecnico?.nombre?.trim() || "Sin técnico";
       const inicioStr = v.inicio ? new Date(v.inicio).toISOString() : "?";
       const finStr = v.fin ? new Date(v.fin).toISOString() : "null";
-      const key = `${tecnico}|${inicioStr}|${finStr}`;
+
+      const key = `${v.empresaId ?? "sin_empresa"}|${tecnico}|${inicioStr}|${finStr}`;
 
       if (!jornadasMap.has(key)) {
         jornadasMap.set(key, {

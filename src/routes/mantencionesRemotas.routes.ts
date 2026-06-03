@@ -46,7 +46,7 @@ router.get("/:id", auth(), (req, res, next) => {
 router.post(
   "/",
   auth(),
-  onlyRole("ADMIN", "TECNICO", "SOPORTE"),
+  onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"),
   (req, res, next) => {
     Promise.resolve(createMantencionRemota(req, res)).catch(next);
   }
@@ -55,7 +55,7 @@ router.post(
 router.put(
   "/:id",
   auth(),
-  onlyRole("ADMIN", "TECNICO", "SOPORTE"),
+  onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"),
   (req, res, next) => {
     Promise.resolve(updateMantencionRemota(req, res)).catch(next);
   }
@@ -64,7 +64,7 @@ router.put(
 router.patch(
   "/:id",
   auth(),
-  onlyRole("ADMIN", "TECNICO", "SOPORTE"),
+  onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"),
   (req, res, next) => {
     Promise.resolve(updateMantencionRemota(req, res)).catch(next);
   }
@@ -73,7 +73,7 @@ router.patch(
 router.delete(
   "/:id",
   auth(),
-  onlyRole("ADMIN", "TECNICO", "SOPORTE"),
+  onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"),
   (req, res, next) => {
     Promise.resolve(deleteMantencionRemota(req, res)).catch(next);
   }
@@ -84,7 +84,7 @@ router.delete(
 router.post(
   "/:id/close",
   auth(),
-  onlyRole("ADMIN", "TECNICO", "SOPORTE"),
+  onlyRole("ADMIN", "TECNICO", "ADMINISTRACION"),
   (req, res, next) => {
     Promise.resolve(closeMantencionRemota(req, res)).catch(next);
   }

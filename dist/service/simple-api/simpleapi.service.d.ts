@@ -14,7 +14,7 @@ export type VentaRCV = {
     montoIvaRecuperable?: number;
     montoTotal: number;
     estado: string;
-    raw?: unknown;
+    raw?: Record<string, any>;
 };
 export type ResumenVentaRCV = {
     tipoDte: number;
@@ -36,7 +36,7 @@ export type ResultadoVentasRCV = {
     resumenes: ResumenVentaRCV[];
     ventas: VentaRCV[];
     total: number;
-    raw?: unknown;
+    raw?: Record<string, any>;
 };
 export type CompraRCV = {
     folio: number;

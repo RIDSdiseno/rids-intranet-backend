@@ -1,6 +1,6 @@
 // src/controllers/empresas.controller.ts
 import type { Request, Response } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
@@ -259,16 +259,19 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     const solicitantesDeEmp = await prisma.solicitante.findMany({
       where: {
         empresaId: { in: empresaIds },
-        isActive: true,
       },
       select: { id_solicitante: true, empresaId: true },
     });
 
     const solicIds = solicitantesDeEmp.map((s) => s.id_solicitante);
+
     const equiposCountPorSolic = solicIds.length
       ? await prisma.equipo.groupBy({
         by: ["idSolicitante"],
-        where: { idSolicitante: { in: solicIds } },
+        where: {
+          deletedAt: null,
+          idSolicitante: { in: solicIds },
+        },
         _count: { _all: true },
       })
       : [];
@@ -352,8 +355,16 @@ export async function getEmpresasStats(
     const [empresas, solicitantes, equipos, tickets, visitas] =
       await Promise.all([
         prisma.empresa.count(),
-        prisma.solicitante.count(),
-        prisma.equipo.count(),
+        prisma.solicitante.count({
+          where: {
+            isActive: true,
+          },
+        }),
+        prisma.equipo.count({
+          where: {
+            deletedAt: null,
+          },
+        }),
         prisma.freshdeskTicket.count(),
         prisma.visita.count(),
       ]);

@@ -8,12 +8,16 @@ export type GoogleUser = {
         familyName?: string;
     };
     suspended?: boolean;
+    archived?: boolean;
+    deleted?: boolean;
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
+    updatedAt: Date;
     id_solicitante: number;
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;
@@ -21,14 +25,18 @@ export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empres
     isActive: boolean;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
+    createdAt: Date;
+    deactivatedAt: Date | null;
 } | null>;
 /** Alias para compatibilidad */
 export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
+    updatedAt: Date;
     id_solicitante: number;
     clienteId: number | null;
     googleUserId: string | null;
     microsoftUserId: string | null;
+    rut: string | null;
     nombre: string;
     email: string | null;
     telefono: string | null;
@@ -36,8 +44,10 @@ export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empre
     isActive: boolean;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
+    createdAt: Date;
+    deactivatedAt: Date | null;
 }>;
-export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsVigentes: string[]): Promise<{
+export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsActivos: string[]): Promise<{
     count: number;
     users: {
         id_solicitante: number;

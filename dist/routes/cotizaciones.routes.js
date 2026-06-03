@@ -1,13 +1,15 @@
-// Rutas para manejo de cotizaciones, con endpoints para CRUD completo, facturación, integración con SII y vinculación de equipos a items, delegando la lógica al controlador correspondiente. Todas las rutas están protegidas por autenticación.
+// src/routes/cotizaciones.routes.ts
 import { Router } from "express";
-import { auth } from "../middlewares/auth.js"; //  IMPORTANTE
-import { getCotizaciones, getCotizacionById, createCotizacion, updateCotizacion, deleteCotizacion, getCotizacionesPaginadas, facturarCotizacion, anularFactura, pagarFactura, cambiarEstadoFactura, vincularEquipoAItem } from "../controllers/cotizaciones.controller.js";
+import { auth } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
+import { onlyOwnEmpresa } from "../middlewares/auth.js";
+import { getCotizaciones, getCotizacionById, createCotizacion, updateCotizacion, deleteCotizacion, getCotizacionesPaginadas, facturarCotizacion, anularFactura, pagarFactura, cambiarEstadoFactura, vincularEquipoAItem, } from "../controllers/cotizaciones.controller.js";
+import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../controllers/cotizaciones-enviadas.controller.js";
 const cotizacionesRouter = Router();
-/* ============================
-   RUTAS CRUD COTIZACION GESTIOO
-============================ */
-// PROTEGER TODO EL ROUTER
-cotizacionesRouter.use(auth());
+const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"];
+const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"];
+const ROLES_FACTURA = ["ADMIN", "ADMINISTRACION", "VENTAS"];
+// ── Rutas de solo lectura — CLIENTE puede acceder (filtrado en controller) ───
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem);
 cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);

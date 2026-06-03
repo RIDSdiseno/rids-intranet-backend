@@ -1,3 +1,4 @@
+// src/controllers/entidades.controller.ts
 import fs from "fs/promises";
 import path from "path";
 import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
@@ -78,35 +79,96 @@ export async function seedEntidadesECONNET(_req, res) {
    CRUD ENTIDADES
 ===================================================== */
 // Crear entidad
+function normalizeRutGestioo(value) {
+    if (!value)
+        return null;
+    const clean = value
+        .replace(/[^0-9kK]/g, "")
+        .toUpperCase();
+    if (!clean)
+        return null;
+    if (clean.length <= 1)
+        return clean;
+    const cuerpo = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+    return `${cuerpo}-${dv}`;
+}
+function rutKey(value) {
+    return (value ?? "")
+        .replace(/[^0-9kK]/g, "")
+        .toUpperCase();
+}
+function normalizeNombreEntidad(value) {
+    return (value ?? "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toUpperCase();
+}
+function normalizeTipoEntidad(value) {
+    if (value === "PERSONA")
+        return TipoEntidadGestioo.PERSONA;
+    return TipoEntidadGestioo.EMPRESA;
+}
+function normalizeOrigenEntidad(value) {
+    if (value === "RIDS")
+        return OrigenGestioo.RIDS;
+    if (value === "ECONNET")
+        return OrigenGestioo.ECONNET;
+    return OrigenGestioo.OTRO;
+}
+// Crear entidad
 export async function createEntidad(req, res) {
     try {
         const data = req.body;
-        // 🔍 verificar si el RUT ya existe
-        const existente = await prisma.entidadGestioo.findUnique({
-            where: { rut: data.rut }
-        });
-        if (existente) {
-            return res.status(409).json({
-                error: "Ya existe una entidad con ese RUT"
+        const rutNormalizado = normalizeRutGestioo(data.rut);
+        const nombreNormalizado = normalizeNombreEntidad(data.nombre);
+        const tipoNormalizado = normalizeTipoEntidad(data.tipo);
+        const origenNormalizado = normalizeOrigenEntidad(data.origen);
+        if (!nombreNormalizado) {
+            return res.status(400).json({
+                error: "El nombre es obligatorio",
             });
+        }
+        if (rutNormalizado) {
+            const entidadesConRut = await prisma.entidadGestioo.findMany({
+                where: {
+                    rut: {
+                        not: null,
+                    },
+                },
+                select: {
+                    id: true,
+                    nombre: true,
+                    rut: true,
+                    tipo: true,
+                    origen: true,
+                },
+            });
+            const existente = entidadesConRut.find((e) => rutKey(e.rut) === rutKey(rutNormalizado));
+            if (existente) {
+                return res.status(409).json({
+                    error: `Ya existe una entidad con este RUT: ${existente.nombre}`,
+                    entidad: existente,
+                });
+            }
         }
         const nuevaEntidad = await prisma.entidadGestioo.create({
             data: {
-                nombre: data.nombre,
-                rut: data.rut,
-                correo: data.correo,
-                telefono: data.telefono,
-                direccion: data.direccion,
-                tipo: data.tipo,
-                origen: OrigenGestioo.OTRO
-            }
+                nombre: nombreNormalizado,
+                rut: rutNormalizado,
+                correo: data.correo || null,
+                telefono: data.telefono || null,
+                direccion: data.direccion || null,
+                tipo: tipoNormalizado,
+                origen: origenNormalizado,
+            },
         });
         return res.status(201).json({ data: nuevaEntidad });
     }
     catch (error) {
         if (error.code === "P2002") {
             return res.status(409).json({
-                error: "El RUT ya está registrado"
+                error: "El RUT ya está registrado",
             });
         }
         console.error("❌ Error al crear entidad:", error);
@@ -116,16 +178,54 @@ export async function createEntidad(req, res) {
 // Obtener todas
 export async function getEntidades(req, res) {
     try {
-        const { tipo, origen } = req.query;
+        const { tipo, origen, search } = req.query;
         const where = {};
-        if (tipo === "EMPRESA" || tipo === "PERSONA")
+        if (tipo === "EMPRESA" || tipo === "PERSONA") {
             where.tipo = tipo;
-        if (origen === "RIDS" || origen === "ECONNET" || origen === "OTRO")
+        }
+        if (origen === "RIDS" ||
+            origen === "ECONNET" ||
+            origen === "OTRO") {
             where.origen = origen;
+        }
+        if (typeof search === "string" && search.trim()) {
+            const q = search.trim();
+            where.OR = [
+                {
+                    nombre: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    rut: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    correo: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    telefono: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+            ];
+        }
         const entidades = await prisma.entidadGestioo.findMany({
             where,
-            orderBy: { id: "asc" },
-            include: { productos: true },
+            orderBy: [
+                { tipo: "asc" },
+                { nombre: "asc" },
+            ],
+            include: {
+                productos: true,
+            },
         });
         return res.json({ data: entidades });
     }
@@ -157,13 +257,71 @@ export async function updateEntidad(req, res) {
     try {
         const id = Number(req.params.id);
         const data = req.body;
+        const entidadActual = await prisma.entidadGestioo.findUnique({
+            where: { id },
+        });
+        if (!entidadActual) {
+            return res.status(404).json({
+                error: "Entidad no encontrada",
+            });
+        }
+        const rutNormalizado = normalizeRutGestioo(data.rut);
+        const nombreNormalizado = normalizeNombreEntidad(data.nombre);
+        const tipoNormalizado = data.tipo === "EMPRESA" || data.tipo === "PERSONA"
+            ? normalizeTipoEntidad(data.tipo)
+            : entidadActual.tipo;
+        const origenNormalizado = data.origen === "RIDS" || data.origen === "ECONNET" || data.origen === "OTRO"
+            ? normalizeOrigenEntidad(data.origen)
+            : entidadActual.origen;
+        if (!nombreNormalizado) {
+            return res.status(400).json({
+                error: "El nombre es obligatorio",
+            });
+        }
+        if (rutNormalizado) {
+            const entidadesConRut = await prisma.entidadGestioo.findMany({
+                where: {
+                    rut: {
+                        not: null,
+                    },
+                },
+                select: {
+                    id: true,
+                    nombre: true,
+                    rut: true,
+                    tipo: true,
+                    origen: true,
+                },
+            });
+            const existente = entidadesConRut.find((e) => e.id !== id &&
+                rutKey(e.rut) === rutKey(rutNormalizado));
+            if (existente) {
+                return res.status(409).json({
+                    error: `Ya existe otra entidad con este RUT: ${existente.nombre}`,
+                    entidad: existente,
+                });
+            }
+        }
         const entidadActualizada = await prisma.entidadGestioo.update({
             where: { id },
-            data,
+            data: {
+                nombre: nombreNormalizado,
+                rut: rutNormalizado,
+                correo: data.correo || null,
+                telefono: data.telefono || null,
+                direccion: data.direccion || null,
+                tipo: tipoNormalizado,
+                origen: origenNormalizado,
+            },
         });
         return res.json({ data: entidadActualizada });
     }
     catch (error) {
+        if (error.code === "P2002") {
+            return res.status(409).json({
+                error: "El RUT ya está registrado",
+            });
+        }
         console.error("❌ Error al actualizar entidad:", error);
         return res.status(500).json({ error: "Error al actualizar entidad" });
     }

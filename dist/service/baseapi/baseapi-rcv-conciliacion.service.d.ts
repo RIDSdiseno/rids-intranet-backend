@@ -1,0 +1,117 @@
+import type { EmpresaBaseApiKey } from "./baseapi.empresas.js";
+type TipoRcv = "ventas" | "compras";
+export declare function listarConciliacionRcv(params: {
+    empresa: EmpresaBaseApiKey;
+    mes: string;
+    ano: string;
+    tipo: TipoRcv;
+    forceRefresh?: boolean;
+}): Promise<{
+    cached: boolean;
+    cacheUpdatedAt: Date | null;
+    data: any;
+    meta: {
+        total: any;
+        conciliadas: any;
+        noConciliadas: any;
+        observadas: any;
+    };
+}>;
+export declare function conciliarDocumentoRcv(params: {
+    empresa: EmpresaBaseApiKey;
+    tipoRcv: TipoRcv;
+    tipoDoc: string;
+    folio: string;
+    rutContraparte: string;
+    razonSocial?: string | null;
+    fechaDocto?: Date | null;
+    montoNeto?: number;
+    montoIva?: number;
+    montoTotal?: number;
+    estadoRcv?: string | null;
+    origenRcv?: string | null;
+    formaPago?: string | null;
+    observacion?: string | null;
+    responsable?: string | null;
+}): Promise<{
+    id: string;
+    updatedAt: Date;
+    createdAt: Date;
+    razonSocial: string | null;
+    folio: string;
+    montoNeto: number;
+    montoTotal: number;
+    empresaKey: string;
+    tipoRcv: string;
+    tipoDoc: string;
+    rutContraparte: string;
+    fechaDocto: Date | null;
+    montoIva: number;
+    estadoRcv: string | null;
+    origenRcv: string | null;
+    estadoConciliacion: string;
+    formaPago: string | null;
+    observacion: string | null;
+    responsable: string | null;
+    conciliadoAt: Date | null;
+}>;
+export declare function desconciliarDocumentoRcv(params: {
+    empresa: EmpresaBaseApiKey;
+    tipoRcv: TipoRcv;
+    tipoDoc: string;
+    folio: string;
+    rutContraparte: string;
+}): Promise<{
+    id: string;
+    updatedAt: Date;
+    createdAt: Date;
+    razonSocial: string | null;
+    folio: string;
+    montoNeto: number;
+    montoTotal: number;
+    empresaKey: string;
+    tipoRcv: string;
+    tipoDoc: string;
+    rutContraparte: string;
+    fechaDocto: Date | null;
+    montoIva: number;
+    estadoRcv: string | null;
+    origenRcv: string | null;
+    estadoConciliacion: string;
+    formaPago: string | null;
+    observacion: string | null;
+    responsable: string | null;
+    conciliadoAt: Date | null;
+}>;
+export declare function observarDocumentoRcv(params: {
+    empresa: EmpresaBaseApiKey;
+    tipoRcv: TipoRcv;
+    tipoDoc: string;
+    folio: string;
+    rutContraparte: string;
+    observacion: string;
+    responsable?: string | null;
+}): Promise<{
+    id: string;
+    updatedAt: Date;
+    createdAt: Date;
+    razonSocial: string | null;
+    folio: string;
+    montoNeto: number;
+    montoTotal: number;
+    empresaKey: string;
+    tipoRcv: string;
+    tipoDoc: string;
+    rutContraparte: string;
+    fechaDocto: Date | null;
+    montoIva: number;
+    estadoRcv: string | null;
+    origenRcv: string | null;
+    estadoConciliacion: string;
+    formaPago: string | null;
+    observacion: string | null;
+    responsable: string | null;
+    conciliadoAt: Date | null;
+}>;
+export {};
+//# sourceMappingURL=baseapi-rcv-conciliacion.service.d.ts.map

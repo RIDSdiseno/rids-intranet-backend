@@ -2,8 +2,14 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { z } from "zod";
-// Importa solo lo que Prisma sí está exportando correctamente
-import { Prisma, TipoEquipo } from "@prisma/client";
+
+// Importar solo lo que Prisma sí está exportando correctamente
+import { Prisma, TipoEquipo, EstadoEquipo } from "@prisma/client";
+
+import {
+  calcularAnioPcDesdeSerial,
+  normalizarAnioPc,
+} from "../utils/equipos/anio-pc.util.js";
 
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
 enum AuditAction {
@@ -22,10 +28,20 @@ const listQuerySchema = z.object({
   marca: z.string().trim().optional(),
   tipo: z.nativeEnum(TipoEquipo).optional(),
 
+  anioPc: z.coerce.number().int().optional(),
+  anioPcDesde: z.coerce.number().int().optional(),
+  anioPcHasta: z.coerce.number().int().optional(),
+  anioPcOrigen: z.enum(["AUTO", "MANUAL", "NO_DETERMINADO"]).optional(),
+
   createdFrom: z.coerce.date().optional(),
   createdTo: z.coerce.date().optional(),
   updatedFrom: z.coerce.date().optional(),
   updatedTo: z.coerce.date().optional(),
+
+  auditTecnicoId: z.coerce.number().int().positive().optional(),
+  auditFrom: z.coerce.date().optional(),
+  auditTo: z.coerce.date().optional(),
+  auditAction: z.enum(["CREATE", "UPDATE", "ALL"]).default("ALL").optional(),
 
   empresaId: z.coerce.number().int().optional(),
   empresaName: z.string().trim().optional(),
@@ -33,13 +49,18 @@ const listQuerySchema = z.object({
 
   mode: z.enum(["full", "selector"]).default("full").optional(),
 
+  estado: z.nativeEnum(EstadoEquipo).optional(),
+
   sortBy: z
     .enum([
       "id_equipo",
       "serial",
       "tipo",
+      "estado",
       "marca",
       "modelo",
+      "anioPc",
+      "anioPcOrigen",
       "procesador",
       "ram",
       "disco",
@@ -74,10 +95,13 @@ const createEquipoSchema = z.object({
   serial: z.string().trim().min(1),
   marca: z.string().trim().min(1),
   modelo: z.string().trim().min(1),
+  anioPc: z.coerce.number().int().nullable().optional(),
+  anioPcOrigen: z.enum(["AUTO", "MANUAL", "NO_DETERMINADO"]).optional(),
   procesador: z.string().trim().min(1),
   ram: z.string().trim().min(1),
   disco: z.string().trim().min(1),
   propiedad: z.string().trim().min(1),
+  estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
 
   macWifi: z.string().optional(),
   redEthernet: z.string().optional(),
@@ -114,12 +138,16 @@ const equipoUpdateSchema = z.object({
   serial: z.string().trim().min(1).optional(),
   marca: z.string().trim().min(1).optional(),
   modelo: z.string().trim().min(1).optional(),
+  anioPc: z.coerce.number().int().nullable().optional(),
+  anioPcOrigen: z.enum(["AUTO", "MANUAL", "NO_DETERMINADO"]).optional(),
   procesador: z.string().trim().min(1).optional(),
   ram: z.string().trim().min(1).optional(),
   disco: z.string().trim().min(1).optional(),
   propiedad: z.string().trim().min(1).optional(),
 
   adicionales: z.array(adicionalSchema).optional(),
+
+  estado: z.nativeEnum(EstadoEquipo).optional(),
 
   // NUEVOS
   macWifi: z.string().optional(),
@@ -162,6 +190,8 @@ function mapOrderBy(
     "tipo",
     "marca",
     "modelo",
+    "anioPc",
+    "anioPcOrigen",
     "procesador",
     "ram",
     "disco",
@@ -174,6 +204,7 @@ function mapOrderBy(
     "usuarioActual",
     "lastSeenAt",
     "estadoAgente",
+    "estado",
   ];
 
   const key = allowed.includes(sortBy as any)
@@ -181,6 +212,158 @@ function mapOrderBy(
     : "id_equipo";
 
   return { [key]: sortDir };
+}
+
+function normalizeRutSearch(value?: string | null): string {
+  return String(value ?? "")
+    .replace(/[^0-9kK]/g, "")
+    .toUpperCase();
+}
+
+function rutWithDash(value?: string | null): string | null {
+  const clean = normalizeRutSearch(value);
+
+  if (!clean) return null;
+  if (clean.length <= 1) return clean;
+
+  const cuerpo = clean.slice(0, -1);
+  const dv = clean.slice(-1);
+
+  return `${cuerpo}-${dv}`;
+}
+
+function normalizeMacSearch(value?: string | null): string {
+  return String(value ?? "")
+    .replace(/[^a-fA-F0-9]/g, "")
+    .toUpperCase();
+}
+
+function buildDetalleEquipoSearchOR(
+  searchText: string,
+  INS: Prisma.QueryMode
+): Prisma.EquipoWhereInput[] {
+  return [
+    {
+      detalle: {
+        is: {
+          macWifi: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          redEthernet: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          so: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          tipoDd: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          estadoAlm: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          office: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          teamViewer: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          claveTv: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          revisado: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          adminRidsUsuario: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          usuarioEmpresa: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+    {
+      detalle: {
+        is: {
+          usuarioPersonal: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+      },
+    },
+  ];
 }
 
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
@@ -197,6 +380,8 @@ function flattenRow(e: any) {
     tipo: e.tipo,
     marca: e.marca,
     modelo: e.modelo,
+    anioPc: e.anioPc ?? null,
+    anioPcOrigen: e.anioPcOrigen ?? null,
     procesador: e.procesador,
     ram: e.ram,
     disco: e.disco,
@@ -207,6 +392,9 @@ function flattenRow(e: any) {
 
     // Relación manual / CRM
     solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
+    solicitanteRut: e.solicitante?.rut ?? null,
+    solicitanteEmail: e.solicitante?.email ?? null,
+
     empresa: empresaFinal?.nombre ?? null,
     empresaId: e.empresaId ?? empresaFinal?.id_empresa ?? null,
     idSolicitante: e.idSolicitante,
@@ -259,6 +447,8 @@ function flattenRow(e: any) {
     adicionales: e.adicionales ?? [],
 
     _count: e._count ?? undefined,
+
+    estado: e.estado,
   };
 }
 
@@ -289,59 +479,205 @@ export async function listEquipos(req: Request, res: Response) {
 
     const user = (req as any).user;
 
-    const empresaFiltroId =
-      user?.rol === "CLIENTE"
-        ? Number(user.empresaId)
-        : q.empresaId
-          ? Number(q.empresaId)
-          : null;
+    let auditEquipoIds: number[] | null = null;
 
-    const andFilters: Prisma.EquipoWhereInput[] = [];
+    const tieneFiltroAuditoria =
+      Boolean(q.auditTecnicoId) ||
+      Boolean(q.auditFrom) ||
+      Boolean(q.auditTo) ||
+      (Boolean(q.auditAction) && q.auditAction !== "ALL");
 
-    if (empresaFiltroId) {
-      andFilters.push({
-        OR: [
-          { empresaId: empresaFiltroId },
-          {
-            solicitante: {
-              is: { empresaId: empresaFiltroId },
+    if (tieneFiltroAuditoria) {
+      const auditWhere: Prisma.AuditLogWhereInput = {
+        entity: {
+          in: ["Equipo", "DetalleEquipo"],
+        },
+
+        ...(q.auditTecnicoId
+          ? {
+            actorId: q.auditTecnicoId,
+          }
+          : {}),
+
+        ...(q.auditAction && q.auditAction !== "ALL"
+          ? {
+            action: q.auditAction as any,
+          }
+          : {
+            action: {
+              in: [AuditAction.CREATE, AuditAction.UPDATE],
+            } as any,
+          }),
+
+        ...(q.auditFrom || q.auditTo
+          ? {
+            createdAt: {
+              ...(q.auditFrom ? { gte: q.auditFrom } : {}),
+              ...(q.auditTo ? { lte: q.auditTo } : {}),
+            },
+          }
+          : {}),
+      };
+
+      const logs = await prisma.auditLog.findMany({
+        where: auditWhere,
+        select: {
+          entity: true,
+          entityId: true,
+        },
+      });
+
+      const equipoIdsDirectos = logs
+        .filter((l) => l.entity === "Equipo")
+        .map((l) => Number(l.entityId))
+        .filter((n) => Number.isFinite(n));
+
+      const detalleIds = logs
+        .filter((l) => l.entity === "DetalleEquipo")
+        .map((l) => Number(l.entityId))
+        .filter((n) => Number.isFinite(n));
+
+      let equipoIdsDesdeDetalle: number[] = [];
+
+      if (detalleIds.length > 0) {
+        const detalles = await prisma.detalleEquipo.findMany({
+          where: {
+            id: {
+              in: detalleIds,
             },
           },
-        ],
+          select: {
+            idEquipo: true,
+          },
+        });
+
+        equipoIdsDesdeDetalle = detalles
+          .map((d) => d.idEquipo)
+          .filter((n): n is number => Number.isFinite(Number(n)));
+      }
+
+      auditEquipoIds = Array.from(
+        new Set([...equipoIdsDirectos, ...equipoIdsDesdeDetalle])
+      );
+    }
+
+    const searchText = String(q.search ?? "").trim();
+    const searchRutClean = normalizeRutSearch(searchText);
+    const searchRutDash = rutWithDash(searchText);
+    const searchMacClean = normalizeMacSearch(searchText);
+
+    let solicitanteIdsByRut: number[] = [];
+
+    if (searchRutClean.length >= 5) {
+      const rowsRut = await prisma.$queryRaw<Array<{ id_solicitante: number }>>`
+    SELECT id_solicitante
+    FROM "Solicitante"
+    WHERE rut IS NOT NULL
+      AND REGEXP_REPLACE(UPPER(rut), '[^0-9K]', '', 'g') LIKE ${`%${searchRutClean}%`}
+  `;
+
+      solicitanteIdsByRut = rowsRut.map((r) => r.id_solicitante);
+    }
+
+    const andConditions: Prisma.EquipoWhereInput[] = [];
+
+    /* =========================
+       Restricción por rol CLIENTE
+    ========================= */
+    if (user?.rol === "CLIENTE") {
+      andConditions.push({
+        solicitante: {
+          is: {
+            empresaId: user.empresaId,
+          },
+        },
+      });
+    } else if (q.empresaId) {
+      andConditions.push({
+        solicitante: {
+          is: {
+            empresaId: q.empresaId,
+          },
+        },
       });
     }
 
+    /* =========================
+       Filtro por nombre empresa
+    ========================= */
     if (q.empresaName) {
-      andFilters.push({
-        OR: [
-          {
+      andConditions.push({
+        solicitante: {
+          is: {
             empresa: {
-              is: { nombre: { contains: q.empresaName, mode: INS } },
-            },
-          },
-          {
-            solicitante: {
               is: {
-                empresa: {
-                  is: { nombre: { contains: q.empresaName, mode: INS } },
+                nombre: {
+                  contains: q.empresaName,
+                  mode: INS,
                 },
               },
             },
           },
-        ],
+        },
       });
     }
 
+    /* =========================
+       Filtros directos
+    ========================= */
     if (q.solicitanteId) {
-      andFilters.push({ idSolicitante: q.solicitanteId });
+      andConditions.push({
+        idSolicitante: q.solicitanteId,
+      });
     }
 
     if (q.marca) {
-      andFilters.push({ marca: { equals: q.marca, mode: INS } });
+      andConditions.push({
+        marca: {
+          equals: q.marca,
+          mode: INS,
+        },
+      });
     }
 
+    if (q.tipo) {
+      andConditions.push({
+        tipo: q.tipo,
+      });
+    }
+
+    if (q.anioPc) {
+      andConditions.push({
+        anioPc: q.anioPc,
+      });
+    }
+
+    if (q.anioPcDesde || q.anioPcHasta) {
+      andConditions.push({
+        anioPc: {
+          ...(q.anioPcDesde ? { gte: q.anioPcDesde } : {}),
+          ...(q.anioPcHasta ? { lte: q.anioPcHasta } : {}),
+        },
+      });
+    }
+
+    if (q.anioPcOrigen) {
+      andConditions.push({
+        anioPcOrigen: q.anioPcOrigen,
+      });
+    }
+
+    if (q.estado) {
+      andConditions.push({
+        estado: q.estado,
+      });
+    }
+
+    /* =========================
+       Fechas
+    ========================= */
     if (q.createdFrom || q.createdTo) {
-      andFilters.push({
+      andConditions.push({
         createdAt: {
           ...(q.createdFrom ? { gte: q.createdFrom } : {}),
           ...(q.createdTo ? { lte: q.createdTo } : {}),
@@ -350,7 +686,7 @@ export async function listEquipos(req: Request, res: Response) {
     }
 
     if (q.updatedFrom || q.updatedTo) {
-      andFilters.push({
+      andConditions.push({
         updatedAt: {
           ...(q.updatedFrom ? { gte: q.updatedFrom } : {}),
           ...(q.updatedTo ? { lte: q.updatedTo } : {}),
@@ -358,44 +694,244 @@ export async function listEquipos(req: Request, res: Response) {
       });
     }
 
-    if (q.search) {
-      andFilters.push({
-        OR: [
-          { serial: { contains: q.search, mode: INS } },
-          { marca: { contains: q.search, mode: INS } },
-          { modelo: { contains: q.search, mode: INS } },
-          { procesador: { contains: q.search, mode: INS } },
+    /* =========================
+       Búsqueda general
+    ========================= */
+    if (searchText) {
+      const orConditions: Prisma.EquipoWhereInput[] = [
+        // Datos principales del equipo
+        {
+          serial: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          marca: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          modelo: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          procesador: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          ram: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          disco: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          propiedad: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
+        {
+          anioPcOrigen: {
+            contains: searchText,
+            mode: INS,
+          },
+        },
 
-          // Agente
-          { hostname: { contains: q.search, mode: INS } },
-          { usuarioActual: { contains: q.search, mode: INS } },
-          { localIp: { contains: q.search, mode: INS } },
-          { macAddress: { contains: q.search, mode: INS } },
+        // Detalle técnico del equipo
+        ...buildDetalleEquipoSearchOR(searchText, INS),
 
-          { solicitante: { is: { nombre: { contains: q.search, mode: INS } } } },
+        // Adicionales del equipo
+        {
+          adicionales: {
+            some: {
+              tipo: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          adicionales: {
+            some: {
+              descripcion: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          adicionales: {
+            some: {
+              serialAdicional: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+
+        // Solicitante
+        {
+          solicitante: {
+            is: {
+              nombre: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          solicitante: {
+            is: {
+              email: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+        {
+          solicitante: {
+            is: {
+              rut: {
+                contains: searchText,
+                mode: INS,
+              },
+            },
+          },
+        },
+
+        // Empresa
+        {
+          solicitante: {
+            is: {
+              empresa: {
+                is: {
+                  nombre: {
+                    contains: searchText,
+                    mode: INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+      ];
+
+      if (searchRutDash) {
+        orConditions.push({
+          solicitante: {
+            is: {
+              rut: {
+                contains: searchRutDash,
+                mode: INS,
+              },
+            },
+          },
+        });
+      }
+
+      if (searchRutClean) {
+        orConditions.push({
+          solicitante: {
+            is: {
+              rut: {
+                contains: searchRutClean,
+                mode: INS,
+              },
+            },
+          },
+        });
+      }
+
+      if (searchMacClean.length >= 6) {
+        orConditions.push(
           {
-            solicitante: {
+            detalle: {
               is: {
-                empresa: { is: { nombre: { contains: q.search, mode: INS } } },
+                macWifi: {
+                  contains: searchMacClean,
+                  mode: INS,
+                },
               },
             },
           },
           {
-            empresa: {
-              is: { nombre: { contains: q.search, mode: INS } },
+            detalle: {
+              is: {
+                redEthernet: {
+                  contains: searchMacClean,
+                  mode: INS,
+                },
+              },
             },
-          },
+          }
+        );
+      }
 
-          ...(Number.isFinite(Number(q.search))
-            ? [{ id_equipo: Number(q.search) }]
-            : []),
-        ],
+      if (solicitanteIdsByRut.length > 0) {
+        orConditions.push({
+          idSolicitante: {
+            in: solicitanteIdsByRut,
+          },
+        });
+      }
+
+      if (Number.isFinite(Number(searchText))) {
+        orConditions.push({
+          id_equipo: Number(searchText),
+        });
+      }
+
+      const estadoMatch = Object.values(EstadoEquipo).find((estado) =>
+        estado.toLowerCase().includes(searchText.toLowerCase())
+      );
+
+      if (estadoMatch) {
+        orConditions.push({
+          estado: estadoMatch,
+        });
+      }
+
+      andConditions.push({
+        OR: orConditions,
       });
     }
 
+    /* =========================
+       Filtro por auditoría
+    ========================= */
+    if (auditEquipoIds) {
+      andConditions.push({
+        id_equipo: {
+          in: auditEquipoIds.length > 0 ? auditEquipoIds : [-1],
+        },
+      });
+    }
+
+    /* =========================
+       WHERE final
+    ========================= */
     const where: Prisma.EquipoWhereInput =
-      andFilters.length > 0
-        ? { AND: andFilters }
+      andConditions.length > 0
+        ? {
+          AND: andConditions,
+        }
         : {};
 
     // Si el cliente está filtrando por empresaId, forzamos que solo vea esa empresa (incluso si intenta usar empresaName para evadirlo)
@@ -413,6 +949,9 @@ export async function listEquipos(req: Request, res: Response) {
           marca: true,
           modelo: true,
           tipo: true,
+          estado: true,
+          anioPc: true,
+          anioPcOrigen: true,
         },
         orderBy,
         skip,
@@ -455,7 +994,12 @@ export async function listEquipos(req: Request, res: Response) {
       items: rows.map(flattenRow),
     });
   } catch (err) {
-    console.error("listEquipos error:", err);
+    console.error("[listEquipos] error:", {
+      message: (err as any)?.message,
+      code: (err as any)?.code,
+      meta: (err as any)?.meta,
+      stack: (err as any)?.stack,
+    });
     if (err instanceof z.ZodError) {
       return res.status(400).json({
         error: "Parámetros inválidos",
@@ -503,18 +1047,45 @@ export async function createEquipo(req: Request, res: Response) {
           idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
         }
 
+        const bodyTieneAnioPc = Object.prototype.hasOwnProperty.call(data, "anioPc");
+
+        const anioPcManual = bodyTieneAnioPc
+          ? normalizarAnioPc(data.anioPc)
+          : null;
+
+        const calculoAnioPc = calcularAnioPcDesdeSerial(
+          data.serial,
+          data.marca,
+          data.modelo
+        );
+
+        const anioPcFinal = bodyTieneAnioPc
+          ? anioPcManual
+          : calculoAnioPc.anioPc;
+
+        const anioPcOrigenFinal = bodyTieneAnioPc
+          ? anioPcManual
+            ? "MANUAL"
+            : "NO_DETERMINADO"
+          : calculoAnioPc.anioPc
+            ? "AUTO"
+            : "NO_DETERMINADO";
+
         // Si no se dio ni idSolicitante ni empresaId, el equipo quedará sin solicitante (idSolicitante = null), lo cual es permitido. Luego se podrá reasignar desde el update indicando el idSolicitante o la empresaId para conectar al placeholder.
         const equipo = await prisma.equipo.create({
           data: {
             tipo: data.tipo,
             marca: data.marca,
             modelo: data.modelo,
+            anioPc: anioPcFinal,
+            anioPcOrigen: anioPcOrigenFinal,
             serial: data.serial,
             procesador: data.procesador,
             ram: data.ram,
             disco: data.disco,
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
+            estado: data.estado,
 
             detalle: {
               create: {
@@ -693,17 +1264,66 @@ export async function updateEquipo(req: Request, res: Response) {
       passwordPersonal,
       adicionales,
 
+      anioPc,
+      anioPcOrigen,
+
       ...equipoData
     } = data;
 
     // Validar empresaId si viene
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
-      include: { solicitante: { select: { empresaId: true } } },
+      select: {
+        anioPc: true,
+        anioPcOrigen: true,
+        serial: true,
+        marca: true,
+        modelo: true,
+        procesador: true,
+        solicitante: {
+          select: {
+            empresaId: true,
+          },
+        },
+      },
     });
 
     if (!equipoActual) {
       return res.status(404).json({ error: "Equipo no encontrado" });
+    }
+
+    const procesadorFinal = equipoData.procesador ?? equipoActual.procesador;
+
+    const modeloFinal = equipoData.modelo ?? equipoActual.modelo;
+
+    const serialNuevo = equipoData.serial?.trim().toUpperCase();
+
+    if (serialNuevo && serialNuevo !== equipoActual.serial?.trim().toUpperCase()) {
+      const serialDuplicado = await prisma.equipo.findFirst({
+        where: {
+          serial: serialNuevo,
+          NOT: {
+            id_equipo: id,
+          },
+        },
+        select: {
+          id_equipo: true,
+          serial: true,
+        },
+      });
+
+      if (serialDuplicado) {
+        return res.status(409).json({
+          ok: false,
+          code: "SERIAL_DUPLICADO",
+          field: "serial",
+          serial: serialNuevo,
+          error: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+          message: `Ya existe un equipo registrado con el serial ${serialNuevo}`,
+        });
+      }
+
+      equipoData.serial = serialNuevo;
     }
 
     let solicitanteUpdate: Prisma.SolicitanteUpdateOneWithoutEquiposNestedInput | undefined;
@@ -726,6 +1346,38 @@ export async function updateEquipo(req: Request, res: Response) {
       }
     }
 
+    const serialFinal = equipoData.serial ?? equipoActual.serial;
+    const marcaFinal = equipoData.marca ?? equipoActual.marca;
+
+    const bodyTieneAnioPc = Object.prototype.hasOwnProperty.call(data, "anioPc");
+
+    let anioPcFinal: number | null = equipoActual.anioPc;
+    let anioPcOrigenFinal = equipoActual.anioPcOrigen ?? "NO_DETERMINADO";
+
+    const cambioDatosCalculo =
+      equipoData.serial !== undefined ||
+      equipoData.marca !== undefined ||
+      equipoData.modelo !== undefined ||
+      equipoData.procesador !== undefined;
+
+    if (bodyTieneAnioPc) {
+      const anioPcManual = normalizarAnioPc(anioPc);
+
+      anioPcFinal = anioPcManual;
+      anioPcOrigenFinal = anioPcManual ? "MANUAL" : "NO_DETERMINADO";
+    } else if (equipoActual.anioPcOrigen !== "MANUAL" && cambioDatosCalculo) {
+
+      const calculoAnioPc = calcularAnioPcDesdeSerial(
+        serialFinal,
+        marcaFinal,
+        modeloFinal,
+        procesadorFinal
+      );
+
+      anioPcFinal = calculoAnioPc.anioPc;
+      anioPcOrigenFinal = calculoAnioPc.anioPcOrigen;
+    }
+
     // Si se dio empresaId pero no idSolicitante, conectamos al placeholder de esa empresa
     const actualizado = await prisma.equipo.update({
       where: { id_equipo: id },
@@ -739,6 +1391,10 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.disco ? { disco: equipoData.disco } : {}),
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
         ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
+        ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
+
+        anioPc: anioPcFinal,
+        anioPcOrigen: anioPcOrigenFinal,
 
         detalle: {
           upsert: {
@@ -811,6 +1467,16 @@ export async function updateEquipo(req: Request, res: Response) {
       return res.status(404).json({ error: "Equipo no encontrado" });
     }
 
+    if ((err as { code?: string })?.code === "P2002") {
+      return res.status(409).json({
+        ok: false,
+        code: "SERIAL_DUPLICADO",
+        field: "serial",
+        error: "Ya existe un equipo registrado con ese serial",
+        message: "Ya existe un equipo registrado con ese serial",
+      });
+    }
+
     if (err instanceof z.ZodError) {
       return res.status(400).json({ error: "Datos inválidos", details: err.flatten() });
     }
@@ -867,6 +1533,8 @@ export async function getEquiposByEmpresa(req: Request, res: Response) {
           select: {
             id_solicitante: true,
             nombre: true,
+            rut: true,
+            email: true,
           },
         },
       },
@@ -1010,5 +1678,193 @@ export async function getEquipoHistorial(req: Request, res: Response) {
   } catch (err) {
     console.error("getEquipoHistorial error:", err);
     return res.status(500).json({ error: "Error al obtener historial del equipo" });
+  }
+}
+
+/* ================== RECALCULAR AÑO PC EQUIPOS EXISTENTES ================== */
+
+const recalcularAnioPcSchema = z.object({
+  empresaId: z.coerce.number().int().positive().optional(),
+
+  /**
+   * force false:
+   *   recalcula solo equipos sin año o NO_DETERMINADO.
+   *
+   * force true:
+   *   recalcula también los AUTO.
+   *
+   * Nunca toca MANUAL.
+   */
+  force: z.coerce.boolean().optional().default(false),
+});
+
+export async function recalcularAnioPcEquipos(req: Request, res: Response) {
+  try {
+    const body = recalcularAnioPcSchema.parse(req.body ?? {});
+    const user = (req as any).user;
+
+    const andConditions: Prisma.EquipoWhereInput[] = [];
+
+    if (user?.rol === "CLIENTE") {
+      andConditions.push({
+        solicitante: {
+          is: {
+            empresaId: user.empresaId,
+          },
+        },
+      });
+    } else if (body.empresaId) {
+      andConditions.push({
+        solicitante: {
+          is: {
+            empresaId: body.empresaId,
+          },
+        },
+      });
+    }
+
+    if (body.force) {
+      andConditions.push({
+        OR: [
+          { anioPc: null },
+          { anioPcOrigen: null },
+          { anioPcOrigen: "AUTO" },
+          { anioPcOrigen: "NO_DETERMINADO" },
+        ],
+      });
+    } else {
+      andConditions.push({
+        OR: [
+          { anioPc: null },
+          { anioPcOrigen: null },
+          { anioPcOrigen: "NO_DETERMINADO" },
+        ],
+      });
+    }
+
+    andConditions.push({
+      NOT: {
+        anioPcOrigen: "MANUAL",
+      },
+    });
+
+    const where: Prisma.EquipoWhereInput = {
+      AND: andConditions,
+    };
+
+    const equipos = await prisma.equipo.findMany({
+      where,
+      select: {
+        id_equipo: true,
+        serial: true,
+        marca: true,
+        modelo: true,
+        procesador: true,
+        anioPc: true,
+        anioPcOrigen: true,
+      },
+      orderBy: {
+        id_equipo: "asc",
+      },
+    });
+
+    let actualizados = 0;
+    let noDeterminados = 0;
+    let sinCambios = 0;
+
+    const resultados: Array<{
+      id_equipo: number;
+      serial: string | null;
+      marca: string | null;
+      anioPcAnterior: number | null;
+      anioPcNuevo: number | null;
+      anioPcOrigenAnterior: string | null;
+      anioPcOrigenNuevo: string;
+      actualizado: boolean;
+    }> = [];
+
+    for (const equipo of equipos) {
+      const calculo = calcularAnioPcDesdeSerial(
+        equipo.serial,
+        equipo.marca,
+        equipo.modelo,
+        equipo.procesador
+      );
+
+      const anioPcNuevo = calculo.anioPc;
+      const anioPcOrigenNuevo = calculo.anioPcOrigen;
+
+      const cambio =
+        equipo.anioPc !== anioPcNuevo ||
+        equipo.anioPcOrigen !== anioPcOrigenNuevo;
+
+      if (!cambio) {
+        sinCambios++;
+
+        resultados.push({
+          id_equipo: equipo.id_equipo,
+          serial: equipo.serial,
+          marca: equipo.marca,
+          anioPcAnterior: equipo.anioPc,
+          anioPcNuevo,
+          anioPcOrigenAnterior: equipo.anioPcOrigen,
+          anioPcOrigenNuevo,
+          actualizado: false,
+        });
+
+        continue;
+      }
+
+      await prisma.equipo.update({
+        where: {
+          id_equipo: equipo.id_equipo,
+        },
+        data: {
+          anioPc: anioPcNuevo,
+          anioPcOrigen: anioPcOrigenNuevo,
+        },
+      });
+
+      if (anioPcNuevo) {
+        actualizados++;
+      } else {
+        noDeterminados++;
+      }
+
+      resultados.push({
+        id_equipo: equipo.id_equipo,
+        serial: equipo.serial,
+        marca: equipo.marca,
+        anioPcAnterior: equipo.anioPc,
+        anioPcNuevo,
+        anioPcOrigenAnterior: equipo.anioPcOrigen,
+        anioPcOrigenNuevo,
+        actualizado: true,
+      });
+    }
+
+    clearCache();
+
+    return res.json({
+      ok: true,
+      totalProcesados: equipos.length,
+      actualizados,
+      noDeterminados,
+      sinCambios,
+      resultados,
+    });
+  } catch (err) {
+    console.error("recalcularAnioPcEquipos error:", err);
+
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        error: "Datos inválidos",
+        details: err.flatten(),
+      });
+    }
+
+    return res.status(500).json({
+      error: "Error al recalcular año PC de equipos existentes",
+    });
   }
 }

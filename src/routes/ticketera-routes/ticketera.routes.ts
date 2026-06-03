@@ -1,6 +1,9 @@
 // src/routes/tickets-rids/ticketera.routes.ts
 import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
+import { auth } from "../../middlewares/auth.js";
+import { onlyRole } from "../../middlewares/roles.js";
+import { onlyOwnEmpresa } from "../../middlewares/auth.js";
 
 import {
     createTicket,
@@ -18,26 +21,13 @@ import {
 } from "../../controllers/tickets-rids/ticketera.controller.js";
 
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
-
-import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
-
 import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
-import {
-    getTicketKpis,
-    getTicketKpisByAgent,
-} from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
-
-import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
-import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.controller.js";
-
 import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
-
 import {
     listTicketEmailTemplates,
     updateTicketEmailTemplate,
     previewTicketEmailTemplate,
 } from "../../controllers/tickets-rids/reply-templates/ticket-email-template.controller.js";
-
 import multer from "multer";
 import {
     getTecnicoSignature,
@@ -45,122 +35,168 @@ import {
     uploadTecnicoSignatureImage,
     deleteTecnicoSignatureImage,
 } from "../../controllers/tickets-rids/reply-templates/tecnico-signature.controller.js";
-
 import { getTicketEmailSignature, updateTicketEmailSignature } from "../../controllers/tickets-rids/reply-templates/ticket-default-signature.controller.js";
-
 import { getTicketMetricsByTecnico, getWorstClosedTicketsByTecnico } from "../../controllers/tickets-rids/tecnicos-metrics.controller.js";
-
 import {
     getTicketsDashboardMonthly,
     getTicketsDashboardRanking,
 } from "../../controllers/tickets-rids/dashboard/ticketDashboard.controller.js";
-
 import {
     getSlaConfig,
     updateSlaConfig,
 } from "../../controllers/tickets-rids/tickets-sla/sla-config.controller.js";
 
 const ticketeraRouter = Router();
-
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ─── Roles que pueden operar internamente ────────────────────────────────────
+const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"] as const;
+const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"] as const;
+
 // =======================
-// CRUD base
+// INBOUND EMAIL (sin auth — webhook externo)
 // =======================
+ticketeraRouter.post("/inbound-email", inboundEmail);
+
+// =======================
+// PROXY IMAGEN EXTERNA (sin auth — usado desde email embebido)
+// =======================
+ticketeraRouter.get("/external-image", proxyExternalImage);
+
+// =======================
+// CRUD BASE
+// =======================
+
+// Crear ticket — solo roles internos
 ticketeraRouter.post(
     "/",
+    auth(),
+    onlyRole(...ROLES_INTERNOS),
     uploadTicketAttachments.array("attachments", 10),
     (err: any, _req: Request, res: Response, next: NextFunction) => {
-        if (err) {
-            return res.status(400).json({
-                ok: false,
-                message: err.message,
-            });
-        }
-
+        if (err) return res.status(400).json({ ok: false, message: err.message });
         return next();
     },
     createTicket
 );
-ticketeraRouter.get("/", listTickets);
+
+// Listar tickets — auth requerido; CLIENTE filtra por su empresa (lógica en controller)
+ticketeraRouter.get(
+    "/",
+    auth(),
+    onlyOwnEmpresa(),
+    listTickets
+);
 
 // =======================
-// RUTAS FIJAS (ANTES DE :id)
+// RUTAS FIJAS SOLO INTERNAS (antes de /:id)
 // =======================
-ticketeraRouter.get("/external-image", proxyExternalImage);
-ticketeraRouter.get("/sla", getTicketSla);
-ticketeraRouter.get("/kpis", getTicketKpis);
-ticketeraRouter.get("/kpis/agent", getTicketKpisByAgent);
-ticketeraRouter.get("/dashboard", getAgentDashboard);
-ticketeraRouter.get("/queues", getTicketQueues);
-ticketeraRouter.get("/home-summary", getTicketsHomeSummary);
-ticketeraRouter.patch("/bulk", bulkUpdateTickets);
-ticketeraRouter.post("/bulk-merge", bulkMergeTickets);
+
+// SLA, KPIs, dashboards — no exponer a CLIENTEs
+ticketeraRouter.get("/sla", auth(), onlyRole(...ROLES_INTERNOS), getTicketSla);
+
+// Home summary — disponible para todos los autenticados (muestra conteos propios para cliente)
+ticketeraRouter.get(
+    "/home-summary",
+    auth(),
+    onlyOwnEmpresa(),
+    getTicketsHomeSummary
+);
+
+// Bulk — solo internos
+ticketeraRouter.patch("/bulk", auth(), onlyRole(...ROLES_INTERNOS), bulkUpdateTickets);
+ticketeraRouter.post("/bulk-merge", auth(), onlyRole(...ROLES_INTERNOS), bulkMergeTickets);
 
 // =======================
 // CONTACTOS
 // =======================
-ticketeraRouter.get("/contactos", buscarContactos)
+ticketeraRouter.get("/contactos", auth(), onlyRole(...ROLES_INTERNOS), buscarContactos);
 
 // =======================
-// MÉTRICAS TÉCNICOS
+// MÉTRICAS TÉCNICOS — solo internos
 // =======================
-ticketeraRouter.get("/tecnicos/metrics", getTicketMetricsByTecnico);
-ticketeraRouter.get("/tecnicos/worst-closed", getWorstClosedTicketsByTecnico);
-// =======================
-// MÉTRICAS TICKETS
-// =======================
-ticketeraRouter.get("/dashboard-empresas/monthly", getTicketsDashboardMonthly);
-ticketeraRouter.get("/dashboard-empresas/ranking", getTicketsDashboardRanking);
+ticketeraRouter.get("/tecnicos/metrics", auth(), onlyRole(...ROLES_INTERNOS), getTicketMetricsByTecnico);
+ticketeraRouter.get("/tecnicos/worst-closed", auth(), onlyRole(...ROLES_INTERNOS), getWorstClosedTicketsByTecnico);
 
 // =======================
-// PLANTILLAS DE EMAIL
+// MÉTRICAS TICKETS — solo internos
 // =======================
-ticketeraRouter.get("/email-templates", listTicketEmailTemplates);
-ticketeraRouter.put("/email-templates", updateTicketEmailTemplate);
-ticketeraRouter.post("/email-templates/preview", previewTicketEmailTemplate);
-ticketeraRouter.get("/email-signature", getTicketEmailSignature);
-ticketeraRouter.put("/email-signature", updateTicketEmailSignature);
+ticketeraRouter.get("/dashboard-empresas/monthly", auth(), onlyRole(...ROLES_INTERNOS), getTicketsDashboardMonthly);
+ticketeraRouter.get("/dashboard-empresas/ranking", auth(), onlyRole(...ROLES_INTERNOS), getTicketsDashboardRanking);
 
 // =======================
-// EMAIL ENDPOINTS
+// PLANTILLAS / FIRMAS — solo ADMIN
 // =======================
-ticketeraRouter.post("/inbound-email", inboundEmail);
-ticketeraRouter.post("/process-emails", processEmails);
+ticketeraRouter.get("/email-templates", auth(), onlyRole(...ROLES_ADMIN), listTicketEmailTemplates);
+ticketeraRouter.put("/email-templates", auth(), onlyRole(...ROLES_ADMIN), updateTicketEmailTemplate);
+ticketeraRouter.post("/email-templates/preview", auth(), onlyRole(...ROLES_ADMIN), previewTicketEmailTemplate);
+ticketeraRouter.get("/email-signature", auth(), onlyRole(...ROLES_ADMIN), getTicketEmailSignature);
+ticketeraRouter.put("/email-signature", auth(), onlyRole(...ROLES_ADMIN), updateTicketEmailSignature);
 
 // =======================
-// SLA CONFIG
+// SLA CONFIG — solo ADMIN
 // =======================
-ticketeraRouter.get("/sla-config", getSlaConfig);
-ticketeraRouter.patch("/sla-config/:priority", updateSlaConfig);
+ticketeraRouter.get("/sla-config", auth(), onlyRole(...ROLES_ADMIN), getSlaConfig);
+ticketeraRouter.patch("/sla-config/:priority", auth(), onlyRole(...ROLES_ADMIN), updateSlaConfig);
 
 // =======================
-// ATTACHMENTS
+// ATTACHMENTS — auth requerido; CLIENTE solo puede descargar adjuntos de sus propios tickets
+// (la verificación de pertenencia se hace en el controller)
 // =======================
-ticketeraRouter.get("/attachments/:attachmentId/download", downloadTicketAttachment);
+ticketeraRouter.get(
+    "/attachments/:attachmentId/download",
+    auth(),
+    onlyOwnEmpresa(),
+    downloadTicketAttachment
+);
 
 // =======================
-// FIRMAS TÉCNICOS
+// FIRMAS TÉCNICOS — solo internos
 // =======================
-ticketeraRouter.get("/tecnicos/:id/signature", getTecnicoSignature);
-ticketeraRouter.put("/tecnicos/:id/signature", updateTecnicoSignatureData);
-ticketeraRouter.post("/tecnicos/:id/signature/image", upload.single("file"), uploadTecnicoSignatureImage);
-ticketeraRouter.delete("/tecnicos/:id/signature/image", deleteTecnicoSignatureImage);
+ticketeraRouter.get("/tecnicos/:id/signature", auth(), onlyRole(...ROLES_INTERNOS), getTecnicoSignature);
+ticketeraRouter.put("/tecnicos/:id/signature", auth(), onlyRole(...ROLES_INTERNOS), updateTecnicoSignatureData);
+ticketeraRouter.post("/tecnicos/:id/signature/image", auth(), onlyRole(...ROLES_INTERNOS), upload.single("file"), uploadTecnicoSignatureImage);
+ticketeraRouter.delete("/tecnicos/:id/signature/image", auth(), onlyRole(...ROLES_ADMIN), deleteTecnicoSignatureImage);
 
 // =======================
-// RUTAS CON ID (AL FINAL)
+// RUTAS CON /:id — AL FINAL
 // =======================
-ticketeraRouter.get("/:id", getTicketById);
-ticketeraRouter.patch("/:id", updateTicket);
-ticketeraRouter.post("/:id/reply", uploadTicketAttachments.array("attachments"), (err: any, _req: Request, res: Response, next: NextFunction) => {
-    if (err) {
-        return res.status(400).json({ ok: false, message: err.message });
-    }
-    return next();
-},
+
+// Ver ticket — auth + filtro por empresa para CLIENTE
+ticketeraRouter.get(
+    "/:id",
+    auth(),
+    onlyOwnEmpresa(),
+    getTicketById
+);
+
+// Actualizar — solo internos
+ticketeraRouter.patch(
+    "/:id",
+    auth(),
+    onlyRole(...ROLES_INTERNOS),
+    updateTicket
+);
+
+// Responder — solo internos
+ticketeraRouter.post(
+    "/:id/reply",
+    auth(),
+    onlyRole(...ROLES_INTERNOS),
+    uploadTicketAttachments.array("attachments"),
+    (err: any, _req: Request, res: Response, next: NextFunction) => {
+        if (err) return res.status(400).json({ ok: false, message: err.message });
+        return next();
+    },
     replyTicketAsAgent
 );
 
-ticketeraRouter.delete("/:id", deleteTicket);
+// Eliminar — solo ADMIN
+ticketeraRouter.delete(
+    "/:id",
+    auth(),
+    onlyRole(...ROLES_ADMIN),
+    deleteTicket
+);
 
 export default ticketeraRouter;

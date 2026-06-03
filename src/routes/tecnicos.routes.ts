@@ -1,3 +1,4 @@
+// src/routes/tecnicos.routes.ts
 import express from "express";
 import {
     listTecnicos,
@@ -6,15 +7,63 @@ import {
     deleteTecnico,
     createTecnico,
 } from "../controllers/tecnicos.controller.js";
+import { getTecnicosHorasHombreDashboard } from "../controllers/controllers-tecnico/tecnicos-dashboard.controller.js";
 import { auth } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
 
 const router = express.Router();
 
-router.get("/", auth(), listTecnicos);
-router.get("/usuarios", auth(), listUsuarios);
+// Selector de técnicos para filtros.
+// Lo puede usar CLIENTE, pero el controller solo devuelve datos básicos.
+router.get(
+    "/select",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"),
+    listTecnicos
+);
 
-router.put("/:id", auth(), updateTecnico);
-router.delete("/:id", auth(), deleteTecnico);
-router.post("/", auth(), createTecnico);
+// Lectura administración: ADMIN, ADMINISTRACION, TECNICO y VENTAS
+router.get(
+    "/",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"),
+    listTecnicos
+);
+
+router.get(
+    "/usuarios",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"),
+    listUsuarios
+);
+
+router.get(
+    "/dashboard/horas-hombre",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"),
+    getTecnicosHorasHombreDashboard
+);
+
+// Escritura: solo ADMIN y ADMINISTRACION
+router.put(
+    "/:id",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION"),
+    updateTecnico
+);
+
+router.delete(
+    "/:id",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION"),
+    deleteTecnico
+);
+
+router.post(
+    "/",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION"),
+    createTecnico
+);
 
 export default router;

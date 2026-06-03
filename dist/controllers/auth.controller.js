@@ -7,7 +7,10 @@ import { transporter } from "../lib/mailer.js";
 import nodemailer from "nodemailer";
 /* ================ CONSTANTES Y CONFIGURACIÓN ================ */
 const ACCESS_TTL = process.env.ACCESS_TTL || "15m";
+// Sesión normal
 const REFRESH_TTL = process.env.REFRESH_TTL || "7d";
+// Sesión con “Recordarme”
+const REFRESH_TTL_REMEMBER = process.env.REFRESH_TTL_REMEMBER || "30d";
 // ✅ Rol fijo para Tecnico (evita depender de campo inexistente en Prisma)
 const ROL_DEFAULT = "TECNICO";
 const ARGON_REFRESH_TOKEN_OPTIONS = {
@@ -20,6 +23,13 @@ const ARGON_REFRESH_TOKEN_OPTIONS = {
 // Pre-calcular valores que no cambian
 const REFRESH_MS = ttlToMs(REFRESH_TTL);
 const IS_PROD = process.env.NODE_ENV === "production";
+function getRefreshConfig(rememberMe) {
+    const ttl = rememberMe ? REFRESH_TTL_REMEMBER : REFRESH_TTL;
+    return {
+        ttl,
+        ms: ttlToMs(ttl),
+    };
+}
 // CORRECCIÓN: Declarar variables con tipos correctos
 let JWT_SECRET;
 let REFRESH_SECRET;
@@ -41,6 +51,15 @@ function getJwtSecret() {
 function getRefreshSecret() {
     return REFRESH_SECRET;
 }
+const MICROSOFT_LOGIN_BLOCKED_DOMAINS = [
+    "t-sales.cl",
+    "vprime.cl",
+    "infinet.cl",
+];
+function isMicrosoftLoginBlockedDomain(domain) {
+    const domainNorm = domain.trim().toLowerCase();
+    return MICROSOFT_LOGIN_BLOCKED_DOMAINS.includes(domainNorm);
+}
 /* ================ SCHEMAS CACHEADOS ================ */
 const registerSchema = z.object({
     nombre: z.string().min(2, "Nombre demasiado corto"),
@@ -50,6 +69,7 @@ const registerSchema = z.object({
 const loginSchema = z.object({
     email: z.string().email("Email inválido"),
     password: z.string().min(1, "Password requerido"),
+    rememberMe: z.boolean().optional().default(false),
 });
 /* ================ UTILS OPTIMIZADOS ================ */
 function ttlToMs(ttl) {
@@ -89,11 +109,18 @@ function signAccessToken(userId, email, rol, empresaId) {
     });
 }
 // CORRECCIÓN: Configuración del transporter con tipos correctos
-function signRefreshToken(userId, tokenId) {
-    const payload = tokenId ? { tid: tokenId } : {};
+function signRefreshToken(userId, rememberMe = false, tokenId) {
+    const payload = {};
+    if (tokenId) {
+        payload.tid = tokenId;
+    }
+    if (rememberMe) {
+        payload.rememberMe = true;
+    }
+    const { ttl } = getRefreshConfig(rememberMe);
     return jwt.sign(payload, getRefreshSecret(), {
         subject: String(userId),
-        expiresIn: REFRESH_TTL,
+        expiresIn: ttl,
         algorithm: "HS256",
     });
 }
@@ -115,13 +142,39 @@ function getRefreshFromRequest(req) {
     return req.cookies?.rt || null;
 }
 // CORRECCIÓN: Configuración del transporter con tipos correctos
-function setRefreshCookie(res, token) {
+function setRefreshCookie(res, token, maxAgeMs = REFRESH_MS) {
     res.cookie("rt", token, {
         httpOnly: true,
         secure: IS_PROD,
         sameSite: IS_PROD ? "none" : "lax",
         path: "/",
-        maxAge: REFRESH_MS,
+        maxAge: maxAgeMs,
+    });
+}
+function getEmailDomain(email) {
+    const emailNorm = email.trim().toLowerCase();
+    const parts = emailNorm.split("@");
+    if (parts.length !== 2)
+        return null;
+    const domain = parts[1]?.trim().toLowerCase();
+    return domain || null;
+}
+function isRidsDomain(domain) {
+    return domain === "rids.cl";
+}
+async function findEmpresaByEmailDomain(domain) {
+    const domainNorm = domain.trim().toLowerCase();
+    return prisma.empresa.findFirst({
+        where: {
+            dominios: {
+                has: domainNorm,
+            },
+        },
+        select: {
+            id_empresa: true,
+            nombre: true,
+            dominios: true,
+        },
     });
 }
 /* ================ CONTROLADORES OPTIMIZADOS ================ */
@@ -198,6 +251,7 @@ export const login = async (req, res) => {
         }
         const emailNorm = parsed.data.email.trim().toLowerCase();
         const password = parsed.data.password;
+        const rememberMe = parsed.data.rememberMe;
         // ✅ Traer solo lo necesario (sin rol, porque Tecnico no lo tiene)
         const tecnico = await prisma.tecnico.findUnique({
             where: { email: emailNorm },
@@ -235,12 +289,13 @@ export const login = async (req, res) => {
         const rol = tecnico.rol ?? ROL_DEFAULT;
         // Generar tokens
         const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, rol, tecnico.empresaId);
-        const refreshRaw = signRefreshToken(tecnico.id_tecnico);
+        const { ms: refreshMs } = getRefreshConfig(rememberMe);
+        const refreshRaw = signRefreshToken(tecnico.id_tecnico, rememberMe);
         const hashStart = Date.now();
         const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const hashEnd = Date.now();
         const { userAgent, ip } = getClientInfo(req);
-        const expiresAt = new Date(Date.now() + REFRESH_MS);
+        const expiresAt = new Date(Date.now() + refreshMs);
         // Insertar token sin bloquear la respuesta
         prisma.refreshToken
             .create({
@@ -254,7 +309,7 @@ export const login = async (req, res) => {
             select: { id: true },
         })
             .catch(console.error);
-        setRefreshCookie(res, refreshRaw);
+        setRefreshCookie(res, refreshRaw, refreshMs);
         const end = Date.now();
         console.log(`⏱️ Tiempo hash Argon2 refresh: ${hashEnd - hashStart}ms`);
         console.log(`⏱️ Tiempo de respuesta del login: ${end - start}ms`);
@@ -282,23 +337,29 @@ export const refresh = async (req, res) => {
         return res.status(401).json({ error: "Refresh token requerido" });
     }
     try {
-        // Verificar token JWT primero (más rápido que consultar DB)
+        // Verificar token JWT primero
         const decoded = jwt.verify(token, getRefreshSecret());
         const userId = Number(decoded.sub);
         if (!userId) {
             return res.status(401).json({ error: "Refresh inválido" });
         }
-        // Consulta optimizada con límite más pequeño
+        // Mantener si la sesión original fue "Recordarme"
+        const rememberMe = decoded.rememberMe === true;
+        const { ms: refreshMs } = getRefreshConfig(rememberMe);
         const candidates = await prisma.refreshToken.findMany({
             where: {
                 userId,
                 expiresAt: { gt: new Date() },
             },
-            select: { id: true, rtHash: true, revokedAt: true, replacedByTokenId: true },
+            select: {
+                id: true,
+                rtHash: true,
+                revokedAt: true,
+                replacedByTokenId: true,
+            },
             orderBy: { id: "desc" },
             take: 10,
         });
-        // Buscar token válido
         let matchedToken = null;
         for (const rt of candidates) {
             if (await argon2.verify(rt.rtHash, token)) {
@@ -307,39 +368,53 @@ export const refresh = async (req, res) => {
             }
         }
         if (!matchedToken) {
-            // Revocar tokens en segundo plano sin bloquear respuesta
             prisma.refreshToken
                 .updateMany({
-                where: { userId, revokedAt: null },
-                data: { revokedAt: new Date() },
+                where: {
+                    userId,
+                    revokedAt: null,
+                },
+                data: {
+                    revokedAt: new Date(),
+                },
             })
                 .catch(console.error);
             return res
                 .status(401)
                 .json({ error: "Refresh no reconocido (revocados los activos)" });
         }
-        // ✅ Obtener datos mínimos para generar access token (sin rol)
         const tecnico = await prisma.tecnico.findUnique({
-            where: { id_tecnico: userId },
+            where: {
+                id_tecnico: userId,
+            },
             select: {
                 id_tecnico: true,
                 email: true,
                 empresaId: true,
+                rol: true,
+                status: true,
             },
         });
         if (!tecnico) {
             return res.status(401).json({ error: "Usuario no encontrado" });
         }
-        const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email, ROL_DEFAULT, tecnico.empresaId);
-        const newRefreshRaw = signRefreshToken(tecnico.id_tecnico);
+        if (!tecnico.status) {
+            return res.status(401).json({ error: "Usuario inactivo" });
+        }
+        const rol = tecnico.rol ?? ROL_DEFAULT;
+        const newAccess = signAccessToken(tecnico.id_tecnico, tecnico.email, rol, tecnico.empresaId);
+        const newRefreshRaw = signRefreshToken(tecnico.id_tecnico, rememberMe);
         const newHash = await argon2.hash(newRefreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
         const { userAgent, ip } = getClientInfo(req);
-        const expiresAt2 = new Date(Date.now() + REFRESH_MS);
-        // Transacción optimizada
+        const expiresAt2 = new Date(Date.now() + refreshMs);
         await prisma.$transaction(async (tx) => {
             await tx.refreshToken.update({
-                where: { id: matchedToken.id },
-                data: { revokedAt: new Date() },
+                where: {
+                    id: matchedToken.id,
+                },
+                data: {
+                    revokedAt: new Date(),
+                },
             });
             await tx.refreshToken.create({
                 data: {
@@ -350,8 +425,10 @@ export const refresh = async (req, res) => {
                     ip,
                 },
             });
-        }, { timeout: 10000 });
-        setRefreshCookie(res, newRefreshRaw);
+        }, {
+            timeout: 10000,
+        });
+        setRefreshCookie(res, newRefreshRaw, refreshMs);
         return res.json({
             accessToken: newAccess,
             refreshToken: newRefreshRaw,
@@ -382,58 +459,216 @@ export const logout = async (req, res) => {
 };
 // Función para obtener cliente de Google Directory con impersonación basada en dominio, con manejo robusto de claves y logging detallado
 export const loginMicrosoft = async (req, res) => {
-    console.log("🔥 loginMicrosoft llamado", req.body);
+    console.log("loginMicrosoft llamado");
     try {
-        const { idToken } = req.body;
+        const { idToken, rememberMe = false } = req.body;
         if (!idToken) {
             return res.status(400).json({
-                error: "Token de Microsoft requerido"
+                error: "Token de Microsoft requerido",
             });
         }
-        // Leer el token
         const decoded = jwt.decode(idToken);
         if (!decoded) {
             return res.status(401).json({
-                error: "Token inválido"
+                error: "Token inválido",
             });
         }
-        const email = decoded.preferred_username;
-        if (!email) {
+        const emailNorm = String(decoded.preferred_username ||
+            decoded.email ||
+            decoded.upn ||
+            "")
+            .trim()
+            .toLowerCase();
+        if (!emailNorm) {
             return res.status(401).json({
-                error: "No se pudo obtener el correo del usuario"
+                error: "No se pudo obtener el correo del usuario",
             });
         }
-        //  Validar que sea correo de RIDS
-        if (!email.endsWith("@rids.cl")) {
+        const domain = getEmailDomain(emailNorm);
+        if (!domain) {
+            return res.status(401).json({
+                error: "Correo Microsoft inválido",
+            });
+        }
+        if (isMicrosoftLoginBlockedDomain(domain)) {
             return res.status(403).json({
-                error: "Acceso denegado. Solo usuarios de RIDS pueden ingresar."
+                error: "El inicio de sesión con Microsoft no está habilitado para este dominio.",
+                code: "MICROSOFT_LOGIN_DOMAIN_BLOCKED",
+                domain,
             });
         }
-        //  Buscar usuario en tu base de datos
-        let tecnico = await prisma.tecnico.findUnique({
-            where: { email }
+        const nombreMicrosoft = decoded.name || emailNorm;
+        /*
+         * CASO 1:
+         * El usuario ya existe en el sistema.
+         * En este caso SIEMPRE respetamos su rol real.
+         */
+        const usuarioSistema = await prisma.tecnico.findUnique({
+            where: {
+                email: emailNorm,
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                status: true,
+                empresaId: true,
+                rol: true,
+            },
         });
-        if (!tecnico) {
-            tecnico = await prisma.tecnico.create({
+        if (usuarioSistema) {
+            if (!usuarioSistema.status) {
+                return res.status(403).json({
+                    error: "Usuario inactivo, contacte al administrador.",
+                });
+            }
+            const rol = usuarioSistema.rol ?? ROL_DEFAULT;
+            const accessToken = signAccessToken(usuarioSistema.id_tecnico, usuarioSistema.email, rol, usuarioSistema.empresaId);
+            const { ms: refreshMs } = getRefreshConfig(rememberMe);
+            const refreshRaw = signRefreshToken(usuarioSistema.id_tecnico, rememberMe);
+            const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+            const { userAgent, ip } = getClientInfo(req);
+            const expiresAt = new Date(Date.now() + refreshMs);
+            await prisma.refreshToken.create({
                 data: {
-                    nombre: decoded.name || email,
-                    email: email,
+                    userId: usuarioSistema.id_tecnico,
+                    rtHash,
+                    expiresAt,
+                    userAgent,
+                    ip,
+                },
+                select: { id: true },
+            });
+            setRefreshCookie(res, refreshRaw, refreshMs);
+            return res.json({
+                accessToken,
+                refreshToken: refreshRaw,
+                tecnico: {
+                    id_tecnico: usuarioSistema.id_tecnico,
+                    nombre: usuarioSistema.nombre,
+                    email: usuarioSistema.email,
+                    rol,
+                    empresaId: usuarioSistema.empresaId ?? null,
+                },
+            });
+        }
+        /*
+         * CASO 2:
+         * Usuario RIDS que todavía no existe.
+         * Lo puedes crear como TECNICO por defecto.
+         */
+        if (isRidsDomain(domain)) {
+            const tecnico = await prisma.tecnico.create({
+                data: {
+                    nombre: nombreMicrosoft,
+                    email: emailNorm,
                     status: true,
                     passwordHash: "",
-                }
+                    rol: ROL_DEFAULT,
+                    empresaId: null,
+                },
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                    email: true,
+                    status: true,
+                    empresaId: true,
+                    rol: true,
+                },
+            });
+            const rol = tecnico.rol ?? ROL_DEFAULT;
+            const accessToken = signAccessToken(tecnico.id_tecnico, tecnico.email, rol, tecnico.empresaId);
+            const { ms: refreshMs } = getRefreshConfig(rememberMe);
+            const refreshRaw = signRefreshToken(tecnico.id_tecnico, rememberMe);
+            const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+            const { userAgent, ip } = getClientInfo(req);
+            const expiresAt = new Date(Date.now() + refreshMs);
+            await prisma.refreshToken.create({
+                data: {
+                    userId: tecnico.id_tecnico,
+                    rtHash,
+                    expiresAt,
+                    userAgent,
+                    ip,
+                },
+                select: { id: true },
+            });
+            setRefreshCookie(res, refreshRaw, refreshMs);
+            return res.json({
+                accessToken,
+                refreshToken: refreshRaw,
+                tecnico: {
+                    id_tecnico: tecnico.id_tecnico,
+                    nombre: tecnico.nombre,
+                    email: tecnico.email,
+                    rol,
+                    empresaId: tecnico.empresaId ?? null,
+                },
             });
         }
-        //  Crear JWT de tu sistema
-        const accessToken = jwt.sign({ id: tecnico.id_tecnico }, process.env.JWT_SECRET, { expiresIn: "8h" });
+        /*
+         * CASO 3:
+         * Usuario externo que no existe en el sistema.
+         * Se intenta asociar por dominio de empresa.
+         */
+        const empresa = await findEmpresaByEmailDomain(domain);
+        if (!empresa) {
+            return res.status(403).json({
+                error: "Tu dominio no está asociado a ninguna empresa registrada.",
+            });
+        }
+        const cliente = await prisma.tecnico.create({
+            data: {
+                nombre: nombreMicrosoft,
+                email: emailNorm,
+                status: true,
+                passwordHash: "",
+                rol: "CLIENTE",
+                empresaId: empresa.id_empresa,
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                status: true,
+                empresaId: true,
+                rol: true,
+            },
+        });
+        const accessToken = signAccessToken(cliente.id_tecnico, cliente.email, cliente.rol ?? "CLIENTE", cliente.empresaId);
+        const { ms: refreshMs } = getRefreshConfig(rememberMe);
+        const refreshRaw = signRefreshToken(cliente.id_tecnico, rememberMe);
+        const rtHash = await argon2.hash(refreshRaw, ARGON_REFRESH_TOKEN_OPTIONS);
+        const { userAgent, ip } = getClientInfo(req);
+        const expiresAt = new Date(Date.now() + refreshMs);
+        await prisma.refreshToken.create({
+            data: {
+                userId: cliente.id_tecnico,
+                rtHash,
+                expiresAt,
+                userAgent,
+                ip,
+            },
+            select: { id: true },
+        });
+        setRefreshCookie(res, refreshRaw, refreshMs);
         return res.json({
             accessToken,
-            tecnico
+            refreshToken: refreshRaw,
+            tecnico: {
+                id_tecnico: cliente.id_tecnico,
+                nombre: cliente.nombre,
+                email: cliente.email,
+                rol: cliente.rol ?? "CLIENTE",
+                empresaId: cliente.empresaId ?? null,
+                empresaNombre: empresa.nombre,
+            },
         });
     }
     catch (error) {
-        console.error(error);
+        console.error("Error en loginMicrosoft:", error);
         return res.status(500).json({
-            error: "Error autenticando con Microsoft"
+            error: "Error autenticando con Microsoft",
         });
     }
 };
@@ -452,6 +687,7 @@ export const me = async (req, res) => {
             email: true,
             status: true,
             empresaId: true,
+            rol: true,
         },
     });
     if (!tecnico) {
@@ -460,7 +696,7 @@ export const me = async (req, res) => {
     return res.json({
         tecnico: {
             ...tecnico,
-            rol: ROL_DEFAULT,
+            rol: tecnico.rol ?? ROL_DEFAULT,
         },
     });
 };

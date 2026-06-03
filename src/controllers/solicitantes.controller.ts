@@ -1,7 +1,7 @@
 // controllers/solicitantes.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 /* Utils */
 const toInt = (v: unknown, def = 0) => {
@@ -13,6 +13,48 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 type OrderByKey = "empresa" | "nombre" | "id";
 type OrderDir = "asc" | "desc";
 
+type EstadoSolicitanteFiltro = "activos" | "inactivos" | "todos";
+
+const SOLICITANTES_CARGA_INICIAL_HASTA =
+  process.env.SOLICITANTES_CARGA_INICIAL_HASTA ??
+  "2026-05-19 15:30:52.844";
+
+const parseEstadoSolicitante = (v: unknown): EstadoSolicitanteFiltro => {
+  const s = String(v ?? "activos").trim().toLowerCase();
+
+  if (s === "inactivos" || s === "inactive" || s === "false") {
+    return "inactivos";
+  }
+
+  if (s === "todos" || s === "all") {
+    return "todos";
+  }
+
+  return "activos";
+};
+
+const buildEstadoSolicitanteWhere = (
+  estado: EstadoSolicitanteFiltro
+): Prisma.SolicitanteWhereInput => {
+  if (estado === "inactivos") {
+    return {
+      OR: [
+        { isActive: false },
+        { deletedAt: { not: null } },
+      ],
+    };
+  }
+
+  if (estado === "todos") {
+    return {};
+  }
+
+  return {
+    isActive: true,
+    deletedAt: null,
+  };
+};
+
 const normalizeEmail = (v: unknown): string | null => {
   const s = String(v ?? "").trim().toLowerCase();
   return s.length > 0 ? s : null;
@@ -20,6 +62,47 @@ const normalizeEmail = (v: unknown): string | null => {
 
 const isValidEmail = (email: string) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
+const normalizeRut = (v: unknown): string | null => {
+  const s = String(v ?? "")
+    .trim()
+    .replace(/\./g, "")
+    .replace(/\s/g, "")
+    .toUpperCase();
+
+  if (!s) return null;
+
+  const clean = s.replace(/-/g, "");
+
+  if (!/^\d{7,8}[0-9K]$/.test(clean)) {
+    return s;
+  }
+
+  return `${clean.slice(0, -1)}-${clean.slice(-1)}`;
+};
+
+const isValidRut = (rut: string) => {
+  const clean = rut.replace(/\./g, "").replace(/-/g, "").toUpperCase();
+
+  if (!/^\d{7,8}[0-9K]$/.test(clean)) return false;
+
+  const cuerpo = clean.slice(0, -1);
+  const dv = clean.slice(-1);
+
+  let suma = 0;
+  let multiplo = 2;
+
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += Number(cuerpo[i]) * multiplo;
+    multiplo = multiplo < 7 ? multiplo + 1 : 2;
+  }
+
+  const dvEsperadoNum = 11 - (suma % 11);
+  const dvEsperado =
+    dvEsperadoNum === 11 ? "0" : dvEsperadoNum === 10 ? "K" : String(dvEsperadoNum);
+
+  return dv === dvEsperado;
 };
 
 /** ✅ Empresas donde los solicitantes pueden ser "boxes" sin cuenta */
@@ -102,6 +185,7 @@ const buildSolicitanteSearchWhere = (
     AND: terms.map((term) => ({
       OR: [
         { nombre: { contains: term, mode: INS } },
+        { rut: { contains: term.replace(/\./g, "").replace(/\s/g, ""), mode: INS } },
         { email: { contains: term, mode: INS } },
         { telefono: { contains: term, mode: INS } },
         ...(includeEmpresa
@@ -121,6 +205,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const empresaId = toInt(req.query.empresaId);
     const page = clamp(toInt(req.query.page, 1), 1, 1_000_000);
     const pageSize = clamp(toInt(req.query.pageSize, 10), 1, 100);
+    const estado = parseEstadoSolicitante(req.query.estado);
 
     const onlyGMS =
       String(req.query.onlyGMS ?? "").toLowerCase() === "1" ||
@@ -151,7 +236,8 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const orderDir = parseOrderDir(req.query.orderDir);
 
     const where: Prisma.SolicitanteWhereInput = {
-      isActive: true,
+      ...buildEstadoSolicitanteWhere(estado),
+
       ...(user?.rol === "CLIENTE"
         ? { empresaId: Number(user.empresaId) }
         : empresaId > 0
@@ -161,14 +247,20 @@ export const listSolicitantes = async (req: Request, res: Response) => {
       ...buildSolicitanteSearchWhere(q, true),
 
       ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] as any } } : {}),
-      ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+      ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
     };
 
     const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
 
-    const [total, baseSolicitantes] = await Promise.all([
-      prisma.solicitante.count({ where }),
-      prisma.solicitante.findMany({
+    // Ejecutar la consulta de manera tolerante: primero intentar la consulta principal,
+    // si `count()` falla (p. ej. respuesta vacía del engine) devolvemos los items
+    // y usamos su longitud como total para no romper la API.
+    let baseSolicitantes: Array<any> = [];
+    let total = 0;
+
+    try {
+      // intentamos obtener los rows (findMany). Si falla, saltamos al fallback.
+      baseSolicitantes = await prisma.solicitante.findMany({
         where,
         skip,
         take: pageSize,
@@ -176,6 +268,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
         select: {
           id_solicitante: true,
           nombre: true,
+          rut: true,
           email: true,
           telefono: true,
           empresaId: true,
@@ -183,8 +276,47 @@ export const listSolicitantes = async (req: Request, res: Response) => {
           googleUserId: true,
           microsoftUserId: true,
         },
-      }),
-    ]);
+      });
+
+      // intentar contar; si falla, usar fallback al tamaño del array
+      try {
+        total = await prisma.solicitante.count({ where });
+      } catch (countErr) {
+        console.warn('[solicitantes.list] count() falló, usando fallback total = items.length', countErr instanceof Error ? countErr.message : countErr);
+        total = baseSolicitantes.length;
+      }
+    } catch (mainErr) {
+      console.warn('[solicitantes.list] consulta principal falló, intentando fallback ligero:', mainErr instanceof Error ? mainErr.message : mainErr);
+
+      // Fallback: ejecutar una consulta más simple (similar a /solicitantes/mailer) para no romper la ruta
+      try {
+        baseSolicitantes = await prisma.solicitante.findMany({
+          where: {
+            isActive: true,
+            ...(empresaId > 0 ? { empresaId } : {}),
+            ...buildSolicitanteSearchWhere(q, true),
+          },
+          select: {
+            id_solicitante: true,
+            nombre: true,
+            email: true,
+            telefono: true,
+            empresaId: true,
+            accountType: true,
+            googleUserId: true,
+            microsoftUserId: true,
+          },
+          orderBy: buildSolicitanteOrderBy(orderByKey, orderDir),
+          skip,
+          take: pageSize,
+        });
+
+        total = baseSolicitantes.length;
+      } catch (fbErr) {
+        console.error('[solicitantes.list] fallback también falló:', fbErr);
+        throw fbErr; // será capturado por el catch exterior y devolverá 500
+      }
+    }
 
     // Enriquecer con empresa, equipos y licencias MS
     const empresaIdSet = new Set(
@@ -192,7 +324,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     );
     const solicitanteIdSet = new Set(baseSolicitantes.map((s) => s.id_solicitante));
 
-    const [empresas, equipos, msLinks] = await Promise.all([
+    const [empresas, equipos] = await Promise.all([
       prisma.empresa.findMany({
         where: { id_empresa: { in: Array.from(empresaIdSet) } },
         select: { id_empresa: true, nombre: true },
@@ -212,7 +344,11 @@ export const listSolicitantes = async (req: Request, res: Response) => {
         },
         orderBy: { id_equipo: "asc" },
       }),
-      prisma.solicitanteMsLicense.findMany({
+    ]);
+
+    let msLinks: Array<{ solicitanteId: number; skuId: string; sku: { skuId: string; skuPartNumber: string; displayName?: string | null } | null }> = [];
+    try {
+      msLinks = await prisma.solicitanteMsLicense.findMany({
         where: { solicitanteId: { in: Array.from(solicitanteIdSet) } },
         select: {
           solicitanteId: true,
@@ -220,8 +356,10 @@ export const listSolicitantes = async (req: Request, res: Response) => {
           sku: { select: { skuId: true, skuPartNumber: true, displayName: true } },
         },
         orderBy: { skuId: "asc" },
-      }),
-    ]);
+      });
+    } catch (msErr) {
+      console.warn("[solicitantes.list] msLicense query failed (tabla puede no existir):", msErr instanceof Error ? msErr.message : msErr);
+    }
 
     const empresaMap = new Map(empresas.map((e) => [e.id_empresa, e]));
     const equiposBySolic = new Map<number, typeof equipos>();
@@ -265,8 +403,8 @@ export const listSolicitantes = async (req: Request, res: Response) => {
       filters: {
         empresaId: user?.rol === "CLIENTE" ? Number(user.empresaId) : empresaId || null,
         q: q ?? null,
+        estado,
         onlyGMS,
-        // ✅ devolvemos el valor final aplicado (con override)
         onlyWithAccount,
         includeMsDetails,
       },
@@ -274,7 +412,40 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     });
   } catch (err: unknown) {
     console.error("[solicitantes.list] error:", err);
-    return res.status(500).json({ error: "No se pudieron listar los solicitantes" });
+    const detail = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: "No se pudieron listar los solicitantes", detail });
+  }
+};
+
+/* ============================================================
+ * GET /solicitantes/mailer
+ * Endpoint simple: solo datos de la tabla Solicitante (isActive=true)
+ * con nombre de empresa incluido. Una sola query, sin joins pesados.
+ * ============================================================ */
+export const listSolicitantesMailer = async (req: Request, res: Response) => {
+  try {
+    const empresaId = toInt(req.query.empresaId);
+
+    const items = await prisma.solicitante.findMany({
+      where: {
+        isActive: true,
+        ...(empresaId > 0 ? { empresaId } : {}),
+      },
+      select: {
+        id_solicitante: true,
+        nombre: true,
+        email: true,
+        empresaId: true,
+        empresa: { select: { id_empresa: true, nombre: true } },
+      },
+      orderBy: [{ empresa: { nombre: "asc" } }, { nombre: "asc" }],
+    });
+
+    return res.json({ items, total: items.length });
+  } catch (err: unknown) {
+    console.error("[solicitantes.mailer] error:", err);
+    const detail = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: "No se pudieron listar los solicitantes", detail });
   }
 };
 
@@ -322,6 +493,7 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
       select: {
         id_solicitante: true,
         nombre: true,
+        rut: true,
         email: true,
         telefono: true,
       },
@@ -331,6 +503,7 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
       items: rows.map((s) => ({
         id: s.id_solicitante,
         nombre: s.nombre,
+        rut: s.rut ?? null,
         email: s.email ?? null,
         telefono: s.telefono ?? null,
       })),
@@ -415,6 +588,8 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     const q = String(req.query.q ?? req.query.search ?? "").trim();
     const empresaId = toInt(req.query.empresaId);
 
+    const estado = parseEstadoSolicitante(req.query.estado);
+
     const user = (req as any).user;
 
     const onlyWithAccountRaw =
@@ -429,13 +604,24 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
 
     const where: Prisma.SolicitanteWhereInput = {
-      isActive: true,
+      ...buildEstadoSolicitanteWhere(estado),
       ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
       ...buildSolicitanteSearchWhere(q, true),
-      ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+      ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+    };
+    const solicitantes = await prisma.solicitante.count({ where });
+
+    const baseEmpresaWhere: Prisma.SolicitanteWhereInput = {
+      ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
+      ...buildSolicitanteSearchWhere(q, true),
     };
 
-    const solicitantes = await prisma.solicitante.count({ where });
+    const inactivos = await prisma.solicitante.count({
+      where: {
+        ...baseEmpresaWhere,
+        ...buildEstadoSolicitanteWhere("inactivos"),
+      },
+    });
 
     const distinctEmpresas = await prisma.solicitante.findMany({
       where,
@@ -444,26 +630,33 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     });
     const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
 
-    const ids = await prisma.solicitante.findMany({
-      where,
-      select: { id_solicitante: true },
-    });
-    const idList = ids.map((s) => s.id_solicitante);
+    const equiposWhere: Prisma.EquipoWhereInput =
+      userEmpresaId ?? (empresaId > 0 ? empresaId : null)
+        ? {
+          deletedAt: null,
+          solicitante: {
+            is: {
+              empresaId: userEmpresaId ?? empresaId,
+            },
+          },
+        }
+        : {
+          deletedAt: null,
+        };
 
-    const equipos =
-      idList.length === 0
-        ? 0
-        : await prisma.equipo.count({
-          where: { idSolicitante: { in: idList } },
-        });
+    const equipos = await prisma.equipo.count({
+      where: equiposWhere,
+    });
 
     return res.json({
       solicitantes,
       empresas,
       equipos,
+      inactivos,
       filters: {
         empresaId: userEmpresaId ?? (empresaId > 0 ? empresaId : null),
         q: q ?? null,
+        estado,
         onlyWithAccount,
       },
     });
@@ -546,6 +739,8 @@ export const createSolicitante = async (req: Request, res: Response) => {
   try {
     const nombre = String(req.body?.nombre ?? "").trim();
 
+    const rut = normalizeRut(req.body?.rut);
+
     const email = normalizeEmail(req.body?.email);
 
     const telefonoRaw = (req.body?.telefono ?? null) as string | null;
@@ -555,6 +750,40 @@ export const createSolicitante = async (req: Request, res: Response) => {
 
     if (!nombre) {
       return res.status(400).json({ error: "El nombre es obligatorio" });
+    }
+
+    if (rut && !isValidRut(rut)) {
+      return res.status(400).json({ error: "El RUT no tiene un formato válido" });
+    }
+
+    if (rut) {
+      const existingRut = await prisma.solicitante.findFirst({
+        where: {
+          isActive: true,
+          rut: {
+            equals: rut,
+            mode: "insensitive",
+          },
+        },
+        select: {
+          id_solicitante: true,
+          nombre: true,
+          rut: true,
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+        },
+      });
+
+      if (existingRut) {
+        return res.status(409).json({
+          error: `Ya existe un solicitante con el RUT ${rut}. Pertenece a: ${existingRut.nombre}${existingRut.empresa?.nombre ? ` (${existingRut.empresa.nombre})` : ""}.`,
+          duplicate: existingRut,
+        });
+      }
     }
 
     if (empresaId <= 0) {
@@ -607,6 +836,7 @@ export const createSolicitante = async (req: Request, res: Response) => {
     const created = await prisma.solicitante.create({
       data: {
         nombre,
+        rut,
         email,
         telefono,
         empresaId,
@@ -614,6 +844,7 @@ export const createSolicitante = async (req: Request, res: Response) => {
       select: {
         id_solicitante: true,
         nombre: true,
+        rut: true,
         email: true,
         telefono: true,
         empresaId: true,
@@ -627,8 +858,13 @@ export const createSolicitante = async (req: Request, res: Response) => {
     const e = err as { code?: string };
 
     if (e?.code === "P2002") {
+      const meta = (err as { meta?: { target?: string[] } })?.meta;
+      const target = Array.isArray(meta?.target) ? meta.target.join(",") : "";
+
       return res.status(409).json({
-        error: "Ya existe un solicitante con ese correo electrónico",
+        error: target.includes("rut")
+          ? "Ya existe un solicitante con ese RUT"
+          : "Ya existe un solicitante con ese correo electrónico",
       });
     }
 
@@ -648,6 +884,7 @@ export const getSolicitanteById = async (req: Request, res: Response) => {
       select: {
         id_solicitante: true,
         nombre: true,
+        rut: true,
         email: true,
         telefono: true,
         empresaId: true,
@@ -703,6 +940,50 @@ export const updateSolicitante = async (req: Request, res: Response) => {
     if (id <= 0) return res.status(400).json({ error: "ID inválido" });
 
     const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim() : undefined;
+
+    const rut =
+      req.body?.rut === null
+        ? null
+        : typeof req.body?.rut === "string"
+          ? normalizeRut(req.body.rut)
+          : undefined;
+
+    if (rut && !isValidRut(rut)) {
+      return res.status(400).json({ error: "El RUT no tiene un formato válido" });
+    }
+
+    if (rut) {
+      const existingRut = await prisma.solicitante.findFirst({
+        where: {
+          isActive: true,
+          rut: {
+            equals: rut,
+            mode: "insensitive",
+          },
+          NOT: {
+            id_solicitante: id,
+          },
+        },
+        select: {
+          id_solicitante: true,
+          nombre: true,
+          rut: true,
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+        },
+      });
+
+      if (existingRut) {
+        return res.status(409).json({
+          error: `Ya existe otro solicitante con el RUT ${rut}. Pertenece a: ${existingRut.nombre}${existingRut.empresa?.nombre ? ` (${existingRut.empresa.nombre})` : ""}.`,
+          duplicate: existingRut,
+        });
+      }
+    }
 
     const email =
       req.body?.email === null
@@ -780,6 +1061,7 @@ export const updateSolicitante = async (req: Request, res: Response) => {
       where: { id_solicitante: id },
       data: {
         ...(nombre !== undefined ? { nombre } : {}),
+        ...(rut !== undefined ? { rut } : {}),
         ...(email !== undefined ? { email } : {}),
         ...(telefono !== undefined ? { telefono } : {}),
         ...(empresaId !== undefined ? { empresaId } : {}),
@@ -787,6 +1069,7 @@ export const updateSolicitante = async (req: Request, res: Response) => {
       select: {
         id_solicitante: true,
         nombre: true,
+        rut: true,
         email: true,
         telefono: true,
         empresaId: true,
@@ -852,7 +1135,13 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
       if (existing) return existing.id_solicitante;
 
       const created = await prisma.solicitante.create({
-        data: { nombre: "S/A", email: null, telefono: null, empresaId },
+        data: {
+          nombre: "S/A",
+          rut: null,
+          email: null,
+          telefono: null,
+          empresaId,
+        },
         select: { id_solicitante: true },
       });
 
@@ -903,7 +1192,10 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
         // ======================================
         // 3️⃣ DELETE FINAL
         // ======================================
-        await tx.solicitante.delete({ where: { id_solicitante: id } });
+        await tx.solicitante.update({
+          where: { id_solicitante: id },
+          data: { isActive: false, deletedAt: new Date() },
+        });
       },
       { timeout: 15000 }
     );
@@ -918,3 +1210,283 @@ export const deleteSolicitante = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "No se pudo eliminar el solicitante" });
   }
 };
+
+export async function getSolicitantesDashboardMensual(req: Request, res: Response) {
+  try {
+    const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+    const cargaInicialHasta = SOLICITANTES_CARGA_INICIAL_HASTA;
+
+    const rows = await prisma.$queryRaw<
+      Array<{
+        empresaId: number;
+        empresa: string;
+        mes: Date;
+        esCargaInicial: boolean;
+        nuevos: number;
+        eliminados: number; // en frontend mostrar como "Bajas"
+        neto: number;
+      }>
+    >(Prisma.sql`
+      WITH base_nuevos_raw AS (
+        SELECT
+          s."empresaId",
+          DATE_TRUNC('month', s."createdAt")::date AS mes,
+          CASE
+            WHEN s."createdAt" <= ${cargaInicialHasta}::timestamp
+            THEN true
+            ELSE false
+          END AS "esCargaInicial"
+        FROM "Solicitante" s
+        WHERE s."createdAt" IS NOT NULL
+          ${empresaId ? Prisma.sql`AND s."empresaId" = ${empresaId}` : Prisma.empty}
+      ),
+      base_nuevos AS (
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          COUNT(*)::int AS nuevos
+        FROM base_nuevos_raw
+        GROUP BY
+          "empresaId",
+          mes,
+          "esCargaInicial"
+      ),
+      bajas AS (
+        SELECT
+          s."empresaId",
+          DATE_TRUNC('month', COALESCE(s."deletedAt", s."deactivatedAt"))::date AS mes,
+          false AS "esCargaInicial",
+          COUNT(*)::int AS eliminados
+        FROM "Solicitante" s
+        WHERE (
+            s."deletedAt" IS NOT NULL
+            OR s."deactivatedAt" IS NOT NULL
+          )
+          ${empresaId ? Prisma.sql`AND s."empresaId" = ${empresaId}` : Prisma.empty}
+        GROUP BY
+          s."empresaId",
+          DATE_TRUNC('month', COALESCE(s."deletedAt", s."deactivatedAt"))
+      ),
+      movimientos AS (
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          nuevos,
+          0::int AS eliminados
+        FROM base_nuevos
+
+        UNION ALL
+
+        SELECT
+          "empresaId",
+          mes,
+          "esCargaInicial",
+          0::int AS nuevos,
+          eliminados
+        FROM bajas
+      )
+      SELECT
+        e.id_empresa AS "empresaId",
+        e.nombre AS empresa,
+        m.mes,
+        m."esCargaInicial",
+        SUM(m.nuevos)::int AS nuevos,
+        SUM(m.eliminados)::int AS eliminados,
+        (SUM(m.nuevos) - SUM(m.eliminados))::int AS neto
+      FROM movimientos m
+      JOIN "Empresa" e
+        ON e.id_empresa = m."empresaId"
+      GROUP BY
+        e.id_empresa,
+        e.nombre,
+        m.mes,
+        m."esCargaInicial"
+      ORDER BY
+        m.mes ASC,
+        m."esCargaInicial" DESC,
+        e.nombre ASC;
+    `);
+
+    const activosActuales = await prisma.solicitante.count({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        deactivatedAt: null,
+        ...(empresaId ? { empresaId } : {}),
+      },
+    });
+
+    const activosPorEmpresa = await prisma.solicitante.groupBy({
+      by: ["empresaId"],
+      where: {
+        isActive: true,
+        deletedAt: null,
+        deactivatedAt: null,
+        ...(empresaId ? { empresaId } : {}),
+      },
+      _count: { id_solicitante: true },
+    });
+
+    return res.json({
+      ok: true,
+      data: rows,
+      cargaInicialHasta,
+      activosActuales,
+      activosPorEmpresa: activosPorEmpresa.map((r) => ({
+        empresaId: r.empresaId,
+        activos: r._count.id_solicitante,
+      })),
+    });
+  } catch (error) {
+    console.error("Error getSolicitantesDashboardMensual:", error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener dashboard mensual de solicitantes",
+    });
+  }
+}
+
+// GET /solicitantes/dashboard/eliminados?desde=2026-06-01&hasta=2026-06-30&empresaId=5
+export async function getSolicitantesEliminadosDetalle(req: Request, res: Response) {
+  try {
+    const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+    const desdeRaw = req.query.desde ? String(req.query.desde) : null;
+    const hastaRaw = req.query.hasta ? String(req.query.hasta) : null;
+
+    if (!desdeRaw || !hastaRaw) {
+      return res.status(400).json({
+        ok: false,
+        message: "Parámetros 'desde' y 'hasta' son requeridos",
+      });
+    }
+
+    const desde = new Date(desdeRaw);
+
+    // Si viene como YYYY-MM-DD, usamos rango hasta el día siguiente exclusivo.
+    const hastaExclusivo =
+      hastaRaw.length === 10
+        ? new Date(new Date(hastaRaw).getTime() + 24 * 60 * 60 * 1000)
+        : new Date(hastaRaw);
+
+    const rows = await prisma.$queryRaw<
+      Array<{
+        id_solicitante: number;
+        nombre: string;
+        rut: string | null;
+        email: string | null;
+        deletedAt: Date | null;
+        deactivatedAt: Date | null;
+        fechaBaja: Date;
+        tipoBaja: string;
+        empresa: {
+          id_empresa: number;
+          nombre: string;
+        } | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        s.id_solicitante,
+        s.nombre,
+        s.rut,
+        s.email,
+        s."deletedAt",
+        s."deactivatedAt",
+        COALESCE(s."deletedAt", s."deactivatedAt") AS "fechaBaja",
+        CASE
+          WHEN s."deletedAt" IS NOT NULL THEN 'ELIMINADO'
+          ELSE 'DESACTIVADO'
+        END AS "tipoBaja",
+        json_build_object(
+          'id_empresa', e.id_empresa,
+          'nombre', e.nombre
+        ) AS empresa
+      FROM "Solicitante" s
+      LEFT JOIN "Empresa" e
+        ON e.id_empresa = s."empresaId"
+      WHERE COALESCE(s."deletedAt", s."deactivatedAt") >= ${desde}
+        AND COALESCE(s."deletedAt", s."deactivatedAt") < ${hastaExclusivo}
+        ${empresaId ? Prisma.sql`AND s."empresaId" = ${empresaId}` : Prisma.empty}
+      ORDER BY "fechaBaja" DESC;
+    `);
+
+    return res.json({
+      ok: true,
+      total: rows.length,
+      data: rows,
+    });
+  } catch (error) {
+    console.error("Error getSolicitantesEliminadosDetalle:", error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener detalle de bajas",
+    });
+  }
+}
+
+// GET /solicitantes/dashboard/nuevos?desde=2026-06-01&hasta=2026-06-19T14:32:00Z&empresaId=5
+export async function getSolicitantesNuevosDetalle(req: Request, res: Response) {
+  try {
+    const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
+    const desde = req.query.desde ? new Date(String(req.query.desde)) : null;
+    const hasta = req.query.hasta ? new Date(String(req.query.hasta)) : null;
+
+    const esCargaInicialParam =
+      req.query.esCargaInicial !== undefined
+        ? String(req.query.esCargaInicial).toLowerCase() === "true"
+        : null;
+
+    if (!desde || !hasta) {
+      return res.status(400).json({
+        error: "Parámetros 'desde' y 'hasta' son requeridos",
+      });
+    }
+
+    const cargaInicialHasta = new Date(SOLICITANTES_CARGA_INICIAL_HASTA);
+
+    const createdAtWhere: Prisma.DateTimeFilter = {
+      gte: desde,
+      lte: hasta,
+    };
+
+    if (esCargaInicialParam === true) {
+      createdAtWhere.lte = cargaInicialHasta < hasta ? cargaInicialHasta : hasta;
+    }
+
+    if (esCargaInicialParam === false) {
+      createdAtWhere.gt = cargaInicialHasta;
+    }
+
+    const rows = await prisma.solicitante.findMany({
+      where: {
+        createdAt: createdAtWhere,
+        ...(empresaId ? { empresaId } : {}),
+      },
+      select: {
+        id_solicitante: true,
+        nombre: true,
+        rut: true,
+        email: true,
+        createdAt: true,
+        empresa: { select: { id_empresa: true, nombre: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json({
+      ok: true,
+      total: rows.length,
+      data: rows,
+    });
+  } catch (error) {
+    console.error("Error getSolicitantesNuevosDetalle:", error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error al obtener detalle de nuevos",
+    });
+  }
+}

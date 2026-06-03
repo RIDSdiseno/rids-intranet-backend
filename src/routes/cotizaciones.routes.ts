@@ -1,6 +1,8 @@
-// Rutas para manejo de cotizaciones, con endpoints para CRUD completo, facturación, integración con SII y vinculación de equipos a items, delegando la lógica al controlador correspondiente. Todas las rutas están protegidas por autenticación.
+// src/routes/cotizaciones.routes.ts
 import { Router } from "express";
-import { auth } from "../middlewares/auth.js"; //  IMPORTANTE
+import { auth } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
+import { onlyOwnEmpresa } from "../middlewares/auth.js";
 
 import {
     getCotizaciones,
@@ -13,17 +15,17 @@ import {
     anularFactura,
     pagarFactura,
     cambiarEstadoFactura,
-    vincularEquipoAItem
+    vincularEquipoAItem,
 } from "../controllers/cotizaciones.controller.js";
+import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../controllers/cotizaciones-enviadas.controller.js";
 
 const cotizacionesRouter = Router();
 
-/* ============================
-   RUTAS CRUD COTIZACION GESTIOO
-============================ */
+const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"] as const;
+const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"] as const;
+const ROLES_FACTURA = ["ADMIN", "ADMINISTRACION", "VENTAS"] as const;
 
-// PROTEGER TODO EL ROUTER
-cotizacionesRouter.use(auth());
+// ── Rutas de solo lectura — CLIENTE puede acceder (filtrado en controller) ───
 
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem)

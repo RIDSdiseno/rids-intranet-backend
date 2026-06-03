@@ -1,7 +1,11 @@
+// src/service/solicitanteSync.ts
 import { prisma } from "../lib/prisma.js";
 import { bus } from "../lib/events.js";
 /* ========== Helpers ========== */
 const norm = (e) => (e ? e.trim().toLowerCase() : null);
+const isGoogleUserActivo = (u) => !(u.suspended ?? false) &&
+    !(u.archived ?? false) &&
+    !(u.deleted ?? false);
 const buildNombre = (u, emailNorm) => u.name?.fullName ||
     `${u.name?.givenName ?? ""} ${u.name?.familyName ?? ""}`.trim() ||
     (emailNorm ?? "Sin nombre");
@@ -19,7 +23,7 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
     if (!email)
         return null;
     const nombre = buildNombre(user, email);
-    const activo = !(user.suspended ?? false);
+    const activo = isGoogleUserActivo(user);
     // 1) Buscar primero por googleUserId
     if (user.id) {
         const byGoogle = await prisma.solicitante.findUnique({
@@ -35,6 +39,13 @@ export async function upsertSolicitanteFromGoogle_min(user, empresaId) {
                 changes.empresaId = empresaId;
             if (byGoogle.isActive !== activo)
                 changes.isActive = activo;
+            if (activo) {
+                changes.deletedAt = null;
+                changes.deactivatedAt = null;
+            }
+            else {
+                changes.deactivatedAt = new Date();
+            }
             if (byGoogle.accountType !== "google")
                 changes.accountType = "google";
             if (Object.keys(changes).length === 0)
@@ -140,6 +151,15 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
                 changes.isActive = activo;
             if (byGoogle.accountType !== "google")
                 changes.accountType = "google";
+            if (activo) {
+                if (byGoogle.deletedAt !== null)
+                    changes.deletedAt = null;
+                if (byGoogle.deactivatedAt !== null)
+                    changes.deactivatedAt = null;
+            }
+            else {
+                changes.deactivatedAt = new Date();
+            }
             if (Object.keys(changes).length === 0)
                 return byGoogle;
             const updated = await prisma.solicitante.update({
@@ -164,6 +184,13 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
                 changes.nombre = nombre;
             if (match.isActive !== activo)
                 changes.isActive = activo;
+            if (activo) {
+                changes.deletedAt = null;
+                changes.deactivatedAt = null;
+            }
+            else {
+                changes.deactivatedAt = new Date();
+            }
             if (match.accountType !== "google")
                 changes.accountType = "google";
             if (Object.keys(changes).length === 0)
@@ -185,14 +212,16 @@ export async function upsertSolicitanteFromGoogle_full(user, empresaId) {
             googleUserId: user.id,
             isActive: activo,
             accountType: "google",
+            deletedAt: null,
+            deactivatedAt: activo ? null : new Date(),
         },
     });
     bus.emit("solicitante.created", created);
     return created;
 }
 // Función de retry genérica para operaciones con prisma, con backoff exponencial
-export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVigentes) {
-    const ids = googleIdsVigentes
+export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsActivos) {
+    const ids = googleIdsActivos
         .map((x) => x?.trim())
         .filter(Boolean);
     if (!ids.length) {
@@ -204,11 +233,9 @@ export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVi
             accountType: "google",
             googleUserId: { not: null },
             isActive: true,
+            deletedAt: null,
             NOT: {
                 googleUserId: { in: ids },
-            },
-            equipos: {
-                none: {},
             },
         },
         select: {
@@ -220,6 +247,9 @@ export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVi
         },
         orderBy: { nombre: "asc" },
     });
+    if (usersToDeactivate.length === 0) {
+        return { count: 0, users: [] };
+    }
     const result = await prisma.solicitante.updateMany({
         where: {
             id_solicitante: {
@@ -228,6 +258,7 @@ export async function deactivateMissingGoogleSolicitantes(empresaId, googleIdsVi
         },
         data: {
             isActive: false,
+            deactivatedAt: new Date(),
         },
     });
     return {

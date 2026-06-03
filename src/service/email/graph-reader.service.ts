@@ -254,10 +254,10 @@ class GraphReaderService {
 
             const messages = response.value ?? [];
 
-            console.log(`📥 Correos recientes encontrados: ${messages.length}`);
+            //console.log(`📥 Correos recientes encontrados: ${messages.length}`);
 
             if (messages.length === 0) {
-                console.log('📭 No hay correos recientes');
+               // console.log('📭 No hay correos recientes');
                 return;
             }
 
@@ -276,13 +276,13 @@ class GraphReaderService {
                 return true;
             });
 
-            console.log(`📥 Correos únicos a procesar: ${uniqueMessages.length}`);
+            //console.log(`📥 Correos únicos a procesar: ${uniqueMessages.length}`);
 
             for (const message of uniqueMessages) {
                 try {
-                    console.log(
-                        `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
-                    );
+                    //console.log(
+                       // `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
+                    //);
 
                     await this.processMessage(message);
                 } catch (err) {
@@ -570,7 +570,7 @@ class GraphReaderService {
         });
 
         if (existingProcessed) {
-            console.log(`⏭️ Ignorado: email ya procesado en ProcessedInboundEmail (${graphMessageId})`);
+            //console.log(`⏭️ Ignorado: email ya procesado en ProcessedInboundEmail (${graphMessageId})`);
             return;
         }
 
@@ -580,7 +580,7 @@ class GraphReaderService {
         });
 
         if (existingMsg) {
-            console.log(`⏭️ Ignorado: email ya procesado en TicketMessage (${graphMessageId})`);
+            //console.log(`⏭️ Ignorado: email ya procesado en TicketMessage (${graphMessageId})`);
             return;
         }
 
@@ -590,14 +590,14 @@ class GraphReaderService {
         const fromEmailRaw = message.from?.emailAddress?.address;
 
         if (!fromEmailRaw) {
-            console.warn("⚠️ Email sin remitente, se ignora");
+            //console.warn("⚠️ Email sin remitente, se ignora");
             return;
         }
 
         const fromEmail = fromEmailRaw.toLowerCase();
 
         if (fromEmail === this.supportEmail) {
-            console.log(`⏭️ Ignorado: mensaje enviado por soporte (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: mensaje enviado por soporte (${fromEmail})`);
             return;
         }
 
@@ -629,9 +629,9 @@ class GraphReaderService {
                 (r.emailAddress.address || "").trim().toLowerCase()
             ).filter(Boolean) || [];
 
-        console.log("📨 To:", toAddresses);
-        console.log("📨 Cc:", ccAddresses);
-        console.log("📨 SupportEmail:", this.supportEmail);
+        //console.log("📨 To:", toAddresses);
+        //console.log("📨 Cc:", ccAddresses);
+        ////console.log("📨 SupportEmail:", this.supportEmail);
 
         const isToSupport =
             toAddresses.includes(this.supportEmail) ||
@@ -640,7 +640,7 @@ class GraphReaderService {
         // Si el correo ya está en el inbox del buzón de soporte, no lo descartes solo por no venir explícito en To/Cc.
         // Esto ayuda con alias, redirecciones, shared mailbox y BCC.
         if (!isToSupport) {
-            console.warn(`⚠️ Email recibido en inbox pero no coincide en To/Cc con soporte. Se procesará igual.`);
+            //console.warn(`⚠️ Email recibido en inbox pero no coincide en To/Cc con soporte. Se procesará igual.`);
         }
 
         /* =============================
@@ -653,7 +653,7 @@ class GraphReaderService {
         ];
 
         if (blockedSenders.some(b => fromEmail.includes(b))) {
-            console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: correo automático (${fromEmail})`);
             return;
         }
 
@@ -685,7 +685,7 @@ class GraphReaderService {
             subjectLower.includes('assigned to your group') ||
             subjectLower.includes('ticket has been assigned')
         ) {
-            console.log(`⏭️ Ignorado: notificación automática (${fromEmail})`);
+            //console.log(`⏭️ Ignorado: notificación automática (${fromEmail})`);
             return;
         }
 
@@ -731,7 +731,7 @@ class GraphReaderService {
             !existingTicket &&
             !allowedInternalCreators.includes(fromEmail)
         ) {
-            console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
+            //console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
             return;
         }
 
@@ -1478,6 +1478,72 @@ class GraphReaderService {
         return null;
     }
 
+    private normalizeEmail(email?: string | null): string | null {
+        if (!email) return null;
+
+        const clean = String(email).trim().toLowerCase();
+
+        if (!clean) return null;
+
+        return clean;
+    }
+
+    private isBasicValidEmail(email?: string | null): boolean {
+        const clean = this.normalizeEmail(email);
+
+        if (!clean) return false;
+
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean);
+    }
+
+    async technicianHasValidOutlookMailbox(email?: string | null): Promise<boolean> {
+        const cleanEmail = this.normalizeEmail(email);
+
+        if (!cleanEmail || !this.isBasicValidEmail(cleanEmail)) {
+            return false;
+        }
+
+        try {
+            const client = await this.getClient();
+
+            const user = await client
+                .api(`/users/${encodeURIComponent(cleanEmail)}`)
+                .select("id,mail,userPrincipalName,accountEnabled")
+                .get();
+
+            if (!user) return false;
+
+            if (user.accountEnabled === false) {
+                return false;
+            }
+
+            const mail = String(user.mail ?? "").trim().toLowerCase();
+            const upn = String(user.userPrincipalName ?? "").trim().toLowerCase();
+
+            return mail === cleanEmail || upn === cleanEmail;
+        } catch (error: any) {
+            const code = error?.code;
+            const statusCode = error?.statusCode || error?.response?.status;
+
+            if (
+                statusCode === 404 ||
+                code === "Request_ResourceNotFound" ||
+                code === "ResourceNotFound"
+            ) {
+                return false;
+            }
+
+            console.warn("⚠️ No se pudo validar casilla Outlook del técnico:", {
+                email: cleanEmail,
+                code,
+                statusCode,
+                message: error?.message,
+            });
+
+            return false;
+        }
+    }
+
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params: {
         to: string | string[];
@@ -1498,33 +1564,134 @@ class GraphReaderService {
         const ccRecipients = (params.cc ?? []).filter(Boolean);
 
         console.log("📤 Enviando email vía Graph a:", toRecipients);
+        // If attachments are small enough, send directly via sendMail.
+        const attachments = params.attachments ?? [];
+        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
+        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
 
-        await client
-            .api(`/users/${this.supportEmail}/sendMail`)
-            .post({
-                message: {
-                    subject: params.subject,
-                    body: {
-                        contentType: "HTML",
-                        content: params.bodyHtml,
+        const hasLarge = attachments.some(a => approxBytes(a.contentBytes) > LARGE_THRESHOLD);
+
+        if (!hasLarge) {
+            await client
+                .api(`/users/${this.supportEmail}/sendMail`)
+                .post({
+                    message: {
+                        subject: params.subject,
+                        body: {
+                            contentType: "HTML",
+                            content: params.bodyHtml,
+                        },
+                        toRecipients: toRecipients.map(address => ({
+                            emailAddress: { address }
+                        })),
+                        ccRecipients: ccRecipients.map(address => ({
+                            emailAddress: { address }
+                        })),
+                        attachments: attachments.map(att => ({
+                            "@odata.type": "#microsoft.graph.fileAttachment",
+                            name: att.name,
+                            contentType: att.contentType,
+                            contentBytes: att.contentBytes,
+                        })),
                     },
-                    toRecipients: toRecipients.map(address => ({
-                        emailAddress: { address }
-                    })),
-                    ccRecipients: ccRecipients.map(address => ({
-                        emailAddress: { address }
-                    })),
-                    attachments: (params.attachments ?? []).map(att => ({
+                    saveToSentItems: true,
+                });
+
+            console.log("✅ Graph sendMail ejecutado (adjuntos pequeños)");
+            return;
+        }
+
+        // For large attachments: create a draft, upload attachments with upload sessions when needed, then send the draft.
+        console.log("⚠️ Algunos adjuntos son grandes, usando upload session para attachments");
+
+        // 1) create draft message
+        const draftPayload: any = {
+            subject: params.subject,
+            body: { contentType: 'HTML', content: params.bodyHtml },
+            toRecipients: toRecipients.map(address => ({ emailAddress: { address } })),
+            ccRecipients: ccRecipients.map(address => ({ emailAddress: { address } })),
+        };
+
+        const draft = await client.api(`/users/${this.supportEmail}/messages`).post(draftPayload);
+        const draftId = draft?.id;
+
+        if (!draftId) throw new Error('No se pudo crear borrador para adjuntos grandes');
+
+        // helper: convert base64 string to Buffer
+        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
+
+        // helper: upload large attachment using upload session
+        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
+            const totalBytes = approxBytes(att.contentBytes);
+
+            const sessionReq = await client
+                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
+                .post({
+                    AttachmentItem: {
+                        attachmentType: 'file',
+                        name: att.name,
+                        size: totalBytes,
+                        contentType: att.contentType || 'application/octet-stream'
+                    }
+                });
+
+            const uploadUrl = sessionReq.uploadUrl;
+            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
+
+            const buffer = base64ToBuffer(att.contentBytes);
+            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+            let offset = 0;
+
+            while (offset < buffer.length) {
+                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
+                const chunk = buffer.slice(offset, chunkEnd);
+                const start = offset;
+                const end = chunkEnd - 1;
+
+                const res = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Length': String(chunk.length),
+                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
+                    },
+                    body: chunk,
+                });
+
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
+                }
+
+                // If finished, Graph may return 201/200 with uploadedAttachment info
+                if (res.status === 201 || res.status === 200) {
+                    // uploaded
+                    break;
+                }
+
+                offset = chunkEnd;
+            }
+        };
+
+        // 2) attach small files via attachments endpoint, large via upload session
+        for (const att of attachments) {
+            const size = approxBytes(att.contentBytes);
+            if (size <= LARGE_THRESHOLD) {
+                await client
+                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                    .post({
                         "@odata.type": "#microsoft.graph.fileAttachment",
                         name: att.name,
                         contentType: att.contentType,
                         contentBytes: att.contentBytes,
-                    })),
-                },
-                saveToSentItems: true,
-            });
+                    });
+            } else {
+                await uploadLargeAttachmentToDraft(att);
+            }
+        }
 
-        console.log("✅ Graph sendMail ejecutado");
+        // 3) send draft
+        await client.api(`/users/${this.supportEmail}/messages/${draftId}/send`).post({});
+        console.log('✅ Draft enviado con adjuntos grandes');
     }
 
     async replyToGraphMessage(params: {
@@ -1581,15 +1748,76 @@ class GraphReaderService {
                     : {}),
             });
 
-        for (const att of params.attachments ?? []) {
-            await client
-                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+        // Attach files: if any are large, use upload session
+        const attachments = params.attachments ?? [];
+        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
+        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
+
+        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
+
+        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
+            const totalBytes = approxBytes(att.contentBytes);
+
+            const sessionReq = await client
+                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
                 .post({
-                    "@odata.type": "#microsoft.graph.fileAttachment",
-                    name: att.name,
-                    contentType: att.contentType,
-                    contentBytes: att.contentBytes,
+                    AttachmentItem: {
+                        attachmentType: 'file',
+                        name: att.name,
+                        size: totalBytes,
+                        contentType: att.contentType || 'application/octet-stream'
+                    }
                 });
+
+            const uploadUrl = sessionReq.uploadUrl;
+            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
+
+            const buffer = base64ToBuffer(att.contentBytes);
+            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+            let offset = 0;
+
+            while (offset < buffer.length) {
+                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
+                const chunk = buffer.slice(offset, chunkEnd);
+                const start = offset;
+                const end = chunkEnd - 1;
+
+                const res = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Length': String(chunk.length),
+                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
+                    },
+                    body: chunk,
+                });
+
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
+                }
+
+                if (res.status === 201 || res.status === 200) {
+                    break;
+                }
+
+                offset = chunkEnd;
+            }
+        };
+
+        for (const att of attachments) {
+            const size = approxBytes(att.contentBytes);
+            if (size <= LARGE_THRESHOLD) {
+                await client
+                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                    .post({
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        name: att.name,
+                        contentType: att.contentType,
+                        contentBytes: att.contentBytes,
+                    });
+            } else {
+                await uploadLargeAttachmentToDraft(att);
+            }
         }
 
         const draftWithIds = await client

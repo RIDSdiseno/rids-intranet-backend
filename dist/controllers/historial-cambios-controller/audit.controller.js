@@ -131,4 +131,156 @@ export const listAuditByEmpresa = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+export const listEmpresasAuditLogs = async (req, res) => {
+    try {
+        const user = req.user;
+        const { entity, action, search, from, to, empresaId, page = "1", limit = "50", } = req.query;
+        const pageNumber = Math.max(Number(page) || 1, 1);
+        const pageSize = Math.min(Number(limit) || 50, 200);
+        const skip = (pageNumber - 1) * pageSize;
+        const empresaIdQuery = empresaId !== undefined &&
+            empresaId !== null &&
+            String(empresaId).trim() !== ""
+            ? Number(empresaId)
+            : null;
+        const empresaIdFiltro = user?.rol === "CLIENTE"
+            ? user.empresaId
+            : empresaIdQuery && Number.isFinite(empresaIdQuery)
+                ? empresaIdQuery
+                : null;
+        const empresaEntities = [
+            "Empresa",
+            "DetalleEmpresa",
+            "FichaEmpresa",
+            "FichaTecnicaEmpresa",
+            "ChecklistGestionEmpresa",
+            "Sucursal",
+            "ResponsableSucursal",
+            "ContactoEmpresa",
+            "EmpresaISP",
+            "RedSucursal",
+            "AccesoRouterSucursal",
+            "Servidor",
+            "ServidorUsuario",
+            "Equipo",
+            "DetalleEquipo",
+            "Solicitante",
+            "Visita",
+            "Historial",
+            "MantencionRemota",
+        ];
+        const where = {
+            entity: entity ? String(entity) : { in: empresaEntities },
+        };
+        if (action) {
+            where.action = String(action);
+        }
+        if (from || to) {
+            where.createdAt = {};
+            if (from) {
+                where.createdAt.gte = new Date(String(from));
+            }
+            if (to) {
+                where.createdAt.lte = new Date(String(to));
+            }
+        }
+        if (empresaIdFiltro) {
+            where.empresaId = empresaIdFiltro;
+        }
+        if (search && String(search).trim()) {
+            const term = String(search).trim();
+            where.OR = [
+                {
+                    entity: {
+                        contains: term,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    description: {
+                        contains: term,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    actor: {
+                        is: {
+                            nombre: {
+                                contains: term,
+                                mode: "insensitive",
+                            },
+                        },
+                    },
+                },
+                {
+                    actor: {
+                        is: {
+                            email: {
+                                contains: term,
+                                mode: "insensitive",
+                            },
+                        },
+                    },
+                },
+            ];
+        }
+        const [logs, total] = await Promise.all([
+            prisma.auditLog.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                skip,
+                take: pageSize,
+                include: {
+                    actor: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                        },
+                    },
+                },
+            }),
+            prisma.auditLog.count({ where }),
+        ]);
+        const empresaIds = [
+            ...new Set(logs
+                .map((log) => log.empresaId)
+                .filter((id) => typeof id === "number")),
+        ];
+        const empresas = empresaIds.length
+            ? await prisma.empresa.findMany({
+                where: {
+                    id_empresa: {
+                        in: empresaIds,
+                    },
+                },
+                select: {
+                    id_empresa: true,
+                    nombre: true,
+                },
+            })
+            : [];
+        const empresaMap = new Map(empresas.map((empresa) => [empresa.id_empresa, empresa]));
+        const data = logs.map((log) => ({
+            ...log,
+            empresa: log.empresaId ? empresaMap.get(log.empresaId) ?? null : null,
+        }));
+        return res.json({
+            ok: true,
+            page: pageNumber,
+            limit: pageSize,
+            total,
+            pages: Math.ceil(total / pageSize),
+            data,
+        });
+    }
+    catch (error) {
+        console.error("Error listEmpresasAuditLogs:", error);
+        return res.status(500).json({
+            ok: false,
+            error: "Error interno del servidor",
+            message: "Error al obtener historial general de empresas",
+        });
+    }
+};
 //# sourceMappingURL=audit.controller.js.map

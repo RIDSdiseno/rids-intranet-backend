@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 // Util para normalizar dominios ingresados (string o array) a formato consistente
@@ -201,7 +202,6 @@ export async function getEmpresas(req, res) {
         const solicitantesDeEmp = await prisma.solicitante.findMany({
             where: {
                 empresaId: { in: empresaIds },
-                isActive: true,
             },
             select: { id_solicitante: true, empresaId: true },
         });
@@ -209,7 +209,10 @@ export async function getEmpresas(req, res) {
         const equiposCountPorSolic = solicIds.length
             ? await prisma.equipo.groupBy({
                 by: ["idSolicitante"],
-                where: { idSolicitante: { in: solicIds } },
+                where: {
+                    deletedAt: null,
+                    idSolicitante: { in: solicIds },
+                },
                 _count: { _all: true },
             })
             : [];
@@ -268,8 +271,16 @@ export async function getEmpresasStats(req, res) {
         }
         const [empresas, solicitantes, equipos, tickets, visitas] = await Promise.all([
             prisma.empresa.count(),
-            prisma.solicitante.count(),
-            prisma.equipo.count(),
+            prisma.solicitante.count({
+                where: {
+                    isActive: true,
+                },
+            }),
+            prisma.equipo.count({
+                where: {
+                    deletedAt: null,
+                },
+            }),
             prisma.freshdeskTicket.count(),
             prisma.visita.count(),
         ]);

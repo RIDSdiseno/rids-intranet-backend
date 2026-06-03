@@ -26,6 +26,9 @@ function normalizeForUpsert(target) {
         };
     });
 }
+function isMicrosoftUserActivo(u) {
+    return !(u.suspended ?? false);
+}
 /** Pre-crea catálogo de SKUs */
 async function precreateSkus(msUsers) {
     const uniq = new Map();
@@ -62,9 +65,10 @@ async function syncMsUsersBatch(msUsers, empresaId, opts) {
     const skuInfo = await precreateSkus(msUsers);
     const skuMs = Date.now() - tSku0;
     // 2) Upsert paralelo
-    const concurrency = Math.max(1, opts?.concurrency ?? 8);
+    const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 2, 4));
     const limit = pLimit(concurrency);
-    const chunks = opts?.chunkSize ? chunk(msUsers, opts.chunkSize) : [msUsers];
+    const chunkSize = Math.max(1, opts?.chunkSize ?? 25);
+    const chunks = chunk(msUsers, chunkSize);
     const tDb0 = Date.now();
     for (const part of chunks) {
         if (!part || part.length === 0)
@@ -162,10 +166,11 @@ msSyncRouter.post("/sync/microsoft/users", async (req, res) => {
             ...(typeof concurrency === "number" ? { concurrency } : {}),
             ...(typeof chunkSize === "number" ? { chunkSize } : {}),
         });
-        const microsoftIdsVigentes = normalized
+        const microsoftIdsActivos = normalized
+            .filter(isMicrosoftUserActivo)
             .map((u) => u.id?.trim())
-            .filter(Boolean);
-        const deactivated = await deactivateMissingMicrosoftSolicitantes(Number(empresaId), microsoftIdsVigentes);
+            .filter((id) => Boolean(id));
+        const deactivated = await deactivateMissingMicrosoftSolicitantes(Number(empresaId), microsoftIdsActivos);
         res.json({
             ok: true, domain: cleanDomain, empresaId, ...r, deactivated: deactivated.count,
             deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }

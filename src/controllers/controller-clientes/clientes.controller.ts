@@ -1,3 +1,4 @@
+// src/controller/controller-clientes/clientes.controller.ts
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
@@ -11,6 +12,7 @@ function normalizeEmail(value: unknown): string {
     return String(value ?? "").trim().toLowerCase();
 }
 
+// Controlador para gestionar clientes (técnicos con rol CLIENTE)
 export async function listClientes(req: Request, res: Response): Promise<void> {
     try {
         const search = String(req.query.search ?? "").trim();
@@ -83,6 +85,7 @@ export async function listClientes(req: Request, res: Response): Promise<void> {
     }
 }
 
+// End-Point para obtener clientes
 export async function getClienteById(req: Request, res: Response): Promise<void> {
     try {
         const id = parsePositiveInt(req.params.id);
@@ -143,6 +146,7 @@ export async function getClienteById(req: Request, res: Response): Promise<void>
     }
 }
 
+// End-Point para crear clientes es decir, técnicos con rol CLIENTE
 export async function createCliente(req: Request, res: Response): Promise<void> {
     try {
         const nombre = String(req.body.nombre ?? "").trim();
@@ -260,6 +264,7 @@ export async function createCliente(req: Request, res: Response): Promise<void> 
     }
 }
 
+// End-Point para actualizar clientes (técnicos con rol CLIENTE)
 export async function updateCliente(req: Request, res: Response): Promise<void> {
     try {
         const id = parsePositiveInt(req.params.id);
@@ -442,8 +447,10 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
     }
 }
 
+// End-Point para desactivar clientes (técnicos con rol CLIENTE)
 export async function deleteCliente(req: Request, res: Response): Promise<void> {
     try {
+
         const id = parsePositiveInt(req.params.id);
 
         if (!id) {
@@ -461,6 +468,11 @@ export async function deleteCliente(req: Request, res: Response): Promise<void> 
             },
             select: {
                 id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+                empresaId: true,
             },
         });
 
@@ -472,18 +484,57 @@ export async function deleteCliente(req: Request, res: Response): Promise<void> 
             return;
         }
 
-        await prisma.tecnico.update({
+        if (!existing.status) {
+            res.json({
+                ok: true,
+                message: "El cliente ya estaba desactivado",
+                data: existing,
+            });
+            return;
+        }
+
+        const cliente = await prisma.tecnico.update({
             where: {
                 id_tecnico: id,
             },
             data: {
                 status: false,
             },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+                empresaId: true,
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: {
+                            select: {
+                                rut: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        await prisma.refreshToken.updateMany({
+            where: {
+                userId: id,
+                revokedAt: null,
+            },
+            data: {
+                revokedAt: new Date(),
+            },
         });
 
         res.json({
             ok: true,
             message: "Cliente desactivado correctamente",
+            data: cliente,
         });
     } catch (error) {
         console.error("❌ Error deleteCliente:", error);

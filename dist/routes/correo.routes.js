@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { graphReaderService } from "../service/email/graph-reader.service.js";
 import { prisma } from "../lib/prisma.js";
+const mailerJobs = {};
 const correoRouter = Router();
 correoRouter.post("/test", async (req, res) => {
     const { to, subject, bodyHtml } = req.body;
@@ -424,4 +425,79 @@ ${tecnicosHtml}
     }
 });
 export default correoRouter;
+// Endpoint para envío masivo desde UI Mailer
+correoRouter.post("/enviar-masivo", async (req, res) => {
+    const { targets, subject, bodyHtml } = req.body;
+    if (!Array.isArray(targets) || !subject || !bodyHtml) {
+        return res.status(400).json({ ok: false, message: "Se requieren 'targets', 'subject' y 'bodyHtml'" });
+    }
+    // attachments opcionales en el body: [{ name, contentType, contentBytes }]
+    const globalAttachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+    const envRate = Number(process.env.MAILER_RATE_PER_MIN || 3);
+    const requestedRate = Number(req.body.ratePerMin || envRate || 3);
+    const ratePerMin = Math.max(1, Math.min(60, requestedRate));
+    const delayMs = Math.ceil(60000 / ratePerMin);
+    const validTargets = targets.filter((t) => typeof (t?.email || "").trim() === "string").map((t) => ({ ...t, email: (t.email || "").trim() })).filter((t) => t.email);
+    const jobId = `mailjob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    mailerJobs[jobId] = {
+        id: jobId,
+        createdAt: Date.now(),
+        ratePerMin,
+        total: validTargets.length,
+        successes: [],
+        failures: [],
+        completed: 0,
+        status: 'queued',
+    };
+    // Schedule sends spaced by delayMs
+    validTargets.forEach((t, idx) => {
+        const when = idx * delayMs;
+        setTimeout(async () => {
+            const jobRef = mailerJobs[jobId];
+            if (!jobRef)
+                return;
+            jobRef.status = 'processing';
+            try {
+                const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
+                const attachments = [...globalAttachments, ...perTargetAttachments].map((a) => ({
+                    name: a.name,
+                    contentType: a.contentType,
+                    contentBytes: a.contentBytes,
+                }));
+                await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
+                jobRef.successes.push(t.email);
+            }
+            catch (err) {
+                jobRef.failures.push({ to: t.email, error: err?.message ?? String(err) });
+            }
+            finally {
+                jobRef.completed += 1;
+                if (jobRef.completed >= jobRef.total) {
+                    jobRef.status = 'done';
+                }
+            }
+        }, when);
+    });
+    const estimatedCompletionMs = delayMs * Math.max(0, validTargets.length - 1);
+    return res.json({ ok: true, queued: true, jobId, requested: targets.length, queuedCount: validTargets.length, ratePerMin, estimatedCompletionMs });
+});
+// Obtener estado de job de envío masivo
+correoRouter.get("/enviar-masivo/status/:id", async (req, res) => {
+    const { id } = req.params;
+    if (!id)
+        return res.status(400).json({ ok: false, message: "Se requiere job id" });
+    const job = mailerJobs[id];
+    if (!job)
+        return res.status(404).json({ ok: false, message: "Job no encontrado" });
+    return res.json({ ok: true, job: {
+            id: job.id,
+            createdAt: job.createdAt,
+            ratePerMin: job.ratePerMin,
+            total: job.total,
+            successes: job.successes,
+            failures: job.failures,
+            completed: job.completed,
+            status: job.status,
+        } });
+});
 //# sourceMappingURL=correo.routes.js.map

@@ -1,6 +1,12 @@
+// src/controllers/tecnicos.controller.ts
 import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
-const VALID_ROLES = ["ADMIN", "TECNICO", "CLIENTE", "VENTAS"];
+const VALID_ROLES = [
+    "ADMIN",
+    "TECNICO",
+    "VENTAS",
+    "ADMINISTRACION",
+];
 function normalizeRole(rol) {
     if (!rol)
         return undefined;
@@ -17,7 +23,7 @@ export async function listTecnicos(_req, res) {
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO"],
+                    in: ["ADMIN", "TECNICO", "ADMINISTRACION", "VENTAS"],
                 },
             },
             select: {
@@ -37,11 +43,18 @@ export async function listTecnicos(_req, res) {
     }
 }
 // Listar todos los usuarios
-export async function listUsuarios(_req, res) {
+export const listUsuarios = async (req, res) => {
     try {
-        const tecnicos = await prisma.tecnico.findMany({
-            where: {
-                status: true,
+        const statusQ = String(req.query.status ?? "activo").toLowerCase();
+        const where = statusQ === "todos"
+            ? {}
+            : statusQ === "inactivo"
+                ? { status: false }
+                : { status: true };
+        const usuarios = await prisma.tecnico.findMany({
+            where,
+            orderBy: {
+                nombre: "asc",
             },
             select: {
                 id_tecnico: true,
@@ -50,15 +63,16 @@ export async function listUsuarios(_req, res) {
                 status: true,
                 rol: true,
             },
-            orderBy: { nombre: "asc" },
         });
-        return res.status(200).json(tecnicos);
+        return res.json(usuarios);
     }
     catch (error) {
-        console.error("Error al listar usuarios:", error);
-        return res.status(500).json({ error: "Error al listar usuarios" });
+        console.error("[listUsuarios] error:", error);
+        return res.status(500).json({
+            error: "Error al listar usuarios técnicos",
+        });
     }
-}
+};
 // Actualizar técnico
 export async function updateTecnico(req, res) {
     console.log("updateTecnico body:", req.body);
@@ -71,7 +85,7 @@ export async function updateTecnico(req, res) {
         const normalizedRole = normalizeRole(rol);
         if (rol && !normalizedRole) {
             return res.status(400).json({
-                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS, ADMINISTRACION",
             });
         }
         const tecnico = await prisma.tecnico.update({

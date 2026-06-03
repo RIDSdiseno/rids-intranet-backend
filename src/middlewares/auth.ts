@@ -31,12 +31,18 @@ export function auth(required = true): RequestHandler {
     }
 
     const token = header.slice(7);
-    
+
     // Verificamos el token JWT
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayloadCustom;
 
       const userId = Number(payload.sub);
+
+      if (!userId || Number.isNaN(userId)) {
+        res.status(401).json({ error: "INVALID_TOKEN_PAYLOAD" });
+        return;
+      }
+
       const requestId = randomUUID();
 
       (req as any).user = {
