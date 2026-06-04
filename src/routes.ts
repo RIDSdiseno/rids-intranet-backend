@@ -76,14 +76,9 @@ import correoRouter from "./routes/correo.routes.js";
 /* ==================== SII simple api ================ */
 import simpleapiRouter from "./routes/Simpleapi.routes.js";
 
-/* ===================== SII API ===================== */
-import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
 
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
-
-/* ===================== Permisos y Roles ===================== */
-import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 
 /* ===================== BaseAPI RCV ===================== */
 import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
@@ -115,7 +110,6 @@ api.use(onlyOwnEmpresa());
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/agenda", agendaRouter);
-api.use("/role-permissions", rolePermissionsRoutes);
 api.use("/manuales-tutoriales", manualesTutorialesRouter);
 api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
 api.use("/ubicaciones", ubicacionesRouter);
@@ -194,9 +188,6 @@ api.use("/correo", correoRouter);
 
 /* ==================== SII simple api ================ */
 api.use("/facturas", simpleapiRouter);
-
-/* ===================== SII API ===================== */
-api.use("/sii", siiApiRoutes);
 
 /* ===================== Clientes ===================== */
 api.use("/clientes-ext", clientesExtRouter);

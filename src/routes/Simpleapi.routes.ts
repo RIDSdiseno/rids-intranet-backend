@@ -11,7 +11,6 @@ import {
 import { auth } from "../middlewares/auth.js";
 
 import { onlyRole } from "../middlewares/roles.js";
-import { ROLE_GROUPS } from "../constant/roles.js";
 
 const router = Router();
 
@@ -19,7 +18,6 @@ const router = Router();
 router.get(
   "/ventas",
   auth(),
-  onlyRole(...ROLE_GROUPS.FACTURACION),
   getVentasRCV
 );
 
@@ -27,7 +25,6 @@ router.get(
 router.get(
   "/ventas/resumen",
   auth(),
-  onlyRole(...ROLE_GROUPS.FACTURACION),
   getResumenVentasRCV
 );
 
@@ -35,7 +32,6 @@ router.get(
 router.get(
   "/compras",
   auth(),
-  onlyRole(...ROLE_GROUPS.FACTURACION),
   getComprasRCV
 );
 
@@ -43,7 +39,6 @@ router.get(
 router.get(
   "/compras/resumen",
   auth(),
-  onlyRole(...ROLE_GROUPS.FACTURACION),
   getResumenComprasRCV
 );
 
