@@ -11,6 +11,12 @@ type EquipoAgentPayload = {
 
     solicitanteEmail?: string | null;
     solicitanteNombre?: string | null;
+    solicitanteEmailFuente?: string | null;
+    conflictoCorreos?: boolean | string | null;
+    emailsDetectados?: Array<{
+        email?: string | null;
+        source?: string | null;
+    }>;
 
     hostname?: string | null;
     serial?: string | null;
@@ -80,6 +86,14 @@ function dateOrNull(value: unknown): Date | null {
 function boolOrNull(value: unknown): boolean | null {
     if (typeof value === "boolean") return value;
     return null;
+}
+
+function boolFromUnknown(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+        return value.toLowerCase() === "true";
+    }
+    return false;
 }
 
 function validateAgentApiKey(req: Request): boolean {
@@ -225,37 +239,6 @@ async function resolveSolicitanteFromAgent(
     return solicitanteGlobal;
 }
 
-async function resolveSolicitanteFallbackByEmpresa(empresaId?: number | null) {
-    if (!empresaId) return null;
-
-    const solicitanteConEmail = await prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-            email: {
-                not: null,
-            },
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-
-    if (solicitanteConEmail) return solicitanteConEmail;
-
-    return prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-}
-
 /* =========================
    SOFTWARE
 ========================= */
@@ -324,6 +307,21 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const solicitanteEmail =
             cleanString(body.solicitanteEmail)?.toLowerCase() ?? null;
+
+        const solicitanteEmailFuente =
+            cleanString(body.solicitanteEmailFuente) ?? null;
+
+        const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
+
+        const emailsDetectados = Array.isArray(body.emailsDetectados)
+            ? body.emailsDetectados
+                .map((item) => ({
+                    email: cleanString(item.email)?.toLowerCase() ?? null,
+                    source: cleanString(item.source) ?? null,
+                    dominio: getEmailDomain(item.email),
+                }))
+                .filter((item) => Boolean(item.email))
+            : [];
 
         const dominioEmpresa =
             cleanString(body.dominioEmpresa)?.toLowerCase() ??
@@ -436,12 +434,19 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const solicitanteDetectadoIdFinal =
             solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
 
+        const fuenteConfiableParaAsignar =
+            !conflictoCorreos ||
+            solicitanteEmailFuente === "OutlookProfile" ||
+            solicitanteEmailFuente === "OfficeIdentity" ||
+            solicitanteEmailFuente === "UPN";
+
         const solicitanteDetectadoValido = Boolean(
             solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt === null &&
             solicitanteDetectado.isActive !== false &&
-            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal)
+            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal) &&
+            fuenteConfiableParaAsignar
         );
 
         let idSolicitanteFinal: number | null = null;
@@ -449,8 +454,6 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         let motivoRevisionSolicitante: string | null = null;
 
         if (solicitanteDetectadoValido && solicitanteDetectadoId) {
-            // Si el agente detectó un email real y encontró un solicitante válido,
-            // se actualiza automáticamente al solicitante detectado.
             idSolicitanteFinal = solicitanteDetectadoId;
 
             if (
@@ -460,6 +463,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 motivoRevisionSolicitante =
                     "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
             }
+        } else if (conflictoCorreos && solicitanteDetectadoId) {
+            idSolicitanteFinal = solicitanteActualValido
+                ? solicitanteActualId
+                : null;
+
+            requiereRevisionSolicitante = true;
+            motivoRevisionSolicitante =
+                "El agente detectó correos o dominios distintos entre las fuentes del equipo. Se requiere revisión manual antes de cambiar el solicitante.";
         } else if (solicitanteActualValido) {
             // Si no hubo email real detectado, conserva el solicitante actual solo si es válido.
             idSolicitanteFinal = solicitanteActualId;
@@ -620,6 +631,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     hostname,
                     serial,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
+                    solicitanteEmailFuente,
+                    conflictoCorreos,
+                    emailsDetectados,
                     dominioEmpresa,
 
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
@@ -627,6 +641,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
                     solicitanteActualId,
                     solicitanteActualValido,
+                    fuenteConfiableParaAsignar,
 
                     empresaIdFinal,
                     solicitanteIdFinal: idSolicitanteFinal,
@@ -655,6 +670,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteActualId,
             solicitanteDetectadoId: solicitanteDetectadoIdFinal,
             solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+            solicitanteEmailFuente,
+            conflictoCorreos,
+            emailsDetectados,
+
             requiereRevisionSolicitante,
             motivoRevisionSolicitante,
 
