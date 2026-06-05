@@ -531,8 +531,12 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const macAddress = cleanString(body.macAddress);
         if (macAddress) equipoUpdateData.macAddress = macAddress;
 
+        const hasMacWifiField = Object.prototype.hasOwnProperty.call(body, "macWifi");
+        const hasMacEthernetField = Object.prototype.hasOwnProperty.call(body, "macEthernet");
+
         const macWifi = cleanString(body.macWifi);
         const macEthernet = cleanString(body.macEthernet);
+
 
         const lastBootAt = dateOrNull(body.lastBootAt);
         if (lastBootAt) equipoUpdateData.lastBootAt = lastBootAt;
@@ -584,8 +588,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             },
             update: {
                 ...(soTexto ? { so: soTexto } : {}),
-                ...(macWifi ? { macWifi } : {}),
-                ...(macEthernet ? { redEthernet: macEthernet } : {}),
+
+                ...(hasMacWifiField
+                    ? { macWifi: macWifi ?? null }
+                    : {}),
+
+                ...(hasMacEthernetField
+                    ? { redEthernet: macEthernet ?? null }
+                    : {}),
 
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
@@ -614,8 +624,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 // macWifi va al campo MAC WiFi.
                 // macEthernet va al campo redEthernet, que en el front se muestra como MAC Ethernet.
                 // localIp NO se guarda aquí.
-                macWifi,
-                redEthernet: macEthernet,
+                macWifi: macWifi ?? null,
+                redEthernet: macEthernet ?? null,
 
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
