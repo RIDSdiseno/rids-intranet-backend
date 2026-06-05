@@ -50,6 +50,11 @@ const listQuerySchema = z.object({
         "propiedad",
         "createdAt",
         "updatedAt",
+        // AGENTE
+        "hostname",
+        "usuarioActual",
+        "lastSeenAt",
+        "estadoAgente",
     ])
         .default("id_equipo")
         .optional(),
@@ -155,6 +160,11 @@ function mapOrderBy(sortBy, sortDir) {
         "propiedad",
         "createdAt",
         "updatedAt",
+        // AGENTE
+        "hostname",
+        "usuarioActual",
+        "lastSeenAt",
+        "estadoAgente",
         "estado",
     ];
     const key = allowed.includes(sortBy)
@@ -309,6 +319,9 @@ function buildDetalleEquipoSearchOR(searchText, INS) {
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e) {
     const detalle = e.detalle ?? null;
+    const empresaDirecta = e.empresa ?? null;
+    const empresaSolicitante = e.solicitante?.empresa ?? null;
+    const empresaFinal = empresaDirecta ?? empresaSolicitante ?? null;
     return {
         id_equipo: e.id_equipo,
         serial: e.serial,
@@ -323,12 +336,31 @@ function flattenRow(e) {
         propiedad: e.propiedad,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
+        // Relación manual / CRM
         solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
         solicitanteRut: e.solicitante?.rut ?? null,
         solicitanteEmail: e.solicitante?.email ?? null,
-        empresa: e.solicitante?.empresa?.nombre ?? null,
-        empresaId: e.solicitante?.empresa?.id_empresa ?? null,
+        empresa: empresaFinal?.nombre ?? null,
+        empresaId: e.empresaId ?? empresaFinal?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
+        // ===============================
+        // AGENTE WINDOWS
+        // ===============================
+        hostname: e.hostname ?? null,
+        usuarioActual: e.usuarioActual ?? null,
+        dominio: e.dominio ?? null,
+        localIp: e.localIp ?? null,
+        publicIp: e.publicIp ?? null,
+        macAddress: e.macAddress ?? null,
+        ramGb: e.ramGb ?? null,
+        diskTotalGb: e.diskTotalGb ?? null,
+        diskFreeGb: e.diskFreeGb ?? null,
+        lastBootAt: e.lastBootAt ?? null,
+        lastSeenAt: e.lastSeenAt ?? null,
+        agenteVersion: e.agenteVersion ?? null,
+        agenteActivo: e.agenteActivo ?? false,
+        estadoAgente: e.estadoAgente ?? "SIN_AGENTE",
+        // Detalle técnico manual + datos de agente
         macWifi: detalle?.macWifi ?? null,
         redEthernet: detalle?.redEthernet ?? null,
         so: detalle?.so ?? null,
@@ -344,7 +376,14 @@ function flattenRow(e) {
         passwordEmpresa: detalle?.passwordEmpresa ?? null,
         usuarioPersonal: detalle?.usuarioPersonal ?? null,
         passwordPersonal: detalle?.passwordPersonal ?? null,
+        antivirusNombre: detalle?.antivirusNombre ?? null,
+        antivirusActivo: detalle?.antivirusActivo ?? null,
+        firewallActivo: detalle?.firewallActivo ?? null,
+        bitlockerEstado: detalle?.bitlockerEstado ?? null,
+        windowsUpdate: detalle?.windowsUpdate ?? null,
+        observacionAgente: detalle?.observacionAgente ?? null,
         adicionales: e.adicionales ?? [],
+        _count: e._count ?? undefined,
         estado: e.estado,
     };
 }
@@ -804,9 +843,16 @@ export async function listEquipos(req, res) {
         const rows = await prisma.equipo.findMany({
             where,
             include: {
+                empresa: true,
                 solicitante: { include: { empresa: true } },
                 detalle: true,
                 adicionales: true,
+                _count: {
+                    select: {
+                        softwares: true,
+                        agenteEventos: true,
+                    },
+                },
             },
             orderBy,
             skip,
@@ -971,16 +1017,30 @@ export async function getEquipoById(req, res) {
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: {
+                empresa: true,
                 solicitante: { include: { empresa: true } },
                 detalle: true,
                 adicionales: true,
+                softwares: {
+                    orderBy: {
+                        nombre: "asc",
+                    },
+                },
+                agenteEventos: {
+                    orderBy: {
+                        createdAt: "desc",
+                    },
+                    take: 50,
+                },
             },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
         // Si es CLIENTE, valida que el equipo sea de su empresa
         if (user?.rol === "CLIENTE") {
-            const empresaEquipoId = equipo.solicitante?.empresaId ?? null;
+            const empresaEquipoId = equipo.empresaId ??
+                equipo.solicitante?.empresaId ??
+                null;
             if (!empresaEquipoId || empresaEquipoId !== user.empresaId) {
                 return res.status(403).json({ error: "No autorizado" });
             }
@@ -1143,21 +1203,21 @@ export async function updateEquipo(req, res) {
                             passwordPersonal: passwordPersonal ?? null,
                         },
                         update: {
-                            macWifi: macWifi ?? null,
-                            redEthernet: redEthernet ?? null,
-                            so: so ?? null,
-                            tipoDd: tipoDd ?? null,
-                            estadoAlm: estadoAlm ?? null,
-                            office: office ?? null,
-                            teamViewer: teamViewer ?? null,
-                            claveTv: claveTv ?? null,
-                            revisado: revisado ?? null,
-                            adminRidsUsuario: adminRidsUsuario ?? null,
-                            adminRidsPassword: adminRidsPassword ?? null,
-                            usuarioEmpresa: usuarioEmpresa ?? null,
-                            passwordEmpresa: passwordEmpresa ?? null,
-                            usuarioPersonal: usuarioPersonal ?? null,
-                            passwordPersonal: passwordPersonal ?? null,
+                            ...(macWifi !== undefined ? { macWifi: macWifi || null } : {}),
+                            ...(redEthernet !== undefined ? { redEthernet: redEthernet || null } : {}),
+                            ...(so !== undefined ? { so: so || null } : {}),
+                            ...(tipoDd !== undefined ? { tipoDd: tipoDd || null } : {}),
+                            ...(estadoAlm !== undefined ? { estadoAlm: estadoAlm || null } : {}),
+                            ...(office !== undefined ? { office: office || null } : {}),
+                            ...(teamViewer !== undefined ? { teamViewer: teamViewer || null } : {}),
+                            ...(claveTv !== undefined ? { claveTv: claveTv || null } : {}),
+                            ...(revisado !== undefined ? { revisado: revisado || null } : {}),
+                            ...(adminRidsUsuario !== undefined ? { adminRidsUsuario: adminRidsUsuario || null } : {}),
+                            ...(adminRidsPassword !== undefined ? { adminRidsPassword: adminRidsPassword || null } : {}),
+                            ...(usuarioEmpresa !== undefined ? { usuarioEmpresa: usuarioEmpresa || null } : {}),
+                            ...(passwordEmpresa !== undefined ? { passwordEmpresa: passwordEmpresa || null } : {}),
+                            ...(usuarioPersonal !== undefined ? { usuarioPersonal: usuarioPersonal || null } : {}),
+                            ...(passwordPersonal !== undefined ? { passwordPersonal: passwordPersonal || null } : {}),
                         },
                     },
                 },
