@@ -439,59 +439,59 @@ model ModeloGestioo {
 }
 
 model Equipo {
-  id_equipo     Int        @id @default(autoincrement())
-  idSolicitante Int?
-  serial        String?    @unique
-  marca         String
-  modelo        String
-  procesador    String?
-  ram           String?
-  disco         String?
-  propiedad     String     @default("Empresa")
-  tipo          TipoEquipo @default(GENERICO)
+  id_equipo          Int          @id @default(autoincrement())
+  idSolicitante      Int?
+  serial             String?      @unique
+  marca              String
+  modelo             String
+  procesador         String?
+  ram                String?
+  disco              String?
+  propiedad          String       @default("Empresa")
+  tipo               TipoEquipo   @default(GENERICO)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now()) @updatedAt
+  deletedAt          DateTime?
+  empresaId          Int?
+  origenCotizacionId Int?
+  productoId         Int?         @unique
+  estado             EstadoEquipo @default(ACTIVO)
 
+  observaciones String?
+
+  anioPc                      Int?
+  anioPcOrigen                String?                 @default("AUTO")
+  agenteActivo                Boolean                 @default(false)
+  agenteVersion               String?
+  diskFreeGb                  Float?
+  diskTotalGb                 Float?
+  dominio                     String?
+  estadoAgente                EstadoAgenteEquipo      @default(SIN_AGENTE)
   /// ===================== Agente Windows / Inventario automático =====================
-  hostname      String?
-  usuarioActual String?
-  dominio       String?
-  localIp       String?
-  publicIp      String?
-  macAddress    String?
-  ramGb         Float?
-  diskTotalGb   Float?
-  diskFreeGb    Float?
-  lastBootAt    DateTime?
-  lastSeenAt    DateTime?
-  agenteVersion String?
-  agenteActivo  Boolean            @default(false)
-  estadoAgente  EstadoAgenteEquipo @default(SIN_AGENTE)
-
+  hostname                    String?
+  lastBootAt                  DateTime?
+  lastSeenAt                  DateTime?
+  localIp                     String?
+  macAddress                  String?
+  motivoRevisionSolicitante   String?
+  publicIp                    String?
+  ramGb                       Float?
   /// ===================== Revisión solicitante detectado por agente =====================
-  requiereRevisionSolicitante Boolean @default(false)
+  requiereRevisionSolicitante Boolean                 @default(false)
   solicitanteDetectadoEmail   String?
   solicitanteDetectadoId      Int?
-  motivoRevisionSolicitante   String?
-
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @default(now()) @updatedAt
-  deletedAt              DateTime?
-  empresaId              Int?
-  origenCotizacionId     Int?
-  productoId             Int?                    @unique
-  estado                 EstadoEquipo            @default(ACTIVO)
-  anioPc                 Int?
-  anioPcOrigen           String?                 @default("AUTO")
-  solicitante            Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
-  detalle                DetalleEquipo?
-  detalleTrabajosGestioo DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
-  empresa                Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  producto               ProductoGestioo?        @relation(fields: [productoId], references: [id])
-  origenCotizacion       CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
-  cotizacionItem         CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
-  adicionales            EquipoAdicional[]
-  bitacoras              BitacoraTecnico[]
-  softwares              EquipoSoftware[]
-  agenteEventos          EquipoAgenteEvento[]
+  usuarioActual               String?
+  solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
+  detalle                     DetalleEquipo?
+  detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
+  empresa                     Empresa?                @relation(fields: [empresaId], references: [id_empresa])
+  producto                    ProductoGestioo?        @relation(fields: [productoId], references: [id])
+  origenCotizacion            CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
+  cotizacionItem              CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
+  adicionales                 EquipoAdicional[]
+  bitacoras                   BitacoraTecnico[]
+  softwares                   EquipoSoftware[]
+  agenteEventos               EquipoAgenteEvento[]
 
   @@index([empresaId])
   @@index([productoId])
@@ -521,8 +521,8 @@ model EquipoAdicional {
 }
 
 model DetalleEquipo {
-  id                Int     @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo          Int     @unique
+  id                Int      @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo          Int      @unique
   macWifi           String?
   so                String?
   tipoDd            String?
@@ -538,16 +538,14 @@ model DetalleEquipo {
   usuarioEmpresa    String?
   usuarioPersonal   String?
   redEthernet       String?
-
+  antivirusActivo   Boolean?
   /// ===================== Agente Windows / Seguridad =====================
   antivirusNombre   String?
-  antivirusActivo   Boolean?
-  firewallActivo    Boolean?
   bitlockerEstado   String?
-  windowsUpdate     String?
+  firewallActivo    Boolean?
   observacionAgente String?
-
-  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+  windowsUpdate     String?
+  equipo            Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
@@ -561,8 +559,7 @@ model EquipoSoftware {
   installDate DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-
-  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  equipo      Equipo    @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@unique([equipoId, nombre, version])
   @@index([equipoId])
@@ -576,8 +573,7 @@ model EquipoAgenteEvento {
   mensaje   String?
   metadata  Json?
   createdAt DateTime @default(now())
-
-  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  equipo    Equipo   @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@index([equipoId])
   @@index([tipo])

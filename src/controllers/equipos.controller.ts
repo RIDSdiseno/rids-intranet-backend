@@ -102,6 +102,7 @@ const createEquipoSchema = z.object({
   disco: z.string().trim().min(1),
   propiedad: z.string().trim().min(1),
   estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
+  observaciones: z.string().trim().optional().nullable(),
 
   macWifi: z.string().optional(),
   redEthernet: z.string().optional(),
@@ -148,6 +149,7 @@ const equipoUpdateSchema = z.object({
   adicionales: z.array(adicionalSchema).optional(),
 
   estado: z.nativeEnum(EstadoEquipo).optional(),
+  observaciones: z.string().trim().optional().nullable(),
 
   // NUEVOS
   macWifi: z.string().optional(),
@@ -386,6 +388,7 @@ function flattenRow(e: any) {
     ram: e.ram,
     disco: e.disco,
     propiedad: e.propiedad,
+    observaciones: e.observaciones ?? null,
 
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
@@ -950,6 +953,7 @@ export async function listEquipos(req: Request, res: Response) {
           modelo: true,
           tipo: true,
           estado: true,
+          observaciones: true,
           anioPc: true,
           anioPcOrigen: true,
         },
@@ -1086,6 +1090,7 @@ export async function createEquipo(req: Request, res: Response) {
             propiedad: data.propiedad,
             idSolicitante: idSolicitanteFinal,
             estado: data.estado,
+            observaciones: data.observaciones?.trim() || null,
 
             detalle: {
               create: {
@@ -1392,6 +1397,7 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
         ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
         ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
+        ...(equipoData.observaciones !== undefined ? { observaciones: equipoData.observaciones } : {}),
 
         anioPc: anioPcFinal,
         anioPcOrigen: anioPcOrigenFinal,
