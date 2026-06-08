@@ -81,6 +81,7 @@ const createEquipoSchema = z.object({
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
     estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
+    observaciones: z.string().trim().optional().nullable(),
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -121,6 +122,7 @@ const equipoUpdateSchema = z.object({
     propiedad: z.string().trim().min(1).optional(),
     adicionales: z.array(adicionalSchema).optional(),
     estado: z.nativeEnum(EstadoEquipo).optional(),
+    observaciones: z.string().trim().optional().nullable(),
     // NUEVOS
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
@@ -334,6 +336,7 @@ function flattenRow(e) {
         ram: e.ram,
         disco: e.disco,
         propiedad: e.propiedad,
+        observaciones: e.observaciones ?? null,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
         // Relación manual / CRM
@@ -825,6 +828,7 @@ export async function listEquipos(req, res) {
                     modelo: true,
                     tipo: true,
                     estado: true,
+                    observaciones: true,
                     anioPc: true,
                     anioPcOrigen: true,
                 },
@@ -940,6 +944,7 @@ export async function createEquipo(req, res) {
                         propiedad: data.propiedad,
                         idSolicitante: idSolicitanteFinal,
                         estado: data.estado,
+                        observaciones: data.observaciones?.trim() || null,
                         detalle: {
                             create: {
                                 macWifi: data.macWifi ?? null,
@@ -1181,6 +1186,7 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
                 ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
+                ...(equipoData.observaciones !== undefined ? { observaciones: equipoData.observaciones } : {}),
                 anioPc: anioPcFinal,
                 anioPcOrigen: anioPcOrigenFinal,
                 detalle: {
