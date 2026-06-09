@@ -240,6 +240,128 @@ function normalizeMacSearch(value?: string | null): string {
     .toUpperCase();
 }
 
+function normalizarBusquedaTipoEquipo(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+// funcion que devuelve los tipos de equipo que coinciden con esa búsqueda (basado en palabras clave).
+function obtenerTiposEquipoDesdeBusqueda(search: string): TipoEquipo[] {
+  const q = normalizarBusquedaTipoEquipo(search);
+
+  if (!q) return [];
+
+  const opciones: Array<{
+    tipo: TipoEquipo;
+    palabras: string[];
+  }> = [
+      {
+        tipo: TipoEquipo.GENERICO,
+        palabras: ["generico", "general"],
+      },
+      {
+        tipo: TipoEquipo.NOTEBOOK,
+        palabras: ["notebook", "laptop", "portatil", "portátil"],
+      },
+      {
+        tipo: TipoEquipo.ALL_IN_ONE,
+        palabras: ["all in one", "aio", "todo en uno"],
+      },
+      {
+        tipo: TipoEquipo.DESKTOP,
+        palabras: ["desktop", "pc escritorio", "escritorio"],
+      },
+      {
+        tipo: TipoEquipo.CPU,
+        palabras: ["cpu", "torre", "gabinete"],
+      },
+      {
+        tipo: TipoEquipo.EQUIPO_ARMADO,
+        palabras: ["equipo armado", "pc armado", "armado"],
+      },
+      {
+        tipo: TipoEquipo.IMPRESORA,
+        palabras: ["impresora", "printer"],
+      },
+      {
+        tipo: TipoEquipo.SCANNER,
+        palabras: ["scanner", "escaner", "escáner"],
+      },
+      {
+        tipo: TipoEquipo.LASER,
+        palabras: ["laser", "láser"],
+      },
+      {
+        tipo: TipoEquipo.LED,
+        palabras: ["led"],
+      },
+      {
+        tipo: TipoEquipo.MONITOR,
+        palabras: ["monitor", "pantalla", "display"],
+      },
+      {
+        tipo: TipoEquipo.NAS,
+        palabras: ["nas", "servidor nas", "almacenamiento nas"],
+      },
+      {
+        tipo: TipoEquipo.ROUTER,
+        palabras: ["router", "enrutador"],
+      },
+      {
+        tipo: TipoEquipo.DISCO_DURO_EXTERNO,
+        palabras: [
+          "disco duro externo",
+          "disco externo",
+          "hdd externo",
+          "ssd externo",
+          "almacenamiento externo",
+        ],
+      },
+      {
+        tipo: TipoEquipo.CARGADOR,
+        palabras: ["cargador", "charger", "adaptador corriente"],
+      },
+      {
+        tipo: TipoEquipo.INSUMOS_COMPUTACIONALES,
+        palabras: [
+          "insumo",
+          "insumos",
+          "insumos computacionales",
+          "accesorios computacionales",
+        ],
+      },
+      {
+        tipo: TipoEquipo.RELOJ_CONTROL,
+        palabras: [
+          "reloj control",
+          "reloj de control",
+          "control asistencia",
+          "reloj asistencia",
+        ],
+      },
+      {
+        tipo: TipoEquipo.OTRO,
+        palabras: ["otro", "otros"],
+      },
+    ];
+
+  return opciones
+    .filter((item) =>
+      item.palabras.some((palabra) => {
+        const palabraNormalizada = normalizarBusquedaTipoEquipo(palabra);
+
+        return q.includes(palabraNormalizada) || palabraNormalizada.includes(q);
+      })
+    )
+    .map((item) => item.tipo);
+}
+
+// función que valida si el rol es válido, o devuelve undefined para que Zod lo rechace (en vez de lanzar un error por tipo)
 function buildDetalleEquipoSearchOR(
   searchText: string,
   INS: Prisma.QueryMode
@@ -835,6 +957,17 @@ export async function listEquipos(req: Request, res: Response) {
           },
         },
       ];
+      
+      // Si el texto de búsqueda coincide con tipos de equipo, también incluirlos en el OR
+      const tiposDesdeBusqueda = obtenerTiposEquipoDesdeBusqueda(searchText);
+
+      if (tiposDesdeBusqueda.length > 0) {
+        orConditions.push({
+          tipo: {
+            in: tiposDesdeBusqueda,
+          },
+        });
+      }
 
       if (searchRutDash) {
         orConditions.push({

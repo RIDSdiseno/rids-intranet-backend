@@ -19,6 +19,11 @@ import { getSlaConfigFromDB } from "../../config/sla.config.js";
 
 import { uploadTicketAttachmentBuffer } from "../../config/ticket-attachments-storage.js";
 
+import {
+    supabaseAdmin,
+    TICKET_ATTACHMENTS_BUCKET,
+} from "../../lib/supabase/supabase.js";
+
 // Extiende Request para tener req.user.id
 declare global {
     namespace Express {
@@ -1431,38 +1436,102 @@ export async function downloadTicketAttachment(req: Request, res: Response) {
         const attachmentId = Number(req.params.attachmentId);
 
         if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
+            return res.status(400).json({
+                ok: false,
+                message: "Adjunto inválido",
+            });
         }
 
         const att = await prisma.ticketAttachment.findUnique({
             where: { id: attachmentId },
+            include: {
+                message: {
+                    include: {
+                        ticket: {
+                            select: {
+                                id: true,
+                                empresaId: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
 
         if (!att) {
-            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
-        }
-
-        const response = await fetch(att.url);
-
-        if (!response.ok) {
             return res.status(404).json({
                 ok: false,
-                message: "No se pudo obtener el archivo",
+                message: "Adjunto no encontrado",
             });
         }
 
-        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!att.url) {
+            return res.status(404).json({
+                ok: false,
+                message: "El adjunto no tiene ruta de archivo",
+            });
+        }
 
-        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
+        let buffer: Buffer;
+        let contentType = att.mimeType || "application/octet-stream";
+
+        if (/^https?:\/\//i.test(att.url)) {
+            const response = await fetch(att.url);
+
+            if (!response.ok) {
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo",
+                });
+            }
+
+            buffer = Buffer.from(await response.arrayBuffer());
+
+            contentType =
+                response.headers.get("content-type") ||
+                att.mimeType ||
+                "application/octet-stream";
+        } else {
+            const { data, error } = await supabaseAdmin.storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .download(att.url);
+
+            if (error || !data) {
+                console.error("[helpdesk] error descargando adjunto desde Supabase:", {
+                    attachmentId,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    url: att.url,
+                    error,
+                });
+
+                return res.status(404).json({
+                    ok: false,
+                    message: "Archivo adjunto no encontrado en Supabase",
+                });
+            }
+
+            const arrayBuffer = await data.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+
+            contentType =
+                data.type ||
+                att.mimeType ||
+                "application/octet-stream";
+        }
+
+        const filename = att.filename || "adjunto";
+
+        res.setHeader("Content-Type", contentType);
         res.setHeader(
             "Content-Disposition",
-            `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`
+            `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
         );
         res.setHeader("Content-Length", String(buffer.length));
 
         return res.send(buffer);
     } catch (error) {
         console.error("[helpdesk] downloadTicketAttachment error:", error);
+
         return res.status(500).json({
             ok: false,
             message: "Error al descargar adjunto",

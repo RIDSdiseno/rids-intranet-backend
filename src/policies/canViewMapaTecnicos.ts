@@ -2,6 +2,7 @@ export const MAPA_TECNICOS_EMAILS_PERMITIDOS = [
   "carenas@rids.cl",
   "dlomparte@rids.cl",
   "rcalsin@rids.cl",
+  "dbravo@rids.cl"
 ];
 
 type MapaTecnicosUser = {
