@@ -68,6 +68,25 @@ function serializarAgendaVisita<T extends { fecha: Date }>(
     };
 }
 
+let empresaRidsAgendaIdCache: number | null | undefined;
+
+async function obtenerEmpresaRidsAgendaId(): Promise<number | null> {
+    if (empresaRidsAgendaIdCache !== undefined) return empresaRidsAgendaIdCache;
+
+    const empresa = await prisma.empresa.findFirst({
+        where: {
+            nombre: {
+                equals: "RIDS",
+                mode: "insensitive",
+            },
+        },
+        select: { id_empresa: true },
+    });
+
+    empresaRidsAgendaIdCache = empresa?.id_empresa ?? null;
+    return empresaRidsAgendaIdCache;
+}
+
 /** Devuelve el lunes de la semana a la que pertenece la fecha (UTC). */
 function getLunesDeLaSemana(fecha: Date): Date {
     const day = fecha.getUTCDay(); // 0=Dom..6=Sáb
@@ -162,10 +181,11 @@ async function resolverEmpresaDesdeOutlook(nombre?: string | null): Promise<{
         };
     }
 
-    // OFICINA: sin empresa ni nombre externo
+    // OFICINA usa la empresa real RIDS para conservar direccion/coordenadas en rutas.
     if (nombreNormalizado.toLowerCase() === "oficina") {
+        const empresaRidsId = await obtenerEmpresaRidsAgendaId();
         return {
-            empresaId: null,
+            empresaId: empresaRidsId,
             empresaExternaNombre: null,
             nombreFinal: "OFICINA",
         };
@@ -449,6 +469,8 @@ export async function generarMallaMensual(
             select: { id_empresa: true, nombre: true },
         }),
     ]);
+    const empresaRidsAgendaId = await obtenerEmpresaRidsAgendaId();
+    const empresaOficinaKey = empresaRidsAgendaId ?? null;
 
     if (tecnicos.length === 0 || (empresas.length === 0 && !includeOficina)) {
        // console.log("[AGENDA] Sin técnicos activos o sin empresas — nada que generar.");
@@ -493,6 +515,10 @@ export async function generarMallaMensual(
     const nuevas: VisitaPayload[] = [];
     let omitidas = 0;
 
+    const existeVisitaOficina = (fechaStr: string, tipo: TipoAgenda) =>
+        existeSet.has(`${fechaStr}|${empresaOficinaKey ?? "null"}|${tipo}`) ||
+        existeSet.has(`${fechaStr}|null|${tipo}`);
+
     /* =====================
        Constantes de bloque — calculadas una sola vez, fuera del loop
     ===================== */
@@ -513,8 +539,8 @@ export async function generarMallaMensual(
 
         /* SÁBADOS */
         if (esSabado(fecha)) {
-            const clave = `${fechaStr}|null|${TipoAgenda.SABADO}`;
-            if (existeSet.has(clave)) { omitidas++; continue; }
+            const clave = `${fechaStr}|${empresaOficinaKey ?? "null"}|${TipoAgenda.SABADO}`;
+            if (existeVisitaOficina(fechaStr, TipoAgenda.SABADO)) { omitidas++; continue; }
 
             // Único await permitido dentro del loop: max 5 veces (un sábado por semana)
             const seleccionados = await elegirTecnicosSabado(tecnicos);
@@ -522,7 +548,7 @@ export async function generarMallaMensual(
                 fecha,
                 tipo: TipoAgenda.SABADO,
                 estado: EstadoAgenda.PROGRAMADA,
-                empresaId: null,
+                empresaId: empresaOficinaKey,
                 notas: "Turno de oficina – asignación automática",
                 tecnicoIds: seleccionados,
             });
@@ -566,7 +592,7 @@ export async function generarMallaMensual(
             }
         }
 
-        // OFICINA explícita: reservar un técnico del pool del día para empresaId null
+        // OFICINA explícita: reservar un técnico del pool del día para la empresa real RIDS.
         if (includeOficina && poolDelDia.length > 0) {
             const idxOficina = (offsetSemana + fecha.getUTCDate()) % poolDelDia.length;
             const tecnicoOficinaId = poolDelDia[idxOficina]!.id_tecnico;
@@ -600,13 +626,13 @@ export async function generarMallaMensual(
             .filter(t => !tecnicosEnEmpresas.has(t.id_tecnico))
             .map(t => t.id_tecnico);
         if (noAsignados.length > 0) {
-            const claveOficina = `${fechaStr}|null|${TipoAgenda.SEMANA}`;
-            if (!existeSet.has(claveOficina)) {
+            const claveOficina = `${fechaStr}|${empresaOficinaKey ?? "null"}|${TipoAgenda.SEMANA}`;
+            if (!existeVisitaOficina(fechaStr, TipoAgenda.SEMANA)) {
                 nuevas.push({
                     fecha,
                     tipo: TipoAgenda.SEMANA,
                     estado: EstadoAgenda.PROGRAMADA,
-                    empresaId: null,
+                    empresaId: empresaOficinaKey,
                     notas: "Turno de oficina – día hábil",
                     tecnicoIds: noAsignados,
                 });
@@ -735,7 +761,17 @@ export async function getAgendaMensual(
                     },
                 },
                 ...("oficina".startsWith(empresa.toLowerCase())
-                    ? [{ empresaId: null, empresaExternaNombre: null }]
+                    ? [
+                        { empresaId: null, empresaExternaNombre: null },
+                        {
+                            empresa: {
+                                nombre: {
+                                    equals: "RIDS",
+                                    mode: "insensitive" as const,
+                                },
+                            },
+                        },
+                    ]
                     : []),
             ],
         }),

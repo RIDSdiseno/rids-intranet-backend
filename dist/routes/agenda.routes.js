@@ -1,7 +1,7 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
 import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
-const TECNICOS_AGENDA_ADMIN = [5, 6, 27];
+const TECNICOS_AGENDA_ADMIN = [5, 6, 27, 36];
 function requireAgendaAdmin(req, res, next) {
     const user = req.user;
     if (!user || !TECNICOS_AGENDA_ADMIN.includes(user.id)) {

@@ -439,26 +439,23 @@ model ModeloGestioo {
 }
 
 model Equipo {
-  id_equipo          Int          @id @default(autoincrement())
-  idSolicitante      Int?
-  serial             String?      @unique
-  marca              String
-  modelo             String
-  procesador         String?
-  ram                String?
-  disco              String?
-  propiedad          String       @default("Empresa")
-  tipo               TipoEquipo   @default(GENERICO)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @default(now()) @updatedAt
-  deletedAt          DateTime?
-  empresaId          Int?
-  origenCotizacionId Int?
-  productoId         Int?         @unique
-  estado             EstadoEquipo @default(ACTIVO)
-
-  observaciones String?
-
+  id_equipo                   Int                     @id @default(autoincrement())
+  idSolicitante               Int?
+  serial                      String?                 @unique
+  marca                       String
+  modelo                      String
+  procesador                  String?
+  ram                         String?
+  disco                       String?
+  propiedad                   String                  @default("Empresa")
+  tipo                        TipoEquipo              @default(GENERICO)
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @default(now()) @updatedAt
+  deletedAt                   DateTime?
+  empresaId                   Int?
+  origenCotizacionId          Int?
+  productoId                  Int?                    @unique
+  estado                      EstadoEquipo            @default(ACTIVO)
   anioPc                      Int?
   anioPcOrigen                String?                 @default("AUTO")
   agenteActivo                Boolean                 @default(false)
@@ -481,6 +478,7 @@ model Equipo {
   solicitanteDetectadoEmail   String?
   solicitanteDetectadoId      Int?
   usuarioActual               String?
+  observaciones               String?
   solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                     DetalleEquipo?
   detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
