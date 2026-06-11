@@ -1361,17 +1361,28 @@ class GraphReaderService {
             });
 
             // Si el ticket estaba cerrado, lo reabrimos automáticamente al recibir una respuesta del cliente
-            if (ticketActual?.status === TicketStatus.CLOSED) {
-                console.log(`🔄 Reabriendo ticket #${ticketId}`);
+            const debeReabrirTicket =
+                ticketActual?.status === TicketStatus.CLOSED ||
+                ticketActual?.status === TicketStatus.PENDING;
+
+            if (debeReabrirTicket) {
+                console.log(
+                    `🔄 Ticket #${ticketId} cambia de ${ticketActual.status} a OPEN por respuesta del solicitante`
+                );
+
+                const updateData: any = {
+                    status: TicketStatus.OPEN,
+                    resolvedAt: null,
+                    closedAt: null,
+                };
+
+                if (ticketActual.status === TicketStatus.CLOSED) {
+                    updateData.lastReopenedAt = new Date();
+                }
 
                 await tx.ticket.update({
                     where: { id: ticketId },
-                    data: {
-                        status: TicketStatus.OPEN,
-                        resolvedAt: null,
-                        closedAt: null,
-                        lastReopenedAt: new Date(),
-                    }
+                    data: updateData,
                 });
 
                 await tx.ticketEvent.create({
@@ -1379,7 +1390,7 @@ class GraphReaderService {
                         ticketId,
                         type: TicketEventType.STATUS_CHANGED,
                         actorType: TicketActorType.SYSTEM,
-                    }
+                    },
                 });
             }
 
