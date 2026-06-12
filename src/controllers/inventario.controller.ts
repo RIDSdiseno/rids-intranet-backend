@@ -3,6 +3,8 @@ import type { Request, Response } from "express";
 import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
 
+import { prisma } from "../lib/prisma.js";
+
 /* ======================================================
    Estilos por empresa (Excel)
 ====================================================== */
@@ -227,9 +229,98 @@ function parseDateQuery(value: unknown): Date | undefined {
 /* ======================================================
     Construcción del Excel
 ====================================================== */
+type InventarioEquipos = Awaited<ReturnType<typeof getInventarioByEmpresa>>;
+
+async function obtenerUltimoEditorPorEquipo(
+    equipos: InventarioEquipos
+): Promise<Map<number, string>> {
+    const equipoIds = equipos
+        .map((e) => e.id_equipo)
+        .filter((id): id is number => Number.isFinite(id));
+
+    if (equipoIds.length === 0) {
+        return new Map();
+    }
+
+    const detalleIdToEquipoId = new Map<number, number>();
+
+    for (const equipo of equipos) {
+        const detalleId = Number((equipo.detalle as any)?.id);
+
+        if (Number.isFinite(detalleId)) {
+            detalleIdToEquipoId.set(detalleId, equipo.id_equipo);
+        }
+    }
+
+    const detalleIds = Array.from(detalleIdToEquipoId.keys());
+
+    const logs = await prisma.auditLog.findMany({
+        where: {
+            action: "UPDATE",
+            OR: [
+                {
+                    entity: "Equipo",
+                    entityId: {
+                        in: equipoIds.map(String),
+                    },
+                },
+                ...(detalleIds.length > 0
+                    ? [
+                        {
+                            entity: "DetalleEquipo",
+                            entityId: {
+                                in: detalleIds.map(String),
+                            },
+                        },
+                    ]
+                    : []),
+            ],
+        },
+        include: {
+            actor: {
+                select: {
+                    nombre: true,
+                    email: true,
+                },
+            },
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+    });
+
+    const ultimoEditorPorEquipo = new Map<number, string>();
+
+    for (const log of logs) {
+        let equipoId: number | null = null;
+
+        if (log.entity === "Equipo") {
+            const parsedId = Number(log.entityId);
+            equipoId = Number.isFinite(parsedId) ? parsedId : null;
+        }
+
+        if (log.entity === "DetalleEquipo") {
+            const detalleId = Number(log.entityId);
+            equipoId = detalleIdToEquipoId.get(detalleId) ?? null;
+        }
+
+        if (!equipoId) continue;
+
+        if (!ultimoEditorPorEquipo.has(equipoId)) {
+            ultimoEditorPorEquipo.set(
+                equipoId,
+                log.actor?.nombre || log.actor?.email || "Sistema"
+            );
+        }
+    }
+
+    return ultimoEditorPorEquipo;
+}
+
 function buildInventarioExcel(
     equipos: Awaited<ReturnType<typeof getInventarioByEmpresa>>,
-    mes: string
+    mes: string,
+    ultimoEditorPorEquipo = new Map<number, string>()
 ): Buffer {
     const porEmpresa: Record<string, typeof equipos> = {};
 
@@ -245,6 +336,7 @@ function buildInventarioExcel(
 
     for (const [empresa, items] of Object.entries(porEmpresa)) {
         if (items.length === 0) continue;
+
         const rows = items.map((e, i) => ({
             "Código": i + 1,
             "USUARIO": e.solicitante?.nombre ?? "",
@@ -257,6 +349,9 @@ function buildInventarioExcel(
             "RAM": e.ram ?? "",
             "DISCO": e.disco ?? "",
             "SISTEMA OPERATIVO": e.detalle?.so ?? "",
+            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
+            "REVISADO": formatRevisado(e.detalle?.revisado),
+            "ÚLTIMA EDICIÓN POR": ultimoEditorPorEquipo.get(e.id_equipo) ?? "",
         }));
 
         const headers = [
@@ -271,6 +366,9 @@ function buildInventarioExcel(
             "RAM",
             "DISCO",
             "SISTEMA OPERATIVO",
+            "TEAMVIEWER",
+            "REVISADO",
+            "ÚLTIMA EDICIÓN POR",
         ];
 
         const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -330,7 +428,9 @@ export async function exportInventario(req: Request, res: Response) {
             ...(updatedTo ? { updatedTo } : {}),
         });
 
-        const buffer = buildInventarioExcel(equipos, mes);
+        const ultimoEditorPorEquipo = await obtenerUltimoEditorPorEquipo(equipos);
+
+        const buffer = buildInventarioExcel(equipos, mes, ultimoEditorPorEquipo);
 
         const fileName = empresaId
             ? `Inventario_${empresaId}_${mes}.xlsx`
@@ -372,6 +472,8 @@ export async function exportInventarioForSharepoint(
             return res.status(404).json({ ok: false, error: "Sin inventario" });
         }
 
+        const ultimoEditorPorEquipo = await obtenerUltimoEditorPorEquipo(equipos);
+
         const porEmpresa: Record<string, typeof equipos> = {};
         for (const e of equipos) {
             const empresa = normalizeEmpresa(
@@ -390,7 +492,7 @@ export async function exportInventarioForSharepoint(
                     return null;
                 }
 
-                const buffer = buildInventarioExcel(items, mes);
+                const buffer = buildInventarioExcel(items, mes, ultimoEditorPorEquipo);
 
                 return {
                     empresa,

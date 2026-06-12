@@ -87,6 +87,8 @@ export async function getInventarioByEmpresa(params) {
             },
             detalle: {
                 select: {
+                    id: true,
+                    idEquipo: true,
                     macWifi: true,
                     so: true,
                     office: true,

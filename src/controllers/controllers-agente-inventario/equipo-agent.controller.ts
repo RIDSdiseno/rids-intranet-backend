@@ -11,6 +11,12 @@ type EquipoAgentPayload = {
 
     solicitanteEmail?: string | null;
     solicitanteNombre?: string | null;
+    solicitanteEmailFuente?: string | null;
+    conflictoCorreos?: boolean | string | null;
+    emailsDetectados?: Array<{
+        email?: string | null;
+        source?: string | null;
+    }>;
 
     hostname?: string | null;
     serial?: string | null;
@@ -32,6 +38,8 @@ type EquipoAgentPayload = {
     localIp?: string | null;
     publicIp?: string | null;
     macAddress?: string | null;
+    macWifi?: string | null;
+    macEthernet?: string | null;
 
     lastBootAt?: string | null;
     agenteVersion?: string | null;
@@ -91,6 +99,12 @@ function boolOrNull(value: unknown): boolean | null {
     return null;
 }
 
+function boolFromUnknown(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") return value.toLowerCase() === "true";
+    return false;
+}
+
 function validateAgentApiKey(req: Request): boolean {
     const expected = process.env.WINDOWS_AGENT_API_KEY?.trim();
     const received = req.header("x-agent-api-key")?.trim();
@@ -103,7 +117,10 @@ function buildRamText(ramGb: number | null): string | null {
     return `${ramGb} GB`;
 }
 
-function buildDiskText(totalGb: number | null, freeGb: number | null): string | null {
+function buildDiskText(
+    totalGb: number | null,
+    freeGb: number | null
+): string | null {
     if (totalGb === null && freeGb === null) return null;
 
     if (totalGb !== null && freeGb !== null) {
@@ -234,37 +251,6 @@ async function resolveSolicitanteFromAgent(
     return solicitanteGlobal;
 }
 
-async function resolveSolicitanteFallbackByEmpresa(empresaId?: number | null) {
-    if (!empresaId) return null;
-
-    const solicitanteConEmail = await prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-            email: {
-                not: null,
-            },
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-
-    if (solicitanteConEmail) return solicitanteConEmail;
-
-    return prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-}
-
 /* =========================
    SOFTWARE
 ========================= */
@@ -283,13 +269,15 @@ async function syncSoftwares(
             publisher: cleanString(s.publisher),
             installDate: dateOrNull(s.installDate),
         }))
-        .filter((s): s is {
-            equipoId: number;
-            nombre: string;
-            version: string;
-            publisher: string | null;
-            installDate: Date | null;
-        } => Boolean(s.nombre));
+        .filter(
+            (s): s is {
+                equipoId: number;
+                nombre: string;
+                version: string;
+                publisher: string | null;
+                installDate: Date | null;
+            } => Boolean(s.nombre)
+        );
 
     if (cleaned.length === 0) return;
 
@@ -333,6 +321,21 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const solicitanteEmail =
             cleanString(body.solicitanteEmail)?.toLowerCase() ?? null;
+
+        const solicitanteEmailFuente =
+            cleanString(body.solicitanteEmailFuente) ?? null;
+
+        const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
+
+        const emailsDetectados = Array.isArray(body.emailsDetectados)
+            ? body.emailsDetectados
+                .map((item) => ({
+                    email: cleanString(item.email)?.toLowerCase() ?? null,
+                    source: cleanString(item.source) ?? null,
+                    dominio: getEmailDomain(item.email),
+                }))
+                .filter((item) => Boolean(item.email))
+            : [];
 
         const dominioEmpresa =
             cleanString(body.dominioEmpresa)?.toLowerCase() ??
@@ -413,11 +416,6 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             });
         }
 
-        /**
-         * Importante:
-         * Si el equipo ya fue clasificado manualmente, se conserva su empresa/solicitante.
-         * Si no, se usa lo detectado automáticamente.
-         */
         const empresaIdFinal =
             equipo?.empresaId ??
             solicitanteDetectado?.empresaId ??
@@ -445,12 +443,19 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const solicitanteDetectadoIdFinal =
             solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
 
+        const fuenteConfiableParaAsignar =
+            !conflictoCorreos ||
+            solicitanteEmailFuente === "OutlookProfile" ||
+            solicitanteEmailFuente === "OfficeIdentity" ||
+            solicitanteEmailFuente === "UPN";
+
         const solicitanteDetectadoValido = Boolean(
             solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt === null &&
             solicitanteDetectado.isActive !== false &&
-            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal)
+            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal) &&
+            fuenteConfiableParaAsignar
         );
 
         let idSolicitanteFinal: number | null = null;
@@ -458,8 +463,6 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         let motivoRevisionSolicitante: string | null = null;
 
         if (solicitanteDetectadoValido && solicitanteDetectadoId) {
-            // Si el agente detectó un email real y encontró un solicitante válido,
-            // se actualiza automáticamente al solicitante detectado.
             idSolicitanteFinal = solicitanteDetectadoId;
 
             if (
@@ -469,11 +472,17 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 motivoRevisionSolicitante =
                     "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
             }
+        } else if (conflictoCorreos && solicitanteDetectadoId) {
+            idSolicitanteFinal = solicitanteActualValido
+                ? solicitanteActualId
+                : null;
+
+            requiereRevisionSolicitante = true;
+            motivoRevisionSolicitante =
+                "El agente detectó correos o dominios distintos entre las fuentes del equipo. Se requiere revisión manual antes de cambiar el solicitante.";
         } else if (solicitanteActualValido) {
-            // Si no hubo email real detectado, conserva el solicitante actual solo si es válido.
             idSolicitanteFinal = solicitanteActualId;
         } else {
-            // Si no hay email real y el solicitante actual no sirve, queda pendiente.
             idSolicitanteFinal = null;
             requiereRevisionSolicitante = true;
 
@@ -531,6 +540,13 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const macAddress = cleanString(body.macAddress);
         if (macAddress) equipoUpdateData.macAddress = macAddress;
 
+        const hasMacWifiField = Object.prototype.hasOwnProperty.call(body, "macWifi");
+        const hasMacEthernetField = Object.prototype.hasOwnProperty.call(body, "macEthernet");
+
+        const macWifi = cleanString(body.macWifi);
+        const macEthernet = cleanString(body.macEthernet);
+
+
         const lastBootAt = dateOrNull(body.lastBootAt);
         if (lastBootAt) equipoUpdateData.lastBootAt = lastBootAt;
 
@@ -582,8 +598,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             },
             update: {
                 ...(soTexto ? { so: soTexto } : {}),
-                ...(macAddress ? { macWifi: macAddress } : {}),
-                ...(localIp ? { redEthernet: localIp } : {}),
+
+                ...(hasMacWifiField
+                    ? { macWifi: macWifi ?? null }
+                    : {}),
+
+                ...(hasMacEthernetField
+                    ? { redEthernet: macEthernet ?? null }
+                    : {}),
 
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
@@ -592,16 +614,29 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 windowsUpdate: cleanString(body.windowsUpdate),
                 revisado: fechaRevisionAgente,
 
-                ...(cleanString(body.tipoDd) ? { tipoDd: cleanString(body.tipoDd) } : {}),
-                ...(cleanString(body.estadoAlm) ? { estadoAlm: cleanString(body.estadoAlm) } : {}),
-                ...(cleanString(body.office) ? { office: cleanString(body.office) } : {}),
-                ...(cleanString(body.teamViewer) ? { teamViewer: cleanString(body.teamViewer) } : {}),
+                ...(cleanString(body.tipoDd)
+                    ? { tipoDd: cleanString(body.tipoDd) }
+                    : {}),
+                ...(cleanString(body.estadoAlm)
+                    ? { estadoAlm: cleanString(body.estadoAlm) }
+                    : {}),
+                ...(cleanString(body.office)
+                    ? { office: cleanString(body.office) }
+                    : {}),
+                ...(cleanString(body.teamViewer)
+                    ? { teamViewer: cleanString(body.teamViewer) }
+                    : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
                 so: soTexto,
-                macWifi: macAddress,
-                redEthernet: localIp,
+
+                // IMPORTANTE:
+                // macWifi va al campo MAC WiFi.
+                // macEthernet va al campo redEthernet, que en el front se muestra como MAC Ethernet.
+                // localIp NO se guarda aquí.
+                macWifi: macWifi ?? null,
+                redEthernet: macEthernet ?? null,
 
                 revisado: fechaRevisionAgente,
 
@@ -633,6 +668,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     hostname,
                     serial,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
+                    solicitanteEmailFuente,
+                    conflictoCorreos,
+                    emailsDetectados,
                     dominioEmpresa,
 
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
@@ -640,9 +678,19 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
                     solicitanteActualId,
                     solicitanteActualValido,
+                    fuenteConfiableParaAsignar,
+
+                    solicitanteDetectadoId: solicitanteDetectadoIdFinal,
+                    solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+                    solicitanteDetectadoNombre: solicitanteDetectado?.nombre ?? null,
 
                     empresaIdFinal,
                     solicitanteIdFinal: idSolicitanteFinal,
+
+                    macAddress,
+                    macWifi,
+                    macEthernet,
+                    localIp,
 
                     requiereRevisionSolicitante,
                     motivoRevisionSolicitante,
@@ -668,6 +716,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteActualId,
             solicitanteDetectadoId: solicitanteDetectadoIdFinal,
             solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+            solicitanteEmailFuente,
+            conflictoCorreos,
+            emailsDetectados,
+
+            macAddress,
+            macWifi,
+            macEthernet,
+            localIp,
+
             requiereRevisionSolicitante,
             motivoRevisionSolicitante,
 
@@ -708,9 +765,7 @@ export async function listEquiposAgent(req: Request, res: Response) {
                 ? empresaIdFromUser
                 : empresaIdQuery || undefined;
 
-        const andFilters: any[] = [
-            { deletedAt: null },
-        ];
+        const andFilters: any[] = [{ deletedAt: null }];
 
         if (empresaId) {
             andFilters.push({

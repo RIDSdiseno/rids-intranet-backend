@@ -16,7 +16,7 @@ import {
 
 import type { Request, Response, NextFunction } from "express";
 
-const TECNICOS_AGENDA_ADMIN = [5, 6, 27];
+const TECNICOS_AGENDA_ADMIN = [5, 6, 27, 36];
 
 function requireAgendaAdmin(req: Request, res: Response, next: NextFunction) {
     const user = (req as any).user;

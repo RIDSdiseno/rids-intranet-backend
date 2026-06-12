@@ -1,5 +1,6 @@
 import XLSX from "xlsx-js-style";
 import { getInventarioByEmpresa } from "../service/inventario.service.js";
+import { prisma } from "../lib/prisma.js";
 /* ======================================================
    Estilos por empresa (Excel)
 ====================================================== */
@@ -169,10 +170,75 @@ function parseDateQuery(value) {
     }
     return date;
 }
-/* ======================================================
-    Construcción del Excel
-====================================================== */
-function buildInventarioExcel(equipos, mes) {
+async function obtenerUltimoEditorPorEquipo(equipos) {
+    const equipoIds = equipos
+        .map((e) => e.id_equipo)
+        .filter((id) => Number.isFinite(id));
+    if (equipoIds.length === 0) {
+        return new Map();
+    }
+    const detalleIdToEquipoId = new Map();
+    for (const equipo of equipos) {
+        const detalleId = Number(equipo.detalle?.id);
+        if (Number.isFinite(detalleId)) {
+            detalleIdToEquipoId.set(detalleId, equipo.id_equipo);
+        }
+    }
+    const detalleIds = Array.from(detalleIdToEquipoId.keys());
+    const logs = await prisma.auditLog.findMany({
+        where: {
+            action: "UPDATE",
+            OR: [
+                {
+                    entity: "Equipo",
+                    entityId: {
+                        in: equipoIds.map(String),
+                    },
+                },
+                ...(detalleIds.length > 0
+                    ? [
+                        {
+                            entity: "DetalleEquipo",
+                            entityId: {
+                                in: detalleIds.map(String),
+                            },
+                        },
+                    ]
+                    : []),
+            ],
+        },
+        include: {
+            actor: {
+                select: {
+                    nombre: true,
+                    email: true,
+                },
+            },
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+    });
+    const ultimoEditorPorEquipo = new Map();
+    for (const log of logs) {
+        let equipoId = null;
+        if (log.entity === "Equipo") {
+            const parsedId = Number(log.entityId);
+            equipoId = Number.isFinite(parsedId) ? parsedId : null;
+        }
+        if (log.entity === "DetalleEquipo") {
+            const detalleId = Number(log.entityId);
+            equipoId = detalleIdToEquipoId.get(detalleId) ?? null;
+        }
+        if (!equipoId)
+            continue;
+        if (!ultimoEditorPorEquipo.has(equipoId)) {
+            ultimoEditorPorEquipo.set(equipoId, log.actor?.nombre || log.actor?.email || "Sistema");
+        }
+    }
+    return ultimoEditorPorEquipo;
+}
+function buildInventarioExcel(equipos, mes, ultimoEditorPorEquipo = new Map()) {
     const porEmpresa = {};
     for (const e of equipos) {
         const empresa = normalizeEmpresa(e.solicitante?.empresa?.nombre ?? e.empresa?.nombre ?? "SIN_EMPRESA");
@@ -195,6 +261,9 @@ function buildInventarioExcel(equipos, mes) {
             "RAM": e.ram ?? "",
             "DISCO": e.disco ?? "",
             "SISTEMA OPERATIVO": e.detalle?.so ?? "",
+            "TEAMVIEWER": e.detalle?.teamViewer ?? "",
+            "REVISADO": formatRevisado(e.detalle?.revisado),
+            "ÚLTIMA EDICIÓN POR": ultimoEditorPorEquipo.get(e.id_equipo) ?? "",
         }));
         const headers = [
             "Código",
@@ -208,6 +277,9 @@ function buildInventarioExcel(equipos, mes) {
             "RAM",
             "DISCO",
             "SISTEMA OPERATIVO",
+            "TEAMVIEWER",
+            "REVISADO",
+            "ÚLTIMA EDICIÓN POR",
         ];
         const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
         styleSheet(ws, rows.length, headers.length, getEmpresaStyle(empresa));
@@ -250,7 +322,8 @@ export async function exportInventario(req, res) {
             ...(updatedFrom ? { updatedFrom } : {}),
             ...(updatedTo ? { updatedTo } : {}),
         });
-        const buffer = buildInventarioExcel(equipos, mes);
+        const ultimoEditorPorEquipo = await obtenerUltimoEditorPorEquipo(equipos);
+        const buffer = buildInventarioExcel(equipos, mes, ultimoEditorPorEquipo);
         const fileName = empresaId
             ? `Inventario_${empresaId}_${mes}.xlsx`
             : `Inventario_TODAS_${mes}.xlsx`;
@@ -277,6 +350,7 @@ export async function exportInventarioForSharepoint(req, res) {
         if (!equipos.length) {
             return res.status(404).json({ ok: false, error: "Sin inventario" });
         }
+        const ultimoEditorPorEquipo = await obtenerUltimoEditorPorEquipo(equipos);
         const porEmpresa = {};
         for (const e of equipos) {
             const empresa = normalizeEmpresa(e.solicitante?.empresa?.nombre ?? e.empresa?.nombre ?? "SIN_EMPRESA");
@@ -291,7 +365,7 @@ export async function exportInventarioForSharepoint(req, res) {
                 console.warn(`⚠️ Empresa sin ruta SharePoint: ${empresa}`);
                 return null;
             }
-            const buffer = buildInventarioExcel(items, mes);
+            const buffer = buildInventarioExcel(items, mes, ultimoEditorPorEquipo);
             return {
                 empresa,
                 sharepointPath,

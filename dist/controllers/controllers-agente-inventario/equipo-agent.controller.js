@@ -25,6 +25,13 @@ function boolOrNull(value) {
         return value;
     return null;
 }
+function boolFromUnknown(value) {
+    if (typeof value === "boolean")
+        return value;
+    if (typeof value === "string")
+        return value.toLowerCase() === "true";
+    return false;
+}
 function validateAgentApiKey(req) {
     const expected = process.env.WINDOWS_AGENT_API_KEY?.trim();
     const received = req.header("x-agent-api-key")?.trim();
@@ -140,35 +147,6 @@ async function resolveSolicitanteFromAgent(body, empresaId) {
     });
     return solicitanteGlobal;
 }
-async function resolveSolicitanteFallbackByEmpresa(empresaId) {
-    if (!empresaId)
-        return null;
-    const solicitanteConEmail = await prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-            email: {
-                not: null,
-            },
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-    if (solicitanteConEmail)
-        return solicitanteConEmail;
-    return prisma.solicitante.findFirst({
-        where: {
-            empresaId,
-            deletedAt: null,
-            isActive: true,
-        },
-        orderBy: {
-            id_solicitante: "asc",
-        },
-    });
-}
 /* =========================
    SOFTWARE
 ========================= */
@@ -214,6 +192,17 @@ export async function receiveEquipoAgentInventory(req, res) {
         const serial = cleanString(body.serial);
         const hostname = cleanString(body.hostname);
         const solicitanteEmail = cleanString(body.solicitanteEmail)?.toLowerCase() ?? null;
+        const solicitanteEmailFuente = cleanString(body.solicitanteEmailFuente) ?? null;
+        const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
+        const emailsDetectados = Array.isArray(body.emailsDetectados)
+            ? body.emailsDetectados
+                .map((item) => ({
+                email: cleanString(item.email)?.toLowerCase() ?? null,
+                source: cleanString(item.source) ?? null,
+                dominio: getEmailDomain(item.email),
+            }))
+                .filter((item) => Boolean(item.email))
+            : [];
         const dominioEmpresa = cleanString(body.dominioEmpresa)?.toLowerCase() ??
             getEmailDomain(solicitanteEmail);
         if (!serial && !hostname) {
@@ -279,11 +268,6 @@ export async function receiveEquipoAgentInventory(req, res) {
                 },
             });
         }
-        /**
-         * Importante:
-         * Si el equipo ya fue clasificado manualmente, se conserva su empresa/solicitante.
-         * Si no, se usa lo detectado automáticamente.
-         */
         const empresaIdFinal = equipo?.empresaId ??
             solicitanteDetectado?.empresaId ??
             empresaDetectada?.id_empresa ??
@@ -299,17 +283,20 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteDetectadoId = solicitanteDetectado?.id_solicitante ?? null;
         const solicitanteDetectadoEmailFinal = solicitanteEmail ?? equipo?.solicitanteDetectadoEmail ?? null;
         const solicitanteDetectadoIdFinal = solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
+        const fuenteConfiableParaAsignar = !conflictoCorreos ||
+            solicitanteEmailFuente === "OutlookProfile" ||
+            solicitanteEmailFuente === "OfficeIdentity" ||
+            solicitanteEmailFuente === "UPN";
         const solicitanteDetectadoValido = Boolean(solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt === null &&
             solicitanteDetectado.isActive !== false &&
-            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal));
+            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal) &&
+            fuenteConfiableParaAsignar);
         let idSolicitanteFinal = null;
         let requiereRevisionSolicitante = false;
         let motivoRevisionSolicitante = null;
         if (solicitanteDetectadoValido && solicitanteDetectadoId) {
-            // Si el agente detectó un email real y encontró un solicitante válido,
-            // se actualiza automáticamente al solicitante detectado.
             idSolicitanteFinal = solicitanteDetectadoId;
             if (solicitanteActualId &&
                 solicitanteActualId !== solicitanteDetectadoId) {
@@ -317,12 +304,18 @@ export async function receiveEquipoAgentInventory(req, res) {
                     "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
             }
         }
+        else if (conflictoCorreos && solicitanteDetectadoId) {
+            idSolicitanteFinal = solicitanteActualValido
+                ? solicitanteActualId
+                : null;
+            requiereRevisionSolicitante = true;
+            motivoRevisionSolicitante =
+                "El agente detectó correos o dominios distintos entre las fuentes del equipo. Se requiere revisión manual antes de cambiar el solicitante.";
+        }
         else if (solicitanteActualValido) {
-            // Si no hubo email real detectado, conserva el solicitante actual solo si es válido.
             idSolicitanteFinal = solicitanteActualId;
         }
         else {
-            // Si no hay email real y el solicitante actual no sirve, queda pendiente.
             idSolicitanteFinal = null;
             requiereRevisionSolicitante = true;
             if (solicitanteActualId) {
@@ -382,6 +375,10 @@ export async function receiveEquipoAgentInventory(req, res) {
         const macAddress = cleanString(body.macAddress);
         if (macAddress)
             equipoUpdateData.macAddress = macAddress;
+        const hasMacWifiField = Object.prototype.hasOwnProperty.call(body, "macWifi");
+        const hasMacEthernetField = Object.prototype.hasOwnProperty.call(body, "macEthernet");
+        const macWifi = cleanString(body.macWifi);
+        const macEthernet = cleanString(body.macEthernet);
         const lastBootAt = dateOrNull(body.lastBootAt);
         if (lastBootAt)
             equipoUpdateData.lastBootAt = lastBootAt;
@@ -428,23 +425,39 @@ export async function receiveEquipoAgentInventory(req, res) {
             },
             update: {
                 ...(soTexto ? { so: soTexto } : {}),
-                ...(macAddress ? { macWifi: macAddress } : {}),
-                ...(localIp ? { redEthernet: localIp } : {}),
+                ...(hasMacWifiField
+                    ? { macWifi: macWifi ?? null }
+                    : {}),
+                ...(hasMacEthernetField
+                    ? { redEthernet: macEthernet ?? null }
+                    : {}),
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
                 bitlockerEstado: cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
-                ...(cleanString(body.tipoDd) ? { tipoDd: cleanString(body.tipoDd) } : {}),
-                ...(cleanString(body.estadoAlm) ? { estadoAlm: cleanString(body.estadoAlm) } : {}),
-                ...(cleanString(body.office) ? { office: cleanString(body.office) } : {}),
-                ...(cleanString(body.teamViewer) ? { teamViewer: cleanString(body.teamViewer) } : {}),
+                ...(cleanString(body.tipoDd)
+                    ? { tipoDd: cleanString(body.tipoDd) }
+                    : {}),
+                ...(cleanString(body.estadoAlm)
+                    ? { estadoAlm: cleanString(body.estadoAlm) }
+                    : {}),
+                ...(cleanString(body.office)
+                    ? { office: cleanString(body.office) }
+                    : {}),
+                ...(cleanString(body.teamViewer)
+                    ? { teamViewer: cleanString(body.teamViewer) }
+                    : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
                 so: soTexto,
-                macWifi: macAddress,
-                redEthernet: localIp,
+                // IMPORTANTE:
+                // macWifi va al campo MAC WiFi.
+                // macEthernet va al campo redEthernet, que en el front se muestra como MAC Ethernet.
+                // localIp NO se guarda aquí.
+                macWifi: macWifi ?? null,
+                redEthernet: macEthernet ?? null,
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
@@ -470,13 +483,24 @@ export async function receiveEquipoAgentInventory(req, res) {
                     hostname,
                     serial,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
+                    solicitanteEmailFuente,
+                    conflictoCorreos,
+                    emailsDetectados,
                     dominioEmpresa,
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
                     empresaDetectadaNombre: empresaDetectada?.nombre ?? null,
                     solicitanteActualId,
                     solicitanteActualValido,
+                    fuenteConfiableParaAsignar,
+                    solicitanteDetectadoId: solicitanteDetectadoIdFinal,
+                    solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+                    solicitanteDetectadoNombre: solicitanteDetectado?.nombre ?? null,
                     empresaIdFinal,
                     solicitanteIdFinal: idSolicitanteFinal,
+                    macAddress,
+                    macWifi,
+                    macEthernet,
+                    localIp,
                     requiereRevisionSolicitante,
                     motivoRevisionSolicitante,
                     clasificado: Boolean(empresaIdFinal && idSolicitanteFinal),
@@ -496,6 +520,13 @@ export async function receiveEquipoAgentInventory(req, res) {
             solicitanteActualId,
             solicitanteDetectadoId: solicitanteDetectadoIdFinal,
             solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
+            solicitanteEmailFuente,
+            conflictoCorreos,
+            emailsDetectados,
+            macAddress,
+            macWifi,
+            macEthernet,
+            localIp,
             requiereRevisionSolicitante,
             motivoRevisionSolicitante,
             clasificado: Boolean(empresaIdFinal && idSolicitanteFinal),
@@ -526,9 +557,7 @@ export async function listEquiposAgent(req, res) {
         const empresaId = isCliente && empresaIdFromUser
             ? empresaIdFromUser
             : empresaIdQuery || undefined;
-        const andFilters = [
-            { deletedAt: null },
-        ];
+        const andFilters = [{ deletedAt: null }];
         if (empresaId) {
             andFilters.push({
                 OR: [
