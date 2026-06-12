@@ -77,6 +77,15 @@ function dateOrNull(value: unknown): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function formatFechaRevisionChile(): string {
+    return new Date().toLocaleDateString("es-CL", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+}
+
 function boolOrNull(value: unknown): boolean | null {
     if (typeof value === "boolean") return value;
     return null;
@@ -565,6 +574,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         }
 
         const soTexto = buildSoText(osName, osVersion, osBuild);
+        const fechaRevisionAgente = formatFechaRevisionChile();
 
         await prisma.detalleEquipo.upsert({
             where: {
@@ -580,6 +590,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 firewallActivo: boolOrNull(body.firewallActivo),
                 bitlockerEstado: cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
+                revisado: fechaRevisionAgente,
 
                 ...(cleanString(body.tipoDd) ? { tipoDd: cleanString(body.tipoDd) } : {}),
                 ...(cleanString(body.estadoAlm) ? { estadoAlm: cleanString(body.estadoAlm) } : {}),
@@ -591,6 +602,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 so: soTexto,
                 macWifi: macAddress,
                 redEthernet: localIp,
+
+                revisado: fechaRevisionAgente,
 
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
