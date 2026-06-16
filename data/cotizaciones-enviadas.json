@@ -1,5 +1,245 @@
 [
   {
+    "id": 19,
+    "cotizacionId": 453,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #453 - EST SOS GROUP SPA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781641249496-w4ztp6",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "EST SOS GROUP SPA",
+    "creadoPor": "Jeferson Carbonell",
+    "fechaCreacion": "2026-06-16T12:48:10.237Z",
+    "sentAt": "2026-06-16T20:20:52.106Z"
+  },
+  {
+    "id": 18,
+    "cotizacionId": 441,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #441 - BDK",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781641045809-9mmd9o",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "BDK",
+    "creadoPor": "Rudy Calsin",
+    "fechaCreacion": "2026-05-29T22:22:25.674Z",
+    "sentAt": "2026-06-16T20:17:27.948Z"
+  },
+  {
+    "id": 17,
+    "cotizacionId": 443,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #443 - VENMED MEDICAL CENTER SPA",
+    "sentBy": null,
+    "jobId": "mailjob-1781640470509-uqjfc5",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "VENMED MEDICAL CENTER SPA",
+    "creadoPor": "Georges Martinez",
+    "fechaCreacion": "2026-06-03T21:02:04.446Z",
+    "sentAt": "2026-06-16T20:07:52.312Z"
+  },
+  {
+    "id": 16,
+    "cotizacionId": 448,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #448 - I.MUNICIPALIDAD DE OLMUE",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781638384580-mejcqq",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "I.MUNICIPALIDAD DE OLMUE",
+    "creadoPor": "Constanza Arenas",
+    "fechaCreacion": "2026-06-11T01:05:24.908Z",
+    "sentAt": "2026-06-16T19:33:06.645Z"
+  },
+  {
+    "id": 15,
+    "cotizacionId": 449,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #449 - EST SOS GROUP SPA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781636806274-8rain8",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "EST SOS GROUP SPA",
+    "creadoPor": "Jeferson Carbonell",
+    "fechaCreacion": "2026-06-11T19:56:12.686Z",
+    "sentAt": "2026-06-16T19:06:48.829Z"
+  },
+  {
+    "id": 14,
+    "cotizacionId": 452,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #452 - AVIVA SANTIAGO SPA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781636374473-wtoycn",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "AVIVA SANTIAGO SPA",
+    "creadoPor": "David Lomparte",
+    "fechaCreacion": "2026-06-15T19:51:27.329Z",
+    "sentAt": "2026-06-16T18:59:36.728Z"
+  },
+  {
+    "id": 13,
+    "cotizacionId": 453,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #453 - EST SOS GROUP SPA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781635528908-2bb7wf",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "EST SOS GROUP SPA",
+    "creadoPor": "Jeferson Carbonell",
+    "fechaCreacion": "2026-06-16T12:48:10.237Z",
+    "sentAt": "2026-06-16T18:45:31.214Z"
+  },
+  {
+    "id": 12,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781291985985-qyrzte",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T19:19:46.570Z"
+  },
+  {
+    "id": 11,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781291237780-qrx82n",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T19:07:18.148Z"
+  },
+  {
+    "id": 10,
+    "cotizacionId": null,
+    "to": "igonzalez@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781291222990-xl300v",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T19:07:03.185Z"
+  },
+  {
+    "id": 9,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781290214122-e7poad",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T18:50:14.556Z"
+  },
+  {
+    "id": 8,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781277583178-qayz9h",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T15:19:43.644Z"
+  },
+  {
+    "id": 7,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781277202146-o5uei3",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-12T15:13:23.683Z"
+  },
+  {
+    "id": 6,
+    "cotizacionId": 424,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #424 - 3DENTAL SPA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1780088609106-d1dy3a",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "3DENTAL SPA",
+    "creadoPor": "Diego Bravo",
+    "fechaCreacion": "2026-05-28T20:35:35.040Z",
+    "sentAt": "2026-05-29T21:03:31.226Z"
+  },
+  {
+    "id": 5,
+    "cotizacionId": 425,
+    "to": "jaja@lol.lol",
+    "subject": "Cotización #425 - FERNANDO PINTO",
+    "sentBy": null,
+    "jobId": "mailjob-1780085128367-6uw3ol",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "FERNANDO PINTO",
+    "creadoPor": "Jeferson Carbonell",
+    "fechaCreacion": "2026-05-28T21:12:22.705Z",
+    "sentAt": "2026-05-29T20:05:31.735Z"
+  },
+  {
+    "id": 4,
+    "cotizacionId": 420,
+    "to": "informaticap@rids.cl",
+    "subject": "Cotización #420 - Comercializadora Covasa LTDA",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1779979337679-mfdj1r",
+    "meta": {
+      "attachments": 1
+    },
+    "clienteNombre": "Comercializadora Covasa LTDA",
+    "creadoPor": "Jeferson Carbonell",
+    "fechaCreacion": "2026-05-28T14:41:34.007Z",
+    "sentAt": "2026-05-28T14:42:21.959Z"
+  },
+  {
     "id": 3,
     "cotizacionId": 417,
     "to": "informaticap@rids.cl",
