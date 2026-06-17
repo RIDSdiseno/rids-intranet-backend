@@ -216,6 +216,36 @@ function mapOrderBy(
   return { [key]: sortDir };
 }
 
+function normalizeDateOnly(value?: string | null): string | null {
+  if (!value) return null;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const isoDateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (isoDateOnlyMatch) return text;
+
+  const isoDateTimeMatch = /^(\d{4})-(\d{2})-(\d{2})T/.exec(text);
+  if (isoDateTimeMatch) {
+    const [, year, month, day] = isoDateTimeMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const clDashMatch = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text);
+  if (clDashMatch) {
+    const [, day, month, year] = clDashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const clSlashMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (clSlashMatch) {
+    const [, day, month, year] = clSlashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
 function normalizeRutSearch(value?: string | null): string {
   return String(value ?? "")
     .replace(/[^0-9kK]/g, "")
@@ -957,7 +987,7 @@ export async function listEquipos(req: Request, res: Response) {
           },
         },
       ];
-      
+
       // Si el texto de búsqueda coincide con tipos de equipo, también incluirlos en el OR
       const tiposDesdeBusqueda = obtenerTiposEquipoDesdeBusqueda(searchText);
 
@@ -1235,7 +1265,7 @@ export async function createEquipo(req: Request, res: Response) {
                 office: data.office ?? null,
                 teamViewer: data.teamViewer ?? null,
                 claveTv: data.claveTv ?? null,
-                revisado: data.revisado ?? null,
+                revisado: normalizeDateOnly(data.revisado),
                 adminRidsUsuario: data.adminRidsUsuario ?? null,
                 adminRidsPassword: data.adminRidsPassword ?? null,
                 usuarioEmpresa: data.usuarioEmpresa ?? null,
@@ -1546,7 +1576,7 @@ export async function updateEquipo(req: Request, res: Response) {
               office: office ?? null,
               teamViewer: teamViewer ?? null,
               claveTv: claveTv ?? null,
-              revisado: revisado ?? null,
+              revisado: normalizeDateOnly(revisado),
               adminRidsUsuario: adminRidsUsuario ?? null,
               adminRidsPassword: adminRidsPassword ?? null,
               usuarioEmpresa: usuarioEmpresa ?? null,
@@ -1563,7 +1593,7 @@ export async function updateEquipo(req: Request, res: Response) {
               ...(office !== undefined ? { office: office || null } : {}),
               ...(teamViewer !== undefined ? { teamViewer: teamViewer || null } : {}),
               ...(claveTv !== undefined ? { claveTv: claveTv || null } : {}),
-              ...(revisado !== undefined ? { revisado: revisado || null } : {}),
+              ...(revisado !== undefined ? { revisado: normalizeDateOnly(revisado) } : {}),
               ...(adminRidsUsuario !== undefined ? { adminRidsUsuario: adminRidsUsuario || null } : {}),
               ...(adminRidsPassword !== undefined ? { adminRidsPassword: adminRidsPassword || null } : {}),
               ...(usuarioEmpresa !== undefined ? { usuarioEmpresa: usuarioEmpresa || null } : {}),
