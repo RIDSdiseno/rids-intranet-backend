@@ -99,13 +99,13 @@ function dateOrNull(value: unknown): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatFechaRevisionChile(): string {
-    return new Date().toLocaleDateString("es-CL", {
+function formatFechaRevisionChileISO(): string {
+    return new Intl.DateTimeFormat("en-CA", {
         timeZone: "America/Santiago",
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
-    });
+    }).format(new Date());
 }
 
 function boolOrNull(value: unknown): boolean | null {
@@ -606,7 +606,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         }
 
         const soTexto = buildSoText(osName, osVersion, osBuild);
-        const fechaRevisionAgente = formatFechaRevisionChile();
+        const fechaRevisionAgente = formatFechaRevisionChileISO();
 
         await prisma.detalleEquipo.upsert({
             where: {
