@@ -356,7 +356,8 @@ export async function receiveEquipoAgentInventory(req, res) {
         const procesador = cleanString(body.procesador);
         if (procesador)
             equipoUpdateData.procesador = procesador;
-        const ramText = buildRamText(ramGb);
+        const ramResumen = cleanString(body.ramResumen);
+        const ramText = ramResumen ?? buildRamText(ramGb);
         if (ramText)
             equipoUpdateData.ram = ramText;
         if (ramGb !== null)
