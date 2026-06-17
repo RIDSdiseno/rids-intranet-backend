@@ -26,6 +26,20 @@ type EquipoAgentPayload = {
     procesador?: string | null;
 
     ramGb?: number | string | null;
+    ramResumen?: string | null;
+    ramTipo?: string | null;
+    ramSlotsUsados?: number | string | null;
+    ramVelocidadMhz?: number | string | null;
+    ramModulos?: Array<{
+        capacidadGb?: number | string | null;
+        tipo?: string | null;
+        velocidadMhz?: number | string | null;
+        slot?: string | null;
+        banco?: string | null;
+        fabricante?: string | null;
+        parte?: string | null;
+    }>;
+
     diskTotalGb?: number | string | null;
     diskFreeGb?: number | string | null;
 
@@ -516,7 +530,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const procesador = cleanString(body.procesador);
         if (procesador) equipoUpdateData.procesador = procesador;
 
-        const ramText = buildRamText(ramGb);
+        const ramResumen = cleanString(body.ramResumen);
+        const ramText = ramResumen ?? buildRamText(ramGb);
+
         if (ramText) equipoUpdateData.ram = ramText;
         if (ramGb !== null) equipoUpdateData.ramGb = ramGb;
 

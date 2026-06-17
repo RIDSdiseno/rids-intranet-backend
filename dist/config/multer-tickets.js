@@ -1,3 +1,4 @@
+// src/config/multer-tickets.ts
 import multer from "multer";
 export const uploadTicketAttachments = multer({
     storage: multer.memoryStorage(),

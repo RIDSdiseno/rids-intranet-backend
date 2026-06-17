@@ -1,3 +1,4 @@
+// src/config/ticket-attachments-storage.ts
 import crypto from "crypto";
 import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET, } from "../lib/supabase/supabase.js";
 function sanitizeFilename(filename) {

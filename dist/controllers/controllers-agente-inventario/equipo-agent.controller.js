@@ -20,6 +20,14 @@ function dateOrNull(value) {
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
 }
+function formatFechaRevisionChile() {
+    return new Date().toLocaleDateString("es-CL", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+}
 function boolOrNull(value) {
     if (typeof value === "boolean")
         return value;
@@ -419,6 +427,7 @@ export async function receiveEquipoAgentInventory(req, res) {
             });
         }
         const soTexto = buildSoText(osName, osVersion, osBuild);
+        const fechaRevisionAgente = formatFechaRevisionChile();
         await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
@@ -436,6 +445,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                 firewallActivo: boolOrNull(body.firewallActivo),
                 bitlockerEstado: cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
+                revisado: fechaRevisionAgente,
                 ...(cleanString(body.tipoDd)
                     ? { tipoDd: cleanString(body.tipoDd) }
                     : {}),
@@ -458,6 +468,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                 // localIp NO se guarda aquí.
                 macWifi: macWifi ?? null,
                 redEthernet: macEthernet ?? null,
+                revisado: fechaRevisionAgente,
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),

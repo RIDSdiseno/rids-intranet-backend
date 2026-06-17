@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
 import { uploadTicketAttachmentBuffer } from "../../config/ticket-attachments-storage.js";
+import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET, } from "../../lib/supabase/supabase.js";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
     return str
@@ -1175,24 +1176,80 @@ export async function downloadTicketAttachment(req, res) {
     try {
         const attachmentId = Number(req.params.attachmentId);
         if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
+            return res.status(400).json({
+                ok: false,
+                message: "Adjunto inválido",
+            });
         }
         const att = await prisma.ticketAttachment.findUnique({
             where: { id: attachmentId },
+            include: {
+                message: {
+                    include: {
+                        ticket: {
+                            select: {
+                                id: true,
+                                empresaId: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
         if (!att) {
-            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
-        }
-        const response = await fetch(att.url);
-        if (!response.ok) {
             return res.status(404).json({
                 ok: false,
-                message: "No se pudo obtener el archivo",
+                message: "Adjunto no encontrado",
             });
         }
-        const buffer = Buffer.from(await response.arrayBuffer());
-        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
-        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`);
+        if (!att.url) {
+            return res.status(404).json({
+                ok: false,
+                message: "El adjunto no tiene ruta de archivo",
+            });
+        }
+        let buffer;
+        let contentType = att.mimeType || "application/octet-stream";
+        if (/^https?:\/\//i.test(att.url)) {
+            const response = await fetch(att.url);
+            if (!response.ok) {
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo",
+                });
+            }
+            buffer = Buffer.from(await response.arrayBuffer());
+            contentType =
+                response.headers.get("content-type") ||
+                    att.mimeType ||
+                    "application/octet-stream";
+        }
+        else {
+            const { data, error } = await supabaseAdmin.storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .download(att.url);
+            if (error || !data) {
+                console.error("[helpdesk] error descargando adjunto desde Supabase:", {
+                    attachmentId,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    url: att.url,
+                    error,
+                });
+                return res.status(404).json({
+                    ok: false,
+                    message: "Archivo adjunto no encontrado en Supabase",
+                });
+            }
+            const arrayBuffer = await data.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+            contentType =
+                data.type ||
+                    att.mimeType ||
+                    "application/octet-stream";
+        }
+        const filename = att.filename || "adjunto";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
         res.setHeader("Content-Length", String(buffer.length));
         return res.send(buffer);
     }
