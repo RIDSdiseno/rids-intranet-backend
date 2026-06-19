@@ -43,11 +43,18 @@ export async function listTecnicos(_req, res) {
     }
 }
 // Listar todos los usuarios
-export async function listUsuarios(_req, res) {
+export const listUsuarios = async (req, res) => {
     try {
-        const tecnicos = await prisma.tecnico.findMany({
-            where: {
-                status: true,
+        const statusQ = String(req.query.status ?? "activo").toLowerCase();
+        const where = statusQ === "todos"
+            ? {}
+            : statusQ === "inactivo"
+                ? { status: false }
+                : { status: true };
+        const usuarios = await prisma.tecnico.findMany({
+            where,
+            orderBy: {
+                nombre: "asc",
             },
             select: {
                 id_tecnico: true,
@@ -56,15 +63,16 @@ export async function listUsuarios(_req, res) {
                 status: true,
                 rol: true,
             },
-            orderBy: { nombre: "asc" },
         });
-        return res.status(200).json(tecnicos);
+        return res.json(usuarios);
     }
     catch (error) {
-        console.error("Error al listar usuarios:", error);
-        return res.status(500).json({ error: "Error al listar usuarios" });
+        console.error("[listUsuarios] error:", error);
+        return res.status(500).json({
+            error: "Error al listar usuarios técnicos",
+        });
     }
-}
+};
 // Actualizar técnico
 export async function updateTecnico(req, res) {
     console.log("updateTecnico body:", req.body);
@@ -103,12 +111,25 @@ export async function updateTecnico(req, res) {
         return res.status(500).json({ error: "Error al actualizar tecnico" });
     }
 }
-// Eliminar técnico
+// Eliminar técnico definitivamente
 export async function deleteTecnico(req, res) {
     try {
         const id = Number(req.params.id);
         if (!Number.isInteger(id) || id <= 0) {
             return res.status(400).json({ error: "ID inválido" });
+        }
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { id_tecnico: id },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+            },
+        });
+        if (!tecnico) {
+            return res.status(404).json({
+                error: "Técnico no encontrado",
+            });
         }
         await prisma.refreshToken.deleteMany({
             where: { userId: id },
@@ -116,11 +137,26 @@ export async function deleteTecnico(req, res) {
         await prisma.tecnico.delete({
             where: { id_tecnico: id },
         });
-        return res.json({ ok: true, message: "Técnico eliminado" });
+        return res.json({
+            ok: true,
+            message: "Técnico eliminado definitivamente",
+        });
     }
     catch (error) {
-        console.error("Error al eliminar tecnico:", error);
-        return res.status(500).json({ error: "Error al eliminar técnico" });
+        console.error("Error al eliminar tecnico:", {
+            code: error?.code,
+            message: error?.message,
+            meta: error?.meta,
+        });
+        if (error?.code === "P2003") {
+            return res.status(409).json({
+                error: "No se puede eliminar este técnico porque tiene registros asociados. Puedes desactivarlo para conservar el historial.",
+            });
+        }
+        return res.status(500).json({
+            error: "Error al eliminar técnico",
+            detail: error?.message,
+        });
     }
 }
 // Crear técnico
@@ -172,6 +208,65 @@ export async function createTecnico(req, res) {
     catch (error) {
         console.error("Error al crear tecnico:", error);
         return res.status(500).json({ error: "Error al crear tecnico" });
+    }
+}
+export async function updateTecnicoPassword(req, res) {
+    try {
+        const id = Number(req.params.id);
+        const { password } = req.body;
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ error: "ID inválido" });
+        }
+        if (!password || typeof password !== "string") {
+            return res.status(400).json({
+                error: "La nueva contraseña es obligatoria",
+            });
+        }
+        const cleanPassword = password.trim();
+        if (cleanPassword.length < 8) {
+            return res.status(400).json({
+                error: "La contraseña debe tener al menos 8 caracteres",
+            });
+        }
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { id_tecnico: id },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+            },
+        });
+        if (!tecnico) {
+            return res.status(404).json({
+                error: "Técnico no encontrado",
+            });
+        }
+        const passwordHash = await argon2.hash(cleanPassword, {
+            type: argon2.argon2id,
+            memoryCost: 4096,
+            timeCost: 2,
+            parallelism: 1,
+        });
+        await prisma.tecnico.update({
+            where: { id_tecnico: id },
+            data: {
+                passwordHash,
+            },
+        });
+        await prisma.refreshToken.deleteMany({
+            where: { userId: id },
+        });
+        return res.json({
+            ok: true,
+            message: "Contraseña actualizada correctamente",
+        });
+    }
+    catch (error) {
+        console.error("Error al actualizar contraseña del técnico:", error);
+        return res.status(500).json({
+            error: "Error al actualizar contraseña del técnico",
+            detail: error?.message,
+        });
     }
 }
 //# sourceMappingURL=tecnicos.controller.js.map

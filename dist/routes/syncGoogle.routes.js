@@ -1,3 +1,4 @@
+// src/routes/syncGoogle.routes.ts
 // Rutas para sincronización de usuarios desde Google Directory a la tabla de solicitantes, con endpoints para sincronización total por dominio o individual por email, y manejo de desactivaciones según los usuarios vigentes en Google
 import { Router } from "express";
 import { listAllUsers } from "../google/googleDirectory.js";
@@ -44,16 +45,21 @@ router.post("/sync/google/users", async (req, res, _next) => {
                 primaryEmail: u.primaryEmail,
                 name: u.name,
                 suspended: u.suspended,
+                archived: u.archived,
+                deleted: u.deleted,
             }, empIdNum);
             if (before)
                 updated++;
             else
                 created++;
         }
-        const googleIdsVigentes = users
+        const googleIdsActivos = users
+            .filter((u) => !(u.suspended ?? false) &&
+            !(u.archived ?? false) &&
+            !(u.deleted ?? false))
             .map((u) => u.id?.trim())
             .filter(Boolean);
-        const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsVigentes);
+        const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsActivos);
         res.json({
             ok: true,
             domain: dom,
@@ -115,6 +121,8 @@ router.put("/sync/google/users", async (req, res, _next) => {
                 primaryEmail: u.primaryEmail,
                 name: u.name,
                 suspended: u.suspended,
+                archived: u.archived,
+                deleted: u.deleted,
             }, empIdNum);
             if (before)
                 updated++;
@@ -130,10 +138,13 @@ router.put("/sync/google/users", async (req, res, _next) => {
                 });
                 return;
             }
-            const googleIdsVigentes = users
+            const googleIdsActivos = users
+                .filter((u) => !(u.suspended ?? false) &&
+                !(u.archived ?? false) &&
+                !(u.deleted ?? false))
                 .map((u) => u.id?.trim())
                 .filter(Boolean);
-            const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsVigentes);
+            const deactivated = await deactivateMissingGoogleSolicitantes(empIdNum, googleIdsActivos);
             deactivatedCount = deactivated.count;
         }
         res.json({

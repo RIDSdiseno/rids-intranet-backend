@@ -1,5 +1,5 @@
 import { prisma } from "../../../lib/prisma.js";
-import { TicketPriority, TicketStatus } from "@prisma/client";
+import { TicketPriority, TicketStatus, TicketEventType } from "@prisma/client";
 import { getSlaConfigFromDB } from "../../../config/sla.config.js";
 export function getSlaTargets(priority, slaConfig) {
     const key = String(priority || "NORMAL").toUpperCase();
@@ -14,36 +14,90 @@ function addMinutes(date, minutes) {
 function diffMinutes(a, b) {
     return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 }
+function getAssignedAt(ticket) {
+    if (!ticket.assigneeId)
+        return null;
+    const events = Array.isArray(ticket.events) ? ticket.events : [];
+    const currentAssigneeId = String(ticket.assigneeId);
+    const assignmentToCurrent = events
+        .filter((event) => event.type === TicketEventType.ASSIGNED &&
+        event.newValue === currentAssigneeId &&
+        event.createdAt)
+        .sort((a, b) => new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime())[0];
+    if (assignmentToCurrent?.createdAt) {
+        return new Date(assignmentToCurrent.createdAt);
+    }
+    const lastAssignment = events
+        .filter((event) => event.type === TicketEventType.ASSIGNED &&
+        event.createdAt)
+        .sort((a, b) => new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime())[0];
+    if (lastAssignment?.createdAt) {
+        return new Date(lastAssignment.createdAt);
+    }
+    // Fallback para tickets antiguos que ya tenían técnico,
+    // pero no tienen evento ASSIGNED registrado.
+    return new Date(ticket.createdAt);
+}
+function signedDiffMinutes(from, to) {
+    return Math.round((to.getTime() - from.getTime()) / 60000);
+}
 export function buildTicketSla(ticket, slaConfig) {
     const now = new Date();
-    const createdAt = new Date(ticket.createdAt);
     const targets = getSlaTargets(ticket.priority, slaConfig);
-    const firstResponseStartAt = createdAt;
-    const resolutionStartAt = ticket.lastReopenedAt
-        ? new Date(ticket.lastReopenedAt)
-        : createdAt;
+    const assignedAt = getAssignedAt(ticket);
+    if (!assignedAt) {
+        return {
+            targets,
+            startsAt: null,
+            waitingAssignment: true,
+            firstResponse: {
+                dueAt: null,
+                at: ticket.firstResponseAt ? new Date(ticket.firstResponseAt) : null,
+                elapsedMinutes: null,
+                status: "PENDING",
+                remainingMinutes: null,
+            },
+            resolution: {
+                dueAt: null,
+                at: ticket.closedAt
+                    ? new Date(ticket.closedAt)
+                    : ticket.resolvedAt
+                        ? new Date(ticket.resolvedAt)
+                        : null,
+                elapsedMinutes: null,
+                status: "PENDING",
+                remainingMinutes: null,
+            },
+        };
+    }
+    const firstResponseStartAt = assignedAt;
+    const resolutionStartAt = assignedAt;
     const firstResponseDueAt = addMinutes(firstResponseStartAt, targets.firstResponseMinutes);
     const resolutionDueAt = addMinutes(resolutionStartAt, targets.resolutionMinutes);
-    const firstResponseAt = ticket.firstResponseAt ? new Date(ticket.firstResponseAt) : null;
+    const firstResponseAt = ticket.firstResponseAt
+        ? new Date(ticket.firstResponseAt)
+        : null;
     const resolutionEndAt = ticket.closedAt
         ? new Date(ticket.closedAt)
         : ticket.resolvedAt
             ? new Date(ticket.resolvedAt)
             : null;
-    // ── Primera respuesta ─────────────────────────────────────────────────────
     let firstResponseStatus = "PENDING";
     if (firstResponseAt) {
-        firstResponseStatus = firstResponseAt <= firstResponseDueAt ? "OK" : "BREACHED";
+        firstResponseStatus =
+            firstResponseAt <= firstResponseDueAt ? "OK" : "BREACHED";
     }
     else if (now > firstResponseDueAt) {
         const isTerminated = ticket.status === TicketStatus.CLOSED ||
             ticket.status === TicketStatus.RESOLVED;
         firstResponseStatus = isTerminated ? "OK" : "BREACHED";
     }
-    // ── Resolución ────────────────────────────────────────────────────────────
     let resolutionStatus = "PENDING";
     if (resolutionEndAt) {
-        resolutionStatus = resolutionEndAt <= resolutionDueAt ? "OK" : "BREACHED";
+        resolutionStatus =
+            resolutionEndAt <= resolutionDueAt ? "OK" : "BREACHED";
     }
     else {
         const isTerminated = ticket.status === TicketStatus.CLOSED ||
@@ -57,6 +111,8 @@ export function buildTicketSla(ticket, slaConfig) {
     }
     return {
         targets,
+        startsAt: assignedAt,
+        waitingAssignment: false,
         firstResponse: {
             dueAt: firstResponseDueAt,
             at: firstResponseAt,
@@ -66,7 +122,7 @@ export function buildTicketSla(ticket, slaConfig) {
             status: firstResponseStatus,
             remainingMinutes: firstResponseAt
                 ? 0
-                : diffMinutes(now, firstResponseDueAt) * -1,
+                : signedDiffMinutes(now, firstResponseDueAt),
         },
         resolution: {
             dueAt: resolutionDueAt,
@@ -77,7 +133,7 @@ export function buildTicketSla(ticket, slaConfig) {
             status: resolutionStatus,
             remainingMinutes: resolutionEndAt
                 ? 0
-                : diffMinutes(now, resolutionDueAt) * -1,
+                : signedDiffMinutes(now, resolutionDueAt),
         },
     };
 }
@@ -113,6 +169,19 @@ export async function getTicketSla(req, res) {
                     select: {
                         id_tecnico: true,
                         nombre: true,
+                    },
+                },
+                events: {
+                    where: {
+                        type: TicketEventType.ASSIGNED,
+                    },
+                    select: {
+                        type: true,
+                        newValue: true,
+                        createdAt: true,
+                    },
+                    orderBy: {
+                        createdAt: "desc",
                     },
                 },
             },

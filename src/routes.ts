@@ -15,7 +15,7 @@ import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 
-// ✅ Maintenance / Jobs
+// Maintenance / Jobs
 import solicitantesMaintenanceRouter from "./routes/solicitantesMaintenance.routes.js";
 
 // Reportes e Inventario export
@@ -55,7 +55,6 @@ import uploadRoutes from "./routes/upload-imagenes.routes.js";
 
 /* ===================== HELP DESK RIDS ===================== */
 import ticketeraRouter from "./routes/ticketera-routes/ticketera.routes.js";
-import FirmasRouter from "./routes/ticketera-routes/firmas.routes.js";
 
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
 import auditRouter from "./routes/historial-cambios-routes/audit.routes.js";
@@ -91,10 +90,23 @@ import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
 
 import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
 
+/* ===================== Manuales y Tutoriales ===================== */
+import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
+
+/* ===================== Bitacora Tecnico ===================== */
+import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
+
+/* ===================== Ubicaciones Tecnicos ===================== */
+import ubicacionesRouter from "./routes/ubicaciones.routes.js";
+
+import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
+
 /* ========================================================= */
-import { auth, onlyOwnEmpresa  } from "./middlewares/auth.js";
+import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
 export const api = Router();
+
+api.use("/equipos/agent", equipoAgentRoutes);
 
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
@@ -104,8 +116,11 @@ api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/agenda", agendaRouter);
 api.use("/role-permissions", rolePermissionsRoutes);
+api.use("/manuales-tutoriales", manualesTutorialesRouter);
+api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
+api.use("/ubicaciones", ubicacionesRouter);
 
-// ✅ Maintenance de solicitantes
+// Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta
 // Entonces se monta sin prefijo extra para que quede: POST /api/solicitantes/cleanup/no-cuenta
 api.use(solicitantesMaintenanceRouter);
@@ -134,7 +149,6 @@ api.use("/tickets", ticketsApiRouter);
 
 /* ===================== HELP DESK RIDS ===================== */
 api.use("/helpdesk/tickets", ticketeraRouter);
-api.use("/helpdesk/firmas", FirmasRouter);
 
 /* ===================== GESTIOO ===================== */
 api.use("/entidades", entidadesRouter);

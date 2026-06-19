@@ -5,11 +5,7 @@ import { onlyRole } from "../../middlewares/roles.js";
 import { onlyOwnEmpresa } from "../../middlewares/auth.js";
 import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket, getTicketsHomeSummary } from "../../controllers/tickets-rids/ticketera.controller.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
-import { processEmails } from "../../controllers/tickets-rids/email.controller.js";
 import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
-import { getTicketKpis, getTicketKpisByAgent, } from "../../controllers/tickets-rids/ticketera-kpis.controller.js";
-import { getAgentDashboard } from "../../controllers/tickets-rids/agent-dashboard.controller.js";
-import { getTicketQueues } from "../../controllers/tickets-rids/cola-tickets.controller.js";
 import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
 import { listTicketEmailTemplates, updateTicketEmailTemplate, previewTicketEmailTemplate, } from "../../controllers/tickets-rids/reply-templates/ticket-email-template.controller.js";
 import multer from "multer";
@@ -27,7 +23,6 @@ const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"];
 // INBOUND EMAIL (sin auth — webhook externo)
 // =======================
 ticketeraRouter.post("/inbound-email", inboundEmail);
-ticketeraRouter.post("/process-emails", processEmails);
 // =======================
 // PROXY IMAGEN EXTERNA (sin auth — usado desde email embebido)
 // =======================
@@ -48,10 +43,6 @@ ticketeraRouter.get("/", auth(), onlyOwnEmpresa(), listTickets);
 // =======================
 // SLA, KPIs, dashboards — no exponer a CLIENTEs
 ticketeraRouter.get("/sla", auth(), onlyRole(...ROLES_INTERNOS), getTicketSla);
-ticketeraRouter.get("/kpis", auth(), onlyRole(...ROLES_INTERNOS), getTicketKpis);
-ticketeraRouter.get("/kpis/agent", auth(), onlyRole(...ROLES_INTERNOS), getTicketKpisByAgent);
-ticketeraRouter.get("/dashboard", auth(), onlyRole(...ROLES_INTERNOS), getAgentDashboard);
-ticketeraRouter.get("/queues", auth(), onlyRole(...ROLES_INTERNOS), getTicketQueues);
 // Home summary — disponible para todos los autenticados (muestra conteos propios para cliente)
 ticketeraRouter.get("/home-summary", auth(), onlyOwnEmpresa(), getTicketsHomeSummary);
 // Bulk — solo internos

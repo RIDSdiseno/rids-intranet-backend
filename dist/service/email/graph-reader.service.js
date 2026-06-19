@@ -223,8 +223,23 @@ class GraphReaderService {
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "")
                 .replace(/[^\w.\-]+/g, "_");
-            const isInlineImage = (att.isInline || Boolean(att.contentId)) &&
-                (att.mimeType || "").startsWith("image/");
+            const normalizedContentId = att.contentId
+                ? String(att.contentId)
+                    .replace(/^cid:/i, "")
+                    .replace(/^</, "")
+                    .replace(/>$/, "")
+                    .trim()
+                : null;
+            const bodyHtml = data.bodyHtml || "";
+            const bodyHtmlLower = bodyHtml.toLowerCase();
+            const normalizedContentIdLower = normalizedContentId?.toLowerCase() ?? null;
+            const isReferencedInHtml = Boolean(normalizedContentIdLower) &&
+                (bodyHtmlLower.includes(`cid:${normalizedContentIdLower}`) ||
+                    bodyHtmlLower.includes(`cid:<${normalizedContentIdLower}>`));
+            const isImage = (att.mimeType || "").startsWith("image/");
+            const isInlineImage = isImage &&
+                Boolean(normalizedContentId) &&
+                isReferencedInHtml;
             /*
              * CASO 1:
              * Imagen inline pegada dentro del correo.
@@ -261,7 +276,7 @@ class GraphReaderService {
                         bytes: att.bytes || buffer.length,
                         url: uploadResult.secure_url,
                         isInline: true,
-                        contentId: att.contentId,
+                        contentId: normalizedContentId,
                     },
                 });
                 continue;
@@ -306,7 +321,7 @@ class GraphReaderService {
                     bytes: att.bytes || buffer.length,
                     url: storagePath,
                     isInline: false,
-                    contentId: att.contentId,
+                    contentId: normalizedContentId,
                 },
             });
         }
@@ -1061,23 +1076,28 @@ class GraphReaderService {
                 select: { status: true }
             });
             // Si el ticket estaba cerrado, lo reabrimos automáticamente al recibir una respuesta del cliente
-            if (ticketActual?.status === TicketStatus.CLOSED) {
-                console.log(`🔄 Reabriendo ticket #${ticketId}`);
+            const debeReabrirTicket = ticketActual?.status === TicketStatus.CLOSED ||
+                ticketActual?.status === TicketStatus.PENDING;
+            if (debeReabrirTicket) {
+                console.log(`🔄 Ticket #${ticketId} cambia de ${ticketActual.status} a OPEN por respuesta del solicitante`);
+                const updateData = {
+                    status: TicketStatus.OPEN,
+                    resolvedAt: null,
+                    closedAt: null,
+                };
+                if (ticketActual.status === TicketStatus.CLOSED) {
+                    updateData.lastReopenedAt = new Date();
+                }
                 await tx.ticket.update({
                     where: { id: ticketId },
-                    data: {
-                        status: TicketStatus.OPEN,
-                        resolvedAt: null,
-                        closedAt: null,
-                        lastReopenedAt: new Date(),
-                    }
+                    data: updateData,
                 });
                 await tx.ticketEvent.create({
                     data: {
                         ticketId,
                         type: TicketEventType.STATUS_CHANGED,
                         actorType: TicketActorType.SYSTEM,
-                    }
+                    },
                 });
             }
             await tx.ticketEvent.create({

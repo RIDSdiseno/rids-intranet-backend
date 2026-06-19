@@ -1,3 +1,4 @@
+// src/config/multer.ts
 import multer from "multer";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import cloudinary from "./cloudinary.js";

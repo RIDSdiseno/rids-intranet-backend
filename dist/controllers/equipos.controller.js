@@ -50,6 +50,11 @@ const listQuerySchema = z.object({
         "propiedad",
         "createdAt",
         "updatedAt",
+        // AGENTE
+        "hostname",
+        "usuarioActual",
+        "lastSeenAt",
+        "estadoAgente",
     ])
         .default("id_equipo")
         .optional(),
@@ -76,6 +81,7 @@ const createEquipoSchema = z.object({
     disco: z.string().trim().min(1),
     propiedad: z.string().trim().min(1),
     estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
+    observaciones: z.string().trim().optional().nullable(),
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
     so: z.string().optional(),
@@ -116,6 +122,7 @@ const equipoUpdateSchema = z.object({
     propiedad: z.string().trim().min(1).optional(),
     adicionales: z.array(adicionalSchema).optional(),
     estado: z.nativeEnum(EstadoEquipo).optional(),
+    observaciones: z.string().trim().optional().nullable(),
     // NUEVOS
     macWifi: z.string().optional(),
     redEthernet: z.string().optional(),
@@ -155,6 +162,11 @@ function mapOrderBy(sortBy, sortDir) {
         "propiedad",
         "createdAt",
         "updatedAt",
+        // AGENTE
+        "hostname",
+        "usuarioActual",
+        "lastSeenAt",
+        "estadoAgente",
         "estado",
     ];
     const key = allowed.includes(sortBy)
@@ -177,9 +189,253 @@ function rutWithDash(value) {
     const dv = clean.slice(-1);
     return `${cuerpo}-${dv}`;
 }
+function normalizeMacSearch(value) {
+    return String(value ?? "")
+        .replace(/[^a-fA-F0-9]/g, "")
+        .toUpperCase();
+}
+function normalizarBusquedaTipoEquipo(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ");
+}
+// funcion que devuelve los tipos de equipo que coinciden con esa búsqueda (basado en palabras clave).
+function obtenerTiposEquipoDesdeBusqueda(search) {
+    const q = normalizarBusquedaTipoEquipo(search);
+    if (!q)
+        return [];
+    const opciones = [
+        {
+            tipo: TipoEquipo.GENERICO,
+            palabras: ["generico", "general"],
+        },
+        {
+            tipo: TipoEquipo.NOTEBOOK,
+            palabras: ["notebook", "laptop", "portatil", "portátil"],
+        },
+        {
+            tipo: TipoEquipo.ALL_IN_ONE,
+            palabras: ["all in one", "aio", "todo en uno"],
+        },
+        {
+            tipo: TipoEquipo.DESKTOP,
+            palabras: ["desktop", "pc escritorio", "escritorio"],
+        },
+        {
+            tipo: TipoEquipo.CPU,
+            palabras: ["cpu", "torre", "gabinete"],
+        },
+        {
+            tipo: TipoEquipo.EQUIPO_ARMADO,
+            palabras: ["equipo armado", "pc armado", "armado"],
+        },
+        {
+            tipo: TipoEquipo.IMPRESORA,
+            palabras: ["impresora", "printer"],
+        },
+        {
+            tipo: TipoEquipo.SCANNER,
+            palabras: ["scanner", "escaner", "escáner"],
+        },
+        {
+            tipo: TipoEquipo.LASER,
+            palabras: ["laser", "láser"],
+        },
+        {
+            tipo: TipoEquipo.LED,
+            palabras: ["led"],
+        },
+        {
+            tipo: TipoEquipo.MONITOR,
+            palabras: ["monitor", "pantalla", "display"],
+        },
+        {
+            tipo: TipoEquipo.NAS,
+            palabras: ["nas", "servidor nas", "almacenamiento nas"],
+        },
+        {
+            tipo: TipoEquipo.ROUTER,
+            palabras: ["router", "enrutador"],
+        },
+        {
+            tipo: TipoEquipo.DISCO_DURO_EXTERNO,
+            palabras: [
+                "disco duro externo",
+                "disco externo",
+                "hdd externo",
+                "ssd externo",
+                "almacenamiento externo",
+            ],
+        },
+        {
+            tipo: TipoEquipo.CARGADOR,
+            palabras: ["cargador", "charger", "adaptador corriente"],
+        },
+        {
+            tipo: TipoEquipo.INSUMOS_COMPUTACIONALES,
+            palabras: [
+                "insumo",
+                "insumos",
+                "insumos computacionales",
+                "accesorios computacionales",
+            ],
+        },
+        {
+            tipo: TipoEquipo.RELOJ_CONTROL,
+            palabras: [
+                "reloj control",
+                "reloj de control",
+                "control asistencia",
+                "reloj asistencia",
+            ],
+        },
+        {
+            tipo: TipoEquipo.OTRO,
+            palabras: ["otro", "otros"],
+        },
+    ];
+    return opciones
+        .filter((item) => item.palabras.some((palabra) => {
+        const palabraNormalizada = normalizarBusquedaTipoEquipo(palabra);
+        return q.includes(palabraNormalizada) || palabraNormalizada.includes(q);
+    }))
+        .map((item) => item.tipo);
+}
+// función que valida si el rol es válido, o devuelve undefined para que Zod lo rechace (en vez de lanzar un error por tipo)
+function buildDetalleEquipoSearchOR(searchText, INS) {
+    return [
+        {
+            detalle: {
+                is: {
+                    macWifi: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    redEthernet: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    so: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    tipoDd: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    estadoAlm: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    office: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    teamViewer: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    claveTv: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    revisado: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    adminRidsUsuario: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    usuarioEmpresa: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+        {
+            detalle: {
+                is: {
+                    usuarioPersonal: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+            },
+        },
+    ];
+}
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e) {
     const detalle = e.detalle ?? null;
+    const empresaDirecta = e.empresa ?? null;
+    const empresaSolicitante = e.solicitante?.empresa ?? null;
+    const empresaFinal = empresaDirecta ?? empresaSolicitante ?? null;
     return {
         id_equipo: e.id_equipo,
         serial: e.serial,
@@ -192,14 +448,34 @@ function flattenRow(e) {
         ram: e.ram,
         disco: e.disco,
         propiedad: e.propiedad,
+        observaciones: e.observaciones ?? null,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
+        // Relación manual / CRM
         solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
         solicitanteRut: e.solicitante?.rut ?? null,
         solicitanteEmail: e.solicitante?.email ?? null,
-        empresa: e.solicitante?.empresa?.nombre ?? null,
-        empresaId: e.solicitante?.empresa?.id_empresa ?? null,
+        empresa: empresaFinal?.nombre ?? null,
+        empresaId: e.empresaId ?? empresaFinal?.id_empresa ?? null,
         idSolicitante: e.idSolicitante,
+        // ===============================
+        // AGENTE WINDOWS
+        // ===============================
+        hostname: e.hostname ?? null,
+        usuarioActual: e.usuarioActual ?? null,
+        dominio: e.dominio ?? null,
+        localIp: e.localIp ?? null,
+        publicIp: e.publicIp ?? null,
+        macAddress: e.macAddress ?? null,
+        ramGb: e.ramGb ?? null,
+        diskTotalGb: e.diskTotalGb ?? null,
+        diskFreeGb: e.diskFreeGb ?? null,
+        lastBootAt: e.lastBootAt ?? null,
+        lastSeenAt: e.lastSeenAt ?? null,
+        agenteVersion: e.agenteVersion ?? null,
+        agenteActivo: e.agenteActivo ?? false,
+        estadoAgente: e.estadoAgente ?? "SIN_AGENTE",
+        // Detalle técnico manual + datos de agente
         macWifi: detalle?.macWifi ?? null,
         redEthernet: detalle?.redEthernet ?? null,
         so: detalle?.so ?? null,
@@ -215,7 +491,14 @@ function flattenRow(e) {
         passwordEmpresa: detalle?.passwordEmpresa ?? null,
         usuarioPersonal: detalle?.usuarioPersonal ?? null,
         passwordPersonal: detalle?.passwordPersonal ?? null,
+        antivirusNombre: detalle?.antivirusNombre ?? null,
+        antivirusActivo: detalle?.antivirusActivo ?? null,
+        firewallActivo: detalle?.firewallActivo ?? null,
+        bitlockerEstado: detalle?.bitlockerEstado ?? null,
+        windowsUpdate: detalle?.windowsUpdate ?? null,
+        observacionAgente: detalle?.observacionAgente ?? null,
         adicionales: e.adicionales ?? [],
+        _count: e._count ?? undefined,
         estado: e.estado,
     };
 }
@@ -309,6 +592,7 @@ export async function listEquipos(req, res) {
         const searchText = String(q.search ?? "").trim();
         const searchRutClean = normalizeRutSearch(searchText);
         const searchRutDash = rutWithDash(searchText);
+        const searchMacClean = normalizeMacSearch(searchText);
         let solicitanteIdsByRut = [];
         if (searchRutClean.length >= 5) {
             const rowsRut = await prisma.$queryRaw `
@@ -428,6 +712,7 @@ export async function listEquipos(req, res) {
         ========================= */
         if (searchText) {
             const orConditions = [
+                // Datos principales del equipo
                 {
                     serial: {
                         contains: searchText,
@@ -452,6 +737,64 @@ export async function listEquipos(req, res) {
                         mode: INS,
                     },
                 },
+                {
+                    ram: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    disco: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    propiedad: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    anioPcOrigen: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                // Detalle técnico del equipo
+                ...buildDetalleEquipoSearchOR(searchText, INS),
+                // Adicionales del equipo
+                {
+                    adicionales: {
+                        some: {
+                            tipo: {
+                                contains: searchText,
+                                mode: INS,
+                            },
+                        },
+                    },
+                },
+                {
+                    adicionales: {
+                        some: {
+                            descripcion: {
+                                contains: searchText,
+                                mode: INS,
+                            },
+                        },
+                    },
+                },
+                {
+                    adicionales: {
+                        some: {
+                            serialAdicional: {
+                                contains: searchText,
+                                mode: INS,
+                            },
+                        },
+                    },
+                },
+                // Solicitante
                 {
                     solicitante: {
                         is: {
@@ -482,6 +825,7 @@ export async function listEquipos(req, res) {
                         },
                     },
                 },
+                // Empresa
                 {
                     solicitante: {
                         is: {
@@ -497,6 +841,15 @@ export async function listEquipos(req, res) {
                     },
                 },
             ];
+            // Si el texto de búsqueda coincide con tipos de equipo, también incluirlos en el OR
+            const tiposDesdeBusqueda = obtenerTiposEquipoDesdeBusqueda(searchText);
+            if (tiposDesdeBusqueda.length > 0) {
+                orConditions.push({
+                    tipo: {
+                        in: tiposDesdeBusqueda,
+                    },
+                });
+            }
             if (searchRutDash) {
                 orConditions.push({
                     solicitante: {
@@ -521,6 +874,27 @@ export async function listEquipos(req, res) {
                     },
                 });
             }
+            if (searchMacClean.length >= 6) {
+                orConditions.push({
+                    detalle: {
+                        is: {
+                            macWifi: {
+                                contains: searchMacClean,
+                                mode: INS,
+                            },
+                        },
+                    },
+                }, {
+                    detalle: {
+                        is: {
+                            redEthernet: {
+                                contains: searchMacClean,
+                                mode: INS,
+                            },
+                        },
+                    },
+                });
+            }
             if (solicitanteIdsByRut.length > 0) {
                 orConditions.push({
                     idSolicitante: {
@@ -531,6 +905,12 @@ export async function listEquipos(req, res) {
             if (Number.isFinite(Number(searchText))) {
                 orConditions.push({
                     id_equipo: Number(searchText),
+                });
+            }
+            const estadoMatch = Object.values(EstadoEquipo).find((estado) => estado.toLowerCase().includes(searchText.toLowerCase()));
+            if (estadoMatch) {
+                orConditions.push({
+                    estado: estadoMatch,
                 });
             }
             andConditions.push({
@@ -569,6 +949,7 @@ export async function listEquipos(req, res) {
                     modelo: true,
                     tipo: true,
                     estado: true,
+                    observaciones: true,
                     anioPc: true,
                     anioPcOrigen: true,
                 },
@@ -587,9 +968,16 @@ export async function listEquipos(req, res) {
         const rows = await prisma.equipo.findMany({
             where,
             include: {
+                empresa: true,
                 solicitante: { include: { empresa: true } },
                 detalle: true,
                 adicionales: true,
+                _count: {
+                    select: {
+                        softwares: true,
+                        agenteEventos: true,
+                    },
+                },
             },
             orderBy,
             skip,
@@ -677,6 +1065,7 @@ export async function createEquipo(req, res) {
                         propiedad: data.propiedad,
                         idSolicitante: idSolicitanteFinal,
                         estado: data.estado,
+                        observaciones: data.observaciones?.trim() || null,
                         detalle: {
                             create: {
                                 macWifi: data.macWifi ?? null,
@@ -754,16 +1143,30 @@ export async function getEquipoById(req, res) {
         const equipo = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             include: {
+                empresa: true,
                 solicitante: { include: { empresa: true } },
                 detalle: true,
                 adicionales: true,
+                softwares: {
+                    orderBy: {
+                        nombre: "asc",
+                    },
+                },
+                agenteEventos: {
+                    orderBy: {
+                        createdAt: "desc",
+                    },
+                    take: 50,
+                },
             },
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
         // Si es CLIENTE, valida que el equipo sea de su empresa
         if (user?.rol === "CLIENTE") {
-            const empresaEquipoId = equipo.solicitante?.empresaId ?? null;
+            const empresaEquipoId = equipo.empresaId ??
+                equipo.solicitante?.empresaId ??
+                null;
             if (!empresaEquipoId || empresaEquipoId !== user.empresaId) {
                 return res.status(403).json({ error: "No autorizado" });
             }
@@ -904,6 +1307,7 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
                 ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
+                ...(equipoData.observaciones !== undefined ? { observaciones: equipoData.observaciones } : {}),
                 anioPc: anioPcFinal,
                 anioPcOrigen: anioPcOrigenFinal,
                 detalle: {
@@ -926,21 +1330,21 @@ export async function updateEquipo(req, res) {
                             passwordPersonal: passwordPersonal ?? null,
                         },
                         update: {
-                            macWifi: macWifi ?? null,
-                            redEthernet: redEthernet ?? null,
-                            so: so ?? null,
-                            tipoDd: tipoDd ?? null,
-                            estadoAlm: estadoAlm ?? null,
-                            office: office ?? null,
-                            teamViewer: teamViewer ?? null,
-                            claveTv: claveTv ?? null,
-                            revisado: revisado ?? null,
-                            adminRidsUsuario: adminRidsUsuario ?? null,
-                            adminRidsPassword: adminRidsPassword ?? null,
-                            usuarioEmpresa: usuarioEmpresa ?? null,
-                            passwordEmpresa: passwordEmpresa ?? null,
-                            usuarioPersonal: usuarioPersonal ?? null,
-                            passwordPersonal: passwordPersonal ?? null,
+                            ...(macWifi !== undefined ? { macWifi: macWifi || null } : {}),
+                            ...(redEthernet !== undefined ? { redEthernet: redEthernet || null } : {}),
+                            ...(so !== undefined ? { so: so || null } : {}),
+                            ...(tipoDd !== undefined ? { tipoDd: tipoDd || null } : {}),
+                            ...(estadoAlm !== undefined ? { estadoAlm: estadoAlm || null } : {}),
+                            ...(office !== undefined ? { office: office || null } : {}),
+                            ...(teamViewer !== undefined ? { teamViewer: teamViewer || null } : {}),
+                            ...(claveTv !== undefined ? { claveTv: claveTv || null } : {}),
+                            ...(revisado !== undefined ? { revisado: revisado || null } : {}),
+                            ...(adminRidsUsuario !== undefined ? { adminRidsUsuario: adminRidsUsuario || null } : {}),
+                            ...(adminRidsPassword !== undefined ? { adminRidsPassword: adminRidsPassword || null } : {}),
+                            ...(usuarioEmpresa !== undefined ? { usuarioEmpresa: usuarioEmpresa || null } : {}),
+                            ...(passwordEmpresa !== undefined ? { passwordEmpresa: passwordEmpresa || null } : {}),
+                            ...(usuarioPersonal !== undefined ? { usuarioPersonal: usuarioPersonal || null } : {}),
+                            ...(passwordPersonal !== undefined ? { passwordPersonal: passwordPersonal || null } : {}),
                         },
                     },
                 },

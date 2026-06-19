@@ -1,10 +1,13 @@
+// src/controllers/detalle-trabajo-gestioo.controller.ts
 // Controlador para manejo de detalles de trabajo, con funciones para crear, obtener, actualizar y eliminar detalles de trabajo, así como generar cotizaciones desde órdenes. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
 import type { Request, Response } from "express";
-import { PrismaClient, EstadoEquipo } from "@prisma/client";
+import { PrismaClient, EstadoEquipo, DestinoEquipoTaller } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
+
+const DESTINOS_EQUIPO_TALLER_VALIDOS = Object.values(DestinoEquipoTaller);
 
 function estadoEquipoPorArea(area?: string | null): EstadoEquipo | null {
     if (area === "ENTRADA") return EstadoEquipo.EN_RIDS;
@@ -91,6 +94,18 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
         const estadoEquipoFinal =
             estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
 
+        const destinoEquipoSolicitado =
+            data.destinoEquipo &&
+                DESTINOS_EQUIPO_TALLER_VALIDOS.includes(data.destinoEquipo)
+                ? data.destinoEquipo
+                : null;
+
+        if (data.destinoEquipo && !destinoEquipoSolicitado) {
+            return res.status(400).json({
+                error: "Destino de equipo no válido",
+            });
+        }
+
         const trabajoFinal = await prisma.$transaction(async (tx) => {
             // Cerrar entradas previas si es SALIDA — solo una vez, dentro de la transacción
             if (data.area === "SALIDA" && equipoIdFinal) {
@@ -130,6 +145,15 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                     equipoId: equipoIdFinal,
                     tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
                     incluyeCargador: data.incluyeCargador ?? false,
+
+                    destinoEquipo:
+                        destinoEquipoSolicitado ?? DestinoEquipoTaller.SIN_DEFINIR,
+
+                    destinoEquipoNota:
+                        typeof data.destinoEquipoNota === "string" &&
+                            data.destinoEquipoNota.trim()
+                            ? data.destinoEquipoNota.trim()
+                            : null,
                 },
             });
 
@@ -281,6 +305,18 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        const destinoEquipoSolicitado =
+            data.destinoEquipo &&
+                DESTINOS_EQUIPO_TALLER_VALIDOS.includes(data.destinoEquipo)
+                ? data.destinoEquipo
+                : null;
+
+        if (data.destinoEquipo && !destinoEquipoSolicitado) {
+            return res.status(400).json({
+                error: "Destino de equipo no válido",
+            });
+        }
+
         // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData: any = {
             tipoTrabajo: data.tipoTrabajo,
@@ -338,6 +374,19 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        if (data.destinoEquipo !== undefined) {
+            updateData.destinoEquipo =
+                destinoEquipoSolicitado ?? DestinoEquipoTaller.SIN_DEFINIR;
+        }
+
+        if (data.destinoEquipoNota !== undefined) {
+            updateData.destinoEquipoNota =
+                typeof data.destinoEquipoNota === "string" &&
+                    data.destinoEquipoNota.trim()
+                    ? data.destinoEquipoNota.trim()
+                    : null;
+        }
+
         const estadoEquipoFinal =
             estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
 
@@ -387,7 +436,6 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
 
         return res.json(detalleActualizado);
 
-        return res.json(detalleActualizado);
     } catch (error) {
         console.error("❌ Error al actualizar detalle:", error);
         return res.status(500).json({

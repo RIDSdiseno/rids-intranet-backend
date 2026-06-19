@@ -7,6 +7,7 @@ function parsePositiveInt(value) {
 function normalizeEmail(value) {
     return String(value ?? "").trim().toLowerCase();
 }
+// Controlador para gestionar clientes (técnicos con rol CLIENTE)
 export async function listClientes(req, res) {
     try {
         const search = String(req.query.search ?? "").trim();
@@ -76,6 +77,7 @@ export async function listClientes(req, res) {
         });
     }
 }
+// End-Point para obtener clientes
 export async function getClienteById(req, res) {
     try {
         const id = parsePositiveInt(req.params.id);
@@ -131,6 +133,7 @@ export async function getClienteById(req, res) {
         });
     }
 }
+// End-Point para crear clientes es decir, técnicos con rol CLIENTE
 export async function createCliente(req, res) {
     try {
         const nombre = String(req.body.nombre ?? "").trim();
@@ -237,6 +240,7 @@ export async function createCliente(req, res) {
         });
     }
 }
+// End-Point para actualizar clientes (técnicos con rol CLIENTE)
 export async function updateCliente(req, res) {
     try {
         const id = parsePositiveInt(req.params.id);
@@ -390,6 +394,7 @@ export async function updateCliente(req, res) {
         });
     }
 }
+// End-Point para desactivar clientes (técnicos con rol CLIENTE)
 export async function deleteCliente(req, res) {
     try {
         const id = parsePositiveInt(req.params.id);
@@ -407,6 +412,11 @@ export async function deleteCliente(req, res) {
             },
             select: {
                 id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+                empresaId: true,
             },
         });
         if (!existing) {
@@ -416,17 +426,54 @@ export async function deleteCliente(req, res) {
             });
             return;
         }
-        await prisma.tecnico.update({
+        if (!existing.status) {
+            res.json({
+                ok: true,
+                message: "El cliente ya estaba desactivado",
+                data: existing,
+            });
+            return;
+        }
+        const cliente = await prisma.tecnico.update({
             where: {
                 id_tecnico: id,
             },
             data: {
                 status: false,
             },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+                empresaId: true,
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                        detalleEmpresa: {
+                            select: {
+                                rut: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        await prisma.refreshToken.updateMany({
+            where: {
+                userId: id,
+                revokedAt: null,
+            },
+            data: {
+                revokedAt: new Date(),
+            },
         });
         res.json({
             ok: true,
             message: "Cliente desactivado correctamente",
+            data: cliente,
         });
     }
     catch (error) {

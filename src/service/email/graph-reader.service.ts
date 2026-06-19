@@ -257,7 +257,7 @@ class GraphReaderService {
             //console.log(`📥 Correos recientes encontrados: ${messages.length}`);
 
             if (messages.length === 0) {
-               // console.log('📭 No hay correos recientes');
+                // console.log('📭 No hay correos recientes');
                 return;
             }
 
@@ -281,7 +281,7 @@ class GraphReaderService {
             for (const message of uniqueMessages) {
                 try {
                     //console.log(
-                       // `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
+                    // `📨 Revisando email: ${message.subject || 'Sin asunto'} | isRead=${message.isRead}`
                     //);
 
                     await this.processMessage(message);
@@ -334,9 +334,31 @@ class GraphReaderService {
                 .replace(/[\u0300-\u036f]/g, "")
                 .replace(/[^\w.\-]+/g, "_");
 
+            const normalizedContentId = att.contentId
+                ? String(att.contentId)
+                    .replace(/^cid:/i, "")
+                    .replace(/^</, "")
+                    .replace(/>$/, "")
+                    .trim()
+                : null;
+
+            const bodyHtml = data.bodyHtml || "";
+            const bodyHtmlLower = bodyHtml.toLowerCase();
+            const normalizedContentIdLower = normalizedContentId?.toLowerCase() ?? null;
+
+            const isReferencedInHtml =
+                Boolean(normalizedContentIdLower) &&
+                (
+                    bodyHtmlLower.includes(`cid:${normalizedContentIdLower}`) ||
+                    bodyHtmlLower.includes(`cid:<${normalizedContentIdLower}>`)
+                );
+
+            const isImage = (att.mimeType || "").startsWith("image/");
+
             const isInlineImage =
-                (att.isInline || Boolean(att.contentId)) &&
-                (att.mimeType || "").startsWith("image/");
+                isImage &&
+                Boolean(normalizedContentId) &&
+                isReferencedInHtml;
 
             /*
              * CASO 1:
@@ -379,7 +401,7 @@ class GraphReaderService {
                         bytes: att.bytes || buffer.length,
                         url: uploadResult.secure_url,
                         isInline: true,
-                        contentId: att.contentId,
+                        contentId: normalizedContentId,
                     },
                 });
 
@@ -431,7 +453,7 @@ class GraphReaderService {
                     bytes: att.bytes || buffer.length,
                     url: storagePath,
                     isInline: false,
-                    contentId: att.contentId,
+                    contentId: normalizedContentId,
                 },
             });
         }
@@ -1339,17 +1361,28 @@ class GraphReaderService {
             });
 
             // Si el ticket estaba cerrado, lo reabrimos automáticamente al recibir una respuesta del cliente
-            if (ticketActual?.status === TicketStatus.CLOSED) {
-                console.log(`🔄 Reabriendo ticket #${ticketId}`);
+            const debeReabrirTicket =
+                ticketActual?.status === TicketStatus.CLOSED ||
+                ticketActual?.status === TicketStatus.PENDING;
+
+            if (debeReabrirTicket) {
+                console.log(
+                    `🔄 Ticket #${ticketId} cambia de ${ticketActual.status} a OPEN por respuesta del solicitante`
+                );
+
+                const updateData: any = {
+                    status: TicketStatus.OPEN,
+                    resolvedAt: null,
+                    closedAt: null,
+                };
+
+                if (ticketActual.status === TicketStatus.CLOSED) {
+                    updateData.lastReopenedAt = new Date();
+                }
 
                 await tx.ticket.update({
                     where: { id: ticketId },
-                    data: {
-                        status: TicketStatus.OPEN,
-                        resolvedAt: null,
-                        closedAt: null,
-                        lastReopenedAt: new Date(),
-                    }
+                    data: updateData,
                 });
 
                 await tx.ticketEvent.create({
@@ -1357,7 +1390,7 @@ class GraphReaderService {
                         ticketId,
                         type: TicketEventType.STATUS_CHANGED,
                         actorType: TicketActorType.SYSTEM,
-                    }
+                    },
                 });
             }
 

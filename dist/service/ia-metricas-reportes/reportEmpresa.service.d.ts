@@ -11,8 +11,10 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
     kpis: {
         visitas: {
             count: number;
-            totalMs: number;
-            avgMs: number;
+            totalMinutos: number;
+            avgMinutos: number;
+            totalTiempoTexto: string;
+            avgTiempoTexto: string;
         };
         equipos: {
             count: number;
@@ -23,9 +25,20 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         mantenciones: {
             total: number;
         };
+        licencias: {
+            total: number;
+            totalUsuariosConLicencia: number;
+        };
     };
     visitas: {
+        total: number;
+        totalMinutos: number;
+        avgMinutos: number;
+        totalTiempoTexto: string;
+        avgTiempoTexto: string;
         detalle: {
+            duracionMinutos: number;
+            duracionTexto: string;
             solicitante: string;
             sucursal: {
                 nombre: string;
@@ -73,19 +86,37 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         }[];
     };
     inventario: {
-        equipos: {
-            solicitante: {
-                nombre: string;
-            } | null;
+        total: number;
+        porMarca: {
+            marca: string;
+            cantidad: number;
+        }[];
+        detalle: {
+            codigo: number;
+            usuario: string;
+            correo: string;
+            estadoEquipo: import("@prisma/client").$Enums.EstadoEquipo;
+            serial: string;
             marca: string;
             modelo: string;
-            serial: string | null;
-            procesador: string | null;
-            ram: string | null;
-            disco: string | null;
-            propiedad: string;
+            cpu: string;
+            ram: string;
+            disco: string;
+            sistemaOperativo: string;
         }[];
-        total: number;
+        equipos: {
+            codigo: number;
+            usuario: string;
+            correo: string;
+            estadoEquipo: import("@prisma/client").$Enums.EstadoEquipo;
+            serial: string;
+            marca: string;
+            modelo: string;
+            cpu: string;
+            ram: string;
+            disco: string;
+            sistemaOperativo: string;
+        }[];
     };
     tickets: {
         detalle: any[];
@@ -98,6 +129,25 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         topUsuariosGeneral: {
             usuario: string;
             solicitudes: number;
+        }[];
+    };
+    licencias: {
+        total: number;
+        totalUsuariosConLicencia: number;
+        porTipo: {
+            skuId: string;
+            skuPartNumber: string;
+            displayName: string;
+            cantidad: number;
+        }[];
+        usuarios: {
+            solicitanteId: number;
+            nombre: string | null;
+            email: string | null;
+            skuId: string;
+            skuPartNumber: string;
+            displayName: string;
+            assignedAt: Date | null;
         }[];
     };
     mantenciones: {
