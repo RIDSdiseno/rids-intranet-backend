@@ -1,7 +1,7 @@
 // src/service/solicitanteSyncMs.ts
 import { prisma } from "../lib/prisma.js";
 // Pequeño helper de retries para errores transitorios (deadlock / tx cerrada)
-async function retry(fn, { retries = 3, baseDelayMs = 200, } = {}) {
+async function retry(fn, { retries = 5, baseDelayMs = 500, } = {}) {
     let lastErr;
     for (let i = 0; i <= retries; i++) {
         try {
@@ -14,7 +14,9 @@ async function retry(fn, { retries = 3, baseDelayMs = 200, } = {}) {
             // deadlock 40P01 o transacción cerrada → reintentar
             const transient = msg.includes("deadlock detected") ||
                 msg.includes("Transaction already closed") ||
-                pgCode === "40P01";
+                msg.includes("Unable to start a transaction") ||
+                pgCode === "40P01" ||
+                e?.code === "P2028";
             if (!transient || i === retries)
                 break;
             const delay = baseDelayMs * Math.pow(2, i);
@@ -143,15 +145,15 @@ export async function upsertSolicitanteFromMicrosoft(u, empresaId) {
             }
             return { solicitante, created };
         }, {
-            maxWait: 8_000,
-            timeout: 10_000,
+            maxWait: 20_000,
+            timeout: 30_000,
             isolationLevel: "ReadCommitted",
         });
     });
 }
 // Función para desactivar solicitantes vinculados a Microsoft que ya no están en el listado de usuarios de MS
-export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsVigentes) {
-    const ids = microsoftIdsVigentes
+export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsActivos) {
+    const ids = microsoftIdsActivos
         .map((x) => x?.trim())
         .filter(Boolean);
     if (!ids.length) {
@@ -163,11 +165,9 @@ export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsof
             accountType: "microsoft",
             microsoftUserId: { not: null },
             isActive: true,
+            deletedAt: null,
             NOT: {
                 microsoftUserId: { in: ids },
-            },
-            equipos: {
-                none: {},
             },
         },
         select: {
@@ -179,6 +179,9 @@ export async function deactivateMissingMicrosoftSolicitantes(empresaId, microsof
         },
         orderBy: { nombre: "asc" },
     });
+    if (usersToDeactivate.length === 0) {
+        return { count: 0, users: [] };
+    }
     const result = await prisma.solicitante.updateMany({
         where: {
             id_solicitante: {

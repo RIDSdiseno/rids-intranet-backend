@@ -1,3 +1,4 @@
+// src/controllers/ia-intranet-controller/ia-reportes-docx-beta.controller.ts
 import type { Request, Response } from "express";
 import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
 import { generarEstructuraWordIABeta } from "../../service/ia-metricas-reportes/ia-reportes-docx-beta.service.js";

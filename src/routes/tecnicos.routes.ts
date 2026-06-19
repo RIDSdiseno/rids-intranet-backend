@@ -6,7 +6,9 @@ import {
     updateTecnico,
     deleteTecnico,
     createTecnico,
+    updateTecnicoPassword,
 } from "../controllers/tecnicos.controller.js";
+import { getTecnicosHorasHombreDashboard } from "../controllers/controllers-tecnico/tecnicos-dashboard.controller.js";
 import { auth } from "../middlewares/auth.js";
 import { onlyRole } from "../middlewares/roles.js";
 
@@ -34,6 +36,20 @@ router.get(
     auth(),
     onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"),
     listUsuarios
+);
+
+router.get(
+    "/dashboard/horas-hombre",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"),
+    getTecnicosHorasHombreDashboard
+);
+
+router.put(
+    "/:id/password",
+    auth(),
+    onlyRole("ADMIN", "ADMINISTRACION"),
+    updateTecnicoPassword
 );
 
 // Escritura: solo ADMIN y ADMINISTRACION

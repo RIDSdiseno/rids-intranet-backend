@@ -620,11 +620,18 @@ export const getVisitasDashboard = async (req, res) => {
         // ─── AGRUPAR POR JORNADA (tecnico + inicio + fin) ───────────────────
         // Evita multiplicar horas cuando hay N solicitantes en la misma visita
         const jornadasMap = new Map();
-        for (const v of visitas) {
+        const visitasParaJornadas = visitas.filter((v) => {
+            const status = String(v.status ?? "").toUpperCase();
+            return (status === "COMPLETADA" &&
+                v.inicio &&
+                v.fin &&
+                new Date(v.fin).getTime() > new Date(v.inicio).getTime());
+        });
+        for (const v of visitasParaJornadas) {
             const tecnico = v.tecnico?.nombre?.trim() || "Sin técnico";
             const inicioStr = v.inicio ? new Date(v.inicio).toISOString() : "?";
             const finStr = v.fin ? new Date(v.fin).toISOString() : "null";
-            const key = `${tecnico}|${inicioStr}|${finStr}`;
+            const key = `${v.empresaId ?? "sin_empresa"}|${tecnico}|${inicioStr}|${finStr}`;
             if (!jornadasMap.has(key)) {
                 jornadasMap.set(key, {
                     inicio: v.inicio,

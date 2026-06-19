@@ -3,7 +3,6 @@ import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { TicketStatus, TicketPriority, TicketEventType, TicketActorType, MessageDirection } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { detectArea, parseArea } from "./ticket-area.utils.js";
 
 import { graphReaderService } from '../../service/email/graph-reader.service.js';
 import { buildTicketSla } from "./tickets-sla/ticketera-sla.controller.js";
@@ -17,6 +16,13 @@ import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
+
+import { uploadTicketAttachmentBuffer } from "../../config/ticket-attachments-storage.js";
+
+import {
+    supabaseAdmin,
+    TICKET_ATTACHMENTS_BUCKET,
+} from "../../lib/supabase/supabase.js";
 
 // Extiende Request para tener req.user.id
 declare global {
@@ -64,6 +70,7 @@ function uniqueEmails(emails: Array<string | null | undefined>) {
     return [...new Set(emails.map(normalizeEmail).filter(Boolean) as string[])];
 }
 
+// Construye destinatarios "To" y "CC" para la respuesta, basándose en los mensajes anteriores del ticket
 function buildReplyRecipients(
     messages: Array<{
         direction: MessageDirection | string;
@@ -157,7 +164,19 @@ export async function createTicket(req: Request, res: Response) {
             fromEmail: bodyFromEmail,
         } = req.body;
 
-        let empresaIdFinal = empresaId;
+        const files = req.files as Express.Multer.File[] | undefined;
+
+        function toPositiveInt(value: unknown): number | null {
+            if (value === undefined || value === null || value === "") return null;
+
+            const num = Number(value);
+
+            return Number.isInteger(num) && num > 0 ? num : null;
+        }
+
+        let empresaIdFinal = toPositiveInt(empresaId);
+        const requesterIdFinal = toPositiveInt(requesterId);
+        const assigneeIdFinal = toPositiveInt(assigneeId);
 
         // Si no se envió empresaId pero sí un correo manual, asignamos a "SIN CLASIFICAR" para no bloquear la creación del ticket (el agente luego puede editar el ticket y asignar la empresa correcta).
         if (!empresaIdFinal && bodyFromEmail?.trim()) {
@@ -183,14 +202,7 @@ export async function createTicket(req: Request, res: Response) {
         }
 
         // Validaciones básicas
-        if (!empresaIdFinal || !subject) {
-            return res.status(400).json({
-                ok: false,
-                message: "empresaId y subject son obligatorios",
-            });
-        }
-
-        if (!requesterId && !bodyFromEmail?.trim()) {
+        if (!requesterIdFinal && !bodyFromEmail?.trim()) {
             return res.status(400).json({
                 ok: false,
                 message: "Debes seleccionar un contacto o ingresar un correo manual",
@@ -198,6 +210,38 @@ export async function createTicket(req: Request, res: Response) {
         }
 
         const publicId = crypto.randomUUID();
+
+        if (!empresaIdFinal) {
+            return res.status(400).json({
+                ok: false,
+                message: "Debes seleccionar una empresa válida.",
+            });
+        }
+
+        if (!subject?.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: "El asunto del ticket es obligatorio.",
+            });
+        }
+
+        if (bodyFromEmail?.trim()) {
+            const cleanEmail = bodyFromEmail.trim().toLowerCase();
+
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+                return res.status(400).json({
+                    ok: false,
+                    message: "El correo manual no tiene un formato válido.",
+                });
+            }
+        }
+
+        if (files?.length && files.length > 10) {
+            return res.status(400).json({
+                ok: false,
+                message: "Solo puedes adjuntar hasta 10 archivos.",
+            });
+        }
 
         // Creamos el ticket dentro de una transacción para asegurar que la creación del ticket, 
         // el evento de creación y el mensaje inicial (si existe) se creen de forma atómica. 
@@ -220,15 +264,15 @@ export async function createTicket(req: Request, res: Response) {
                         connect: { id_empresa: empresaIdFinal },
                     },
 
-                    ...(requesterId && {
+                    ...(requesterIdFinal && {
                         requester: {
-                            connect: { id_solicitante: requesterId },
+                            connect: { id_solicitante: requesterIdFinal },
                         },
                     }),
 
-                    ...(assigneeId && {
+                    ...(assigneeIdFinal && {
                         assignee: {
-                            connect: { id_tecnico: assigneeId },
+                            connect: { id_tecnico: assigneeIdFinal },
                         },
                     }),
                 },
@@ -242,23 +286,70 @@ export async function createTicket(req: Request, res: Response) {
                 },
             });
 
-            if (message?.trim()) {
-                await tx.ticketMessage.create({
+            if (assigneeIdFinal) {
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId: ticket.id,
+                        type: TicketEventType.ASSIGNED,
+                        oldValue: null,
+                        newValue: String(assigneeIdFinal),
+                        actorType: req.user?.id
+                            ? TicketActorType.AGENT
+                            : TicketActorType.SYSTEM,
+                        actorId: req.user?.id ?? null,
+                    },
+                });
+            }
+
+            const hasMessage = Boolean(message?.trim());
+            const hasFiles = Boolean(files?.length);
+
+            if (hasMessage || hasFiles) {
+                const createdMessage = await tx.ticketMessage.create({
                     data: {
                         ticketId: ticket.id,
                         direction: MessageDirection.OUTBOUND,
-                        bodyText: message.trim(),
+                        bodyText: message?.trim() || "",
                         isInternal: false,
-                        fromEmail: null,
+                        fromEmail: process.env.EMAIL_USER ?? null,
                         toEmail: bodyFromEmail?.trim() || null,
                     },
                 });
+
+                if (files?.length) {
+                    for (const file of files) {
+                        if (!file.buffer) {
+                            throw new Error(`Adjunto sin buffer: ${file.originalname}`);
+                        }
+
+                        const uploaded = await uploadTicketAttachmentBuffer({
+                            ticketId: ticket.id,
+                            messageId: createdMessage.id,
+                            buffer: file.buffer,
+                            filename: file.originalname,
+                            mimeType: file.mimetype || "application/octet-stream",
+                        });
+
+                        await tx.ticketAttachment.create({
+                            data: {
+                                messageId: createdMessage.id,
+                                filename: uploaded.filename,
+                                mimeType: uploaded.mimeType,
+                                url: uploaded.url,
+                                bytes: uploaded.bytes,
+                                isInline: false,
+                                contentId: null,
+                            },
+                        });
+                    }
+                }
 
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: ticket.id,
                         type: TicketEventType.MESSAGE_SENT,
                         actorType: TicketActorType.AGENT,
+                        actorId: req.user?.id ?? null,
                     },
                 });
             }
@@ -285,9 +376,9 @@ export async function createTicket(req: Request, res: Response) {
         const fromEmail =
             bodyFromEmail ||           // 1️⃣ email ingresado manualmente por el agente
             ticket.fromEmail ||        // 2️⃣ email de origen si vino de email entrante
-            (requesterId
+            (requesterIdFinal
                 ? (await prisma.solicitante.findUnique({
-                    where: { id_solicitante: requesterId },
+                    where: { id_solicitante: requesterIdFinal },
                     select: { email: true },
                 }))?.email
                 : null);
@@ -304,35 +395,34 @@ export async function createTicket(req: Request, res: Response) {
             });
         }
 
-        // Si tenemos un correo de origen válido, intentamos enviar un auto-reply al cliente 
-        // con un template personalizado. Para esto, renderizamos el template "TICKET_CREATED_WEB"
-        //  con la información del ticket y del técnico asignado (si existe). 
-        // Si el template está habilitado, enviamos el correo usando el graphReaderService.
+        const emailAttachments = files?.length
+            ? files.map((file) => ({
+                name: file.originalname,
+                contentType: file.mimetype || "application/octet-stream",
+                contentBytes: file.buffer.toString("base64"),
+            }))
+            : [];
+
         const tecnico = ticket.assigneeId
             ? await prisma.tecnico.findUnique({
                 where: { id_tecnico: ticket.assigneeId },
                 select: {
                     nombre: true,
                     email: true,
-                    cargo: true,    // 🆕
-                    area: true,     // 🆕
+                    cargo: true,
+                    area: true,
                     firma: {
-                        select: { path: true }
-                    }
-                }
+                        select: { path: true },
+                    },
+                },
             })
             : null;
 
-        // Si el ticket tiene un correo de origen válido, intentamos enviar un auto-reply al cliente
-        //  con un template personalizado. Para esto, renderizamos el template 
-        // "TICKET_CREATED_WEB" con la información del ticket y del técnico asignado (si existe).
-        //  Si el template está habilitado, enviamos el correo usando el graphReaderService.
         if (
             normalizedFromEmail &&
             normalizedFromEmail !== process.env.EMAIL_USER?.trim().toLowerCase()
         ) {
             try {
-
                 const tecnicoRender = tecnico
                     ? {
                         nombre: tecnico.nombre,
@@ -366,6 +456,7 @@ export async function createTicket(req: Request, res: Response) {
                         to: normalizedFromEmail,
                         subject: rendered.subject,
                         bodyHtml: rendered.bodyHtml,
+                        attachments: emailAttachments,
                     });
                 }
             } catch (err) {
@@ -377,11 +468,16 @@ export async function createTicket(req: Request, res: Response) {
             ok: true,
             ticketId: ticket.id,
         });
-    } catch (error) {
-        console.error("[helpdesk] createTicket error:", error);
+    } catch (error: any) {
+        console.error("❌ Error al crear ticket:", error);
+
         return res.status(500).json({
             ok: false,
-            message: "Error al crear ticket",
+            message: "No se pudo crear el ticket",
+            detail:
+                process.env.NODE_ENV === "production"
+                    ? undefined
+                    : error?.message || "Error interno del servidor",
         });
     }
 }
@@ -391,13 +487,44 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
     try {
         const ticketId = Number(req.params.id);
         const { message } = req.body;
-        const to = JSON.parse(req.body.to || "[]");
-        const cc = JSON.parse(req.body.cc || "[]");
         const isInternal = req.body.isInternal === "true";
 
-        const agentId = req.user?.id;
+        let to: string[] = [];
+        let cc: string[] = [];
 
+        try {
+            to = JSON.parse(req.body.to || "[]");
+            cc = JSON.parse(req.body.cc || "[]");
+        } catch {
+            return res.status(400).json({
+                ok: false,
+                message: "Los destinatarios del correo no tienen un formato válido.",
+            });
+        }
+
+        const agentId = req.user?.id;
         const files = req.files as Express.Multer.File[] | undefined;
+
+        if (!Number.isInteger(ticketId) || ticketId <= 0) {
+            return res.status(400).json({
+                ok: false,
+                message: "ID de ticket inválido.",
+            });
+        }
+
+        if (!message?.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: "Debes escribir un mensaje antes de responder.",
+            });
+        }
+
+        if (files?.length && files.length > 10) {
+            return res.status(400).json({
+                ok: false,
+                message: "Solo puedes adjuntar hasta 10 archivos.",
+            });
+        }
 
         if (!ticketId) {
             return res.status(400).json({
@@ -496,13 +623,27 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 
             if (files?.length) {
                 for (const file of files) {
+                    if (!file.buffer) {
+                        throw new Error(`Adjunto sin buffer: ${file.originalname}`);
+                    }
+
+                    const uploaded = await uploadTicketAttachmentBuffer({
+                        ticketId,
+                        messageId: createdMessage.id,
+                        buffer: file.buffer,
+                        filename: file.originalname,
+                        mimeType: file.mimetype || "application/octet-stream",
+                    });
+
                     await tx.ticketAttachment.create({
                         data: {
                             messageId: createdMessage.id,
-                            filename: file.originalname,
-                            mimeType: file.mimetype,
-                            url: file.path,
-                            bytes: file.size,
+                            filename: uploaded.filename,
+                            mimeType: uploaded.mimeType,
+                            url: uploaded.url,
+                            bytes: uploaded.bytes,
+                            isInline: false,
+                            contentId: null,
                         },
                     });
                 }
@@ -519,7 +660,7 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 updateData.status = TicketStatus.OPEN;
             }
 
-            if (!ticket.firstResponseAt && !isInternal && agentId) {
+            if (!ticket.firstResponseAt && !isInternal && agentId && ticket.assigneeId) {
                 updateData.firstResponseAt = new Date();
             }
 
@@ -570,24 +711,11 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             });
 
             const emailAttachments = files?.length
-                ? await Promise.all(
-                    files.map(async (file) => {
-                        const response = await fetch(file.path);
-
-                        if (!response.ok) {
-                            throw new Error(`No se pudo descargar adjunto: ${file.originalname}`);
-                        }
-
-                        const arrayBuffer = await response.arrayBuffer();
-                        const fileBuffer = Buffer.from(arrayBuffer);
-
-                        return {
-                            name: file.originalname,
-                            contentType: file.mimetype || "application/octet-stream",
-                            contentBytes: fileBuffer.toString("base64"),
-                        };
-                    })
-                )
+                ? files.map((file) => ({
+                    name: file.originalname,
+                    contentType: file.mimetype || "application/octet-stream",
+                    contentBytes: file.buffer.toString("base64"),
+                }))
                 : [];
 
             if (rendered.isEnabled) {
@@ -655,11 +783,16 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
             ok: true,
             message: "Respuesta enviada correctamente",
         });
-    } catch (error) {
-        console.error("[helpdesk] replyTicketAsAgent error:", error);
+    } catch (error: any) {
+        console.error("❌ Error al responder ticket:", error);
+
         return res.status(500).json({
             ok: false,
-            message: "Error al responder ticket",
+            message: "No se pudo responder el ticket",
+            detail:
+                process.env.NODE_ENV === "production"
+                    ? undefined
+                    : error?.message || "Error interno del servidor",
         });
     }
 }
@@ -754,8 +887,6 @@ export async function listTickets(req: Request, res: Response) {
         }
 
         // ── Área (solo roles internos) ────────────────────────────────────────
-        const parsedArea = !isCliente ? parseArea(area) : null;
-
         const isClosedFilter = status === TicketStatus.CLOSED;
 
         const orderBy: Prisma.TicketOrderByWithRelationInput[] = isClosedFilter
@@ -766,65 +897,47 @@ export async function listTickets(req: Request, res: Response) {
         let tickets: any[] = [];
         let total = 0;
 
-        if (parsedArea) {
-            // Filtrado por área requiere traer todos y filtrar en memoria
-            const areaCandidates = await prisma.ticket.findMany({
-                where: whereActual,
-                include: {
-                    empresa: { select: { nombre: true } },
-                    assignee: { select: { id_tecnico: true, nombre: true } },
-                    requester: { select: { nombre: true, email: true } },
-                    messages: {
-                        orderBy: { createdAt: "desc" },
-                        select: {
-                            direction: true,
-                            isInternal: true,
-                            createdAt: true,
-                            bodyText: true,
-                            bodyHtml: true,
-                            fromEmail: true,
-                            toEmail: true,
-                            cc: true,
-                        },
-                    },
+        const includeForList = {
+            empresa: { select: { nombre: true } },
+            assignee: { select: { id_tecnico: true, nombre: true } },
+            requester: { select: { nombre: true, email: true } },
+            messages: {
+                orderBy: { createdAt: "desc" as const },
+                take: 2,
+                select: {
+                    direction: true,
+                    isInternal: true,
+                    createdAt: true,
                 },
+            },
+            events: {
+                where: {
+                    type: TicketEventType.ASSIGNED,
+                },
+                orderBy: {
+                    createdAt: "desc" as const,
+                },
+                select: {
+                    type: true,
+                    newValue: true,
+                    createdAt: true,
+                },
+            },
+        };
+
+        const result = await Promise.all([
+            prisma.ticket.findMany({
+                where: whereActual,
+                include: includeForList,
                 orderBy,
-            });
+                skip,
+                take,
+            }),
+            prisma.ticket.count({ where: whereActual }),
+        ]);
 
-            const filteredByArea = areaCandidates.filter(
-                (t) => detectArea(t) === parsedArea
-            );
-
-            total = filteredByArea.length;
-            tickets = filteredByArea.slice(skip, skip + take);
-        } else {
-            const result = await Promise.all([
-                prisma.ticket.findMany({
-                    where: whereActual,
-                    include: {
-                        empresa: { select: { nombre: true } },
-                        assignee: { select: { id_tecnico: true, nombre: true } },
-                        requester: { select: { nombre: true, email: true } },
-                        messages: {
-                            orderBy: { createdAt: "desc" },
-                            take: 2,
-                            select: {
-                                direction: true,
-                                isInternal: true,
-                                createdAt: true,
-                            },
-                        },
-                    },
-                    orderBy,
-                    skip,
-                    take,
-                }),
-                prisma.ticket.count({ where: whereActual }),
-            ]);
-
-            tickets = result[0];
-            total = result[1];
-        }
+        tickets = result[0];
+        total = result[1];
 
         // ── Conteos por estado (con mismo where base, sin filtro de status) ───
         const whereCounts: Prisma.TicketWhereInput = { ...whereActual };
@@ -955,6 +1068,24 @@ export async function getTicketById(req: Request, res: Response) {
                             actorId: tecnicoActual.id_tecnico,
                         },
                     });
+
+                    const refreshedTicket = await prisma.ticket.findFirst({
+                        where: { id: ticket.id, deletedAt: null },
+                        include: {
+                            empresa: true,
+                            requester: true,
+                            assignee: true,
+                            messages: {
+                                orderBy: { createdAt: "desc" },
+                                include: { attachments: true },
+                            },
+                            events: { orderBy: { createdAt: "desc" } },
+                        },
+                    });
+
+                    if (refreshedTicket) {
+                        ticketFinal = refreshedTicket;
+                    }
 
                     bus.emit("ticket.updated", {
                         ticketId: ticket.id,
@@ -1094,6 +1225,10 @@ export async function updateTicket(req: Request, res: Response) {
         /* ================== ASSIGNEE ================== */
         if (assigneeId !== undefined && assigneeId !== ticket.assigneeId) {
             updateData.assigneeId = assigneeId;
+
+            if (assigneeId && ticket.status === TicketStatus.NEW) {
+                updateData.status = TicketStatus.OPEN;
+            }
 
             events.push({
                 ticketId,
@@ -1301,38 +1436,102 @@ export async function downloadTicketAttachment(req: Request, res: Response) {
         const attachmentId = Number(req.params.attachmentId);
 
         if (!attachmentId || Number.isNaN(attachmentId)) {
-            return res.status(400).json({ ok: false, message: "Adjunto inválido" });
+            return res.status(400).json({
+                ok: false,
+                message: "Adjunto inválido",
+            });
         }
 
         const att = await prisma.ticketAttachment.findUnique({
             where: { id: attachmentId },
+            include: {
+                message: {
+                    include: {
+                        ticket: {
+                            select: {
+                                id: true,
+                                empresaId: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
 
         if (!att) {
-            return res.status(404).json({ ok: false, message: "Adjunto no encontrado" });
-        }
-
-        const response = await fetch(att.url);
-
-        if (!response.ok) {
             return res.status(404).json({
                 ok: false,
-                message: "No se pudo obtener el archivo",
+                message: "Adjunto no encontrado",
             });
         }
 
-        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!att.url) {
+            return res.status(404).json({
+                ok: false,
+                message: "El adjunto no tiene ruta de archivo",
+            });
+        }
 
-        res.setHeader("Content-Type", att.mimeType || "application/octet-stream");
+        let buffer: Buffer;
+        let contentType = att.mimeType || "application/octet-stream";
+
+        if (/^https?:\/\//i.test(att.url)) {
+            const response = await fetch(att.url);
+
+            if (!response.ok) {
+                return res.status(404).json({
+                    ok: false,
+                    message: "No se pudo obtener el archivo",
+                });
+            }
+
+            buffer = Buffer.from(await response.arrayBuffer());
+
+            contentType =
+                response.headers.get("content-type") ||
+                att.mimeType ||
+                "application/octet-stream";
+        } else {
+            const { data, error } = await supabaseAdmin.storage
+                .from(TICKET_ATTACHMENTS_BUCKET)
+                .download(att.url);
+
+            if (error || !data) {
+                console.error("[helpdesk] error descargando adjunto desde Supabase:", {
+                    attachmentId,
+                    bucket: TICKET_ATTACHMENTS_BUCKET,
+                    url: att.url,
+                    error,
+                });
+
+                return res.status(404).json({
+                    ok: false,
+                    message: "Archivo adjunto no encontrado en Supabase",
+                });
+            }
+
+            const arrayBuffer = await data.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+
+            contentType =
+                data.type ||
+                att.mimeType ||
+                "application/octet-stream";
+        }
+
+        const filename = att.filename || "adjunto";
+
+        res.setHeader("Content-Type", contentType);
         res.setHeader(
             "Content-Disposition",
-            `attachment; filename*=UTF-8''${encodeURIComponent(att.filename)}`
+            `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
         );
         res.setHeader("Content-Length", String(buffer.length));
 
         return res.send(buffer);
     } catch (error) {
         console.error("[helpdesk] downloadTicketAttachment error:", error);
+
         return res.status(500).json({
             ok: false,
             message: "Error al descargar adjunto",

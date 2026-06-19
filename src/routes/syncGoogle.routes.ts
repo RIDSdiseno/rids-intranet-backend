@@ -1,3 +1,4 @@
+// src/routes/syncGoogle.routes.ts
 // Rutas para sincronización de usuarios desde Google Directory a la tabla de solicitantes, con endpoints para sincronización total por dominio o individual por email, y manejo de desactivaciones según los usuarios vigentes en Google
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { listAllUsers } from "../google/googleDirectory.js";
@@ -59,6 +60,8 @@ router.post(
             primaryEmail: u.primaryEmail,
             name: u.name,
             suspended: u.suspended,
+            archived: (u as any).archived,
+            deleted: (u as any).deleted,
           },
           empIdNum
         );
@@ -66,13 +69,18 @@ router.post(
         if (before) updated++; else created++;
       }
 
-      const googleIdsVigentes = users
+      const googleIdsActivos = users
+        .filter((u) =>
+          !(u.suspended ?? false) &&
+          !((u as any).archived ?? false) &&
+          !((u as any).deleted ?? false)
+        )
         .map((u) => u.id?.trim())
         .filter(Boolean);
 
       const deactivated = await deactivateMissingGoogleSolicitantes(
         empIdNum,
-        googleIdsVigentes
+        googleIdsActivos
       );
 
       res.json({
@@ -155,6 +163,8 @@ router.put(
             primaryEmail: u.primaryEmail,
             name: u.name,
             suspended: u.suspended,
+            archived: (u as any).archived,
+            deleted: (u as any).deleted,
           },
           empIdNum
         );
@@ -173,13 +183,18 @@ router.put(
           return;
         }
 
-        const googleIdsVigentes = users
+        const googleIdsActivos = users
+          .filter((u) =>
+            !(u.suspended ?? false) &&
+            !((u as any).archived ?? false) &&
+            !((u as any).deleted ?? false)
+          )
           .map((u) => u.id?.trim())
           .filter(Boolean);
 
         const deactivated = await deactivateMissingGoogleSolicitantes(
           empIdNum,
-          googleIdsVigentes
+          googleIdsActivos
         );
 
         deactivatedCount = deactivated.count;

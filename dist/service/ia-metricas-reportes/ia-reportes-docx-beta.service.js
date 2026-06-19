@@ -1,3 +1,4 @@
+// src/service/ia-metricas-reportes/ia-reportes-docx-beta.service.ts
 import OpenAI from "openai";
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -34,17 +35,87 @@ function sanitizeForJSON(value) {
     }
     return value;
 }
+function formatMinutosAHoras(minutos) {
+    const total = Math.max(0, Math.round(Number(minutos) || 0));
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h === 0)
+        return `${m} min`;
+    if (m === 0)
+        return `${h} h`;
+    return `${h} h ${m} min`;
+}
+function normalizarDuracionVisita(v) {
+    if (v?.duracionTexto)
+        return v.duracionTexto;
+    if (typeof v?.duracionMinutos === "number") {
+        return formatMinutosAHoras(v.duracionMinutos);
+    }
+    if (typeof v?.duracionMs === "number") {
+        return formatMinutosAHoras(Math.round(v.duracionMs / 1000 / 60));
+    }
+    if (v?.inicio && v?.fin) {
+        const inicio = new Date(v.inicio).getTime();
+        const fin = new Date(v.fin).getTime();
+        if (Number.isFinite(inicio) && Number.isFinite(fin) && fin > inicio) {
+            return formatMinutosAHoras(Math.round((fin - inicio) / 1000 / 60));
+        }
+    }
+    return "0 min";
+}
 function prepararContextoWordBeta(data) {
     const safe = sanitizeForJSON(data);
+    const inventarioFuente = safe.inventario?.detalle ??
+        safe.inventario?.equipos ??
+        [];
     return {
         empresa: safe.empresa?.nombre ?? "Empresa no identificada",
         periodo: safe.month ?? safe.periodo ?? "Periodo no identificado",
-        kpis: safe.kpis ?? {},
+        kpis: {
+            visitas: {
+                count: safe.kpis?.visitas?.count ?? safe.visitas?.total ?? 0,
+                totalTiempoTexto: safe.kpis?.visitas?.totalTiempoTexto
+                    ?? safe.visitas?.totalTiempoTexto
+                    ?? formatMinutosAHoras(Number(safe.kpis?.visitas?.totalMinutos ?? 0)),
+                avgTiempoTexto: safe.kpis?.visitas?.avgTiempoTexto
+                    ?? safe.visitas?.avgTiempoTexto
+                    ?? formatMinutosAHoras(Number(safe.kpis?.visitas?.avgMinutos ?? 0)),
+                // ── NO pasar totalMinutos ni avgMinutos ──
+            },
+            equipos: { count: safe.kpis?.equipos?.count ?? 0 },
+            tickets: { total: safe.kpis?.tickets?.total ?? 0 },
+            mantenciones: { total: safe.kpis?.mantenciones?.total ?? 0 },
+            licencias: {
+                total: safe.licencias?.total ?? 0,
+                totalUsuariosConLicencia: safe.licencias?.totalUsuariosConLicencia ?? 0,
+                porTipo: safe.licencias?.porTipo ?? [],
+            }
+        },
         visitas: {
             total: safe.visitas?.total ?? 0,
+            // ── Eliminar totalMinutos y avgMinutos del contexto IA ──
+            // La IA no debe ver números crudos para no recalcular
+            totalTiempoTexto: safe.visitas?.totalTiempoTexto ??
+                formatMinutosAHoras(Number(safe.visitas?.totalMinutos ?? 0)),
+            avgTiempoTexto: safe.visitas?.avgTiempoTexto ??
+                formatMinutosAHoras(Number(safe.visitas?.avgMinutos ?? 0)),
             porTipo: safe.visitas?.porTipo ?? [],
             porTecnico: safe.visitas?.porTecnico ?? [],
-            detalle: (safe.visitas?.detalle ?? []).slice(0, 12),
+            // Detalle: eliminar duracionMinutos de cada visita
+            detalle: (safe.visitas?.detalle ?? []).slice(0, 12).map((v) => ({
+                tecnico: v.tecnico,
+                solicitante: v.solicitante,
+                inicio: v.inicio,
+                fin: v.fin,
+                duracionTexto: normalizarDuracionVisita(v),
+                // ── NO pasar duracionMinutos ni duracionMs ──
+            })),
+        },
+        licencias: {
+            total: safe.licencias?.total ?? 0,
+            totalUsuariosConLicencia: safe.licencias?.totalUsuariosConLicencia ?? 0,
+            porTipo: safe.licencias?.porTipo ?? [],
+            usuarios: (safe.licencias?.usuarios ?? []).slice(0, 30),
         },
         tickets: {
             total: safe.tickets?.total ?? 0,
@@ -59,14 +130,58 @@ function prepararContextoWordBeta(data) {
             detalle: (safe.mantenciones?.detalle ?? []).slice(0, 12),
         },
         inventario: {
-            totalEquipos: safe.inventario?.total ?? 0,
+            totalEquipos: safe.inventario?.total ??
+                inventarioFuente.length ??
+                0,
             porMarca: safe.inventario?.porMarca ?? [],
-            muestra: (safe.inventario?.detalle ?? []).slice(0, 10),
+            columnas: [
+                "codigo",
+                "usuario",
+                "correo",
+                "estadoEquipo",
+                "serial",
+                "marca",
+                "modelo",
+                "cpu",
+                "ram",
+                "disco",
+                "sistemaOperativo",
+            ],
+            detalle: inventarioFuente.map((equipo, index) => ({
+                codigo: equipo.codigo ?? index + 1,
+                usuario: equipo.usuario ?? equipo.solicitante?.nombre ?? "",
+                correo: equipo.correo ?? equipo.solicitante?.email ?? "",
+                estadoEquipo: equipo.estadoEquipo ?? equipo.estado ?? "",
+                serial: equipo.serial ?? "",
+                marca: equipo.marca ?? "",
+                modelo: equipo.modelo ?? "",
+                cpu: equipo.cpu ?? equipo.procesador ?? "",
+                ram: equipo.ram ?? "",
+                disco: equipo.disco ?? "",
+                sistemaOperativo: equipo.sistemaOperativo ?? equipo.detalle?.so ?? equipo.so ?? "",
+            })),
+            muestra: inventarioFuente.slice(0, 15).map((equipo, index) => ({
+                codigo: equipo.codigo ?? index + 1,
+                usuario: equipo.usuario ?? equipo.solicitante?.nombre ?? "",
+                correo: equipo.correo ?? equipo.solicitante?.email ?? "",
+                estadoEquipo: equipo.estadoEquipo ?? equipo.estado ?? "",
+                serial: equipo.serial ?? "",
+                marca: equipo.marca ?? "",
+                modelo: equipo.modelo ?? "",
+                cpu: equipo.cpu ?? equipo.procesador ?? "",
+                ram: equipo.ram ?? "",
+                disco: equipo.disco ?? "",
+                sistemaOperativo: equipo.sistemaOperativo ?? equipo.detalle?.so ?? equipo.so ?? "",
+            })),
         },
         extras: safe.extras?.totales ?? [],
         observaciones: {
-            promedioAtencion: safe.kpis?.duracionPromedio ?? null,
+            promedioAtencion: safe.visitas?.avgTiempoTexto ?? null,
             topUsuariosGeneral: safe.tickets?.topUsuarios ?? [],
+            duracionTotalVisitas: safe.visitas?.totalTiempoTexto ??
+                formatMinutosAHoras(Number(safe.visitas?.totalMinutos ?? 0)),
+            duracionPromedioVisitas: safe.visitas?.avgTiempoTexto ??
+                formatMinutosAHoras(Number(safe.visitas?.avgMinutos ?? 0)),
         },
     };
 }
@@ -98,6 +213,12 @@ REGLAS ESTRICTAS DE TONO:
 - NO inventes métricas ni tendencias que no estén soportadas
 - Si un dato no existe o no es concluyente, dilo de forma sobria y neutral
 - Evita exageraciones
+- Para licencias Microsoft, interpreta "total" como cantidad de usuarios únicos con licencia asignada.
+- No sumes múltiples licencias del mismo usuario como usuarios adicionales.
+- En licencias.porTipo, "cantidad" representa usuarios únicos asociados a ese tipo de licencia.
+- Cuando menciones duración de visitas, usa siempre totalTiempoTexto, avgTiempoTexto o duracionTexto.
+- No muestres milisegundos ni valores crudos como 5400000, 7200000 o similares.
+- No inventes licencias ni nombres de productos. Usa solo los datos entregados en licencias.porTipo.
 - No uses markdown
 - No uses HTML
 - Devuelve SOLO JSON válido
@@ -121,6 +242,26 @@ REGLAS ESTRICTAS DE TONO:
   "líneas de mejora continua"
 - Destaca siempre la gestión realizada, el acompañamiento técnico entregado, la capacidad de respuesta y la contribución a la continuidad operacional
 - El texto debe dejar una percepción positiva, profesional y confiable del servicio prestado
+
+INVENTARIO DE EQUIPOS:
+- El contexto inventario.detalle contiene el inventario operativo de la empresa.
+- Las columnas disponibles son: código, usuario, correo, estado del equipo, serial, marca, modelo, CPU, RAM, disco y sistema operativo.
+- No inventes equipos, usuarios, correos, seriales ni especificaciones.
+- Si mencionas el inventario, usa únicamente los datos disponibles.
+- El detalle completo del inventario debe conservarse como datos estructurados, no como texto inventado.
+
+VALORES FIJOS OBLIGATORIOS — NO MODIFICAR:
+- "Tiempo total en terreno" = "${contextoIA.observaciones.duracionTotalVisitas}"
+- "Duración promedio por visita" = "${contextoIA.observaciones.duracionPromedioVisitas}"
+- "Total de visitas" = ${contextoIA.visitas.total}
+- "Total de tickets" = ${contextoIA.tickets.total}
+- "Total de mantenciones" = ${contextoIA.mantenciones.total}
+- "Total de equipos" = ${contextoIA.inventario.totalEquipos}
+- "Licencias Microsoft utilizadas" = ${contextoIA.licencias.total}
+- "Usuarios con licencia Microsoft" = ${contextoIA.licencias.totalUsuariosConLicencia}
+
+Estos valores deben aparecer EXACTAMENTE ASÍ en metricas_destacadas y kpis_interpretados.
+No los recalcules. No los modifiques. Cópialos literalmente.
 
 INSTRUCCIONES DE ENFOQUE:
 - En el resumen ejecutivo, prioriza el valor del servicio prestado y la gestión del periodo
@@ -147,6 +288,8 @@ REGLAS PARA MÉTRICAS Y GRÁFICOS:
 - Propón entre 2 y 4 gráficos sugeridos
 - Cada gráfico debe incluir una lectura ejecutiva breve y positiva
 - Los gráficos deben ayudar a entender el servicio, no a criticarlo
+- La métrica "Tiempo total en terreno" DEBE tener valor exacto: "${contextoIA.observaciones.duracionTotalVisitas}". No uses otro valor.
+- La métrica "Duración promedio por visita" DEBE tener valor exacto: "${contextoIA.observaciones.duracionPromedioVisitas}". No uses otro valor.
 
 ESQUEMA JSON OBLIGATORIO:
 {

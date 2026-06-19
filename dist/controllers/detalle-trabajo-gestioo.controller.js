@@ -1,6 +1,7 @@
-import { PrismaClient, EstadoEquipo } from "@prisma/client";
+import { PrismaClient, EstadoEquipo, DestinoEquipoTaller } from "@prisma/client";
 const prisma = new PrismaClient();
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
+const DESTINOS_EQUIPO_TALLER_VALIDOS = Object.values(DestinoEquipoTaller);
 function estadoEquipoPorArea(area) {
     if (area === "ENTRADA")
         return EstadoEquipo.EN_RIDS;
@@ -68,6 +69,15 @@ export async function createDetalleTrabajo(req, res) {
         }
         // Si viene estadoEquipo del frontend usarlo, si no calcular por área
         const estadoEquipoFinal = estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
+        const destinoEquipoSolicitado = data.destinoEquipo &&
+            DESTINOS_EQUIPO_TALLER_VALIDOS.includes(data.destinoEquipo)
+            ? data.destinoEquipo
+            : null;
+        if (data.destinoEquipo && !destinoEquipoSolicitado) {
+            return res.status(400).json({
+                error: "Destino de equipo no válido",
+            });
+        }
         const trabajoFinal = await prisma.$transaction(async (tx) => {
             // Cerrar entradas previas si es SALIDA — solo una vez, dentro de la transacción
             if (data.area === "SALIDA" && equipoIdFinal) {
@@ -104,6 +114,11 @@ export async function createDetalleTrabajo(req, res) {
                     equipoId: equipoIdFinal,
                     tecnicoId: data.tecnicoId ? Number(data.tecnicoId) : null,
                     incluyeCargador: data.incluyeCargador ?? false,
+                    destinoEquipo: destinoEquipoSolicitado ?? DestinoEquipoTaller.SIN_DEFINIR,
+                    destinoEquipoNota: typeof data.destinoEquipoNota === "string" &&
+                        data.destinoEquipoNota.trim()
+                        ? data.destinoEquipoNota.trim()
+                        : null,
                 },
             });
             // Autoasignar ordenGrupoId para órdenes de ENTRADA
@@ -236,6 +251,15 @@ export async function updateDetalleTrabajo(req, res) {
                 },
             });
         }
+        const destinoEquipoSolicitado = data.destinoEquipo &&
+            DESTINOS_EQUIPO_TALLER_VALIDOS.includes(data.destinoEquipo)
+            ? data.destinoEquipo
+            : null;
+        if (data.destinoEquipo && !destinoEquipoSolicitado) {
+            return res.status(400).json({
+                error: "Destino de equipo no válido",
+            });
+        }
         // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData = {
             tipoTrabajo: data.tipoTrabajo,
@@ -280,6 +304,17 @@ export async function updateDetalleTrabajo(req, res) {
                 error: "Estado de equipo no válido",
             });
         }
+        if (data.destinoEquipo !== undefined) {
+            updateData.destinoEquipo =
+                destinoEquipoSolicitado ?? DestinoEquipoTaller.SIN_DEFINIR;
+        }
+        if (data.destinoEquipoNota !== undefined) {
+            updateData.destinoEquipoNota =
+                typeof data.destinoEquipoNota === "string" &&
+                    data.destinoEquipoNota.trim()
+                    ? data.destinoEquipoNota.trim()
+                    : null;
+        }
         const estadoEquipoFinal = estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
         const detalleActualizado = await prisma.$transaction(async (tx) => {
             if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
@@ -321,7 +356,6 @@ export async function updateDetalleTrabajo(req, res) {
             }
             return detalle;
         });
-        return res.json(detalleActualizado);
         return res.json(detalleActualizado);
     }
     catch (error) {

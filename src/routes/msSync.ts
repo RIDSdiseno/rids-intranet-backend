@@ -47,6 +47,10 @@ function normalizeForUpsert(target: MsUser[]): MsUserInput[] {
   });
 }
 
+function isMicrosoftUserActivo(u: MsUserInput) {
+  return !(u.suspended ?? false);
+}
+
 /** Pre-crea catálogo de SKUs */
 async function precreateSkus(msUsers: MsUserInput[]) {
   const uniq = new Map<string, { skuId: string; skuPartNumber: string; displayName?: string }>();
@@ -87,9 +91,10 @@ async function syncMsUsersBatch(
   const skuMs = Date.now() - tSku0;
 
   // 2) Upsert paralelo
-  const concurrency = Math.max(1, opts?.concurrency ?? 8);
+  const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 2, 4));
   const limit = pLimit(concurrency);
-  const chunks = opts?.chunkSize ? chunk(msUsers, opts.chunkSize) : [msUsers];
+  const chunkSize = Math.max(1, opts?.chunkSize ?? 25);
+  const chunks = chunk(msUsers, chunkSize);
 
   const tDb0 = Date.now();
   for (const part of chunks) {
@@ -216,13 +221,14 @@ msSyncRouter.post(
         }
       );
 
-      const microsoftIdsVigentes = normalized
+      const microsoftIdsActivos = normalized
+        .filter(isMicrosoftUserActivo)
         .map((u) => u.id?.trim())
-        .filter(Boolean);
+        .filter((id): id is string => Boolean(id));
 
       const deactivated = await deactivateMissingMicrosoftSolicitantes(
         Number(empresaId),
-        microsoftIdsVigentes
+        microsoftIdsActivos
       );
 
       res.json({

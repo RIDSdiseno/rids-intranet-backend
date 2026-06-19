@@ -1,3 +1,4 @@
+// src/config/multer-local.ts
 // Configuración de Multer para almacenamiento local de archivos (ej. firmas digitales, adjuntos, etc.)
 import multer from "multer";
 import path from "path";
