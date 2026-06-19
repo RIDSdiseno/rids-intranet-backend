@@ -30,21 +30,6 @@
     "sentAt": "2026-06-16T20:17:27.948Z"
   },
   {
-    "id": 17,
-    "cotizacionId": 443,
-    "to": "informaticap@rids.cl",
-    "subject": "Cotización #443 - VENMED MEDICAL CENTER SPA",
-    "sentBy": null,
-    "jobId": "mailjob-1781640470509-uqjfc5",
-    "meta": {
-      "attachments": 1
-    },
-    "clienteNombre": "VENMED MEDICAL CENTER SPA",
-    "creadoPor": "Georges Martinez",
-    "fechaCreacion": "2026-06-03T21:02:04.446Z",
-    "sentAt": "2026-06-16T20:07:52.312Z"
-  },
-  {
     "id": 16,
     "cotizacionId": 448,
     "to": "informaticap@rids.cl",
@@ -208,21 +193,6 @@
     "creadoPor": "Diego Bravo",
     "fechaCreacion": "2026-05-28T20:35:35.040Z",
     "sentAt": "2026-05-29T21:03:31.226Z"
-  },
-  {
-    "id": 5,
-    "cotizacionId": 425,
-    "to": "jaja@lol.lol",
-    "subject": "Cotización #425 - FERNANDO PINTO",
-    "sentBy": null,
-    "jobId": "mailjob-1780085128367-6uw3ol",
-    "meta": {
-      "attachments": 1
-    },
-    "clienteNombre": "FERNANDO PINTO",
-    "creadoPor": "Jeferson Carbonell",
-    "fechaCreacion": "2026-05-28T21:12:22.705Z",
-    "sentAt": "2026-05-29T20:05:31.735Z"
   },
   {
     "id": 4,
