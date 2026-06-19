@@ -20,13 +20,13 @@ function dateOrNull(value) {
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
 }
-function formatFechaRevisionChile() {
-    return new Date().toLocaleDateString("es-CL", {
+function formatFechaRevisionChileISO() {
+    return new Intl.DateTimeFormat("en-CA", {
         timeZone: "America/Santiago",
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
-    });
+    }).format(new Date());
 }
 function boolOrNull(value) {
     if (typeof value === "boolean")
@@ -197,6 +197,25 @@ export async function receiveEquipoAgentInventory(req, res) {
             return;
         }
         const body = req.body;
+        const tecnicoEmail = cleanString(body.tecnicoEmail)?.toLowerCase() ?? null;
+        const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
+        const taskUserConfigurado = cleanString(body.taskUserConfigurado);
+        const tecnicoEjecutor = tecnicoEmail
+            ? await prisma.tecnico.findFirst({
+                where: {
+                    email: {
+                        equals: tecnicoEmail,
+                        mode: "insensitive",
+                    },
+                    status: true,
+                },
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                    email: true,
+                },
+            })
+            : null;
         const serial = cleanString(body.serial);
         const hostname = cleanString(body.hostname);
         const solicitanteEmail = cleanString(body.solicitanteEmail)?.toLowerCase() ?? null;
@@ -428,7 +447,7 @@ export async function receiveEquipoAgentInventory(req, res) {
             });
         }
         const soTexto = buildSoText(osName, osVersion, osBuild);
-        const fechaRevisionAgente = formatFechaRevisionChile();
+        const fechaRevisionAgente = formatFechaRevisionChileISO();
         await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
@@ -481,6 +500,28 @@ export async function receiveEquipoAgentInventory(req, res) {
                 teamViewer: cleanString(body.teamViewer),
             },
         });
+        if (tecnicoEjecutor?.id_tecnico) {
+            await prisma.auditLog.create({
+                data: {
+                    entity: "Equipo",
+                    entityId: String(equipo.id_equipo),
+                    action: "UPDATE",
+                    actorId: tecnicoEjecutor.id_tecnico,
+                    empresaId: empresaIdFinal ?? null,
+                    description: "Inventario actualizado desde agente Windows",
+                    changes: {
+                        origen: "WINDOWS_AGENT",
+                        tecnicoEmail: tecnicoEjecutor.email,
+                        tecnicoNombre: tecnicoEjecutor.nombre,
+                        usuarioWindowsEjecutor,
+                        taskUserConfigurado,
+                        hostname,
+                        serial,
+                        lastSeenAt: new Date().toISOString(),
+                    },
+                },
+            });
+        }
         await syncSoftwares(equipo.id_equipo, body.softwares);
         await prisma.equipoAgenteEvento.create({
             data: {
@@ -494,6 +535,11 @@ export async function receiveEquipoAgentInventory(req, res) {
                 metadata: {
                     hostname,
                     serial,
+                    tecnicoEjecutorId: tecnicoEjecutor?.id_tecnico ?? null,
+                    tecnicoEjecutorNombre: tecnicoEjecutor?.nombre ?? null,
+                    tecnicoEjecutorEmail: tecnicoEjecutor?.email ?? tecnicoEmail,
+                    usuarioWindowsEjecutor,
+                    taskUserConfigurado,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
                     conflictoCorreos,

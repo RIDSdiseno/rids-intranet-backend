@@ -58,6 +58,10 @@ type EquipoAgentPayload = {
     lastBootAt?: string | null;
     agenteVersion?: string | null;
 
+    tecnicoEmail?: string | null;
+    usuarioWindowsEjecutor?: string | null;
+    taskUserConfigurado?: string | null;
+
     antivirusNombre?: string | null;
     antivirusActivo?: boolean | null;
     firewallActivo?: boolean | null;
@@ -329,6 +333,27 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         }
 
         const body = req.body as EquipoAgentPayload;
+
+        const tecnicoEmail = cleanString(body.tecnicoEmail)?.toLowerCase() ?? null;
+        const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
+        const taskUserConfigurado = cleanString(body.taskUserConfigurado);
+
+        const tecnicoEjecutor = tecnicoEmail
+            ? await prisma.tecnico.findFirst({
+                where: {
+                    email: {
+                        equals: tecnicoEmail,
+                        mode: "insensitive",
+                    },
+                    status: true,
+                },
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                    email: true,
+                },
+            })
+            : null;
 
         const serial = cleanString(body.serial);
         const hostname = cleanString(body.hostname);
@@ -669,6 +694,29 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             },
         });
 
+        if (tecnicoEjecutor?.id_tecnico) {
+            await prisma.auditLog.create({
+                data: {
+                    entity: "Equipo",
+                    entityId: String(equipo.id_equipo),
+                    action: "UPDATE" as any,
+                    actorId: tecnicoEjecutor.id_tecnico,
+                    empresaId: empresaIdFinal ?? null,
+                    description: "Inventario actualizado desde agente Windows",
+                    changes: {
+                        origen: "WINDOWS_AGENT",
+                        tecnicoEmail: tecnicoEjecutor.email,
+                        tecnicoNombre: tecnicoEjecutor.nombre,
+                        usuarioWindowsEjecutor,
+                        taskUserConfigurado,
+                        hostname,
+                        serial,
+                        lastSeenAt: new Date().toISOString(),
+                    },
+                },
+            });
+        }
+
         await syncSoftwares(equipo.id_equipo, body.softwares);
 
         await prisma.equipoAgenteEvento.create({
@@ -683,6 +731,13 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 metadata: {
                     hostname,
                     serial,
+
+                    tecnicoEjecutorId: tecnicoEjecutor?.id_tecnico ?? null,
+                    tecnicoEjecutorNombre: tecnicoEjecutor?.nombre ?? null,
+                    tecnicoEjecutorEmail: tecnicoEjecutor?.email ?? tecnicoEmail,
+                    usuarioWindowsEjecutor,
+                    taskUserConfigurado,
+
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
                     conflictoCorreos,
