@@ -6,17 +6,17 @@ class EmailSenderService {
     private transporter: nodemailer.Transporter;
 
     async sendStatusEmail(ticketId: number, nuevoEstado: string, toEmail: string) {
-    try {
-        await this.transporter.sendMail({
-            from: `"RIDS" <${process.env.SMTP_USER}>`,
-            to: toEmail,
-            subject: `Actualización Ticket #${ticketId}`,
-            html: `<p>El estado de tu ticket es ahora: <strong>${this.translateStatus(nuevoEstado)}</strong>.</p>`,
-        });
-    } catch (e) {
-        console.error("Error al enviar estado:", e);
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to: toEmail,
+                subject: `Actualización Ticket #${ticketId}`,
+                html: `<p>El estado de tu ticket es ahora: <strong>${this.translateStatus(nuevoEstado)}</strong>.</p>`,
+            });
+        } catch (e) {
+            console.error("Error al enviar estado:", e);
+        }
     }
-}
 
     constructor() {
         this.transporter = nodemailer.createTransport({
@@ -27,8 +27,35 @@ class EmailSenderService {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASSWORD,
             },
-            
+
         });
+    }
+
+    async sendHtmlEmail(params: {
+        to: string | string[];
+        subject: string;
+        html: string;
+        cc?: string | string[];
+    }) {
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to: Array.isArray(params.to) ? params.to.join(",") : params.to,
+                cc: Array.isArray(params.cc)
+                    ? params.cc.join(",")
+                    : params.cc || undefined,
+                subject: params.subject,
+                html: params.html,
+            });
+
+            console.log("✅ Correo enviado correctamente:", {
+                to: params.to,
+                subject: params.subject,
+            });
+        } catch (error) {
+            console.error("❌ Error enviando correo HTML:", error);
+            throw error;
+        }
     }
 
     /**
@@ -52,7 +79,7 @@ class EmailSenderService {
                 filename: file.originalname,
                 path: file.path, // Cloudinary secure_url
             })) || [];
-            
+
             // Enviar correo con template HTML y adjuntos
             await this.transporter.sendMail({
                 from: `"Soporte RIDS" <${process.env.SMTP_USER}>`,
@@ -76,17 +103,17 @@ class EmailSenderService {
     }
     // Método para enviar correo de confirmación al crear un ticket
     async sendTicketCreatedEmail(to: string, id: string, summary: string) {
-  try {
-    await this.transporter.sendMail({
-      from: `"RIDS" <${process.env.SMTP_USER}>`,
-      to,
-      subject: `Ticket #${id} Registrado`,
-      html: `<p>${summary}</p><hr><p>Ticket #${id}</p>`,
-    });
-  } catch (e) {
-    console.error("Error de correo:", e);
-  }
-}
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to,
+                subject: `Ticket #${id} Registrado`,
+                html: `<p>${summary}</p><hr><p>Ticket #${id}</p>`,
+            });
+        } catch (e) {
+            console.error("Error de correo:", e);
+        }
+    }
 
     /**
      * Template HTML para respuesta
@@ -143,7 +170,7 @@ class EmailSenderService {
     </html>
     `;
     }
-    
+
     // Método para convertir texto a entidades HTML y preservar saltos de línea
     private escapeHtml(text: string): string {
         return text
@@ -154,7 +181,7 @@ class EmailSenderService {
             .replace(/'/g, '&#039;')
             .replace(/\n/g, '<br>');
     }
-    
+
     // Método para traducir estados internos a texto legible para el cliente
     private translateStatus(status: string): string {
         const translations: Record<string, string> = {

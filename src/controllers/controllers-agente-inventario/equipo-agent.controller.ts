@@ -60,7 +60,9 @@ type EquipoAgentPayload = {
     uptimeSeconds?: number | string | null;
     agenteVersion?: string | null;
 
-    tecnicoEmail?: string | null;
+    source?: string | null;
+    tecnicoEmail?: string | null; // compatibilidad con agentes antiguos
+    tecnicoInstaladorEmail?: string | null;
     usuarioWindowsEjecutor?: string | null;
     taskUserConfigurado?: string | null;
 
@@ -336,15 +338,22 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const body = req.body as EquipoAgentPayload;
 
-        const tecnicoEmail = cleanString(body.tecnicoEmail)?.toLowerCase() ?? null;
+        const source = cleanString(body.source) ?? "AGENT";
+        const isAgentSync = source === "AGENT";
+
+        const tecnicoInstaladorEmail =
+            cleanString(body.tecnicoInstaladorEmail)?.toLowerCase() ??
+            cleanString(body.tecnicoEmail)?.toLowerCase() ??
+            null;
+
         const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
         const taskUserConfigurado = cleanString(body.taskUserConfigurado);
 
-        const tecnicoEjecutor = tecnicoEmail
+        const tecnicoInstalador = tecnicoInstaladorEmail
             ? await prisma.tecnico.findFirst({
                 where: {
                     email: {
-                        equals: tecnicoEmail,
+                        equals: tecnicoInstaladorEmail,
                         mode: "insensitive",
                     },
                     status: true,
@@ -699,28 +708,38 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             },
         });
 
-        if (tecnicoEjecutor?.id_tecnico) {
-            await prisma.auditLog.create({
-                data: {
-                    entity: "Equipo",
-                    entityId: String(equipo.id_equipo),
-                    action: "UPDATE" as any,
-                    actorId: tecnicoEjecutor.id_tecnico,
-                    empresaId: empresaIdFinal ?? null,
-                    description: "Inventario actualizado desde agente Windows",
-                    changes: {
-                        origen: "WINDOWS_AGENT",
-                        tecnicoEmail: tecnicoEjecutor.email,
-                        tecnicoNombre: tecnicoEjecutor.nombre,
-                        usuarioWindowsEjecutor,
-                        taskUserConfigurado,
-                        hostname,
-                        serial,
-                        lastSeenAt: new Date().toISOString(),
-                    },
+        await prisma.auditLog.create({
+            data: {
+                entity: "Equipo",
+                entityId: String(equipo.id_equipo),
+                action: "UPDATE" as any,
+
+                // Importante:
+                // Las sincronizaciones automáticas del agente NO deben quedar a nombre del técnico.
+                // El técnico solo queda como instalador/configurador dentro de changes/metadata.
+                actorId: null,
+
+                empresaId: empresaIdFinal ?? null,
+                description: "Inventario actualizado automáticamente desde agente Windows",
+                changes: {
+                    origen: "WINDOWS_AGENT",
+                    source,
+                    ejecutadoPor: "SISTEMA",
+
+                    tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
+                    tecnicoInstaladorEmail:
+                        tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+                    tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
+
+                    usuarioWindowsEjecutor,
+                    taskUserConfigurado,
+
+                    hostname,
+                    serial,
+                    lastSeenAt: new Date().toISOString(),
                 },
-            });
-        }
+            },
+        });
 
         await syncSoftwares(equipo.id_equipo, body.softwares);
 
@@ -731,8 +750,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     ? "REVISION_SOLICITANTE"
                     : "INVENTORY_SYNC",
                 mensaje: requiereRevisionSolicitante
-                    ? "El agente detectó un solicitante distinto al asignado actualmente."
-                    : "Inventario recibido desde agente Windows",
+                    ? "El agente detectó información de solicitante que requiere revisión manual."
+                    : "Inventario sincronizado automáticamente desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
@@ -741,9 +760,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     uptimeText,
                     uptimeSeconds,
 
-                    tecnicoEjecutorId: tecnicoEjecutor?.id_tecnico ?? null,
-                    tecnicoEjecutorNombre: tecnicoEjecutor?.nombre ?? null,
-                    tecnicoEjecutorEmail: tecnicoEjecutor?.email ?? tecnicoEmail,
+                    source,
+                    ejecutadoPor: "SISTEMA",
+
+                    tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
+                    tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
+                    tecnicoInstaladorEmail:
+                        tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+
                     usuarioWindowsEjecutor,
                     taskUserConfigurado,
 
