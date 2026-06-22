@@ -29,6 +29,48 @@ function parsePeriodo(req) {
 function parseForceRefresh(value) {
     return String(value ?? "false").toLowerCase() === "true";
 }
+function parseConciliadoAt(value) {
+    if (!value) {
+        return new Date();
+    }
+    const date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) {
+        throw new Error("Fecha de conciliación inválida");
+    }
+    return date;
+}
+function getErrorStatus(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("inválida") ||
+        message.includes("inválido") ||
+        message.includes("fuera de rango") ||
+        message.includes("Debes seleccionar") ||
+        message.includes("Debes ingresar")) {
+        return 400;
+    }
+    return 500;
+}
+function getResponsable(req) {
+    const user = req.user;
+    return (user?.email ??
+        user?.nombre ??
+        req.body.responsable ??
+        (user?.id ? `usuario:${user.id}` : null));
+}
+function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+function parseCorreosDestino(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map((email) => String(email).trim().toLowerCase())
+            .filter(Boolean);
+    }
+    return String(value ?? "")
+        .split(/[,;\n\r]+/)
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean);
+}
 export async function getConciliacionRcv(req, res) {
     try {
         const empresa = parseEmpresa(req.query.empresa);
@@ -57,24 +99,39 @@ export async function getConciliacionRcv(req, res) {
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        res.status(500).json({
+        res.status(getErrorStatus(error)).json({
             ok: false,
             provider: "baseapi",
             error: message,
         });
     }
 }
-function getResponsable(req) {
-    const user = req.user;
-    return (user?.email ??
-        user?.nombre ??
-        req.body.responsable ??
-        (user?.id ? `usuario:${user.id}` : null));
-}
 export async function postConciliarRcv(req, res) {
     try {
         const empresa = parseEmpresa(req.body.empresa);
         const tipoRcv = parseTipo(req.body.tipoRcv);
+        const formaPago = String(req.body.formaPago ?? "").trim();
+        if (!formaPago) {
+            return res.status(400).json({
+                ok: false,
+                error: "Debes seleccionar una forma de pago o validación",
+            });
+        }
+        const enviarCorreo = Boolean(req.body.enviarCorreo);
+        const correosDestino = parseCorreosDestino(req.body.correoDestino);
+        if (enviarCorreo && correosDestino.length === 0) {
+            return res.status(400).json({
+                ok: false,
+                error: "Debes agregar al menos un correo destino",
+            });
+        }
+        const correosInvalidos = correosDestino.filter((email) => !isValidEmail(email));
+        if (enviarCorreo && correosInvalidos.length > 0) {
+            return res.status(400).json({
+                ok: false,
+                error: `Correos destino inválidos: ${correosInvalidos.join(", ")}`,
+            });
+        }
         const resultado = await conciliarDocumentoRcv({
             empresa,
             tipoRcv,
@@ -88,9 +145,12 @@ export async function postConciliarRcv(req, res) {
             montoTotal: Number(req.body.montoTotal ?? 0),
             estadoRcv: req.body.estadoRcv ?? null,
             origenRcv: req.body.origenRcv ?? null,
-            formaPago: req.body.formaPago ?? null,
+            formaPago,
             observacion: req.body.observacion ?? null,
+            conciliadoAt: parseConciliadoAt(req.body.conciliadoAt),
             responsable: getResponsable(req),
+            enviarCorreo,
+            correoDestino: enviarCorreo ? correosDestino : [],
         });
         res.json({
             ok: true,
@@ -99,11 +159,12 @@ export async function postConciliarRcv(req, res) {
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        res.status(500).json({
+        res.status(getErrorStatus(error)).json({
             ok: false,
             error: message,
         });
     }
+    return;
 }
 export async function postDesconciliarRcv(req, res) {
     try {
@@ -123,7 +184,7 @@ export async function postDesconciliarRcv(req, res) {
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        res.status(500).json({
+        res.status(getErrorStatus(error)).json({
             ok: false,
             error: message,
         });
@@ -149,7 +210,7 @@ export async function postObservarRcv(req, res) {
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        res.status(500).json({
+        res.status(getErrorStatus(error)).json({
             ok: false,
             error: message,
         });

@@ -32,7 +32,10 @@ export declare function conciliarDocumentoRcv(params: {
     origenRcv?: string | null;
     formaPago?: string | null;
     observacion?: string | null;
+    conciliadoAt?: Date | null;
     responsable?: string | null;
+    enviarCorreo?: boolean;
+    correoDestino?: string[] | null;
 }): Promise<{
     id: string;
     updatedAt: Date;

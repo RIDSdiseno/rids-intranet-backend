@@ -27,6 +27,27 @@ class EmailSenderService {
             },
         });
     }
+    async sendHtmlEmail(params) {
+        try {
+            await this.transporter.sendMail({
+                from: `"RIDS" <${process.env.SMTP_USER}>`,
+                to: Array.isArray(params.to) ? params.to.join(",") : params.to,
+                cc: Array.isArray(params.cc)
+                    ? params.cc.join(",")
+                    : params.cc || undefined,
+                subject: params.subject,
+                html: params.html,
+            });
+            console.log("✅ Correo enviado correctamente:", {
+                to: params.to,
+                subject: params.subject,
+            });
+        }
+        catch (error) {
+            console.error("❌ Error enviando correo HTML:", error);
+            throw error;
+        }
+    }
     /**
      * Envía respuesta del agente al cliente
      */
