@@ -1794,6 +1794,139 @@ export async function reassignEquipos(req: Request, res: Response) {
   }
 }
 
+// Helpers para filtrar cambios de historial
+type AuditChangeValue = {
+  before?: unknown;
+  after?: unknown;
+};
+
+type AuditChanges = Record<string, AuditChangeValue>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const normalized = String(value)
+    .replace(",", ".")
+    .replace(/[^\d.-]/g, "");
+
+  const n = Number(normalized);
+
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractDiskTextParts(value: unknown): {
+  totalGb: number | null;
+  freeGb: number | null;
+} {
+  const text = String(value ?? "");
+
+  const totalMatch = text.match(/([\d.,]+)\s*GB\s*total/i);
+  const freeMatch = text.match(/([\d.,]+)\s*GB\s*libres/i);
+
+  return {
+    totalGb: totalMatch ? toNumber(totalMatch[1]) : null,
+    freeGb: freeMatch ? toNumber(freeMatch[1]) : null,
+  };
+}
+
+function isMinorNumberChange(before: unknown, after: unknown, threshold = 5) {
+  const beforeNumber = toNumber(before);
+  const afterNumber = toNumber(after);
+
+  if (beforeNumber === null || afterNumber === null) return false;
+
+  return Math.abs(afterNumber - beforeNumber) < threshold;
+}
+
+function isMinorDiskTextChange(before: unknown, after: unknown, thresholdGb = 5) {
+  const beforeDisk = extractDiskTextParts(before);
+  const afterDisk = extractDiskTextParts(after);
+
+  if (beforeDisk.freeGb === null || afterDisk.freeGb === null) {
+    return false;
+  }
+
+  const totalChanged =
+    beforeDisk.totalGb !== null &&
+    afterDisk.totalGb !== null &&
+    Math.abs(beforeDisk.totalGb - afterDisk.totalGb) >= 1;
+
+  if (totalChanged) {
+    return false;
+  }
+
+  return Math.abs(afterDisk.freeGb - beforeDisk.freeGb) < thresholdGb;
+}
+
+function normalizeAuditChanges(value: unknown): AuditChanges | null {
+  if (!isPlainObject(value)) return null;
+
+  const normalized: AuditChanges = {};
+
+  for (const [field, change] of Object.entries(value)) {
+    if (!isPlainObject(change)) continue;
+
+    normalized[field] = {
+      before: change.before,
+      after: change.after,
+    };
+  }
+
+  return normalized;
+}
+
+function filterEquipoHistoryChanges(value: unknown): AuditChanges | null {
+  const changes = normalizeAuditChanges(value);
+
+  if (!changes) return null;
+
+  const filtered: AuditChanges = {};
+
+  for (const [field, change] of Object.entries(changes)) {
+    const normalizedField = field.trim();
+
+    if (
+      [
+        "updatedAt",
+        "lastSeenAt",
+        "agenteActivo",
+        "estadoAgente",
+      ].includes(normalizedField)
+    ) {
+      continue;
+    }
+
+    if (
+      normalizedField === "diskFreeGb" &&
+      isMinorNumberChange(change.before, change.after, 5)
+    ) {
+      continue;
+    }
+
+    if (
+      normalizedField === "diskTotalGb" &&
+      isMinorNumberChange(change.before, change.after, 1)
+    ) {
+      continue;
+    }
+
+    if (
+      normalizedField === "disco" &&
+      isMinorDiskTextChange(change.before, change.after, 5)
+    ) {
+      continue;
+    }
+
+    filtered[field] = change;
+  }
+
+  return filtered;
+}
+
 /* ================== HISTORIAL POR EQUIPO ================== */
 // GET /api/equipos/:id/historial
 export async function getEquipoHistorial(req: Request, res: Response) {
@@ -1838,10 +1971,35 @@ export async function getEquipoHistorial(req: Request, res: Response) {
         : Promise.resolve([]),
     ]);
 
-    // ✅ Fusiona y ordena por fecha desc
-    const merged = [...logsEquipo, ...logsDetalle].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    // Fusiona, limpia cambios mínimos del agente y ordena por fecha desc
+    const merged = [...logsEquipo, ...logsDetalle]
+      .map((log) => {
+        const filteredChanges = filterEquipoHistoryChanges((log as any).changes);
+
+        if (!filteredChanges) {
+          return log;
+        }
+
+        return {
+          ...log,
+          changes: filteredChanges,
+        };
+      })
+      .filter((log) => {
+        const changes = normalizeAuditChanges((log as any).changes);
+
+        if (!changes) {
+          return true;
+        }
+
+        return Object.keys(changes).length > 0;
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+    return res.json({ total: merged.length, items: merged });
 
     return res.json({ total: merged.length, items: merged });
   } catch (err) {

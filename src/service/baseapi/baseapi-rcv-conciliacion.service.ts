@@ -1,4 +1,4 @@
-// src/service/baseapi/baseapi-rcv-concilacion.service.ts
+// src/service/baseapi/baseapi-rcv-conciliacion.service.ts
 import { prisma } from "../../lib/prisma.js";
 import {
     consultarComprasRcvBaseApi,
@@ -6,6 +6,7 @@ import {
 } from "./baseapi-rcv.service.js";
 import type { EmpresaBaseApiKey } from "./baseapi.empresas.js";
 import { mapRcvToConciliacionInput } from "./rcv-concilacion.mapper.js";
+import { enviarCorreoConciliacionRcv } from "./baseapi-rcv-conciliacion-mail.service.js";
 
 type TipoRcv = "ventas" | "compras";
 
@@ -94,7 +95,10 @@ export async function conciliarDocumentoRcv(params: {
     origenRcv?: string | null;
     formaPago?: string | null;
     observacion?: string | null;
+    conciliadoAt?: Date | null;
     responsable?: string | null;
+    enviarCorreo?: boolean;
+    correoDestino?: string[] | null;
 }) {
     const {
         empresa,
@@ -111,7 +115,10 @@ export async function conciliarDocumentoRcv(params: {
         origenRcv,
         formaPago,
         observacion,
+        conciliadoAt,
         responsable,
+        enviarCorreo = false,
+        correoDestino,
     } = params;
 
     const razonSocialDb = razonSocial ?? null;
@@ -121,8 +128,9 @@ export async function conciliarDocumentoRcv(params: {
     const formaPagoDb = formaPago ?? null;
     const observacionDb = observacion ?? null;
     const responsableDb = responsable ?? null;
+    const conciliadoAtDb = conciliadoAt ?? new Date();
 
-    return prisma.rcvConciliacion.upsert({
+    const conciliacion = await prisma.rcvConciliacion.upsert({
         where: {
             empresaKey_tipoRcv_tipoDoc_rutContraparte_folio: {
                 empresaKey: empresa,
@@ -149,7 +157,7 @@ export async function conciliarDocumentoRcv(params: {
             formaPago: formaPagoDb,
             observacion: observacionDb,
             responsable: responsableDb,
-            conciliadoAt: new Date(),
+            conciliadoAt: conciliadoAtDb,
         },
         update: {
             razonSocial: razonSocialDb,
@@ -163,9 +171,26 @@ export async function conciliarDocumentoRcv(params: {
             formaPago: formaPagoDb,
             observacion: observacionDb,
             responsable: responsableDb,
-            conciliadoAt: new Date(),
+            conciliadoAt: conciliadoAtDb,
         },
     });
+
+    if (enviarCorreo && correoDestino) {
+        try {
+            await enviarCorreoConciliacionRcv({
+                to: correoDestino,
+                conciliacion,
+            });
+        } catch (error) {
+            console.error("No se pudo enviar correo de conciliación:", {
+                correoDestino,
+                conciliacionId: conciliacion.id,
+                error,
+            });
+        }
+    }
+
+    return conciliacion;
 }
 
 export async function desconciliarDocumentoRcv(params: {
