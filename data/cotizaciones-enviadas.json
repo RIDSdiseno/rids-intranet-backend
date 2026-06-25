@@ -1,5 +1,485 @@
 [
   {
+    "id": 51,
+    "cotizacionId": null,
+    "to": "soporte@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.914Z"
+  },
+  {
+    "id": 50,
+    "cotizacionId": null,
+    "to": "rcalsin@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.913Z"
+  },
+  {
+    "id": 49,
+    "cotizacionId": null,
+    "to": "mahumada@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.913Z"
+  },
+  {
+    "id": 48,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.912Z"
+  },
+  {
+    "id": 47,
+    "cotizacionId": null,
+    "to": "diseno@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.912Z"
+  },
+  {
+    "id": 46,
+    "cotizacionId": null,
+    "to": "igonzalez@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.911Z"
+  },
+  {
+    "id": 45,
+    "cotizacionId": null,
+    "to": "gmartinez@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.911Z"
+  },
+  {
+    "id": 44,
+    "cotizacionId": null,
+    "to": "dbravo@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.910Z"
+  },
+  {
+    "id": 43,
+    "cotizacionId": null,
+    "to": "dlomparte@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.909Z"
+  },
+  {
+    "id": 42,
+    "cotizacionId": null,
+    "to": "carenas@rids.cl",
+    "subject": "Mensaje desde RIDS",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1782404820890-kdeoau",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-25T16:27:00.909Z"
+  },
+  {
+    "id": 41,
+    "cotizacionId": null,
+    "to": "ventas@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:11:38.020Z"
+  },
+  {
+    "id": 40,
+    "cotizacionId": null,
+    "to": "soporte@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:11:18.132Z"
+  },
+  {
+    "id": 39,
+    "cotizacionId": null,
+    "to": "rcalsin@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:10:58.079Z"
+  },
+  {
+    "id": 38,
+    "cotizacionId": null,
+    "to": "mahumada@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:10:38.046Z"
+  },
+  {
+    "id": 37,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:10:18.117Z"
+  },
+  {
+    "id": 36,
+    "cotizacionId": null,
+    "to": "diseno@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:09:58.001Z"
+  },
+  {
+    "id": 35,
+    "cotizacionId": null,
+    "to": "igonzalez@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:09:38.166Z"
+  },
+  {
+    "id": 34,
+    "cotizacionId": null,
+    "to": "gmartinez@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:09:18.052Z"
+  },
+  {
+    "id": 33,
+    "cotizacionId": null,
+    "to": "dbravo@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:08:57.993Z"
+  },
+  {
+    "id": 32,
+    "cotizacionId": null,
+    "to": "dlomparte@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:08:38.061Z"
+  },
+  {
+    "id": 31,
+    "cotizacionId": null,
+    "to": "carenas@rids.cl",
+    "subject": "Mensaje desde RIDS - Prueba Mailer (No borrar de Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892497422-y420ud",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:08:18.023Z"
+  },
+  {
+    "id": 30,
+    "cotizacionId": null,
+    "to": "ventas@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:08:32.812Z"
+  },
+  {
+    "id": 29,
+    "cotizacionId": null,
+    "to": "soporte@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:08:12.595Z"
+  },
+  {
+    "id": 28,
+    "cotizacionId": null,
+    "to": "rcalsin@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:07:52.363Z"
+  },
+  {
+    "id": 27,
+    "cotizacionId": null,
+    "to": "mahumada@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:07:32.497Z"
+  },
+  {
+    "id": 26,
+    "cotizacionId": null,
+    "to": "informaticap@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:07:12.635Z"
+  },
+  {
+    "id": 25,
+    "cotizacionId": null,
+    "to": "diseno@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:06:52.359Z"
+  },
+  {
+    "id": 24,
+    "cotizacionId": null,
+    "to": "igonzalez@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:06:32.521Z"
+  },
+  {
+    "id": 23,
+    "cotizacionId": null,
+    "to": "gmartinez@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:06:12.498Z"
+  },
+  {
+    "id": 22,
+    "cotizacionId": null,
+    "to": "dbravo@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:05:52.390Z"
+  },
+  {
+    "id": 21,
+    "cotizacionId": null,
+    "to": "dlomparte@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:05:32.509Z"
+  },
+  {
+    "id": 20,
+    "cotizacionId": null,
+    "to": "carenas@rids.cl",
+    "subject": "Mensaje desde RIDS - PRUEBA (No Cerrar en Tickets)",
+    "sentBy": "carenas@rids.cl",
+    "jobId": "mailjob-1781892311965-rhzcfs",
+    "meta": {
+      "attachments": 0
+    },
+    "clienteNombre": null,
+    "creadoPor": null,
+    "fechaCreacion": null,
+    "sentAt": "2026-06-19T18:05:12.547Z"
+  },
+  {
     "id": 19,
     "cotizacionId": 453,
     "to": "informaticap@rids.cl",
