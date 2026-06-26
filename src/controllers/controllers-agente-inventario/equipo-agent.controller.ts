@@ -66,6 +66,11 @@ type EquipoAgentPayload = {
     usuarioWindowsEjecutor?: string | null;
     taskUserConfigurado?: string | null;
 
+    platform?: string | null;
+    usuarioMacEjecutor?: string | null;
+    launchdLabel?: string | null;
+    fileVaultEstado?: string | null;
+
     antivirusNombre?: string | null;
     antivirusActivo?: boolean | null;
     firewallActivo?: boolean | null;
@@ -341,6 +346,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const source = cleanString(body.source) ?? "AGENT";
         const isAgentSync = source === "AGENT";
 
+        const platform =
+            cleanString(body.platform)?.toUpperCase() === "MACOS"
+                ? "MACOS"
+                : "WINDOWS";
+
         const tecnicoInstaladorEmail =
             cleanString(body.tecnicoInstaladorEmail)?.toLowerCase() ??
             cleanString(body.tecnicoEmail)?.toLowerCase() ??
@@ -348,6 +358,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
         const taskUserConfigurado = cleanString(body.taskUserConfigurado);
+
+        const usuarioMacEjecutor = cleanString(body.usuarioMacEjecutor);
+        const launchdLabel = cleanString(body.launchdLabel);
+        const fileVaultEstado = cleanString(body.fileVaultEstado);
+
+        const usuarioSistemaEjecutor =
+            platform === "MACOS"
+                ? usuarioMacEjecutor
+                : usuarioWindowsEjecutor;
 
         const tecnicoInstalador = tecnicoInstaladorEmail
             ? await prisma.tecnico.findFirst({
@@ -665,7 +684,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado:
+                    platform === "MACOS"
+                        ? fileVaultEstado
+                        : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
                 revisado: fechaRevisionAgente,
 
@@ -698,7 +720,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado:
+                    platform === "MACOS"
+                        ? fileVaultEstado
+                        : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
 
                 tipoDd: cleanString(body.tipoDd),
@@ -720,10 +745,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 actorId: null,
 
                 empresaId: empresaIdFinal ?? null,
-                description: "Inventario actualizado automáticamente desde agente Windows",
+                description:
+                    platform === "MACOS"
+                        ? "Inventario actualizado automáticamente desde agente macOS"
+                        : "Inventario actualizado automáticamente desde agente Windows",
                 changes: {
-                    origen: "WINDOWS_AGENT",
+                    origen: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
                     source,
+                    platform,
                     ejecutadoPor: "SISTEMA",
 
                     tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
@@ -731,8 +760,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                         tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
                     tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
 
+                    usuarioSistemaEjecutor,
                     usuarioWindowsEjecutor,
                     taskUserConfigurado,
+                    usuarioMacEjecutor,
+                    launchdLabel,
 
                     hostname,
                     serial,
@@ -751,7 +783,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     : "INVENTORY_SYNC",
                 mensaje: requiereRevisionSolicitante
                     ? "El agente detectó información de solicitante que requiere revisión manual."
-                    : "Inventario sincronizado automáticamente desde agente Windows",
+                    : platform === "MACOS"
+                        ? "Inventario sincronizado automáticamente desde agente macOS"
+                        : "Inventario sincronizado automáticamente desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
@@ -761,6 +795,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     uptimeSeconds,
 
                     source,
+                    platform,
                     ejecutadoPor: "SISTEMA",
 
                     tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
@@ -768,8 +803,12 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     tecnicoInstaladorEmail:
                         tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
 
+                    usuarioSistemaEjecutor,
                     usuarioWindowsEjecutor,
                     taskUserConfigurado,
+                    usuarioMacEjecutor,
+                    launchdLabel,
+                    fileVaultEstado,
 
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
@@ -813,6 +852,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         res.json({
             ok: true,
             message: "Inventario actualizado correctamente",
+            platform,
+            usuarioSistemaEjecutor,
+            usuarioMacEjecutor,
+            launchdLabel,
+            fileVaultEstado,
             equipoId: equipo.id_equipo,
             empresaId: empresaIdFinal,
             solicitanteId: idSolicitanteFinal,

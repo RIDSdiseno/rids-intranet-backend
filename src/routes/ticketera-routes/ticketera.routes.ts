@@ -20,6 +20,7 @@ import {
     getTicketsHomeSummary
 } from "../../controllers/tickets-rids/ticketera.controller.js";
 
+import { handleTicketAttachmentsUpload } from "../../middlewares/ticket-attachments-upload.middleware.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
 import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
@@ -72,11 +73,7 @@ ticketeraRouter.post(
     "/",
     auth(),
     onlyRole(...ROLES_INTERNOS),
-    uploadTicketAttachments.array("attachments", 10),
-    (err: any, _req: Request, res: Response, next: NextFunction) => {
-        if (err) return res.status(400).json({ ok: false, message: err.message });
-        return next();
-    },
+    handleTicketAttachmentsUpload,
     createTicket
 );
 
@@ -183,11 +180,7 @@ ticketeraRouter.post(
     "/:id/reply",
     auth(),
     onlyRole(...ROLES_INTERNOS),
-    uploadTicketAttachments.array("attachments"),
-    (err: any, _req: Request, res: Response, next: NextFunction) => {
-        if (err) return res.status(400).json({ ok: false, message: err.message });
-        return next();
-    },
+    handleTicketAttachmentsUpload,
     replyTicketAsAgent
 );
 

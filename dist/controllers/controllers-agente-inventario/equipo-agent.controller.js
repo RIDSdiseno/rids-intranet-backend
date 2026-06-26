@@ -199,11 +199,20 @@ export async function receiveEquipoAgentInventory(req, res) {
         const body = req.body;
         const source = cleanString(body.source) ?? "AGENT";
         const isAgentSync = source === "AGENT";
+        const platform = cleanString(body.platform)?.toUpperCase() === "MACOS"
+            ? "MACOS"
+            : "WINDOWS";
         const tecnicoInstaladorEmail = cleanString(body.tecnicoInstaladorEmail)?.toLowerCase() ??
             cleanString(body.tecnicoEmail)?.toLowerCase() ??
             null;
         const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
         const taskUserConfigurado = cleanString(body.taskUserConfigurado);
+        const usuarioMacEjecutor = cleanString(body.usuarioMacEjecutor);
+        const launchdLabel = cleanString(body.launchdLabel);
+        const fileVaultEstado = cleanString(body.fileVaultEstado);
+        const usuarioSistemaEjecutor = platform === "MACOS"
+            ? usuarioMacEjecutor
+            : usuarioWindowsEjecutor;
         const tecnicoInstalador = tecnicoInstaladorEmail
             ? await prisma.tecnico.findFirst({
                 where: {
@@ -469,7 +478,9 @@ export async function receiveEquipoAgentInventory(req, res) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado: platform === "MACOS"
+                    ? fileVaultEstado
+                    : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
                 revisado: fechaRevisionAgente,
                 ...(cleanString(body.tipoDd)
@@ -498,7 +509,9 @@ export async function receiveEquipoAgentInventory(req, res) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado: platform === "MACOS"
+                    ? fileVaultEstado
+                    : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
                 tipoDd: cleanString(body.tipoDd),
                 estadoAlm: cleanString(body.estadoAlm),
@@ -516,16 +529,22 @@ export async function receiveEquipoAgentInventory(req, res) {
                 // El técnico solo queda como instalador/configurador dentro de changes/metadata.
                 actorId: null,
                 empresaId: empresaIdFinal ?? null,
-                description: "Inventario actualizado automáticamente desde agente Windows",
+                description: platform === "MACOS"
+                    ? "Inventario actualizado automáticamente desde agente macOS"
+                    : "Inventario actualizado automáticamente desde agente Windows",
                 changes: {
-                    origen: "WINDOWS_AGENT",
+                    origen: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
                     source,
+                    platform,
                     ejecutadoPor: "SISTEMA",
                     tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
                     tecnicoInstaladorEmail: tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
                     tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
+                    usuarioSistemaEjecutor,
                     usuarioWindowsEjecutor,
                     taskUserConfigurado,
+                    usuarioMacEjecutor,
+                    launchdLabel,
                     hostname,
                     serial,
                     lastSeenAt: new Date().toISOString(),
@@ -541,7 +560,9 @@ export async function receiveEquipoAgentInventory(req, res) {
                     : "INVENTORY_SYNC",
                 mensaje: requiereRevisionSolicitante
                     ? "El agente detectó información de solicitante que requiere revisión manual."
-                    : "Inventario sincronizado automáticamente desde agente Windows",
+                    : platform === "MACOS"
+                        ? "Inventario sincronizado automáticamente desde agente macOS"
+                        : "Inventario sincronizado automáticamente desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
@@ -549,12 +570,17 @@ export async function receiveEquipoAgentInventory(req, res) {
                     uptimeText,
                     uptimeSeconds,
                     source,
+                    platform,
                     ejecutadoPor: "SISTEMA",
                     tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
                     tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
                     tecnicoInstaladorEmail: tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+                    usuarioSistemaEjecutor,
                     usuarioWindowsEjecutor,
                     taskUserConfigurado,
+                    usuarioMacEjecutor,
+                    launchdLabel,
+                    fileVaultEstado,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
                     conflictoCorreos,
@@ -587,6 +613,11 @@ export async function receiveEquipoAgentInventory(req, res) {
         res.json({
             ok: true,
             message: "Inventario actualizado correctamente",
+            platform,
+            usuarioSistemaEjecutor,
+            usuarioMacEjecutor,
+            launchdLabel,
+            fileVaultEstado,
             equipoId: equipo.id_equipo,
             empresaId: empresaIdFinal,
             solicitanteId: idSolicitanteFinal,
