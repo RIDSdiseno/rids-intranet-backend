@@ -38,6 +38,11 @@ const listQuerySchema = z.object({
   updatedFrom: z.coerce.date().optional(),
   updatedTo: z.coerce.date().optional(),
 
+  // Filtros por fecha de mantención.
+  // Estos vienen desde el front como string en formato YYYY-MM-DD.
+  mantencionDesde: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  mantencionHasta: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+
   auditTecnicoId: z.coerce.number().int().positive().optional(),
   auditFrom: z.coerce.date().optional(),
   auditTo: z.coerce.date().optional(),
@@ -845,6 +850,34 @@ export async function listEquipos(req: Request, res: Response) {
         updatedAt: {
           ...(q.updatedFrom ? { gte: q.updatedFrom } : {}),
           ...(q.updatedTo ? { lte: q.updatedTo } : {}),
+        },
+      });
+    }
+
+    /* =========================
+   Filtro por fecha de mantención 
+    ========================= */
+    /**
+     * Este filtro muestra solo equipos que tengan al menos una mantención
+     * registrada dentro del rango indicado.
+     *
+     * No filtra por fecha de creación/edición del equipo.
+     * Filtra por EquipoMantencion.fechaInicio.
+     */
+    if (q.mantencionDesde || q.mantencionHasta) {
+      andConditions.push({
+        equipoMantenciones: {
+          some: {
+            fechaInicio: {
+              ...(q.mantencionDesde
+                ? { gte: new Date(`${q.mantencionDesde}T00:00:00.000Z`) }
+                : {}),
+
+              ...(q.mantencionHasta
+                ? { lte: new Date(`${q.mantencionHasta}T23:59:59.999Z`) }
+                : {}),
+            },
+          },
         },
       });
     }

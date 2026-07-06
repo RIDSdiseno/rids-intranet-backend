@@ -60,8 +60,6 @@ import simpleapiRouter from "./routes/Simpleapi.routes.js";
 import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
-/* ===================== Permisos y Roles ===================== */
-import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 /* ===================== BaseAPI RCV ===================== */
 import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
 import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
@@ -72,9 +70,11 @@ import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
 /* ===================== Ubicaciones Tecnicos ===================== */
 import ubicacionesRouter from "./routes/ubicaciones.routes.js";
 import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
+import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-mantencion.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
+api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 api.use("/equipos/agent", equipoAgentRoutes);
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
@@ -82,7 +82,6 @@ api.use(onlyOwnEmpresa());
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/agenda", agendaRouter);
-api.use("/role-permissions", rolePermissionsRoutes);
 api.use("/manuales-tutoriales", manualesTutorialesRouter);
 api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
 api.use("/ubicaciones", ubicacionesRouter);

@@ -37,6 +37,7 @@ model Empresa {
   analisisInventarioIAs AnalisisInventarioIA[]
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
+  equipoMantencions     EquipoMantencion[]
 }
 
 model Sucursal {
@@ -276,6 +277,7 @@ model Solicitante {
   mantencionesRemotas  MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   bitacoras            BitacoraTecnico[]
+  equipoMantenciones   EquipoMantencion[]
 
   @@index([empresaId])
   @@index([isActive])
@@ -490,6 +492,7 @@ model Equipo {
   bitacoras                   BitacoraTecnico[]
   softwares                   EquipoSoftware[]
   agenteEventos               EquipoAgenteEvento[]
+  equipoMantenciones          EquipoMantencion[]
 
   @@index([empresaId])
   @@index([productoId])
@@ -578,6 +581,58 @@ model EquipoAgenteEvento {
   @@index([createdAt])
 }
 
+model EquipoMantencion {
+  id Int @id @default(autoincrement())
+
+  equipoId      Int?
+  empresaId     Int?
+  solicitanteId Int?
+  tecnicoId     Int?
+
+  tipo   String
+  estado String
+  origen String @default("MANT_GENERAL_RIDS")
+
+  fechaInicio      DateTime
+  fechaFin         DateTime?
+  duracionSegundos Int?
+  duracionTexto    String?
+
+  tareasRealizadas Json    @default("[]")
+  tareasConError   Json    @default("[]")
+  resumen          String?
+  reporteTexto     String?
+
+  serial        String?
+  hostname      String?
+  usuarioActual String?
+  localIp       String?
+  macAddress    String?
+  marca         String?
+  modelo        String?
+  agenteVersion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  equipo      Equipo?      @relation(fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+  empresa     Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+  tecnico     Tecnico?     @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([equipoId])
+  @@index([empresaId])
+  @@index([solicitanteId])
+  @@index([tecnicoId])
+  @@index([fechaInicio])
+  @@index([estado])
+  @@index([tipo])
+  @@index([origen])
+  @@index([serial])
+  @@index([hostname])
+  @@index([macAddress])
+}
+
 model Historial {
   tecnicoId          Int
   solicitante        String
@@ -654,21 +709,9 @@ model Tecnico {
   analisisInventarioIAs AnalisisInventarioIA[]
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
+  equipoMantenciones    EquipoMantencion[]
 
   @@index([empresaId])
-}
-
-model RolePermission {
-  id        Int      @id @default(autoincrement())
-  rol       String
-  permiso   String
-  permitido Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([rol, permiso])
-  @@index([rol])
-  @@index([permiso])
 }
 
 model Visita {
