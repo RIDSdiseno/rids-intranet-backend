@@ -61,6 +61,43 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
         const fechaInicio = fechaValida(mantencion.fechaInicio);
         const fechaFin = fechaValida(mantencion.fechaFin);
 
+        const tecnicoIdRaw = mantencion.tecnicoId;
+        const tecnicoId = tecnicoIdRaw ? Number(tecnicoIdRaw) : null;
+
+        let tecnicoResponsable: {
+            id_tecnico: number;
+            nombre: string;
+            email: string;
+            rol: string;
+            status: boolean;
+        } | null = null;
+
+        if (tecnicoId && Number.isFinite(tecnicoId)) {
+            tecnicoResponsable = await prisma.tecnico.findFirst({
+                where: {
+                    id_tecnico: tecnicoId,
+                    status: true,
+                    rol: {
+                        in: ["ADMIN", "ADMINISTRACION", "TECNICO"],
+                    },
+                },
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                    email: true,
+                    rol: true,
+                    status: true,
+                },
+            });
+
+            if (!tecnicoResponsable) {
+                return res.status(400).json({
+                    ok: false,
+                    error: "El técnico responsable no existe, está inactivo o no tiene un rol permitido.",
+                });
+            }
+        }
+
         if (!fechaInicio) {
             return res.status(400).json({
                 ok: false,
@@ -136,6 +173,7 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
                 equipoId: equipoEncontrado.id_equipo,
                 empresaId: equipoEncontrado.empresaId ?? null,
                 solicitanteId: equipoEncontrado.idSolicitante ?? null,
+                tecnicoId: tecnicoResponsable?.id_tecnico ?? null,
 
                 tipo: String(mantencion.tipo || "Mantención general"),
                 estado: String(mantencion.estado || "COMPLETADA"),
@@ -202,6 +240,16 @@ export async function listarMantencionesPorEquipo(req: Request, res: Response) {
             select: {
                 id: true,
                 equipoId: true,
+                tecnicoId: true,
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                        rol: true,
+                        status: true,
+                    },
+                },
                 tipo: true,
                 estado: true,
                 origen: true,
@@ -235,6 +283,59 @@ export async function listarMantencionesPorEquipo(req: Request, res: Response) {
         return res.status(500).json({
             ok: false,
             error: "Error al listar mantenciones del equipo.",
+        });
+    }
+}
+
+export async function listarTecnicosParaMantencion(req: Request, res: Response) {
+    try {
+        /**
+         * Este endpoint es consumido por RIDS-Mant.General.exe.
+         *
+         * No usa auth() de usuarios de la intranet porque el .exe no tiene sesión web.
+         * En su lugar, valida el token técnico/agente enviado en Authorization.
+         */
+        const authHeader = req.headers.authorization || "";
+        const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+        const expectedToken = process.env.AGENT_TOKEN || process.env.RIDS_AGENT_TOKEN || "test123";
+
+        if (!token || token !== expectedToken) {
+            return res.status(401).json({
+                ok: false,
+                error: "Token no autorizado.",
+            });
+        }
+
+        const tecnicos = await prisma.tecnico.findMany({
+            where: {
+                rol: {
+                    in: ["ADMIN", "ADMINISTRACION", "TECNICO"],
+                },
+                status: true,
+            },
+            orderBy: {
+                nombre: "asc",
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+            },
+        });
+
+        return res.json({
+            ok: true,
+            data: tecnicos,
+        });
+    } catch (error) {
+        console.error("listarTecnicosParaMantencion error:", error);
+
+        return res.status(500).json({
+            ok: false,
+            error: "Error al listar técnicos para mantención.",
         });
     }
 }
