@@ -1181,3 +1181,283 @@ export async function consultarEstadoSII(req: Request, res: Response) {
     }
 }
 */
+
+// =====================================================
+//      TYPES CREAR COTIZACIONES MASIVAS
+// =====================================================
+type ItemMasivoInput = {
+    productoId: number;
+    cantidad: number;
+};
+
+type CotizacionMasivaInput = {
+    entidadId: number;
+    comentariosCotizacion?: string | null;
+    items: ItemMasivoInput[];
+};
+
+type ItemNormalizadoMasivo = {
+    producto: {
+        id: number;
+        nombre: string;
+        descripcion: string | null;
+        precio: number | null;
+        precioTotal: number | null;
+        porcGanancia: number | null;
+        serie: string | null;
+        imagen: string | null;
+    };
+    cantidad: number;
+    precioVenta: number;
+    precioCosto: number;
+    subtotalItem: number;
+};
+
+// =====================================================
+//     CONSTANTES DE LÍMITES
+// =====================================================
+const MAX_COTIZACIONES_MASIVAS = 20;
+const MAX_ITEMS_POR_COTIZACION = 10;
+const MAX_ITEMS_TOTALES = 100;
+
+// =====================================================
+//    ENDPOINT DE CREAR COTIZACIONES MASIVAS
+// =====================================================
+export async function createCotizacionesMasivas(req: Request, res: Response) {
+    try {
+        const user = (req as any).user;
+        const userId = user?.id;
+
+        if (!userId) {
+            return res.status(401).json({
+                error: "No autenticado",
+            });
+        }
+
+        const {
+            cotizaciones,
+            comentariosCotizacion,
+            nombreGrupo,
+        } = req.body as {
+            cotizaciones: CotizacionMasivaInput[];
+            comentariosCotizacion?: string | null;
+            nombreGrupo?: string | null;
+        };
+
+        if (!Array.isArray(cotizaciones) || cotizaciones.length === 0) {
+            return res.status(400).json({
+                error: "Debes enviar al menos una cotización.",
+            });
+        }
+
+        if (cotizaciones.length > MAX_COTIZACIONES_MASIVAS) {
+            return res.status(400).json({
+                error: `No puedes generar más de ${MAX_COTIZACIONES_MASIVAS} cotizaciones por solicitud.`,
+            });
+        }
+
+        const totalItemsSolicitados = cotizaciones.reduce(
+            (acc: number, cot: CotizacionMasivaInput) =>
+                acc + (Array.isArray(cot.items) ? cot.items.length : 0),
+            0
+        );
+
+        if (totalItemsSolicitados > MAX_ITEMS_TOTALES) {
+            return res.status(400).json({
+                error: `No puedes generar más de ${MAX_ITEMS_TOTALES} ítems en una sola solicitud.`,
+            });
+        }
+
+        const cotizacionConDemasiadosItems = cotizaciones.find(
+            (cot: CotizacionMasivaInput) =>
+                Array.isArray(cot.items) &&
+                cot.items.length > MAX_ITEMS_POR_COTIZACION
+        );
+
+        if (cotizacionConDemasiadosItems) {
+            return res.status(400).json({
+                error: `Cada cotización puede tener como máximo ${MAX_ITEMS_POR_COTIZACION} productos.`,
+            });
+        }
+
+        const resultados = await prisma.$transaction(async (tx) => {
+            const creadas = [];
+
+            for (const cot of cotizaciones) {
+                const entidadId = Number(cot.entidadId);
+
+                if (!entidadId) {
+                    throw new Error("Todas las cotizaciones deben tener entidadId.");
+                }
+
+                if (!Array.isArray(cot.items) || cot.items.length === 0) {
+                    throw new Error("Todas las cotizaciones deben tener al menos un item.");
+                }
+
+                const entidad = await tx.entidadGestioo.findUnique({
+                    where: {
+                        id: entidadId,
+                    },
+                });
+
+                if (!entidad) {
+                    throw new Error(`No existe la entidad con ID ${entidadId}.`);
+                }
+
+                const nombreGrupoLimpio = nombreGrupo?.trim();
+
+                const comentarioBase =
+                    cot.comentariosCotizacion ??
+                    comentariosCotizacion ??
+                    "Cotización generada masivamente.";
+
+                const comentarioFinal = nombreGrupoLimpio
+                    ? `[${nombreGrupoLimpio}] ${comentarioBase}`
+                    : comentarioBase;
+
+                const productoIds = cot.items.map((item: ItemMasivoInput) =>
+                    Number(item.productoId)
+                );
+
+                const productos = await tx.productoGestioo.findMany({
+                    where: {
+                        id: {
+                            in: productoIds,
+                        },
+                        activo: true,
+                    },
+                    select: {
+                        id: true,
+                        nombre: true,
+                        descripcion: true,
+                        precio: true,
+                        precioTotal: true,
+                        porcGanancia: true,
+                        serie: true,
+                        imagen: true,
+                    },
+                });
+
+                if (productos.length !== productoIds.length) {
+                    throw new Error(
+                        `Hay productos inválidos o inactivos para la entidad ${entidad.nombre}.`
+                    );
+                }
+
+                const itemsNormalizados: ItemNormalizadoMasivo[] = cot.items.map(
+                    (item: ItemMasivoInput): ItemNormalizadoMasivo => {
+                        const producto = productos.find(
+                            (p) => p.id === Number(item.productoId)
+                        );
+
+                        if (!producto) {
+                            throw new Error(`Producto ${item.productoId} no encontrado.`);
+                        }
+
+                        const cantidad = Math.max(1, Number(item.cantidad || 1));
+                        const precioVenta = Number(
+                            producto.precioTotal ?? producto.precio ?? 0
+                        );
+                        const precioCosto = Number(producto.precio ?? 0);
+                        const subtotalItem = precioVenta * cantidad;
+
+                        return {
+                            producto,
+                            cantidad,
+                            precioVenta,
+                            precioCosto,
+                            subtotalItem,
+                        };
+                    }
+                );
+
+                const subtotalBruto = itemsNormalizados.reduce(
+                    (acc: number, item: ItemNormalizadoMasivo) =>
+                        acc + item.subtotalItem,
+                    0
+                );
+
+                const iva = Math.round(subtotalBruto * 0.19);
+                const total = subtotalBruto + iva;
+
+                const nuevaCotizacion = await tx.cotizacionGestioo.create({
+                    data: {
+                        entidadId,
+                        estado: "BORRADOR",
+                        tipo: "CLIENTE",
+                        moneda: "CLP",
+                        tasaCambio: 1,
+                        subtotal: subtotalBruto,
+                        descuentos: 0,
+                        iva,
+                        total,
+
+                        // MISMA IDEA QUE createCotizacion NORMAL
+                        tecnicoId: userId,
+
+                        comentariosCotizacion: comentarioFinal,
+
+                        items: {
+                            create: itemsNormalizados.map(
+                                (item: ItemNormalizadoMasivo) => ({
+                                    tipo: "PRODUCTO",
+                                    nombre: item.producto.nombre?.trim() ?? "",
+                                    descripcion: item.producto.descripcion?.trim() ?? "",
+                                    cantidad: item.cantidad,
+
+                                    precio: item.precioVenta,
+                                    precioOriginalCLP: item.precioVenta,
+                                    precioCosto: item.precioCosto,
+
+                                    porcGanancia:
+                                        item.producto.porcGanancia != null
+                                            ? Number(item.producto.porcGanancia)
+                                            : null,
+
+                                    tieneIVA: true,
+                                    tieneDescuento: false,
+                                    porcentaje: 0,
+
+                                    sku:
+                                        item.producto.serie &&
+                                            item.producto.serie.trim() !== ""
+                                            ? item.producto.serie
+                                            : generarSKU(),
+
+                                    imagen: item.producto.imagen ?? null,
+                                })
+                            ),
+                        },
+                    },
+                    include: {
+                        entidad: true,
+                        items: true,
+                        tecnico: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                                email: true,
+                            },
+                        },
+                    },
+                });
+
+                creadas.push(nuevaCotizacion);
+            }
+
+            return creadas;
+        });
+
+        return res.status(201).json({
+            ok: true,
+            message: `${resultados.length} cotización(es) generada(s) correctamente.`,
+            data: resultados,
+        });
+    } catch (error: any) {
+        console.error("❌ Error createCotizacionesMasivas:", error);
+
+        return res.status(500).json({
+            error: error?.message ?? "Error al crear cotizaciones masivas.",
+        });
+    }
+}

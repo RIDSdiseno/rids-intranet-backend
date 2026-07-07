@@ -16,6 +16,7 @@ import {
     pagarFactura,
     cambiarEstadoFactura,
     vincularEquipoAItem,
+    createCotizacionesMasivas,
 } from "../controllers/cotizaciones.controller.js";
 import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../controllers/cotizaciones-enviadas.controller.js";
 
@@ -38,5 +39,6 @@ cotizacionesRouter.post("/", createCotizacion);
 cotizacionesRouter.put("/:id", updateCotizacion);
 cotizacionesRouter.delete("/:id", deleteCotizacion);
 cotizacionesRouter.patch("/facturas/:id/estado", cambiarEstadoFactura);
+cotizacionesRouter.post("/masivas", auth(true), createCotizacionesMasivas);
 
 export default cotizacionesRouter;
