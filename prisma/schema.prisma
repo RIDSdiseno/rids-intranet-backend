@@ -1514,6 +1514,131 @@ model UbicacionTecnico {
   @@index([tecnicoId])
 }
 
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductoGestioo_backup_deleted_duplicates_2026_06 {
+  id            Int?
+  nombre        String?
+  descripcion   String?
+  tipo          String?
+  categoria     String?
+  serie         String?
+  estado        String?
+  precio        Float?
+  stock         Int?
+  fechaIngreso  DateTime?
+  garantiaMeses Int?
+  activo        Boolean?
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
+  imagen        String?
+  publicId      String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductoGestioo_backup_deleted_similares_2026_06 {
+  id            Int?
+  nombre        String?
+  descripcion   String?
+  tipo          String?
+  categoria     String?
+  serie         String?
+  estado        String?
+  precio        Float?
+  stock         Int?
+  fechaIngreso  DateTime?
+  garantiaMeses Int?
+  activo        Boolean?
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
+  imagen        String?
+  publicId      String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductoGestioo_backup_deleted_similares_manual_2026_06 {
+  id            Int?
+  nombre        String?
+  descripcion   String?
+  tipo          String?
+  categoria     String?
+  serie         String?
+  estado        String?
+  precio        Float?
+  stock         Int?
+  fechaIngreso  DateTime?
+  garantiaMeses Int?
+  activo        Boolean?
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
+  imagen        String?
+  publicId      String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductoGestioo_backup_encoding_2026_06 {
+  id            Int?
+  nombre        String?
+  descripcion   String?
+  tipo          String?
+  categoria     String?
+  serie         String?
+  estado        String?
+  precio        Float?
+  stock         Int?
+  fechaIngreso  DateTime?
+  garantiaMeses Int?
+  activo        Boolean?
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
+  imagen        String?
+  publicId      String?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ProductoGestioo_backup_normalizacion_2026_06 {
+  id            Int?
+  nombre        String?
+  descripcion   String?
+  tipo          String?
+  categoria     String?
+  serie         String?
+  estado        String?
+  precio        Float?
+  stock         Int?
+  fechaIngreso  DateTime?
+  garantiaMeses Int?
+  activo        Boolean?
+  marcaId       Int?
+  modeloId      Int?
+  entidadId     Int?
+  porcGanancia  Float?
+  precioTotal   Float?
+  imagen        String?
+  publicId      String?
+
+  @@ignore
+}
+
 enum TipoBitacoraTecnico {
   SOPORTE
   TERRENO

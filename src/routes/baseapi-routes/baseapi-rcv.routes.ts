@@ -40,10 +40,11 @@ router.get(
   getBaseApiRcvDashboardController
 );
 
+// Lectura de conciliación: solo ADMINISTRACION (pestaña restringida a administradores)
 router.get(
   "/conciliacion",
   auth(),
-  onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"),
+  onlyRole("ADMINISTRACION"),
   getConciliacionRcv
 );
 

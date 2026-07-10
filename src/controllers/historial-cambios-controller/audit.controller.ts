@@ -170,8 +170,9 @@ export const createAuditLog = async (req: Request, res: Response) => {
                 entity: entity ? String(entity) : 'Recordatorio',
                 entityId: entityId ? String(entityId) : 'unknown',
                 empresaId: empresaId ? Number(empresaId) : null,
-                action: action ? String(action) : 'REMINDER',
-                changes: changes ? changes : { description: description ?? 'Recordatorio enviado' },
+                action: action ? String(action) : 'CREATE',
+                description: description ? String(description) : 'Recordatorio enviado',
+                changes: changes ? changes : null,
                 actorId: actorId ?? null,
             },
         });
