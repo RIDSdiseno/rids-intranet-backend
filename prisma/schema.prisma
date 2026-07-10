@@ -582,43 +582,36 @@ model EquipoAgenteEvento {
 }
 
 model EquipoMantencion {
-  id Int @id @default(autoincrement())
-
-  equipoId      Int?
-  empresaId     Int?
-  solicitanteId Int?
-  tecnicoId     Int?
-
-  tipo   String
-  estado String
-  origen String @default("MANT_GENERAL_RIDS")
-
+  id               Int          @id @default(autoincrement())
+  equipoId         Int?
+  empresaId        Int?
+  solicitanteId    Int?
+  tecnicoId        Int?
+  tipo             String
+  estado           String
+  origen           String       @default("MANT_GENERAL_RIDS")
   fechaInicio      DateTime
   fechaFin         DateTime?
   duracionSegundos Int?
   duracionTexto    String?
-
-  tareasRealizadas Json    @default("[]")
-  tareasConError   Json    @default("[]")
+  tareasRealizadas Json         @default("[]")
+  tareasConError   Json         @default("[]")
   resumen          String?
   reporteTexto     String?
-
-  serial        String?
-  hostname      String?
-  usuarioActual String?
-  localIp       String?
-  macAddress    String?
-  marca         String?
-  modelo        String?
-  agenteVersion String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  equipo      Equipo?      @relation(fields: [equipoId], references: [id_equipo], onDelete: SetNull)
-  empresa     Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
-  tecnico     Tecnico?     @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
+  serial           String?
+  hostname         String?
+  usuarioActual    String?
+  localIp          String?
+  macAddress       String?
+  marca            String?
+  modelo           String?
+  agenteVersion    String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  equipo           Equipo?      @relation(fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+  empresa          Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante      Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+  tecnico          Tecnico?     @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
 
   @@index([equipoId])
   @@index([empresaId])
@@ -1555,6 +1548,61 @@ model UbicacionTecnico {
   @@index([createdAt])
   @@index([estadoTracking])
   @@index([tecnicoId])
+}
+
+model CotizacionMasivaEjecucion {
+  id                Int      @id @default(autoincrement())
+  plantillaId       Int
+  fecha             DateTime @default(now())
+  nombre            String?
+  totalCotizaciones Int      @default(0)
+
+  @@index([fecha])
+  @@index([plantillaId])
+}
+
+model CotizacionMasivaPlantilla {
+  id          Int      @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  tecnicoId   Int?
+
+  @@index([activo])
+  @@index([tecnicoId])
+}
+
+model CotizacionMasivaPlantillaCantidad {
+  id                 Int @id @default(autoincrement())
+  plantillaEntidadId Int
+  productoId         Int
+  cantidad           Int @default(1)
+
+  @@unique([plantillaEntidadId, productoId])
+  @@index([plantillaEntidadId])
+  @@index([productoId])
+}
+
+model CotizacionMasivaPlantillaEntidad {
+  id          Int @id @default(autoincrement())
+  plantillaId Int
+  entidadId   Int
+
+  @@unique([plantillaId, entidadId])
+  @@index([entidadId])
+  @@index([plantillaId])
+}
+
+model CotizacionMasivaPlantillaItem {
+  id          Int @id @default(autoincrement())
+  plantillaId Int
+  productoId  Int
+
+  @@unique([plantillaId, productoId])
+  @@index([plantillaId])
+  @@index([productoId])
 }
 
 enum TipoBitacoraTecnico {
