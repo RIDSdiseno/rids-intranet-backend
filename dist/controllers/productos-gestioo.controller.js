@@ -1,3 +1,4 @@
+// src/controllers/productos-gestioo.controller.ts
 import fs from "fs/promises";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
@@ -13,6 +14,43 @@ function calcularPrecioTotal(precioCosto, porcGanancia) {
         return precioCosto;
     const ganancia = precioCosto * (porcGanancia / 100);
     return Math.round(precioCosto + ganancia);
+}
+function normalizarNombreProducto(value) {
+    return value.trim().replace(/\s+/g, " ");
+}
+function normalizarNombreComparacion(value) {
+    return value
+        .trim()
+        .replace(/\s+/g, " ")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+}
+async function buscarProductoDuplicadoPorNombre(nombre, productoIdExcluir) {
+    const nombreComparacion = normalizarNombreComparacion(nombre);
+    const productosActivos = await prisma.productoGestioo.findMany({
+        where: {
+            activo: true,
+            ...(productoIdExcluir
+                ? {
+                    id: {
+                        not: productoIdExcluir,
+                    },
+                }
+                : {}),
+        },
+        select: {
+            id: true,
+            nombre: true,
+            serie: true,
+            stock: true,
+            estado: true,
+            activo: true,
+        },
+    });
+    return productosActivos.find((producto) => {
+        return normalizarNombreComparacion(producto.nombre) === nombreComparacion;
+    });
 }
 /* ======================================
    SEED
@@ -65,8 +103,19 @@ export async function createProducto(req, res) {
         const { nombre, descripcion, precio, // puede venir viejo (costo)
         precioCosto, // nuevo campo recomendado
         categoria, stock, porcGanancia, imagen, serie, conIVA, } = req.body;
-        if (!nombre?.trim()) {
-            return res.status(400).json({ error: "El nombre es obligatorio" });
+        const nombreLimpio = normalizarNombreProducto(String(nombre ?? ""));
+        if (!nombreLimpio) {
+            return res.status(400).json({
+                error: "El nombre es obligatorio",
+            });
+        }
+        const productoDuplicado = await buscarProductoDuplicadoPorNombre(nombreLimpio);
+        if (productoDuplicado) {
+            return res.status(409).json({
+                error: "Ya existe un producto activo con ese nombre.",
+                message: "Ya existe un producto activo con ese nombre.",
+                producto: productoDuplicado,
+            });
         }
         // COSTO REAL: priorizamos precioCosto, si no viene usamos precio
         const costoReal = precioCosto !== undefined && precioCosto !== null
@@ -82,10 +131,10 @@ export async function createProducto(req, res) {
             ? (aplicaIVA ? costoReal / 1.19 : costoReal)
             : null;
         const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
-        // 1️⃣ Crear producto
+        // Crear producto
         const nuevo = await prisma.productoGestioo.create({
             data: {
-                nombre: nombre.trim(),
+                nombre: nombreLimpio,
                 descripcion: descripcion?.trim() || null,
                 //Guardamos siempre el COSTO en "precio"
                 precio: costoReal,
@@ -101,7 +150,7 @@ export async function createProducto(req, res) {
                 serie: serie || null,
             },
         });
-        // 2️⃣ Si no vino serie, generar una
+        // Si no vino serie, generar una
         if (!serie) {
             const serieGenerada = `PROD-${nuevo.id.toString().padStart(4, "0")}`;
             const actualizado = await prisma.productoGestioo.update({
@@ -171,8 +220,19 @@ export async function updateProducto(req, res) {
         const { nombre, descripcion, precio, // puede venir como antes
         precioCosto, // nuevo campo desde front
         categoria, stock, serie, porcGanancia, imagen, publicId, conIVA, } = req.body;
-        if (!nombre?.trim()) {
-            return res.status(400).json({ error: "El nombre es obligatorio" });
+        const nombreLimpio = normalizarNombreProducto(String(nombre ?? ""));
+        if (!nombreLimpio) {
+            return res.status(400).json({
+                error: "El nombre es obligatorio",
+            });
+        }
+        const productoDuplicado = await buscarProductoDuplicadoPorNombre(nombreLimpio, id);
+        if (productoDuplicado) {
+            return res.status(409).json({
+                error: "Ya existe otro producto activo con ese nombre.",
+                message: "Ya existe otro producto activo con ese nombre.",
+                producto: productoDuplicado,
+            });
         }
         // COSTO REAL: priorizamos precioCosto, luego precio, luego lo que ya está en BD
         const costoReal = precioCosto !== undefined && precioCosto !== null
@@ -187,7 +247,7 @@ export async function updateProducto(req, res) {
         const costoBase = aplicaIVA ? costoReal / 1.19 : costoReal;
         const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
         const data = {
-            nombre: nombre.trim(),
+            nombre: nombreLimpio,
             descripcion: descripcion?.trim() || null,
             // Guardamos costo real en "precio"
             precio: costoReal,
@@ -229,12 +289,12 @@ export async function deleteProducto(req, res) {
         if (isNaN(id)) {
             return res.status(400).json({ error: "ID inválido" });
         }
-        // 1️⃣ Buscar producto en BD
+        // Buscar producto en BD
         const producto = await prisma.productoGestioo.findUnique({ where: { id } });
         if (!producto) {
             return res.status(404).json({ error: "Producto no encontrado" });
         }
-        // 2️⃣ Si tiene imagen en Cloudinary → eliminarla
+        // Si tiene imagen en Cloudinary → eliminarla
         if (producto.publicId) {
             try {
                 console.log("🗑 Eliminando imagen Cloudinary:", producto.publicId);
@@ -245,7 +305,7 @@ export async function deleteProducto(req, res) {
                 console.warn("⚠ No se pudo eliminar imagen en Cloudinary:", error);
             }
         }
-        // 3️⃣ Eliminar producto de la BD
+        // Eliminar producto de la BD
         await prisma.productoGestioo.delete({ where: { id } });
         return res.json({
             message: "Producto eliminado correctamente",

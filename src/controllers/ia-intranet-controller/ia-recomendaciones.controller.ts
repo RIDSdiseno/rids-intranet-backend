@@ -1,7 +1,7 @@
 // Controlador para generar recomendaciones operativas con IA
 import type { Request, Response } from "express";
 import OpenAI from "openai";
-import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
+import { buildReporteEmpresaData } from "../../service/reportes/ia-metricas-reportes/reportEmpresa.service.js";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY

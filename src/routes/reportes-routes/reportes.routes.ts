@@ -1,0 +1,9 @@
+import { Router } from "express";
+import { getReporteEmpresa } from "../../controllers/reportes-controller/reportes.controller.js";
+
+const router = Router();
+
+// Web / Dashboard
+router.get("/empresa/:empresaId", getReporteEmpresa);
+
+export default router;

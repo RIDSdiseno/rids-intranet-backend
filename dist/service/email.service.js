@@ -1,3 +1,4 @@
+// src/service/email.service.ts
 import nodemailer from "nodemailer";
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.gmail.com",
