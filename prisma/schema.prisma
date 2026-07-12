@@ -481,6 +481,14 @@ model Equipo {
   solicitanteDetectadoId      Int?
   usuarioActual               String?
   observaciones               String?
+  mantGeneralConfigPath       String?
+  mantGeneralExePath          String?
+  mantGeneralInstalado        Boolean                 @default(false)
+  mantGeneralInstalledAt      DateTime?
+  mantGeneralLastSeenAt       DateTime?
+  mantGeneralTecnicoId        Int?
+  mantGeneralVersion          String?
+  propietarioExterno          String?
   solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                     DetalleEquipo?
   detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -505,6 +513,9 @@ model Equipo {
   @@index([agenteActivo])
   @@index([requiereRevisionSolicitante])
   @@index([estado])
+  @@index([mantGeneralInstalado])
+  @@index([mantGeneralLastSeenAt])
+  @@index([mantGeneralTecnicoId])
 }
 
 model EquipoAdicional {
@@ -1209,6 +1220,7 @@ model AgendaVisita {
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
   fechaInicioRuta      DateTime?
+  fechaInicioVisita    DateTime?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   tecnicos             AgendaTecnico[]
 
@@ -1640,6 +1652,7 @@ enum EstadoAgenda {
   COMPLETADA
   CANCELADA
   EN_RUTA
+  INICIADA
 }
 
 enum EstadoDTE {
