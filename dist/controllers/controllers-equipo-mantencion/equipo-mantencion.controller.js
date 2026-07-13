@@ -28,6 +28,21 @@ function fechaValida(value) {
         return null;
     return date;
 }
+function obtenerTokenMantGeneral(req) {
+    const authHeader = req.headers.authorization || "";
+    return authHeader.replace(/^Bearer\s+/i, "").trim();
+}
+function obtenerExpectedTokenMantGeneral() {
+    return (process.env.AGENT_TOKEN ||
+        process.env.RIDS_AGENT_TOKEN ||
+        process.env.MANT_GENERAL_TOKEN ||
+        "test123");
+}
+function validarTokenMantGeneral(req) {
+    const token = obtenerTokenMantGeneral(req);
+    const expectedToken = obtenerExpectedTokenMantGeneral();
+    return Boolean(token && token === expectedToken);
+}
 export async function registrarMantencionEquipo(req, res) {
     try {
         const { equipo, mantencion } = req.body;
@@ -157,6 +172,17 @@ export async function registrarMantencionEquipo(req, res) {
                 agenteVersion,
             },
         });
+        await prisma.equipo.update({
+            where: {
+                id_equipo: equipoEncontrado.id_equipo,
+            },
+            data: {
+                mantGeneralInstalado: true,
+                mantGeneralVersion: agenteVersion,
+                mantGeneralLastSeenAt: new Date(),
+                mantGeneralTecnicoId: tecnicoResponsable?.id_tecnico ?? null,
+            },
+        });
         return res.status(201).json({
             ok: true,
             registrado: true,
@@ -247,10 +273,7 @@ export async function listarTecnicosParaMantencion(req, res) {
          * No usa auth() de usuarios de la intranet porque el .exe no tiene sesión web.
          * En su lugar, valida el token técnico/agente enviado en Authorization.
          */
-        const authHeader = req.headers.authorization || "";
-        const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-        const expectedToken = process.env.AGENT_TOKEN || process.env.RIDS_AGENT_TOKEN || "test123";
-        if (!token || token !== expectedToken) {
+        if (!validarTokenMantGeneral(req)) {
             return res.status(401).json({
                 ok: false,
                 error: "Token no autorizado.",
@@ -284,6 +307,120 @@ export async function listarTecnicosParaMantencion(req, res) {
         return res.status(500).json({
             ok: false,
             error: "Error al listar técnicos para mantención.",
+        });
+    }
+}
+export async function registrarInstalacionMantGeneral(req, res) {
+    try {
+        /**
+         * Endpoint consumido por RIDS-Mant.General.exe.
+         *
+         * Registra que el equipo tiene Mant.General disponible/configurado.
+         * No crea equipos nuevos: solo vincula si encuentra un equipo existente.
+         */
+        if (!validarTokenMantGeneral(req)) {
+            return res.status(401).json({
+                ok: false,
+                error: "Token no autorizado.",
+            });
+        }
+        const { equipo, instalacion } = req.body;
+        if (!equipo) {
+            return res.status(400).json({
+                ok: false,
+                error: "Payload inválido. Se requiere equipo.",
+            });
+        }
+        const serial = limpiarTexto(equipo.serial);
+        const hostname = limpiarTexto(equipo.hostname);
+        const macAddress = normalizarMac(equipo.macAddress ?? equipo.mac);
+        if (!serial && !hostname && !macAddress) {
+            return res.status(400).json({
+                ok: false,
+                error: "No se pudo identificar el equipo. Se requiere serial, hostname o macAddress.",
+            });
+        }
+        let equipoEncontrado = null;
+        if (serial) {
+            equipoEncontrado = await prisma.equipo.findFirst({
+                where: {
+                    deletedAt: null,
+                    serial,
+                },
+            });
+        }
+        if (!equipoEncontrado && hostname) {
+            equipoEncontrado = await prisma.equipo.findFirst({
+                where: {
+                    deletedAt: null,
+                    hostname,
+                },
+            });
+        }
+        if (!equipoEncontrado && macAddress) {
+            equipoEncontrado = await prisma.equipo.findFirst({
+                where: {
+                    deletedAt: null,
+                    macAddress,
+                },
+            });
+        }
+        if (!equipoEncontrado) {
+            return res.status(202).json({
+                ok: true,
+                registrado: false,
+                equipoEncontrado: false,
+                message: "Mant.General fue abierto, pero no se registró en la intranet porque no se encontró un equipo asociado.",
+                detalle: {
+                    serial,
+                    hostname,
+                    macAddress,
+                },
+            });
+        }
+        const tecnicoIdRaw = instalacion?.tecnicoId;
+        const tecnicoId = tecnicoIdRaw ? Number(tecnicoIdRaw) : null;
+        const version = limpiarTexto(instalacion?.version);
+        const configPath = limpiarTexto(instalacion?.configPath);
+        const exePath = limpiarTexto(instalacion?.exePath);
+        const installedAt = fechaValida(instalacion?.installedAt) ?? new Date();
+        const equipoActualizado = await prisma.equipo.update({
+            where: {
+                id_equipo: equipoEncontrado.id_equipo,
+            },
+            data: {
+                mantGeneralInstalado: true,
+                mantGeneralVersion: version,
+                mantGeneralLastSeenAt: new Date(),
+                mantGeneralInstalledAt: equipoEncontrado.mantGeneralInstalledAt ?? installedAt,
+                mantGeneralConfigPath: configPath,
+                mantGeneralExePath: exePath,
+                mantGeneralTecnicoId: tecnicoId && Number.isFinite(tecnicoId) ? tecnicoId : null,
+            },
+            select: {
+                id_equipo: true,
+                serial: true,
+                hostname: true,
+                mantGeneralInstalado: true,
+                mantGeneralVersion: true,
+                mantGeneralLastSeenAt: true,
+                mantGeneralInstalledAt: true,
+                mantGeneralTecnicoId: true,
+            },
+        });
+        return res.json({
+            ok: true,
+            registrado: true,
+            equipoEncontrado: true,
+            message: "Instalación de Mant.General registrada correctamente.",
+            equipo: equipoActualizado,
+        });
+    }
+    catch (error) {
+        console.error("registrarInstalacionMantGeneral error:", error);
+        return res.status(500).json({
+            ok: false,
+            error: "Error al registrar instalación de Mant.General.",
         });
     }
 }

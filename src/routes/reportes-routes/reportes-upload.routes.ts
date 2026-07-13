@@ -5,6 +5,7 @@ import {
     listHistorialReportes,
     uploadReporteSupabase,
     convertDocxToPdf,
+    previewDocxToPdf,
     enviarInformeResumenCorreo
 } from "../../controllers/reportes-controller/reportes-upload.controller.js";
 
@@ -17,5 +18,6 @@ router.get("/history", auth(), onlyOwnEmpresa(), listHistorialReportes);
 router.post("/upload", auth(), uploadReporteSupabase);
 router.post("/convert-pdf", auth(), convertDocxToPdf);
 router.post("/enviar-informe-resumen", auth(), enviarInformeResumenCorreo);
+router.post("/preview-docx-pdf", previewDocxToPdf);
 
 export default router;

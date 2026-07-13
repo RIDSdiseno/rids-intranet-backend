@@ -10,6 +10,7 @@ var AuditAction;
     AuditAction["UPDATE"] = "UPDATE";
     AuditAction["DELETE"] = "DELETE";
 })(AuditAction || (AuditAction = {}));
+const PROPIEDADES_EQUIPO = ["Empresa", "Personal", "Externo"];
 /* ================== Schemas ================== */
 const listQuerySchema = z.object({
     page: z.coerce.number().int().positive().default(1),
@@ -17,6 +18,8 @@ const listQuerySchema = z.object({
     search: z.string().trim().optional(),
     marca: z.string().trim().optional(),
     tipo: z.nativeEnum(TipoEquipo).optional(),
+    propiedad: z.enum(PROPIEDADES_EQUIPO).optional(),
+    propietarioExterno: z.string().trim().optional(),
     anioPc: z.coerce.number().int().optional(),
     anioPcDesde: z.coerce.number().int().optional(),
     anioPcHasta: z.coerce.number().int().optional(),
@@ -29,6 +32,17 @@ const listQuerySchema = z.object({
     // Estos vienen desde el front como string en formato YYYY-MM-DD.
     mantencionDesde: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     mantencionHasta: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    // Filtros Mant.General RIDS
+    mantGeneral: z.enum(["TODOS", "INSTALADO", "NO_INSTALADO"]).default("TODOS").optional(),
+    mantGeneralDesde: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    mantGeneralHasta: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    // Filtros Agente / Script RIDS
+    agente: z
+        .enum(["TODOS", "INSTALADO", "NO_INSTALADO", "ACTIVO", "SIN_CONEXION"])
+        .default("TODOS")
+        .optional(),
+    agenteDesde: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    agenteHasta: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     auditTecnicoId: z.coerce.number().int().positive().optional(),
     auditFrom: z.coerce.date().optional(),
     auditTo: z.coerce.date().optional(),
@@ -52,6 +66,7 @@ const listQuerySchema = z.object({
         "ram",
         "disco",
         "propiedad",
+        "propietarioExterno",
         "createdAt",
         "updatedAt",
         // AGENTE
@@ -59,6 +74,11 @@ const listQuerySchema = z.object({
         "usuarioActual",
         "lastSeenAt",
         "estadoAgente",
+        // MANT.GENERAL RIDS
+        "mantGeneralInstalado",
+        "mantGeneralVersion",
+        "mantGeneralLastSeenAt",
+        "mantGeneralInstalledAt",
     ])
         .default("id_equipo")
         .optional(),
@@ -83,7 +103,8 @@ const createEquipoSchema = z.object({
     procesador: z.string().trim().min(1),
     ram: z.string().trim().min(1),
     disco: z.string().trim().min(1),
-    propiedad: z.string().trim().min(1),
+    propiedad: z.enum(PROPIEDADES_EQUIPO).default("Empresa"),
+    propietarioExterno: z.string().trim().max(200).optional().nullable(),
     estado: z.nativeEnum(EstadoEquipo).default(EstadoEquipo.ACTIVO),
     observaciones: z.string().trim().optional().nullable(),
     macWifi: z.string().optional(),
@@ -123,7 +144,8 @@ const equipoUpdateSchema = z.object({
     procesador: z.string().trim().min(1).optional(),
     ram: z.string().trim().min(1).optional(),
     disco: z.string().trim().min(1).optional(),
-    propiedad: z.string().trim().min(1).optional(),
+    propiedad: z.enum(PROPIEDADES_EQUIPO).optional(),
+    propietarioExterno: z.string().trim().max(200).optional().nullable(),
     adicionales: z.array(adicionalSchema).optional(),
     estado: z.nativeEnum(EstadoEquipo).optional(),
     observaciones: z.string().trim().optional().nullable(),
@@ -150,6 +172,20 @@ const equiposCache = new Map();
 function clearCache() {
     equiposCache.clear();
 }
+function normalizarPropiedadEquipo(value) {
+    const propiedad = String(value ?? "Empresa").trim();
+    if (PROPIEDADES_EQUIPO.includes(propiedad)) {
+        return propiedad;
+    }
+    return "Empresa";
+}
+function normalizarPropietarioExterno(propiedad, value) {
+    const propietarioExterno = String(value ?? "").trim();
+    if (propiedad !== "Externo") {
+        return null;
+    }
+    return propietarioExterno || null;
+}
 /* ================== Helpers ================== */
 function mapOrderBy(sortBy, sortDir) {
     const allowed = [
@@ -164,6 +200,7 @@ function mapOrderBy(sortBy, sortDir) {
         "ram",
         "disco",
         "propiedad",
+        "propietarioExterno",
         "createdAt",
         "updatedAt",
         // AGENTE
@@ -172,6 +209,11 @@ function mapOrderBy(sortBy, sortDir) {
         "lastSeenAt",
         "estadoAgente",
         "estado",
+        // MANT.GENERAL RIDS
+        "mantGeneralInstalado",
+        "mantGeneralVersion",
+        "mantGeneralLastSeenAt",
+        "mantGeneralInstalledAt",
     ];
     const key = allowed.includes(sortBy)
         ? sortBy
@@ -478,6 +520,7 @@ function flattenRow(e) {
         ram: e.ram,
         disco: e.disco,
         propiedad: e.propiedad,
+        propietarioExterno: e.propietarioExterno ?? null,
         observaciones: e.observaciones ?? null,
         createdAt: e.createdAt,
         updatedAt: e.updatedAt,
@@ -505,6 +548,16 @@ function flattenRow(e) {
         agenteVersion: e.agenteVersion ?? null,
         agenteActivo: e.agenteActivo ?? false,
         estadoAgente: e.estadoAgente ?? "SIN_AGENTE",
+        // ===============================
+        // MANT.GENERAL RIDS
+        // ===============================
+        mantGeneralInstalado: e.mantGeneralInstalado ?? false,
+        mantGeneralVersion: e.mantGeneralVersion ?? null,
+        mantGeneralLastSeenAt: e.mantGeneralLastSeenAt ?? null,
+        mantGeneralInstalledAt: e.mantGeneralInstalledAt ?? null,
+        mantGeneralConfigPath: e.mantGeneralConfigPath ?? null,
+        mantGeneralExePath: e.mantGeneralExePath ?? null,
+        mantGeneralTecnicoId: e.mantGeneralTecnicoId ?? null,
         // Detalle técnico manual + datos de agente
         macWifi: detalle?.macWifi ?? null,
         redEthernet: detalle?.redEthernet ?? null,
@@ -695,6 +748,19 @@ export async function listEquipos(req, res) {
                 tipo: q.tipo,
             });
         }
+        if (q.propiedad) {
+            andConditions.push({
+                propiedad: q.propiedad,
+            });
+        }
+        if (q.propietarioExterno) {
+            andConditions.push({
+                propietarioExterno: {
+                    contains: q.propietarioExterno,
+                    mode: INS,
+                },
+            });
+        }
         if (q.anioPc) {
             andConditions.push({
                 anioPc: q.anioPc,
@@ -764,6 +830,68 @@ export async function listEquipos(req, res) {
             });
         }
         /* =========================
+       Filtro Mant.General RIDS
+    ========================= */
+        if (q.mantGeneral === "INSTALADO") {
+            andConditions.push({
+                mantGeneralInstalado: true,
+            });
+        }
+        if (q.mantGeneral === "NO_INSTALADO") {
+            andConditions.push({
+                mantGeneralInstalado: false,
+            });
+        }
+        if (q.mantGeneralDesde || q.mantGeneralHasta) {
+            andConditions.push({
+                mantGeneralLastSeenAt: {
+                    ...(q.mantGeneralDesde
+                        ? { gte: new Date(`${q.mantGeneralDesde}T00:00:00.000Z`) }
+                        : {}),
+                    ...(q.mantGeneralHasta
+                        ? { lte: new Date(`${q.mantGeneralHasta}T23:59:59.999Z`) }
+                        : {}),
+                },
+            });
+        }
+        /* =========================
+        Filtro Agente / Script RIDS
+        ========================= */
+        if (q.agente === "INSTALADO") {
+            andConditions.push({
+                lastSeenAt: {
+                    not: null,
+                },
+            });
+        }
+        if (q.agente === "NO_INSTALADO") {
+            andConditions.push({
+                lastSeenAt: null,
+            });
+        }
+        if (q.agente === "ACTIVO") {
+            andConditions.push({
+                agenteActivo: true,
+            });
+        }
+        if (q.agente === "SIN_CONEXION") {
+            andConditions.push({
+                estadoAgente: "SIN_CONEXION",
+            });
+        }
+        if (q.agenteDesde || q.agenteHasta) {
+            andConditions.push({
+                lastSeenAt: {
+                    ...(q.agenteDesde
+                        ? { gte: new Date(`${q.agenteDesde}T00:00:00.000Z`) }
+                        : {}),
+                    ...(q.agenteHasta
+                        ? { lte: new Date(`${q.agenteHasta}T23:59:59.999Z`) }
+                        : {}),
+                },
+            });
+        }
+        /* =========================
            Búsqueda general
         ========================= */
         if (searchText) {
@@ -807,6 +935,12 @@ export async function listEquipos(req, res) {
                 },
                 {
                     propiedad: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    propietarioExterno: {
                         contains: searchText,
                         mode: INS,
                     },
@@ -894,6 +1028,68 @@ export async function listEquipos(req, res) {
                                 },
                             },
                         },
+                    },
+                },
+                // Agente / Script RIDS
+                {
+                    hostname: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    usuarioActual: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    dominio: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    localIp: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    publicIp: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    macAddress: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    agenteVersion: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                // Mant.General RIDS
+                {
+                    mantGeneralVersion: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    mantGeneralConfigPath: {
+                        contains: searchText,
+                        mode: INS,
+                    },
+                },
+                {
+                    mantGeneralExePath: {
+                        contains: searchText,
+                        mode: INS,
                     },
                 },
             ];
@@ -1008,6 +1204,17 @@ export async function listEquipos(req, res) {
                     observaciones: true,
                     anioPc: true,
                     anioPcOrigen: true,
+                    propiedad: true,
+                    propietarioExterno: true,
+                    mantGeneralInstalado: true,
+                    mantGeneralVersion: true,
+                    mantGeneralLastSeenAt: true,
+                    hostname: true,
+                    usuarioActual: true,
+                    lastSeenAt: true,
+                    agenteActivo: true,
+                    estadoAgente: true,
+                    agenteVersion: true,
                 },
                 orderBy,
                 skip,
@@ -1106,6 +1313,8 @@ export async function createEquipo(req, res) {
                     : calculoAnioPc.anioPc
                         ? "AUTO"
                         : "NO_DETERMINADO";
+                const propiedadNormalizada = normalizarPropiedadEquipo(data.propiedad);
+                const propietarioExternoNormalizado = normalizarPropietarioExterno(propiedadNormalizada, data.propietarioExterno);
                 // Si no se dio ni idSolicitante ni empresaId, el equipo quedará sin solicitante (idSolicitante = null), lo cual es permitido. Luego se podrá reasignar desde el update indicando el idSolicitante o la empresaId para conectar al placeholder.
                 const equipo = await prisma.equipo.create({
                     data: {
@@ -1118,7 +1327,8 @@ export async function createEquipo(req, res) {
                         procesador: data.procesador,
                         ram: data.ram,
                         disco: data.disco,
-                        propiedad: data.propiedad,
+                        propiedad: propiedadNormalizada,
+                        propietarioExterno: propietarioExternoNormalizado,
                         idSolicitante: idSolicitanteFinal,
                         estado: data.estado,
                         observaciones: data.observaciones?.trim() || null,
@@ -1156,6 +1366,64 @@ export async function createEquipo(req, res) {
                         solicitante: { include: { empresa: true } },
                         detalle: true,
                         adicionales: true,
+                    },
+                });
+                await prisma.auditLog.create({
+                    data: {
+                        entity: "Equipo",
+                        entityId: String(equipo.id_equipo),
+                        action: AuditAction.CREATE,
+                        actorId: req.user?.id_tecnico ?? req.user?.id ?? null,
+                        empresaId: equipo.empresaId ??
+                            equipo.solicitante?.empresaId ??
+                            data.empresaId ??
+                            null,
+                        description: `Equipo creado: ${equipo.marca} ${equipo.modelo} ${equipo.serial ? `(${equipo.serial})` : ""}`,
+                        changes: {
+                            id_equipo: {
+                                before: null,
+                                after: equipo.id_equipo,
+                            },
+                            serial: {
+                                before: null,
+                                after: equipo.serial,
+                            },
+                            marca: {
+                                before: null,
+                                after: equipo.marca,
+                            },
+                            modelo: {
+                                before: null,
+                                after: equipo.modelo,
+                            },
+                            tipo: {
+                                before: null,
+                                after: equipo.tipo,
+                            },
+                            estado: {
+                                before: null,
+                                after: equipo.estado,
+                            },
+                            propiedad: {
+                                before: null,
+                                after: equipo.propiedad,
+                            },
+                            propietarioExterno: {
+                                before: null,
+                                after: equipo.propietarioExterno ?? null,
+                            },
+                            idSolicitante: {
+                                before: null,
+                                after: equipo.idSolicitante ?? null,
+                            },
+                            empresaId: {
+                                before: null,
+                                after: equipo.empresaId ??
+                                    equipo.solicitante?.empresaId ??
+                                    data.empresaId ??
+                                    null,
+                            },
+                        },
                     },
                 });
                 created.push(equipo);
@@ -1275,6 +1543,8 @@ export async function updateEquipo(req, res) {
                 marca: true,
                 modelo: true,
                 procesador: true,
+                propiedad: true,
+                propietarioExterno: true,
                 solicitante: {
                     select: {
                         empresaId: true,
@@ -1285,6 +1555,8 @@ export async function updateEquipo(req, res) {
         if (!equipoActual) {
             return res.status(404).json({ error: "Equipo no encontrado" });
         }
+        const propiedadFinal = normalizarPropiedadEquipo(data.propiedad ?? equipoActual.propiedad);
+        const propietarioExternoFinal = normalizarPropietarioExterno(propiedadFinal, data.propietarioExterno ?? equipoActual.propietarioExterno);
         const procesadorFinal = equipoData.procesador ?? equipoActual.procesador;
         const modeloFinal = equipoData.modelo ?? equipoActual.modelo;
         const serialNuevo = equipoData.serial?.trim().toUpperCase();
@@ -1360,7 +1632,8 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.procesador ? { procesador: equipoData.procesador } : {}),
                 ...(equipoData.ram ? { ram: equipoData.ram } : {}),
                 ...(equipoData.disco ? { disco: equipoData.disco } : {}),
-                ...(equipoData.propiedad ? { propiedad: equipoData.propiedad } : {}),
+                propiedad: propiedadFinal,
+                propietarioExterno: propietarioExternoFinal,
                 ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
                 ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
                 ...(equipoData.observaciones !== undefined ? { observaciones: equipoData.observaciones } : {}),
@@ -1667,12 +1940,37 @@ export async function getEquipoHistorial(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         }
         const user = req.user;
-        // ✅ Busca el id del detalle para cruzar sus logs
+        const equipo = await prisma.equipo.findFirst({
+            where: {
+                id_equipo: id,
+                ...(user?.rol === "CLIENTE"
+                    ? {
+                        OR: [
+                            { empresaId: user.empresaId },
+                            {
+                                solicitante: {
+                                    is: {
+                                        empresaId: user.empresaId,
+                                    },
+                                },
+                            },
+                        ],
+                    }
+                    : {}),
+            },
+            select: {
+                id_equipo: true,
+                empresaId: true,
+            },
+        });
+        if (!equipo) {
+            return res.status(404).json({ error: "Equipo no encontrado" });
+        }
         const detalle = await prisma.detalleEquipo.findUnique({
             where: { idEquipo: id },
             select: { id: true },
         });
-        const [logsEquipo, logsDetalle] = await Promise.all([
+        const [logsEquipo, logsDetalle, eventosAgente] = await Promise.all([
             prisma.auditLog.findMany({
                 where: {
                     entity: "Equipo",
@@ -1680,10 +1978,15 @@ export async function getEquipoHistorial(req, res) {
                     ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
                 },
                 include: {
-                    actor: { select: { id_tecnico: true, nombre: true, email: true } },
+                    actor: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                        },
+                    },
                 },
             }),
-            // ✅ También trae logs de DetalleEquipo
             detalle
                 ? prisma.auditLog.findMany({
                     where: {
@@ -1692,21 +1995,42 @@ export async function getEquipoHistorial(req, res) {
                         ...(user?.rol === "CLIENTE" ? { empresaId: user.empresaId } : {}),
                     },
                     include: {
-                        actor: { select: { id_tecnico: true, nombre: true, email: true } },
+                        actor: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                                email: true,
+                            },
+                        },
                     },
                 })
                 : Promise.resolve([]),
+            prisma.equipoAgenteEvento.findMany({
+                where: {
+                    equipoId: id,
+                    tipo: {
+                        in: ["INVENTORY_CREATED", "REVISION_SOLICITANTE"],
+                    },
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+                take: 100,
+            })
         ]);
-        // Fusiona, limpia cambios mínimos del agente y ordena por fecha desc
-        const merged = [...logsEquipo, ...logsDetalle]
+        const auditItems = [...logsEquipo, ...logsDetalle]
             .map((log) => {
             const filteredChanges = filterEquipoHistoryChanges(log.changes);
             if (!filteredChanges) {
-                return log;
+                return {
+                    ...log,
+                    origenHistorial: "AUDIT_LOG",
+                };
             }
             return {
                 ...log,
                 changes: filteredChanges,
+                origenHistorial: "AUDIT_LOG",
             };
         })
             .filter((log) => {
@@ -1715,14 +2039,37 @@ export async function getEquipoHistorial(req, res) {
                 return true;
             }
             return Object.keys(changes).length > 0;
-        })
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        return res.json({ total: merged.length, items: merged });
-        return res.json({ total: merged.length, items: merged });
+        });
+        const agenteItems = eventosAgente.map((ev) => ({
+            id: `agent-${ev.id}`,
+            entity: "EquipoAgenteEvento",
+            entityId: String(ev.equipoId),
+            action: ev.tipo === "INVENTORY_CREATED"
+                ? "CREATE"
+                : ev.tipo === "REVISION_SOLICITANTE"
+                    ? "REVIEW"
+                    : "UPDATE",
+            actorId: null,
+            actor: null,
+            empresaId: equipo.empresaId ?? null,
+            description: ev.mensaje,
+            changes: ev.metadata,
+            createdAt: ev.createdAt,
+            updatedAt: ev.createdAt,
+            origenHistorial: "AGENTE_EVENTO",
+            tipoEventoAgente: ev.tipo,
+        }));
+        const merged = [...auditItems, ...agenteItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return res.json({
+            total: merged.length,
+            items: merged,
+        });
     }
     catch (err) {
         console.error("getEquipoHistorial error:", err);
-        return res.status(500).json({ error: "Error al obtener historial del equipo" });
+        return res.status(500).json({
+            error: "Error al obtener historial del equipo",
+        });
     }
 }
 /* ================== RECALCULAR AÑO PC EQUIPOS EXISTENTES ================== */

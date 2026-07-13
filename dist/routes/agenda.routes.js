@@ -1,11 +1,14 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
 import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
-const TECNICOS_AGENDA_ADMIN = [5, 6, 27, 36];
+const ROLES_AGENDA_ADMIN = ["ADMINISTRACION", "ADMIN"];
 function requireAgendaAdmin(req, res, next) {
     const user = req.user;
-    if (!user || !TECNICOS_AGENDA_ADMIN.includes(user.id)) {
-        return res.status(403).json({ error: "No tienes permisos para esta acción" });
+    const rol = String(user?.rol ?? "").toUpperCase();
+    if (!user || !ROLES_AGENDA_ADMIN.includes(rol)) {
+        return res.status(403).json({
+            error: "No tienes permisos para crear o editar agenda.",
+        });
     }
     next();
     return;

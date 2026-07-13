@@ -1,3 +1,4 @@
+// src/lib/prisma.ts
 import { PrismaClient } from "@prisma/client";
 import { getCurrentUserId } from "../lib/request-context.js";
 const CONNECTION_ERROR_CODES = new Set(["P1001", "P1002", "P1008", "P1017"]);

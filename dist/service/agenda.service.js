@@ -1,3 +1,4 @@
+// src/service/agenda.service.ts
 import { prisma } from "../lib/prisma.js";
 import { TipoAgenda, EstadoAgenda } from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
@@ -108,6 +109,37 @@ function escapeHtml(texto) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+function isEmailTecnicoValido(email) {
+    /*
+      Evita enviar correos a direcciones inexistentes o internas de Exchange.
+      Esto previene rebotes tipo:
+      microsoftexchange...@rids.cl
+    */
+    const limpio = email?.trim().toLowerCase();
+    if (!limpio)
+        return false;
+    if (limpio.startsWith("microsoftexchange"))
+        return false;
+    if (limpio.includes("microsoft exchange"))
+        return false;
+    if (limpio.includes("no-reply") || limpio.includes("noreply"))
+        return false;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio))
+        return false;
+    // Si las notificaciones de agenda son solo para técnicos internos RIDS.
+    if (!limpio.endsWith("@rids.cl"))
+        return false;
+    return true;
+}
+function normalizarEmailTecnico(email) {
+    const limpio = email?.trim().toLowerCase();
+    return isEmailTecnicoValido(limpio) ? limpio : null;
+}
+function filtrarCorreosTecnicosValidos(correos) {
+    return Array.from(new Set(correos
+        .map((correo) => normalizarEmailTecnico(correo))
+        .filter((correo) => Boolean(correo))));
 }
 function normalizarNombreEmpresaOutlook(nombre) {
     const nombreTrim = nombre?.trim().replace(/^@/, "").trim();
@@ -255,13 +287,23 @@ function buildAgendaOutlookAttendees(visita) {
     const seen = new Set();
     const attendees = [];
     for (const { tecnico } of visita.tecnicos ?? []) {
-        const email = tecnico?.email?.trim().toLowerCase();
-        if (!email || seen.has(email))
+        const email = normalizarEmailTecnico(tecnico?.email);
+        if (!email) {
+            console.warn("[AGENDA OUTLOOK] Técnico omitido como asistente por email inválido", {
+                nombre: tecnico?.nombre,
+                email: tecnico?.email,
+            });
+            continue;
+        }
+        if (seen.has(email))
             continue;
         seen.add(email);
         const nombre = tecnico?.nombre?.trim();
         attendees.push({
-            emailAddress: { address: email, ...(nombre ? { name: nombre } : {}) },
+            emailAddress: {
+                address: email,
+                ...(nombre ? { name: nombre } : {}),
+            },
             type: "required",
         });
     }
@@ -361,7 +403,8 @@ export async function generarMallaMensual(year, month, empresaIds, includeOficin
     };
     const [tecnicos, empresas] = await Promise.all([
         prisma.tecnico.findMany({
-            where: { status: true,
+            where: {
+                status: true,
                 id_tecnico: {
                     notIn: tecnicos_excluidos,
                 },
@@ -962,7 +1005,8 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                 not: null,
             },
         },
-        select: { id: true,
+        select: {
+            id: true,
             outlookEventId: true,
         },
     });
@@ -1561,11 +1605,23 @@ ${tecnicosHtml}
   </p>
 </div>
         `.trim();
-        const destinatarios = visita.tecnicos
-            .map(({ tecnico }) => tecnico.email?.trim())
-            .filter((email) => Boolean(email));
+        const destinatarios = filtrarCorreosTecnicosValidos(visita.tecnicos.map(({ tecnico }) => tecnico.email));
         if (destinatarios.length === 0) {
-            //console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos validos`);
+            console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos técnicos válidos`, {
+                tecnicos: visita.tecnicos.map(({ tecnico }) => ({
+                    nombre: tecnico.nombre,
+                    email: tecnico.email,
+                })),
+            });
+            /*
+              Importante:
+              Marcamos como notificada para que no intente enviar todos los días
+              a técnicos sin correo válido.
+            */
+            await prisma.agendaVisita.update({
+                where: { id: visita.id },
+                data: { notificacionEnviada: true },
+            });
             continue;
         }
         try {
@@ -1691,9 +1747,7 @@ ${tecnicosHtml}
   </p>
 </div>
         `.trim();
-        const destinatarios = visita.tecnicos
-            .map(({ tecnico }) => tecnico.email?.trim())
-            .filter((email) => Boolean(email));
+        const destinatarios = filtrarCorreosTecnicosValidos(visita.tecnicos.map(({ tecnico }) => tecnico.email));
         if (destinatarios.length === 0) {
             //console.warn(`[AGENDA RECORDATORIOS] Agenda omitida sin email - agenda #${visita.id}`);
             await prisma.agendaVisita.update({
@@ -1740,11 +1794,14 @@ export async function enviarNotaAgendaPorCorreo(agendaId) {
         throw new AgendaNotFoundError(`No se encontro una agenda con id ${agendaId}`);
     }
     const nombreEmpresa = getNombreEmpresaAgenda(visita);
-    const destinatarios = visita.tecnicos
-        .map(({ tecnico }) => tecnico.email?.trim())
-        .filter((email) => Boolean(email));
+    const destinatarios = filtrarCorreosTecnicosValidos(visita.tecnicos.map(({ tecnico }) => tecnico.email));
     if (destinatarios.length === 0) {
-        console.warn(`[AGENDA NOTA] Agenda #${visita.id} sin correos validos para envio`);
+        console.warn(`[AGENDA NOTA] Agenda #${visita.id} sin correos técnicos válidos para envío`, {
+            tecnicos: visita.tecnicos.map(({ tecnico }) => ({
+                nombre: tecnico.nombre,
+                email: tecnico.email,
+            })),
+        });
         return 0;
     }
     const fechaStr = visita.fecha.toISOString().slice(0, 10);

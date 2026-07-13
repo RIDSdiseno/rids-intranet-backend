@@ -63,24 +63,127 @@ function normalizarDuracionVisita(v) {
     }
     return "0 min";
 }
+function getDuracionVisitaMinutos(v) {
+    /*
+      Devuelve duración exacta en minutos.
+      No redondeamos cada visita antes de sumar, para que coincida con:
+      ROUND(SUM(EXTRACT(EPOCH FROM ("fin" - "inicio")) / 60))
+    */
+    if (typeof v?.duracionMinutos === "number") {
+        return Math.max(0, Number(v.duracionMinutos) || 0);
+    }
+    if (typeof v?.duracionMs === "number") {
+        return Math.max(0, (Number(v.duracionMs) || 0) / 1000 / 60);
+    }
+    if (v?.inicio && v?.fin) {
+        const inicio = new Date(v.inicio).getTime();
+        const fin = new Date(v.fin).getTime();
+        if (Number.isFinite(inicio) && Number.isFinite(fin) && fin > inicio) {
+            return Math.max(0, (fin - inicio) / 1000 / 60);
+        }
+    }
+    return 0;
+}
+function getSolicitanteKeyVisita(v) {
+    /*
+      Identifica al solicitante real de la visita.
+      Si viene S/A, vacío o sin solicitante, no se cuenta.
+    */
+    const nombreSolicitante = String(v?.solicitante?.nombre ??
+        v?.solicitanteRef?.nombre ??
+        v?.solicitante ??
+        "")
+        .trim()
+        .toLowerCase();
+    if (!nombreSolicitante ||
+        nombreSolicitante === "s/a" ||
+        nombreSolicitante === "sin solicitante" ||
+        nombreSolicitante === "null" ||
+        nombreSolicitante === "undefined") {
+        return null;
+    }
+    const rawValue = v?.idSolicitante ??
+        v?.solicitanteId ??
+        v?.solicitanteRef?.id ??
+        v?.solicitanteRef?.id_solicitante ??
+        v?.solicitanteRef?.email ??
+        v?.solicitanteRef?.correo ??
+        v?.solicitante?.id ??
+        v?.solicitante?.id_solicitante ??
+        v?.solicitante?.email ??
+        v?.solicitante?.correo ??
+        v?.solicitante?.nombre ??
+        v?.solicitante ??
+        null;
+    if (!rawValue)
+        return null;
+    const key = String(rawValue).trim().toLowerCase();
+    if (!key || key === "null" || key === "undefined") {
+        return null;
+    }
+    return key;
+}
+function calcularTiempoPromedioAtencionSolicitantes(visitas) {
+    /*
+      KPI general:
+      Total minutos exactos de atenciones con solicitante real / solicitantes únicos atendidos.
+  
+      Coincide con psql:
+      ROUND(SUM(minutos)) / COUNT(DISTINCT solicitante)
+    */
+    const solicitantesUnicos = new Set();
+    let totalMinutosExactos = 0;
+    let atencionesConSolicitante = 0;
+    let atencionesSinSolicitante = 0;
+    for (const visita of visitas ?? []) {
+        const solicitanteKey = getSolicitanteKeyVisita(visita);
+        if (!solicitanteKey) {
+            atencionesSinSolicitante += 1;
+            continue;
+        }
+        const minutos = getDuracionVisitaMinutos(visita);
+        if (minutos <= 0) {
+            continue;
+        }
+        atencionesConSolicitante += 1;
+        totalMinutosExactos += minutos;
+        solicitantesUnicos.add(solicitanteKey);
+    }
+    const totalMinutos = Math.round(totalMinutosExactos);
+    const totalSolicitantesAtendidos = solicitantesUnicos.size;
+    const promedioMinutos = totalSolicitantesAtendidos > 0
+        ? Math.round(totalMinutos / totalSolicitantesAtendidos)
+        : 0;
+    return {
+        atencionesConSolicitante,
+        atencionesSinSolicitante,
+        totalMinutos,
+        totalTiempoTexto: formatMinutosAHoras(totalMinutos),
+        totalSolicitantesAtendidos,
+        promedioMinutos,
+        promedioTexto: formatMinutosAHoras(promedioMinutos),
+    };
+}
 function prepararContextoWordBeta(data) {
     const safe = sanitizeForJSON(data);
     const inventarioFuente = safe.inventario?.detalle ??
         safe.inventario?.equipos ??
         [];
+    // Usamos el detalle real de visitas para recalcular los KPIs de terreno.
+    // Esto evita tomar valores precalculados antiguos o de otra fuente.
+    const visitasDetalle = safe.visitas?.detalle ?? [];
+    const kpiAtencionSolicitantes = calcularTiempoPromedioAtencionSolicitantes(visitasDetalle);
     return {
         empresa: safe.empresa?.nombre ?? "Empresa no identificada",
         periodo: safe.month ?? safe.periodo ?? "Periodo no identificado",
         kpis: {
             visitas: {
-                count: safe.kpis?.visitas?.count ?? safe.visitas?.total ?? 0,
-                totalTiempoTexto: safe.kpis?.visitas?.totalTiempoTexto
-                    ?? safe.visitas?.totalTiempoTexto
-                    ?? formatMinutosAHoras(Number(safe.kpis?.visitas?.totalMinutos ?? 0)),
-                avgTiempoTexto: safe.kpis?.visitas?.avgTiempoTexto
-                    ?? safe.visitas?.avgTiempoTexto
-                    ?? formatMinutosAHoras(Number(safe.kpis?.visitas?.avgMinutos ?? 0)),
-                // ── NO pasar totalMinutos ni avgMinutos ──
+                count: kpiAtencionSolicitantes.atencionesConSolicitante,
+                // Total recalculado desde el detalle real de visitas.
+                totalTiempoTexto: kpiAtencionSolicitantes.totalTiempoTexto,
+                // Nuevo KPI solicitado.
+                promedioAtencionSolicitantesTexto: kpiAtencionSolicitantes.promedioTexto,
+                totalSolicitantesAtendidos: kpiAtencionSolicitantes.totalSolicitantesAtendidos,
             },
             equipos: { count: safe.kpis?.equipos?.count ?? 0 },
             tickets: { total: safe.kpis?.tickets?.total ?? 0 },
@@ -92,23 +195,22 @@ function prepararContextoWordBeta(data) {
             }
         },
         visitas: {
-            total: safe.visitas?.total ?? 0,
-            // ── Eliminar totalMinutos y avgMinutos del contexto IA ──
-            // La IA no debe ver números crudos para no recalcular
-            totalTiempoTexto: safe.visitas?.totalTiempoTexto ??
-                formatMinutosAHoras(Number(safe.visitas?.totalMinutos ?? 0)),
-            avgTiempoTexto: safe.visitas?.avgTiempoTexto ??
-                formatMinutosAHoras(Number(safe.visitas?.avgMinutos ?? 0)),
+            // Total de atenciones válidas con solicitante real y duración válida.
+            total: kpiAtencionSolicitantes.atencionesConSolicitante,
+            // Total recalculado desde el detalle real de visitas.
+            totalTiempoTexto: kpiAtencionSolicitantes.totalTiempoTexto,
+            // Nuevo KPI general.
+            promedioAtencionSolicitantesTexto: kpiAtencionSolicitantes.promedioTexto,
+            totalSolicitantesAtendidos: kpiAtencionSolicitantes.totalSolicitantesAtendidos,
             porTipo: safe.visitas?.porTipo ?? [],
             porTecnico: safe.visitas?.porTecnico ?? [],
-            // Detalle: eliminar duracionMinutos de cada visita
-            detalle: (safe.visitas?.detalle ?? []).slice(0, 12).map((v) => ({
+            // Detalle: se mantiene solo información legible para la IA.
+            detalle: visitasDetalle.slice(0, 12).map((v) => ({
                 tecnico: v.tecnico,
                 solicitante: v.solicitante,
                 inicio: v.inicio,
                 fin: v.fin,
                 duracionTexto: normalizarDuracionVisita(v),
-                // ── NO pasar duracionMinutos ni duracionMs ──
             })),
         },
         licencias: {
@@ -176,14 +278,24 @@ function prepararContextoWordBeta(data) {
         },
         extras: safe.extras?.totales ?? [],
         observaciones: {
-            promedioAtencion: safe.visitas?.avgTiempoTexto ?? null,
             topUsuariosGeneral: safe.tickets?.topUsuarios ?? [],
-            duracionTotalVisitas: safe.visitas?.totalTiempoTexto ??
-                formatMinutosAHoras(Number(safe.visitas?.totalMinutos ?? 0)),
-            duracionPromedioVisitas: safe.visitas?.avgTiempoTexto ??
-                formatMinutosAHoras(Number(safe.visitas?.avgMinutos ?? 0)),
+            // Valor validado contra tabla "Visita".
+            duracionTotalVisitas: kpiAtencionSolicitantes.totalTiempoTexto,
+            // Nuevo KPI general solicitado.
+            tiempoPromedioAtencionSolicitantes: kpiAtencionSolicitantes.promedioTexto,
+            totalSolicitantesAtendidos: kpiAtencionSolicitantes.totalSolicitantesAtendidos,
+            totalAtencionesRealizadas: kpiAtencionSolicitantes.atencionesConSolicitante,
         },
     };
+}
+function normalizarTextoInformeIA(texto) {
+    /*
+      Normaliza frases que la IA puede seguir generando aunque el prompt
+      indique otra redacción.
+    */
+    return String(texto ?? "")
+        .replace(/visitas técnicas/gi, "atenciones a solicitantes")
+        .replace(/visita técnica/gi, "atención a solicitante");
 }
 export async function generarEstructuraWordIABeta(reporteEmpresa) {
     const contextoIA = prepararContextoWordBeta(reporteEmpresa);
@@ -216,7 +328,9 @@ REGLAS ESTRICTAS DE TONO:
 - Para licencias Microsoft, interpreta "total" como cantidad de usuarios únicos con licencia asignada.
 - No sumes múltiples licencias del mismo usuario como usuarios adicionales.
 - En licencias.porTipo, "cantidad" representa usuarios únicos asociados a ese tipo de licencia.
-- Cuando menciones duración de visitas, usa siempre totalTiempoTexto, avgTiempoTexto o duracionTexto.
+- Cuando menciones tiempos de atención, usa siempre totalTiempoTexto, duracionTexto o tiempoPromedioAtencionSolicitantes.
+- No uses ni menciones "Duración promedio por visita"; reemplázalo siempre por "Tiempo promedio de atención de solicitantes".
+- No uses la expresión "visitas técnicas"; usa "atenciones a solicitantes".
 - No muestres milisegundos ni valores crudos como 5400000, 7200000 o similares.
 - No inventes licencias ni nombres de productos. Usa solo los datos entregados en licencias.porTipo.
 - No uses markdown
@@ -252,19 +366,26 @@ INVENTARIO DE EQUIPOS:
 
 VALORES FIJOS OBLIGATORIOS — NO MODIFICAR:
 - "Tiempo total en terreno" = "${contextoIA.observaciones.duracionTotalVisitas}"
-- "Duración promedio por visita" = "${contextoIA.observaciones.duracionPromedioVisitas}"
-- "Total de visitas" = ${contextoIA.visitas.total}
+- "Tiempo promedio de atención de solicitantes" = "${contextoIA.observaciones.tiempoPromedioAtencionSolicitantes}"
+- "Solicitantes únicos atendidos" = ${contextoIA.observaciones.totalSolicitantesAtendidos}
+- "Atenciones a solicitantes" = ${contextoIA.observaciones.totalAtencionesRealizadas}
 - "Total de tickets" = ${contextoIA.tickets.total}
 - "Total de mantenciones" = ${contextoIA.mantenciones.total}
 - "Total de equipos" = ${contextoIA.inventario.totalEquipos}
 - "Licencias Microsoft utilizadas" = ${contextoIA.licencias.total}
 - "Usuarios con licencia Microsoft" = ${contextoIA.licencias.totalUsuariosConLicencia}
 
-Estos valores deben aparecer EXACTAMENTE ASÍ en metricas_destacadas y kpis_interpretados.
-No los recalcules. No los modifiques. Cópialos literalmente.
+Estos valores son de referencia obligatoria para la redacción.
+No los recalcules. No los modifiques. Cópialos literalmente cuando los menciones.
+
+El backend insertará automáticamente las métricas operativas principales en metricas_destacadas y kpis_interpretados.
+La IA no debe duplicarlas si ya aparecen en el contexto.
 
 INSTRUCCIONES DE ENFOQUE:
 - En el resumen ejecutivo, prioriza el valor del servicio prestado y la gestión del periodo
+- En el resumen ejecutivo, no uses la expresión "visitas técnicas".
+- Cuando hables del total de visitas del período, usa la expresión "atenciones a solicitantes".
+- Ejemplo correcto: "se realizaron 39 atenciones a solicitantes".
 - En los KPIs interpretados, da una lectura favorable y profesional de los indicadores
 - En hallazgos, describe aspectos relevantes del periodo sin sonar crítico
 - En riesgos, usa un enfoque suave y corporativo, más cercano a "aspectos a monitorear" que a advertencias duras
@@ -289,7 +410,11 @@ REGLAS PARA MÉTRICAS Y GRÁFICOS:
 - Cada gráfico debe incluir una lectura ejecutiva breve y positiva
 - Los gráficos deben ayudar a entender el servicio, no a criticarlo
 - La métrica "Tiempo total en terreno" DEBE tener valor exacto: "${contextoIA.observaciones.duracionTotalVisitas}". No uses otro valor.
-- La métrica "Duración promedio por visita" DEBE tener valor exacto: "${contextoIA.observaciones.duracionPromedioVisitas}". No uses otro valor.
+- La métrica "Tiempo promedio de atención de solicitantes" DEBE tener valor exacto: "${contextoIA.observaciones.tiempoPromedioAtencionSolicitantes}". No uses otro valor.
+- La métrica "Solicitantes únicos atendidos" DEBE tener valor exacto: "${contextoIA.observaciones.totalSolicitantesAtendidos}". No uses otro valor.
+- La métrica "Atenciones a solicitantes" DEBE tener valor exacto: "${contextoIA.observaciones.totalAtencionesRealizadas}". No uses otro valor.
+- Cuando menciones duración de visitas, usa siempre totalTiempoTexto, duracionTexto o tiempoPromedioAtencionSolicitantes.
+- No uses ni menciones "Duración promedio por visita"; reemplázalo siempre por "Tiempo promedio de atención de solicitantes".
 
 ESQUEMA JSON OBLIGATORIO:
 {
@@ -383,6 +508,79 @@ ${JSON.stringify(contextoIA, null, 2)}
         ],
     });
     const raw = completion.choices[0]?.message?.content ?? "";
-    return parseJsonSafe(raw);
+    const parsed = parseJsonSafe(raw);
+    // Normalizamos textos generados por IA para mantener el lenguaje solicitado.
+    if (typeof parsed.resumen_ejecutivo === "string") {
+        parsed.resumen_ejecutivo = normalizarTextoInformeIA(parsed.resumen_ejecutivo);
+    }
+    if (typeof parsed.conclusion === "string") {
+        parsed.conclusion = normalizarTextoInformeIA(parsed.conclusion);
+    }
+    if (Array.isArray(parsed.hallazgos)) {
+        parsed.hallazgos = parsed.hallazgos.map((item) => ({
+            ...item,
+            titulo: normalizarTextoInformeIA(item?.titulo ?? ""),
+            detalle: normalizarTextoInformeIA(item?.detalle ?? ""),
+        }));
+    }
+    if (Array.isArray(parsed.riesgos)) {
+        parsed.riesgos = parsed.riesgos.map((item) => ({
+            ...item,
+            titulo: normalizarTextoInformeIA(item?.titulo ?? ""),
+            detalle: normalizarTextoInformeIA(item?.detalle ?? ""),
+        }));
+    }
+    if (Array.isArray(parsed.recomendaciones)) {
+        parsed.recomendaciones = parsed.recomendaciones.map((item) => ({
+            ...item,
+            titulo: normalizarTextoInformeIA(item?.titulo ?? ""),
+            detalle: normalizarTextoInformeIA(item?.detalle ?? ""),
+            beneficio: normalizarTextoInformeIA(item?.beneficio ?? ""),
+        }));
+    }
+    // Métricas calculadas por backend.
+    // Estas NO dependen de la IA, por lo tanto no pueden quedar alteradas.
+    const metricasForzadas = [
+        {
+            nombre: "Tiempo total en terreno",
+            valor: contextoIA.observaciones.duracionTotalVisitas,
+            lectura: "Refleja el tiempo total dedicado a atenciones presenciales durante el período evaluado.",
+        },
+        {
+            nombre: "Tiempo promedio de atención de solicitantes",
+            valor: contextoIA.observaciones.tiempoPromedioAtencionSolicitantes,
+            lectura: `Promedio calculado sobre ${contextoIA.observaciones.totalSolicitantesAtendidos} solicitantes únicos atendidos durante el período.`,
+        },
+        {
+            nombre: "Solicitantes únicos atendidos",
+            valor: String(contextoIA.observaciones.totalSolicitantesAtendidos),
+            lectura: "Cantidad de solicitantes distintos considerados en atenciones con duración válida.",
+        },
+        {
+            nombre: "Atenciones a solicitantes",
+            valor: String(contextoIA.observaciones.totalAtencionesRealizadas),
+            lectura: "Cantidad de atenciones presenciales válidas registradas durante el período.",
+        },
+    ];
+    const limpiarMetricasRepetidas = (items) => items.filter((m) => {
+        const nombre = String(m?.nombre ?? "").toLowerCase();
+        return (!nombre.includes("tiempo total en terreno") &&
+            !nombre.includes("duración promedio por visita") &&
+            !nombre.includes("tiempo promedio de atención") &&
+            !nombre.includes("solicitantes únicos atendidos") &&
+            !nombre.includes("total de visitas") &&
+            !nombre.includes("visitas técnicas") &&
+            !nombre.includes("atenciones a solicitantes"));
+    });
+    parsed.metricas_destacadas = Array.isArray(parsed.metricas_destacadas)
+        ? limpiarMetricasRepetidas(parsed.metricas_destacadas)
+        : [];
+    parsed.kpis_interpretados = Array.isArray(parsed.kpis_interpretados)
+        ? limpiarMetricasRepetidas(parsed.kpis_interpretados)
+        : [];
+    // Insertamos primero los valores validados por backend.
+    parsed.metricas_destacadas.unshift(...metricasForzadas);
+    parsed.kpis_interpretados.unshift(...metricasForzadas);
+    return parsed;
 }
 //# sourceMappingURL=ia-reportes-docx-beta.service.js.map

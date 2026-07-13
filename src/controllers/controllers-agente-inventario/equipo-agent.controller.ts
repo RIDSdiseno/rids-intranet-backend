@@ -637,6 +637,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             equipoUpdateData.idSolicitante = null;
         }
 
+        const fueCreadoPorAgente = !equipo;
+        const equipoAntesUpdate = equipo;
+
         if (equipo) {
             equipo = await prisma.equipo.update({
                 where: {
@@ -737,39 +740,149 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             data: {
                 entity: "Equipo",
                 entityId: String(equipo.id_equipo),
-                action: "UPDATE" as any,
+                action: fueCreadoPorAgente ? ("CREATE" as any) : ("UPDATE" as any),
 
-                // Importante:
-                // Las sincronizaciones automáticas del agente NO deben quedar a nombre del técnico.
-                // El técnico solo queda como instalador/configurador dentro de changes/metadata.
+                // Las sincronizaciones automáticas del agente quedan como Sistema.
                 actorId: null,
 
                 empresaId: empresaIdFinal ?? null,
-                description:
-                    platform === "MACOS"
+                description: fueCreadoPorAgente
+                    ? platform === "MACOS"
+                        ? "Equipo creado automáticamente desde agente macOS"
+                        : "Equipo creado automáticamente desde agente Windows"
+                    : platform === "MACOS"
                         ? "Inventario actualizado automáticamente desde agente macOS"
                         : "Inventario actualizado automáticamente desde agente Windows",
-                changes: {
-                    origen: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
-                    source,
-                    platform,
-                    ejecutadoPor: "SISTEMA",
 
-                    tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
-                    tecnicoInstaladorEmail:
-                        tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
-                    tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
-
-                    usuarioSistemaEjecutor,
-                    usuarioWindowsEjecutor,
-                    taskUserConfigurado,
-                    usuarioMacEjecutor,
-                    launchdLabel,
-
-                    hostname,
-                    serial,
-                    lastSeenAt: new Date().toISOString(),
-                },
+                changes: fueCreadoPorAgente
+                    ? {
+                        origen: {
+                            before: null,
+                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
+                        },
+                        accionAgente: {
+                            before: null,
+                            after: "EQUIPO_CREADO",
+                        },
+                        serial: {
+                            before: null,
+                            after: equipo.serial ?? serial,
+                        },
+                        marca: {
+                            before: null,
+                            after: equipo.marca ?? marca,
+                        },
+                        modelo: {
+                            before: null,
+                            after: equipo.modelo ?? modelo,
+                        },
+                        hostname: {
+                            before: null,
+                            after: hostname,
+                        },
+                        propiedad: {
+                            before: null,
+                            after: equipo.propiedad ?? "Empresa",
+                        },
+                        propietarioExterno: {
+                            before: null,
+                            after: equipo.propietarioExterno ?? null,
+                        },
+                        empresaId: {
+                            before: null,
+                            after: empresaIdFinal,
+                        },
+                        idSolicitante: {
+                            before: null,
+                            after: idSolicitanteFinal,
+                        },
+                        solicitanteDetectadoEmail: {
+                            before: null,
+                            after: solicitanteDetectadoEmailFinal,
+                        },
+                        usuarioSistemaEjecutor: {
+                            before: null,
+                            after: usuarioSistemaEjecutor,
+                        },
+                        tecnicoInstaladorEmail: {
+                            before: null,
+                            after: tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+                        },
+                        lastSeenAt: {
+                            before: null,
+                            after: new Date().toISOString(),
+                        },
+                    }
+                    : {
+                        origen: {
+                            before: null,
+                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
+                        },
+                        accionAgente: {
+                            before: null,
+                            after: "INVENTARIO_ACTUALIZADO",
+                        },
+                        hostname: {
+                            before: equipoAntesUpdate?.hostname ?? null,
+                            after: equipo.hostname ?? null,
+                        },
+                        usuarioActual: {
+                            before: equipoAntesUpdate?.usuarioActual ?? null,
+                            after: equipo.usuarioActual ?? null,
+                        },
+                        procesador: {
+                            before: equipoAntesUpdate?.procesador ?? null,
+                            after: equipo.procesador ?? null,
+                        },
+                        ram: {
+                            before: equipoAntesUpdate?.ram ?? null,
+                            after: equipo.ram ?? null,
+                        },
+                        disco: {
+                            before: equipoAntesUpdate?.disco ?? null,
+                            after: equipo.disco ?? null,
+                        },
+                        localIp: {
+                            before: equipoAntesUpdate?.localIp ?? null,
+                            after: equipo.localIp ?? null,
+                        },
+                        macAddress: {
+                            before: equipoAntesUpdate?.macAddress ?? null,
+                            after: equipo.macAddress ?? null,
+                        },
+                        lastBootAt: {
+                            before: equipoAntesUpdate?.lastBootAt ?? null,
+                            after: equipo.lastBootAt ?? null,
+                        },
+                        lastSeenAt: {
+                            before: equipoAntesUpdate?.lastSeenAt ?? null,
+                            after: equipo.lastSeenAt ?? null,
+                        },
+                        estadoAgente: {
+                            before: equipoAntesUpdate?.estadoAgente ?? null,
+                            after: equipo.estadoAgente ?? null,
+                        },
+                        agenteVersion: {
+                            before: equipoAntesUpdate?.agenteVersion ?? null,
+                            after: equipo.agenteVersion ?? null,
+                        },
+                        empresaId: {
+                            before: equipoAntesUpdate?.empresaId ?? null,
+                            after: equipo.empresaId ?? null,
+                        },
+                        idSolicitante: {
+                            before: equipoAntesUpdate?.idSolicitante ?? null,
+                            after: equipo.idSolicitante ?? null,
+                        },
+                        solicitanteDetectadoEmail: {
+                            before: equipoAntesUpdate?.solicitanteDetectadoEmail ?? null,
+                            after: equipo.solicitanteDetectadoEmail ?? null,
+                        },
+                        requiereRevisionSolicitante: {
+                            before: equipoAntesUpdate?.requiereRevisionSolicitante ?? null,
+                            after: equipo.requiereRevisionSolicitante ?? null,
+                        },
+                    },
             },
         });
 
@@ -780,12 +893,19 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 equipoId: equipo.id_equipo,
                 tipo: requiereRevisionSolicitante
                     ? "REVISION_SOLICITANTE"
-                    : "INVENTORY_SYNC",
+                    : fueCreadoPorAgente
+                        ? "INVENTORY_CREATED"
+                        : "INVENTORY_SYNC",
+
                 mensaje: requiereRevisionSolicitante
                     ? "El agente detectó información de solicitante que requiere revisión manual."
-                    : platform === "MACOS"
-                        ? "Inventario sincronizado automáticamente desde agente macOS"
-                        : "Inventario sincronizado automáticamente desde agente Windows",
+                    : fueCreadoPorAgente
+                        ? platform === "MACOS"
+                            ? "Equipo creado automáticamente desde agente macOS"
+                            : "Equipo creado automáticamente desde agente Windows"
+                        : platform === "MACOS"
+                            ? "Inventario sincronizado automáticamente desde agente macOS"
+                            : "Inventario sincronizado automáticamente desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
@@ -797,6 +917,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     source,
                     platform,
                     ejecutadoPor: "SISTEMA",
+
+                    accionAgente: fueCreadoPorAgente
+                        ? "EQUIPO_CREADO"
+                        : "INVENTARIO_ACTUALIZADO",
 
                     tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
                     tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,

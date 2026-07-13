@@ -172,6 +172,80 @@ export async function uploadReporteSupabase(req, res) {
 }
 // ─── DOCX → PDF via LibreOffice → Supabase ───────────────────────────────
 const execAsync = promisify(exec);
+// ─── Preview DOCX → PDF temporal ──────────────────────────────────────────
+export async function previewDocxToPdf(req, res) {
+    try {
+        const { fileBase64, fileName } = req.body;
+        if (!fileBase64 || !fileName) {
+            return res.status(400).json({
+                ok: false,
+                message: "fileBase64 y fileName son obligatorios",
+            });
+        }
+        if (!fileName.toLowerCase().endsWith(".docx")) {
+            return res.status(400).json({
+                ok: false,
+                message: "El archivo debe ser un DOCX.",
+            });
+        }
+        const sizeMb = Buffer.byteLength(fileBase64, "base64") / (1024 * 1024);
+        if (sizeMb > 20) {
+            return res.status(413).json({
+                ok: false,
+                message: "Archivo demasiado grande para previsualizar.",
+            });
+        }
+        const safeName = fileName
+            .replace(/\s+/g, "_")
+            .replace(/[^\w.-]/g, "");
+        const unique = `${Date.now()}_${Math.round(Math.random() * 100000)}`;
+        const tmpDocx = join(tmpdir(), `${unique}_${safeName}`);
+        const tmpOutputDir = tmpdir();
+        const buffer = Buffer.from(fileBase64, "base64");
+        writeFileSync(tmpDocx, buffer);
+        try {
+            const libreOfficeCmd = process.env.LIBREOFFICE_PATH?.trim() || "libreoffice";
+            await execAsync(`"${libreOfficeCmd}" --headless --convert-to pdf "${tmpDocx}" --outdir "${tmpOutputDir}"`, { timeout: 60000 });
+        }
+        catch (err) {
+            if (existsSync(tmpDocx))
+                unlinkSync(tmpDocx);
+            console.error("❌ LibreOffice preview error:", err);
+            return res.status(500).json({
+                ok: false,
+                message: "Error convirtiendo DOCX a PDF. Verifica que LibreOffice esté instalado.",
+            });
+        }
+        const pdfPath = tmpDocx.replace(/\.docx$/i, ".pdf");
+        if (!existsSync(pdfPath)) {
+            if (existsSync(tmpDocx))
+                unlinkSync(tmpDocx);
+            return res.status(500).json({
+                ok: false,
+                message: "No se generó el PDF de vista previa.",
+            });
+        }
+        const pdfBuffer = readFileSync(pdfPath);
+        const pdfBase64 = pdfBuffer.toString("base64");
+        if (existsSync(tmpDocx))
+            unlinkSync(tmpDocx);
+        if (existsSync(pdfPath))
+            unlinkSync(pdfPath);
+        return res.json({
+            ok: true,
+            fileName: safeName.replace(/\.docx$/i, ".pdf"),
+            mimeType: "application/pdf",
+            fileBase64: pdfBase64,
+        });
+    }
+    catch (error) {
+        console.error("previewDocxToPdf error:", error);
+        return res.status(500).json({
+            ok: false,
+            message: "Error generando vista previa del DOCX.",
+        });
+    }
+}
 export async function convertDocxToPdf(req, res) {
     try {
         const { fileBase64, fileName, empresaId, empresa, periodo } = req.body;
@@ -182,7 +256,8 @@ export async function convertDocxToPdf(req, res) {
         const buffer = Buffer.from(fileBase64, "base64");
         writeFileSync(tmpDocx, buffer);
         try {
-            await execAsync(`libreoffice --headless --convert-to pdf "${tmpDocx}" --outdir "${tmpdir()}"`, {
+            const libreOfficeCmd = process.env.LIBREOFFICE_PATH?.trim() || "libreoffice";
+            await execAsync(`"${libreOfficeCmd}" --headless --convert-to pdf "${tmpDocx}" --outdir "${tmpdir()}"`, {
                 timeout: 60000,
             });
         }
@@ -236,12 +311,18 @@ export async function convertDocxToPdf(req, res) {
 // Envía el informe resumido generado desde el frontend como adjunto PDF.
 export async function enviarInformeResumenCorreo(req, res) {
     try {
-        const { destinatario, asunto, mensaje, fileName, mimeType, fileBase64, empresa, periodo, tipo, } = req.body;
+        const { destinatario, destinatarios, cc, asunto, mensaje, fileName, mimeType, fileBase64, empresa, periodo, tipo, } = req.body;
         // Validaciones para que la UI reciba errores claros.
-        if (!destinatario?.trim()) {
+        const destinatariosFinal = destinatarios ??
+            destinatario ??
+            "";
+        const destinatariosTexto = Array.isArray(destinatariosFinal)
+            ? destinatariosFinal.join(",")
+            : String(destinatariosFinal);
+        if (!destinatariosTexto.trim()) {
             return res.status(400).json({
                 ok: false,
-                message: "Debes ingresar un correo destinatario.",
+                message: "Debes ingresar al menos un correo destinatario.",
             });
         }
         if (!asunto?.trim()) {
@@ -259,12 +340,25 @@ export async function enviarInformeResumenCorreo(req, res) {
         // Construimos el payload evitando enviar propiedades con valor undefined.
         // Esto es necesario porque el proyecto usa exactOptionalPropertyTypes: true.
         const emailPayload = {
-            to: destinatario,
+            to: Array.isArray(destinatariosFinal)
+                ? destinatariosFinal
+                : String(destinatariosFinal)
+                    .split(/[,;\n\r]+/g)
+                    .map((email) => email.trim())
+                    .filter(Boolean),
             subject: asunto,
             fileName,
             mimeType,
             fileBase64,
         };
+        if (cc) {
+            emailPayload.cc = Array.isArray(cc)
+                ? cc
+                : String(cc)
+                    .split(/[,;\n\r]+/g)
+                    .map((email) => email.trim())
+                    .filter(Boolean);
+        }
         // Solo agregamos mensaje si realmente viene con contenido.
         if (mensaje?.trim()) {
             emailPayload.mensaje = mensaje.trim();

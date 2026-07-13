@@ -1,5 +1,6 @@
 type EnviarInformeResumenEmailParams = {
-    to: string;
+    to: string[];
+    cc?: string[];
     subject: string;
     mensaje?: string;
     fileName: string;

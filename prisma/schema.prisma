@@ -484,6 +484,15 @@ model Equipo {
   solicitanteDetectadoId      Int?
   usuarioActual               String?
   observaciones               String?
+  mantGeneralConfigPath       String?
+  mantGeneralExePath          String?
+  /// ===================== Mant.General RIDS =====================
+  mantGeneralInstalado        Boolean                 @default(false)
+  mantGeneralInstalledAt      DateTime?
+  mantGeneralLastSeenAt       DateTime?
+  mantGeneralTecnicoId        Int?
+  mantGeneralVersion          String?
+  propietarioExterno          String?
   solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                     DetalleEquipo?
   detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -508,6 +517,9 @@ model Equipo {
   @@index([agenteActivo])
   @@index([requiereRevisionSolicitante])
   @@index([estado])
+  @@index([mantGeneralInstalado])
+  @@index([mantGeneralLastSeenAt])
+  @@index([mantGeneralTecnicoId])
 }
 
 model EquipoAdicional {
@@ -1213,6 +1225,7 @@ model AgendaVisita {
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
   fechaInicioRuta      DateTime?
+  fechaInicioVisita    DateTime?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   tecnicos             AgendaTecnico[]
 
@@ -1555,29 +1568,26 @@ model UbicacionTecnico {
 }
 
 model CotizacionMasivaEjecucion {
-  id                Int      @id @default(autoincrement())
+  id                Int                       @id @default(autoincrement())
   plantillaId       Int
-  fecha             DateTime @default(now())
+  fecha             DateTime                  @default(now())
   nombre            String?
-  totalCotizaciones Int      @default(0)
-
-  plantilla CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  totalCotizaciones Int                       @default(0)
+  plantilla         CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
 
   @@index([fecha])
   @@index([plantillaId])
 }
 
 model CotizacionMasivaPlantilla {
-  id          Int      @id @default(autoincrement())
+  id          Int                                @id @default(autoincrement())
   nombre      String
   descripcion String?
-  activo      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  activo      Boolean                            @default(true)
+  createdAt   DateTime                           @default(now())
+  updatedAt   DateTime                           @updatedAt
   tecnicoId   Int?
-
-  tecnico Tecnico? @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
-
+  tecnico     Tecnico?                           @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
   items       CotizacionMasivaPlantillaItem[]
   entidades   CotizacionMasivaPlantillaEntidad[]
   ejecuciones CotizacionMasivaEjecucion[]
@@ -1587,13 +1597,12 @@ model CotizacionMasivaPlantilla {
 }
 
 model CotizacionMasivaPlantillaCantidad {
-  id                 Int @id @default(autoincrement())
+  id                 Int                              @id @default(autoincrement())
   plantillaEntidadId Int
   productoId         Int
-  cantidad           Int @default(1)
-
-  plantillaEntidad CotizacionMasivaPlantillaEntidad @relation(fields: [plantillaEntidadId], references: [id], onDelete: Cascade)
-  producto         ProductoGestioo                  @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  cantidad           Int                              @default(1)
+  plantillaEntidad   CotizacionMasivaPlantillaEntidad @relation(fields: [plantillaEntidadId], references: [id], onDelete: Cascade)
+  producto           ProductoGestioo                  @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
   @@unique([plantillaEntidadId, productoId])
   @@index([plantillaEntidadId])
@@ -1601,13 +1610,12 @@ model CotizacionMasivaPlantillaCantidad {
 }
 
 model CotizacionMasivaPlantillaEntidad {
-  id          Int @id @default(autoincrement())
+  id          Int                                 @id @default(autoincrement())
   plantillaId Int
   entidadId   Int
-
-  plantilla  CotizacionMasivaPlantilla           @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
-  entidad    EntidadGestioo                      @relation(fields: [entidadId], references: [id], onDelete: Restrict)
-  cantidades CotizacionMasivaPlantillaCantidad[]
+  plantilla   CotizacionMasivaPlantilla           @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  entidad     EntidadGestioo                      @relation(fields: [entidadId], references: [id], onDelete: Restrict)
+  cantidades  CotizacionMasivaPlantillaCantidad[]
 
   @@unique([plantillaId, entidadId])
   @@index([entidadId])
@@ -1615,12 +1623,11 @@ model CotizacionMasivaPlantillaEntidad {
 }
 
 model CotizacionMasivaPlantillaItem {
-  id          Int @id @default(autoincrement())
+  id          Int                       @id @default(autoincrement())
   plantillaId Int
   productoId  Int
-
-  plantilla CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
-  producto  ProductoGestioo           @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  plantilla   CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  producto    ProductoGestioo           @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
   @@unique([plantillaId, productoId])
   @@index([plantillaId])
@@ -1662,6 +1669,7 @@ enum EstadoAgenda {
   COMPLETADA
   CANCELADA
   EN_RUTA
+  INICIADA
 }
 
 enum EstadoDTE {

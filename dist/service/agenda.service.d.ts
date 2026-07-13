@@ -70,6 +70,7 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -124,6 +125,7 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -171,6 +173,7 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }, "fecha"> & {
     fecha: string;
 }>;
@@ -200,6 +203,7 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }>;
 /**
  * Elimina todas las visitas de un mes completo.
@@ -254,6 +258,7 @@ export declare function crearAgendaVisitaManual(data: {
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }, "fecha"> & {
     fecha: string;
 }>;
