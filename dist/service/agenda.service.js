@@ -57,6 +57,42 @@ function serializarAgendaVisita(visita) {
         fecha: formatearFechaAgenda(visita.fecha),
     };
 }
+async function adjuntarFormularioVisita(visitas) {
+    const agendaIds = visitas.map((visita) => visita.id);
+    if (agendaIds.length === 0) {
+        return visitas.map((visita) => serializarAgendaVisita({
+            ...visita,
+            visita: null,
+            visitaId: null,
+            visitaStatus: null,
+            visitaOrigen: null,
+        }));
+    }
+    const formularios = await prisma.visita.findMany({
+        where: { agendaId: { in: agendaIds } },
+        select: {
+            id_visita: true,
+            agendaId: true,
+            status: true,
+            origen: true,
+            inicio: true,
+            fin: true,
+        },
+    });
+    const formulariosPorAgendaId = new Map(formularios
+        .filter((formulario) => typeof formulario.agendaId === "number")
+        .map((formulario) => [formulario.agendaId, formulario]));
+    return visitas.map((visita) => {
+        const formulario = formulariosPorAgendaId.get(visita.id) ?? null;
+        return serializarAgendaVisita({
+            ...visita,
+            visita: formulario,
+            visitaId: formulario?.id_visita ?? null,
+            visitaStatus: formulario?.status ?? null,
+            visitaOrigen: formulario?.origen ?? null,
+        });
+    });
+}
 let empresaRidsAgendaIdCache;
 async function obtenerEmpresaRidsAgendaId() {
     if (empresaRidsAgendaIdCache !== undefined)
@@ -707,7 +743,7 @@ export async function getAgendaMensual(year, month, filtros) {
         },
         orderBy: { fecha: "asc" },
     });
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 export async function getAgendaDesdeOutlook(year, month) {
     const primerDia = new Date(Date.UTC(year, month - 1, 1));
@@ -1142,7 +1178,7 @@ export async function getAgendaPorDia(fecha) {
         },
         orderBy: { tipo: "asc" },
     });
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 /* ======================================================
    ⏱️ VALIDACIÓN DE CONFLICTO HORARIO
@@ -1292,7 +1328,8 @@ export async function actualizarAgendaVisita(id, datos) {
             // console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
         }
     }
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 export async function cerrarAgendasPendientesDelDia() {
     const hoy = new Date();
@@ -1495,14 +1532,16 @@ export async function crearAgendaVisitaManual(data) {
                         },
                     },
                 });
-                return serializarAgendaVisita(visitaActualizada);
+                const [visitaConFormulario] = await adjuntarFormularioVisita([visitaActualizada]);
+                return visitaConFormulario;
             }
         }
         catch (error) {
             //console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
         }
     }
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 /* ======================================================
    🔔 NOTIFICACIONES REALES POR CORREO

@@ -748,6 +748,9 @@ model Visita {
   direccion_visita   String?
   ecografo           Boolean           @default(false)
   sucursalId         Int?
+  agendaId           Int?              @unique
+  origen             OrigenVisita      @default(MANUAL)
+  agenda             AgendaVisita?     @relation(fields: [agendaId], references: [id])
   empresa            Empresa           @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
   tecnico            Tecnico           @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante?      @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
@@ -1228,6 +1231,7 @@ model AgendaVisita {
   fechaInicioVisita    DateTime?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   tecnicos             AgendaTecnico[]
+  visita               Visita?
 
   @@index([empresaId])
   @@index([fecha])
@@ -1871,4 +1875,9 @@ enum EstadoAgenteEquipo {
   SIN_CONEXION
   ADVERTENCIA
   CRITICO
+}
+
+enum OrigenVisita {
+  MANUAL
+  AGENDA
 }

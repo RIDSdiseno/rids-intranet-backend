@@ -71,6 +71,18 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -126,6 +138,18 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -140,7 +164,7 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
     empresaId?: number | null | undefined;
-}): Promise<Omit<{
+}): Promise<(Omit<{
     empresa: {
         nombre: string;
         id_empresa: number;
@@ -174,9 +198,21 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
-}>;
+}) | undefined>;
 export declare function cerrarAgendasPendientesDelDia(): Promise<number>;
 /**
  * Reemplaza completamente los técnicos de una visita.
@@ -225,7 +261,7 @@ export declare function crearAgendaVisitaManual(data: {
     horaFin?: string | undefined;
     mensaje?: string | undefined;
     notas?: string | undefined;
-}): Promise<Omit<{
+}): Promise<(Omit<{
     empresa: {
         nombre: string;
         id_empresa: number;
@@ -259,9 +295,21 @@ export declare function crearAgendaVisitaManual(data: {
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
-}>;
+}) | undefined>;
 /**
  * Envía correos reales a los técnicos de cada agenda pendiente del día.
  * Usa Microsoft Graph via graphReaderService.sendReplyEmail().

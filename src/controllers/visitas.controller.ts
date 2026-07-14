@@ -49,6 +49,8 @@ const visitaSelect = {
   licenciaWindows: true,
   mantenimientoReloj: true,
   rendimientoEquipo: true,
+  agendaId: true,
+  origen: true,
   empresa: { select: { id_empresa: true, nombre: true } },
   tecnico: { select: { id_tecnico: true, nombre: true } },
   solicitanteRef: { select: { id_solicitante: true, nombre: true } },
@@ -59,6 +61,51 @@ const visitaSelect = {
     }
   }
 } as const;
+
+const agendaResumenSelect = {
+  id: true,
+  fecha: true,
+  estado: true,
+  horaInicio: true,
+  horaFin: true,
+  fechaInicioRuta: true,
+  fechaInicioVisita: true,
+  empresaExternaNombre: true,
+  empresa: { select: { id_empresa: true, nombre: true } },
+  tecnicos: {
+    include: {
+      tecnico: { select: { id_tecnico: true, nombre: true } },
+    },
+  },
+} as const;
+
+type VisitaConAgendaId = { agendaId?: number | null };
+
+async function adjuntarAgendaResumen<T extends VisitaConAgendaId>(rows: T[]) {
+  const agendaIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.agendaId)
+        .filter((agendaId): agendaId is number => typeof agendaId === "number")
+    )
+  );
+
+  if (agendaIds.length === 0) {
+    return rows.map((row) => ({ ...row, agenda: null }));
+  }
+
+  const agendas = await prisma.agendaVisita.findMany({
+    where: { id: { in: agendaIds } },
+    select: agendaResumenSelect,
+  });
+
+  const agendasPorId = new Map(agendas.map((agenda) => [agenda.id, agenda] as const));
+
+  return rows.map((row) => ({
+    ...row,
+    agenda: row.agendaId ? agendasPorId.get(row.agendaId) ?? null : null,
+  }));
+}
 
 const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
 
@@ -214,12 +261,14 @@ export const listVisitas = async (req: Request, res: Response) => {
     }),
   ]);
 
+  const items = await adjuntarAgendaResumen(rows);
+
   return res.json({
     page,
     pageSize,
     total,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    items: rows,
+    items,
   });
 };
 
@@ -242,7 +291,9 @@ export const getVisitaById = async (req: Request, res: Response) => {
     return res.status(403).json({ error: "No autorizado" });
   }
 
-  return res.json(row);
+  const [visita] = await adjuntarAgendaResumen([row]);
+
+  return res.json(visita);
 
 };
 

@@ -43,6 +43,8 @@ const visitaSelect = {
     licenciaWindows: true,
     mantenimientoReloj: true,
     rendimientoEquipo: true,
+    agendaId: true,
+    origen: true,
     empresa: { select: { id_empresa: true, nombre: true } },
     tecnico: { select: { id_tecnico: true, nombre: true } },
     solicitanteRef: { select: { id_solicitante: true, nombre: true } },
@@ -53,6 +55,39 @@ const visitaSelect = {
         }
     }
 };
+const agendaResumenSelect = {
+    id: true,
+    fecha: true,
+    estado: true,
+    horaInicio: true,
+    horaFin: true,
+    fechaInicioRuta: true,
+    fechaInicioVisita: true,
+    empresaExternaNombre: true,
+    empresa: { select: { id_empresa: true, nombre: true } },
+    tecnicos: {
+        include: {
+            tecnico: { select: { id_tecnico: true, nombre: true } },
+        },
+    },
+};
+async function adjuntarAgendaResumen(rows) {
+    const agendaIds = Array.from(new Set(rows
+        .map((row) => row.agendaId)
+        .filter((agendaId) => typeof agendaId === "number")));
+    if (agendaIds.length === 0) {
+        return rows.map((row) => ({ ...row, agenda: null }));
+    }
+    const agendas = await prisma.agendaVisita.findMany({
+        where: { id: { in: agendaIds } },
+        select: agendaResumenSelect,
+    });
+    const agendasPorId = new Map(agendas.map((agenda) => [agenda.id, agenda]));
+    return rows.map((row) => ({
+        ...row,
+        agenda: row.agendaId ? agendasPorId.get(row.agendaId) ?? null : null,
+    }));
+}
 const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
 const baseFlags = z.object({
     confImpresoras: z.boolean().optional().default(false),
@@ -181,12 +216,13 @@ export const listVisitas = async (req, res) => {
             select: visitaSelect,
         }),
     ]);
+    const items = await adjuntarAgendaResumen(rows);
     return res.json({
         page,
         pageSize,
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
-        items: rows,
+        items,
     });
 };
 /* ------------------------------------ */
@@ -203,7 +239,8 @@ export const getVisitaById = async (req, res) => {
     if (user?.rol === "CLIENTE" && row.empresaId !== user.empresaId) {
         return res.status(403).json({ error: "No autorizado" });
     }
-    return res.json(row);
+    const [visita] = await adjuntarAgendaResumen([row]);
+    return res.json(visita);
 };
 /* ------------------------------------ */
 /* Crear (single o lote)                 */

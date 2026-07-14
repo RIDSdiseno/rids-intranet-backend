@@ -69,6 +69,54 @@ function serializarAgendaVisita<T extends { fecha: Date }>(
     };
 }
 
+type AgendaConIdFecha = { id: number; fecha: Date };
+
+async function adjuntarFormularioVisita<T extends AgendaConIdFecha>(visitas: T[]) {
+    const agendaIds = visitas.map((visita) => visita.id);
+
+    if (agendaIds.length === 0) {
+        return visitas.map((visita) =>
+            serializarAgendaVisita({
+                ...visita,
+                visita: null,
+                visitaId: null,
+                visitaStatus: null,
+                visitaOrigen: null,
+            })
+        );
+    }
+
+    const formularios = await prisma.visita.findMany({
+        where: { agendaId: { in: agendaIds } },
+        select: {
+            id_visita: true,
+            agendaId: true,
+            status: true,
+            origen: true,
+            inicio: true,
+            fin: true,
+        },
+    });
+
+    const formulariosPorAgendaId = new Map(
+        formularios
+            .filter((formulario) => typeof formulario.agendaId === "number")
+            .map((formulario) => [formulario.agendaId!, formulario] as const)
+    );
+
+    return visitas.map((visita) => {
+        const formulario = formulariosPorAgendaId.get(visita.id) ?? null;
+
+        return serializarAgendaVisita({
+            ...visita,
+            visita: formulario,
+            visitaId: formulario?.id_visita ?? null,
+            visitaStatus: formulario?.status ?? null,
+            visitaOrigen: formulario?.origen ?? null,
+        });
+    });
+}
+
 let empresaRidsAgendaIdCache: number | null | undefined;
 
 async function obtenerEmpresaRidsAgendaId(): Promise<number | null> {
@@ -863,7 +911,7 @@ export async function getAgendaMensual(
         orderBy: { fecha: "asc" },
     });
 
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 
 export async function getAgendaDesdeOutlook(
@@ -1448,7 +1496,7 @@ export async function getAgendaPorDia(fecha: Date) {
         orderBy: { tipo: "asc" },
     });
 
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 
 /* ======================================================
@@ -1640,7 +1688,8 @@ export async function actualizarAgendaVisita(
         }
     }
 
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 
 export async function cerrarAgendasPendientesDelDia(): Promise<number> {
@@ -1895,14 +1944,16 @@ export async function crearAgendaVisitaManual(data: {
                     },
                 });
 
-                return serializarAgendaVisita(visitaActualizada);
+                const [visitaConFormulario] = await adjuntarFormularioVisita([visitaActualizada]);
+                return visitaConFormulario;
             }
         } catch (error) {
             //console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
         }
     }
 
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 
 /* ======================================================
