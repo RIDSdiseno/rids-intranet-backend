@@ -2,12 +2,25 @@ import fetch from "node-fetch";
 import { resolveSharepointPathReporte } from "../../utils/sharepointPaths.js";
 import { prisma } from "../../lib/prisma.js";
 import { supabaseAdmin } from "../../lib/supabase/supabase.js";
-import { exec } from "child_process";
-import { writeFileSync, readFileSync, existsSync, unlinkSync } from "fs";
+import { execFile } from "child_process";
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, rmSync, } from "fs";
+import { pathToFileURL } from "url";
 import { join } from "path";
 import { tmpdir } from "os";
 import { promisify } from "util";
 import { enviarInformeResumenPorCorreo } from "../../service/reportes/ia-metricas-reportes/reportes-email/reportes-email.service.js";
+function eliminarArchivoTemporal(path) {
+    if (!path)
+        return;
+    try {
+        if (existsSync(path)) {
+            unlinkSync(path);
+        }
+    }
+    catch (error) {
+        console.warn(`[LibreOffice] No fue posible eliminar el archivo temporal: ${path}`, error);
+    }
+}
 // ─── DOCX → SharePoint + Supabase ────────────────────────────────────────
 export async function uploadReporteDocx(req, res) {
     try {
@@ -171,9 +184,47 @@ export async function uploadReporteSupabase(req, res) {
     }
 }
 // ─── DOCX → PDF via LibreOffice → Supabase ───────────────────────────────
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+function obtenerLibreOfficePath() {
+    const configuredPath = process.env.LIBREOFFICE_PATH?.trim();
+    if (configuredPath) {
+        return configuredPath;
+    }
+    if (process.platform === "win32") {
+        return "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
+    }
+    return "/usr/bin/libreoffice";
+}
+function crearPerfilTemporalLibreOffice(unique) {
+    const profileDir = join(tmpdir(), `libreoffice-profile-${unique}`);
+    mkdirSync(profileDir, {
+        recursive: true,
+    });
+    return {
+        profileDir,
+        profileArgument: `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
+    };
+}
+function eliminarDirectorioTemporal(path) {
+    if (!path)
+        return;
+    try {
+        if (existsSync(path)) {
+            rmSync(path, {
+                recursive: true,
+                force: true,
+            });
+        }
+    }
+    catch (error) {
+        console.warn(`[LibreOffice] No fue posible eliminar el directorio temporal: ${path}`, error);
+    }
+}
 // ─── Preview DOCX → PDF temporal ──────────────────────────────────────────
 export async function previewDocxToPdf(req, res) {
+    let tmpDocx = null;
+    let pdfPath = null;
+    let libreOfficeProfileDir = null;
     try {
         const { fileBase64, fileName } = req.body;
         if (!fileBase64 || !fileName) {
@@ -188,7 +239,8 @@ export async function previewDocxToPdf(req, res) {
                 message: "El archivo debe ser un DOCX.",
             });
         }
-        const sizeMb = Buffer.byteLength(fileBase64, "base64") / (1024 * 1024);
+        const sizeMb = Buffer.byteLength(fileBase64, "base64") /
+            (1024 * 1024);
         if (sizeMb > 20) {
             return res.status(413).json({
                 ok: false,
@@ -199,43 +251,61 @@ export async function previewDocxToPdf(req, res) {
             .replace(/\s+/g, "_")
             .replace(/[^\w.-]/g, "");
         const unique = `${Date.now()}_${Math.round(Math.random() * 100000)}`;
-        const tmpDocx = join(tmpdir(), `${unique}_${safeName}`);
+        const { profileDir, profileArgument, } = crearPerfilTemporalLibreOffice(unique);
+        libreOfficeProfileDir = profileDir;
+        tmpDocx = join(tmpdir(), `${unique}_${safeName}`);
         const tmpOutputDir = tmpdir();
-        const buffer = Buffer.from(fileBase64, "base64");
-        writeFileSync(tmpDocx, buffer);
-        try {
-            const libreOfficeCmd = process.env.LIBREOFFICE_PATH?.trim() || "libreoffice";
-            await execAsync(`"${libreOfficeCmd}" --headless --convert-to pdf "${tmpDocx}" --outdir "${tmpOutputDir}"`, { timeout: 60000 });
-        }
-        catch (err) {
-            if (existsSync(tmpDocx))
-                unlinkSync(tmpDocx);
-            console.error("❌ LibreOffice preview error:", err);
-            return res.status(500).json({
-                ok: false,
-                message: "Error convirtiendo DOCX a PDF. Verifica que LibreOffice esté instalado.",
-            });
-        }
-        const pdfPath = tmpDocx.replace(/\.docx$/i, ".pdf");
+        writeFileSync(tmpDocx, Buffer.from(fileBase64, "base64"));
+        const libreOfficePath = obtenerLibreOfficePath();
+        await execFileAsync(libreOfficePath, [
+            "--headless",
+            profileArgument,
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            tmpOutputDir,
+            tmpDocx,
+        ], {
+            timeout: 60_000,
+            env: {
+                ...process.env,
+                HOME: process.env.HOME ||
+                    (process.platform === "win32"
+                        ? process.env.USERPROFILE
+                        : "/tmp"),
+            },
+        });
+        console.log("[LibreOffice] Ejecutando preview con:", libreOfficePath);
+        await execFileAsync(libreOfficePath, [
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            tmpOutputDir,
+            tmpDocx,
+        ], {
+            timeout: 60_000,
+            env: {
+                ...process.env,
+                HOME: process.env.HOME ||
+                    (process.platform === "win32"
+                        ? process.env.USERPROFILE
+                        : "/tmp"),
+            },
+        });
+        pdfPath = tmpDocx.replace(/\.docx$/i, ".pdf");
         if (!existsSync(pdfPath)) {
-            if (existsSync(tmpDocx))
-                unlinkSync(tmpDocx);
             return res.status(500).json({
                 ok: false,
-                message: "No se generó el PDF de vista previa.",
+                message: "LibreOffice terminó, pero no generó el PDF de vista previa.",
             });
         }
         const pdfBuffer = readFileSync(pdfPath);
-        const pdfBase64 = pdfBuffer.toString("base64");
-        if (existsSync(tmpDocx))
-            unlinkSync(tmpDocx);
-        if (existsSync(pdfPath))
-            unlinkSync(pdfPath);
         return res.json({
             ok: true,
             fileName: safeName.replace(/\.docx$/i, ".pdf"),
             mimeType: "application/pdf",
-            fileBase64: pdfBase64,
+            fileBase64: pdfBuffer.toString("base64"),
         });
     }
     catch (error) {
@@ -245,51 +315,99 @@ export async function previewDocxToPdf(req, res) {
             message: "Error generando vista previa del DOCX.",
         });
     }
+    finally {
+        eliminarArchivoTemporal(tmpDocx);
+        eliminarArchivoTemporal(pdfPath);
+        eliminarDirectorioTemporal(libreOfficeProfileDir);
+    }
 }
 export async function convertDocxToPdf(req, res) {
+    let tmpDocx = null;
+    let pdfPath = null;
+    let libreOfficeProfileDir = null;
     try {
-        const { fileBase64, fileName, empresaId, empresa, periodo } = req.body;
+        const { fileBase64, fileName, empresaId, empresa, periodo, } = req.body;
         if (!fileBase64 || !fileName) {
-            return res.status(400).json({ ok: false, message: "fileBase64 y fileName son obligatorios" });
-        }
-        const tmpDocx = join(tmpdir(), `${Date.now()}_reporte.docx`);
-        const buffer = Buffer.from(fileBase64, "base64");
-        writeFileSync(tmpDocx, buffer);
-        try {
-            const libreOfficeCmd = process.env.LIBREOFFICE_PATH?.trim() || "libreoffice";
-            await execAsync(`"${libreOfficeCmd}" --headless --convert-to pdf "${tmpDocx}" --outdir "${tmpdir()}"`, {
-                timeout: 60000,
+            return res.status(400).json({
+                ok: false,
+                message: "fileBase64 y fileName son obligatorios",
             });
         }
-        catch (err) {
-            unlinkSync(tmpDocx);
-            return res.status(500).json({ ok: false, message: "Error convirtiendo DOCX a PDF. ¿LibreOffice instalado?" });
+        if (!fileName.toLowerCase().endsWith(".docx")) {
+            return res.status(400).json({
+                ok: false,
+                message: "El archivo debe tener extensión DOCX.",
+            });
         }
-        const pdfPath = tmpDocx.replace(".docx", ".pdf");
+        const sizeMb = Buffer.byteLength(fileBase64, "base64") /
+            (1024 * 1024);
+        if (sizeMb > 20) {
+            return res.status(413).json({
+                ok: false,
+                message: "Archivo demasiado grande para convertir.",
+            });
+        }
+        const unique = `${Date.now()}_${Math.round(Math.random() * 100000)}`;
+        const { profileDir, profileArgument, } = crearPerfilTemporalLibreOffice(unique);
+        libreOfficeProfileDir = profileDir;
+        tmpDocx = join(tmpdir(), `${unique}_reporte.docx`);
+        writeFileSync(tmpDocx, Buffer.from(fileBase64, "base64"));
+        const libreOfficePath = obtenerLibreOfficePath();
+        console.log("[LibreOffice] Ejecutando conversión con:", libreOfficePath);
+        await execFileAsync(libreOfficePath, [
+            "--headless",
+            profileArgument,
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            tmpdir(),
+            tmpDocx,
+        ], {
+            timeout: 60_000,
+            env: {
+                ...process.env,
+                HOME: process.env.HOME ||
+                    (process.platform === "win32"
+                        ? process.env.USERPROFILE
+                        : "/tmp"),
+            },
+        });
+        pdfPath = tmpDocx.replace(/\.docx$/i, ".pdf");
         if (!existsSync(pdfPath)) {
-            unlinkSync(tmpDocx);
-            return res.status(500).json({ ok: false, message: "No se generó el PDF" });
+            return res.status(500).json({
+                ok: false,
+                message: "LibreOffice terminó, pero no se generó el PDF.",
+            });
         }
         const pdfBuffer = readFileSync(pdfPath);
-        unlinkSync(tmpDocx);
-        unlinkSync(pdfPath);
-        const bucket = process.env.SUPABASE_BUCKET_REPORTES || "reportes";
-        const safeEmpresa = (empresa || "empresa").replace(/\s+/g, "_").replace(/[^\w-]/g, "");
-        const safePeriodo = (periodo || "Periodo").replace(/\s+/g, "_").replace(/[^\w-]/g, "");
+        const bucket = process.env.SUPABASE_BUCKET_REPORTES ||
+            "reportes";
+        const safeEmpresa = (empresa || "empresa")
+            .replace(/\s+/g, "_")
+            .replace(/[^\w-]/g, "");
+        const safePeriodo = (periodo || "Periodo")
+            .replace(/\s+/g, "_")
+            .replace(/[^\w-]/g, "");
         const pdfFileName = fileName.replace(/\.docx$/i, ".pdf");
         const storagePath = `${safeEmpresa}/${safePeriodo}/${pdfFileName}`;
         const { error: uploadError } = await supabaseAdmin.storage
             .from(bucket)
-            .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
-        if (uploadError)
+            .upload(storagePath, pdfBuffer, {
+            contentType: "application/pdf",
+            upsert: true,
+        });
+        if (uploadError) {
             throw uploadError;
+        }
         const { data: publicData } = supabaseAdmin.storage
             .from(bucket)
             .getPublicUrl(storagePath);
         const urlArchivo = publicData?.publicUrl ?? null;
         await prisma.reporteGenerado.create({
             data: {
-                empresaId: empresaId ? Number(empresaId) : null,
+                empresaId: empresaId
+                    ? Number(empresaId)
+                    : null,
                 empresaNombre: empresa,
                 periodo: periodo || "Periodo",
                 tipo: "PDF",
@@ -297,15 +415,31 @@ export async function convertDocxToPdf(req, res) {
                 urlArchivo,
                 storagePath,
                 generadoPorId: req.user?.id ?? null,
-                generadoPor: req.user?.nombre ?? req.user?.email ?? null,
+                generadoPor: req.user?.nombre ??
+                    req.user?.email ??
+                    null,
                 estado: "GENERADO",
             },
         });
-        return res.json({ ok: true, urlArchivo, storagePath });
+        return res.json({
+            ok: true,
+            urlArchivo,
+            storagePath,
+        });
     }
     catch (error) {
         console.error("convertDocxToPdf error:", error);
-        return res.status(500).json({ ok: false, message: "Error convirtiendo o subiendo PDF" });
+        return res.status(500).json({
+            ok: false,
+            message: error instanceof Error
+                ? error.message
+                : "Error convirtiendo o subiendo PDF",
+        });
+    }
+    finally {
+        eliminarArchivoTemporal(tmpDocx);
+        eliminarArchivoTemporal(pdfPath);
+        eliminarDirectorioTemporal(libreOfficeProfileDir);
     }
 }
 // Envía el informe resumido generado desde el frontend como adjunto PDF.
