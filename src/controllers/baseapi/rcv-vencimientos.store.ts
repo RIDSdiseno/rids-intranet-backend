@@ -1,3 +1,4 @@
+// src/controllers/baseapi/rcv-vencimientos.store.ts
 import { prisma } from "../../lib/prisma.js";
 
 function makeKey(empresaKey: string, tipoDoc: string, folio: string) {

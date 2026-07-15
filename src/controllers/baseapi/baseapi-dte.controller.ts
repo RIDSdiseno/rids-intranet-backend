@@ -82,9 +82,19 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
         });
 
         // Exponer timbre_base64 a nivel superior también para depuración rápida
-        const timbreBase64 = (
-            (resultado.data && (resultado.data.data?.documento?.timbre_base64 ?? resultado.data.data?.documento?.TED?.FRMT)) ?? null
-        ) as string | null;
+        const documento = resultado.data?.data?.documento as
+            | {
+                timbre_base64?: string | null;
+                TED?: {
+                    FRMT?: string | null;
+                } | null;
+            }
+            | undefined;
+
+        const timbreBase64 =
+            documento?.timbre_base64 ??
+            documento?.TED?.FRMT ??
+            null;
 
         res.json({
             ok: true,
@@ -231,7 +241,7 @@ export async function getDtePdfPorFolioBaseApi(req: Request, res: Response) {
                         <tbody>
                             ${items.map((it: any, i: number) => `
                                 <tr>
-                                    <td style="text-align:center">${escapeHtml(String(it.linea ?? it.line ?? i+1))}</td>
+                                    <td style="text-align:center">${escapeHtml(String(it.linea ?? it.line ?? i + 1))}</td>
                                     <td>${escapeHtml(String(it.nombre ?? it.descripcion ?? ''))}</td>
                                     <td style="text-align:center">${escapeHtml(String(it.cantidad ?? ''))}</td>
                                     <td style="text-align:right">${escapeHtml(String(it.precioUnitario ?? it.precioUnitario ?? ''))}</td>

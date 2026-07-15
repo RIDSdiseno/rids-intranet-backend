@@ -1,4 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
+import { getCurrentUserId } from "../../lib/request-context.js";
+import { AuditAction, Prisma } from "@prisma/client";
 // Controlador para listar logs de auditoría con filtros y paginación
 export const listAuditLogs = async (req, res) => {
     try {
@@ -131,6 +133,72 @@ export const listAuditByEmpresa = async (req, res) => {
         return res.status(500).json({ error: "Error interno del servidor" });
     }
 };
+// Crear un log de auditoría manual (útil para registrar envíos de recordatorios)
+export const createAuditLog = async (req, res) => {
+    try {
+        const { entity, entityId, empresaId, action, changes, description, } = req.body;
+        const actorId = getCurrentUserId();
+        const actionNormalizada = String(action ?? "CREATE")
+            .trim()
+            .toUpperCase();
+        const auditAction = actionNormalizada === AuditAction.UPDATE
+            ? AuditAction.UPDATE
+            : actionNormalizada === AuditAction.DELETE
+                ? AuditAction.DELETE
+                : AuditAction.CREATE;
+        const empresaIdNormalizada = empresaId !== undefined &&
+            empresaId !== null &&
+            String(empresaId).trim() !== ""
+            ? Number(empresaId)
+            : null;
+        if (empresaIdNormalizada !== null &&
+            !Number.isInteger(empresaIdNormalizada)) {
+            return res.status(400).json({
+                ok: false,
+                error: "empresaId inválido",
+            });
+        }
+        const auditData = {
+            entity: entity !== undefined &&
+                entity !== null &&
+                String(entity).trim()
+                ? String(entity).trim()
+                : "Recordatorio",
+            entityId: entityId !== undefined &&
+                entityId !== null &&
+                String(entityId).trim()
+                ? String(entityId).trim()
+                : "unknown",
+            empresaId: empresaIdNormalizada,
+            action: auditAction,
+            description: description !== undefined &&
+                description !== null &&
+                String(description).trim()
+                ? String(description).trim()
+                : "Recordatorio enviado",
+            actorId: actorId ?? null,
+            ...(changes !== undefined && changes !== null
+                ? {
+                    changes: changes,
+                }
+                : {}),
+        };
+        const created = await prisma.auditLog.create({
+            data: auditData,
+        });
+        return res.status(201).json({
+            ok: true,
+            data: created,
+        });
+    }
+    catch (error) {
+        console.error("Error createAuditLog:", error);
+        return res.status(500).json({
+            ok: false,
+            error: "Error interno al crear audit log",
+        });
+    }
+};
 export const listEmpresasAuditLogs = async (req, res) => {
     try {
         const user = req.user;
@@ -173,7 +241,16 @@ export const listEmpresasAuditLogs = async (req, res) => {
             entity: entity ? String(entity) : { in: empresaEntities },
         };
         if (action) {
-            where.action = String(action);
+            const actionNormalizada = String(action)
+                .trim()
+                .toUpperCase();
+            if (!Object.values(AuditAction).includes(actionNormalizada)) {
+                return res.status(400).json({
+                    ok: false,
+                    error: "Acción de auditoría inválida",
+                });
+            }
+            where.action = actionNormalizada;
         }
         if (from || to) {
             where.createdAt = {};

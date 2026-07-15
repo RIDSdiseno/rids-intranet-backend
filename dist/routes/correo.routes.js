@@ -1,3 +1,4 @@
+// src/routes/correos.routes.ts
 import { Router } from "express";
 import { graphReaderService } from "../service/email/graph-reader.service.js";
 import { prisma } from "../lib/prisma.js";
@@ -433,16 +434,14 @@ correoRouter.post("/enviar-masivo", async (req, res) => {
     }
     // attachments opcionales en el body: [{ name, contentType, contentBytes }]
     const globalAttachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
-    const envRate = Number(process.env.MAILER_RATE_PER_MIN || 3);
-    const requestedRate = Number(req.body.ratePerMin || envRate || 3);
-    const ratePerMin = Math.max(1, Math.min(60, requestedRate));
-    const delayMs = Math.ceil(60000 / ratePerMin);
-    const validTargets = targets.filter((t) => typeof (t?.email || "").trim() === "string").map((t) => ({ ...t, email: (t.email || "").trim() })).filter((t) => t.email);
+    const validTargets = targets
+        .map((t) => ({ ...t, email: (t?.email ?? "").trim() }))
+        .filter((t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t.email));
     const jobId = `mailjob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     mailerJobs[jobId] = {
         id: jobId,
         createdAt: Date.now(),
-        ratePerMin,
+        ratePerMin: 0,
         total: validTargets.length,
         successes: [],
         failures: [],
@@ -450,36 +449,130 @@ correoRouter.post("/enviar-masivo", async (req, res) => {
         status: 'queued',
     };
     // Schedule sends spaced by delayMs
-    validTargets.forEach((t, idx) => {
-        const when = idx * delayMs;
-        setTimeout(async () => {
-            const jobRef = mailerJobs[jobId];
-            if (!jobRef)
-                return;
-            jobRef.status = 'processing';
-            try {
-                const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
-                const attachments = [...globalAttachments, ...perTargetAttachments].map((a) => ({
-                    name: a.name,
-                    contentType: a.contentType,
-                    contentBytes: a.contentBytes,
-                }));
-                await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
-                jobRef.successes.push(t.email);
+    // Registrar entradas iniciales para cada destinatario para garantizar que quede rastro
+    try {
+        const fs = await import('fs');
+        const { prisma } = await import('../lib/prisma.js');
+        // Resolver nombre del remitente una sola vez
+        let sentBy = null;
+        try {
+            const user = req.user;
+            if (user?.id) {
+                const tecnico = await prisma.tecnico.findUnique({
+                    where: {
+                        id_tecnico: Number(user.id),
+                    },
+                    select: {
+                        nombre: true,
+                        email: true,
+                    },
+                });
+                sentBy =
+                    tecnico?.nombre ??
+                        tecnico?.email ??
+                        user?.email ??
+                        null;
             }
-            catch (err) {
-                jobRef.failures.push({ to: t.email, error: err?.message ?? String(err) });
+            else {
+                sentBy = user?.email ?? null;
             }
-            finally {
-                jobRef.completed += 1;
-                if (jobRef.completed >= jobRef.total) {
-                    jobRef.status = 'done';
+        }
+        catch (error) {
+            console.warn("No se pudo resolver el remitente:", error);
+            sentBy = req?.user?.email ?? null;
+        }
+        for (const t of validTargets) {
+            // Extraer cotizacionId desde nombre del adjunto
+            let cotizacionId = null;
+            const combined = [...globalAttachments, ...(Array.isArray(t.attachments) ? t.attachments : [])];
+            for (const a of combined) {
+                const m = String(a?.name ?? '').match(/Cotizacion_(\d+)\.pdf/i);
+                if (m?.[1]) {
+                    cotizacionId = Number(m[1]);
+                    break;
                 }
             }
-        }, when);
+            // Enriquecer con datos de la cotización si existe
+            let clienteNombre = null;
+            let creadoPor = null;
+            let fechaCreacion = null;
+            if (cotizacionId) {
+                try {
+                    const cot = await prisma.cotizacionGestioo.findUnique({
+                        where: { id: cotizacionId },
+                        include: { entidad: true, tecnico: true },
+                    });
+                    if (cot) {
+                        clienteNombre = cot.entidad?.nombre ?? null;
+                        creadoPor = cot.tecnico?.nombre ?? null;
+                        const f = cot.fecha ?? cot.createdAt ?? null;
+                        fechaCreacion = f ? new Date(f) : null;
+                    }
+                }
+                catch (err) {
+                    console.warn('Pre-registro: no se pudo enriquecer cotizacion', cotizacionId, err);
+                }
+            }
+            // Upsert en DB (evita duplicados por jobId+to+cotizacionId)
+            try {
+                const existing = await prisma.cotizacionEnviada.findFirst({
+                    where: { jobId, to: t.email ?? null, cotizacionId },
+                });
+                if (!existing) {
+                    await prisma.cotizacionEnviada.create({
+                        data: {
+                            cotizacionId,
+                            to: t.email ?? null,
+                            subject: subject ?? null,
+                            sentBy,
+                            jobId,
+                            meta: { attachments: combined.length },
+                            clienteNombre,
+                            creadoPor,
+                            fechaCreacion,
+                        },
+                    });
+                }
+            }
+            catch (err) {
+                console.warn('Pre-registro DB error para', t.email, err);
+            }
+        }
+    }
+    catch (err) {
+        console.error('Error creando registros iniciales de envíos:', err);
+    }
+    const jobRef = mailerJobs[jobId];
+    jobRef.status = 'processing';
+    // Envío paralelo inmediato — sin throttling artificial.
+    // Microsoft Graph maneja su propio rate limiting (429) si se supera la cuota.
+    Promise.allSettled(validTargets.map(async (t) => {
+        const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
+        const attachments = [...globalAttachments, ...perTargetAttachments].map((a) => ({
+            name: a.name,
+            contentType: a.contentType,
+            contentBytes: a.contentBytes,
+        }));
+        await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
+        jobRef.successes.push(t.email);
+    })).then((results) => {
+        results.forEach((result, idx) => {
+            if (result.status !== "rejected")
+                return;
+            const err = result.reason;
+            const targetEmail = validTargets[idx]?.email;
+            jobRef.failures.push({
+                ...(targetEmail ? { to: targetEmail } : {}),
+                error: err instanceof Error
+                    ? err.message
+                    : String(err),
+            });
+        });
+        jobRef.completed = validTargets.length;
+        jobRef.status = 'done';
+        console.log(`[Mailer] Job ${jobId} completado: ${jobRef.successes.length} ok, ${jobRef.failures.length} errores`);
     });
-    const estimatedCompletionMs = delayMs * Math.max(0, validTargets.length - 1);
-    return res.json({ ok: true, queued: true, jobId, requested: targets.length, queuedCount: validTargets.length, ratePerMin, estimatedCompletionMs });
+    return res.json({ ok: true, queued: true, jobId, requested: targets.length, queuedCount: validTargets.length, ratePerMin: 0, estimatedCompletionMs: 0 });
 });
 // Obtener estado de job de envío masivo
 correoRouter.get("/enviar-masivo/status/:id", async (req, res) => {
@@ -489,7 +582,8 @@ correoRouter.get("/enviar-masivo/status/:id", async (req, res) => {
     const job = mailerJobs[id];
     if (!job)
         return res.status(404).json({ ok: false, message: "Job no encontrado" });
-    return res.json({ ok: true, job: {
+    return res.json({
+        ok: true, job: {
             id: job.id,
             createdAt: job.createdAt,
             ratePerMin: job.ratePerMin,
@@ -498,6 +592,7 @@ correoRouter.get("/enviar-masivo/status/:id", async (req, res) => {
             failures: job.failures,
             completed: job.completed,
             status: job.status,
-        } });
+        }
+    });
 });
 //# sourceMappingURL=correo.routes.js.map

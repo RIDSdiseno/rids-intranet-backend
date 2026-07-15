@@ -1,3 +1,4 @@
+// src/controllers/cotizaciones-enviadas.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 
@@ -32,7 +33,15 @@ export async function createCotizacionEnvio(req: Request, res: Response) {
     let sentBy: string | null = sentByBody ?? null;
     if (!sentBy && user?.id) {
       try {
-        const u = await prisma.usuario.findUnique({ where: { id: Number(user.id) } });
+        const u = await prisma.tecnico.findUnique({
+          where: {
+            id_tecnico: Number(user.id),
+          },
+          select: {
+            nombre: true,
+            email: true,
+          },
+        });
         if (u) sentBy = (u as any).nombre ?? (u as any).email ?? null;
       } catch {
         sentBy = user?.email ?? null;
@@ -68,8 +77,8 @@ export async function createCotizacionEnvio(req: Request, res: Response) {
     const cotId = cotizacionId ? Number(cotizacionId) : null;
     const existing = jobId
       ? await prisma.cotizacionEnviada.findFirst({
-          where: { jobId, to: to ?? null, cotizacionId: cotId },
-        })
+        where: { jobId, to: to ?? null, cotizacionId: cotId },
+      })
       : null;
 
     let entry;

@@ -8,6 +8,11 @@ import {
 import { prisma } from "../../lib/prisma.js";
 import { getOverride as getVencimientoOverride } from "./rcv-vencimientos.store.js";
 
+type EstadoPagoRcv =
+    | "CONFIRMADA"
+    | "PENDIENTE"
+    | "VENCIDA";
+
 // Función para parsear la empresa desde la query, validando que sea "econnet" o "rids", y lanzando un error descriptivo si no es así.
 function parseEmpresa(value: unknown): "econnet" | "rids" {
     const empresa = String(value ?? "").toLowerCase();
@@ -128,35 +133,6 @@ function normalizeRut(value: unknown): string {
         .trim();
 }
 
-function extractRutCandidates(value: unknown): string[] {
-    const raw = String(value ?? "").toUpperCase();
-
-    if (!raw.trim()) return [];
-
-    const candidates = new Set<string>();
-
-    // Caso valor completo: 80.103.900-6, 80103900-6, 801039006
-    const normalizedFull = normalizeRut(raw);
-
-    if (/^\d{7,8}[\dK]$/.test(normalizedFull)) {
-        candidates.add(normalizedFull);
-    }
-
-    // Buscar RUT dentro de textos largos
-    const rutRegex = /\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dK]\b/g;
-    const matches = raw.match(rutRegex) ?? [];
-
-    for (const match of matches) {
-        const normalized = normalizeRut(match);
-
-        if (/^\d{7,8}[\dK]$/.test(normalized)) {
-            candidates.add(normalized);
-        }
-    }
-
-    return [...candidates];
-}
-
 function mergeRcvResponses(
     responses: Array<{
         empresa: "rids" | "econnet";
@@ -264,17 +240,6 @@ async function getClienteRutPermitido(req: Request): Promise<string | null> {
     }
 
     return normalizeRut(rut);
-}
-
-function documentoCoincideConRut(
-    doc: any,
-    rutClienteNormalizado: string
-): boolean {
-    if (!doc || typeof doc !== "object") return false;
-
-    const textoNormalizado = normalizeRut(JSON.stringify(doc));
-
-    return textoNormalizado.includes(rutClienteNormalizado);
 }
 
 function filtrarRcvPorRutCliente(
@@ -433,7 +398,7 @@ export async function getVentasRcvBaseApi(req: Request, res: Response) {
                     const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
                     const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
 
-                    let estadoPago = null;
+                    let estadoPago: EstadoPagoRcv | null = null;
 
                     if (empresaKey && tipoDoc && folio) {
                         const conciliacion = await prisma.rcvConciliacion.findFirst({
@@ -605,7 +570,7 @@ export async function getComprasRcvBaseApi(req: Request, res: Response) {
                     const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
                     const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
 
-                    let estadoPago = null;
+                    let estadoPago: EstadoPagoRcv | null = null;
 
                     if (empresaKey && tipoDoc && folio) {
                         const conciliacion = await prisma.rcvConciliacion.findFirst({

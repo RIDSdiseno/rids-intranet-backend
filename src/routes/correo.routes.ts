@@ -1,3 +1,4 @@
+// src/routes/correos.routes.ts
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { graphReaderService } from "../service/email/graph-reader.service.js";
@@ -249,19 +250,19 @@ correoRouter.post("/test-agenda/:id", async (req: Request, res: Response) => {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.estado}</td>
     </tr>
     ${agenda.horaInicio?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora inicio</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaInicio.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
     ${agenda.horaFin?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora fin</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaFin.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
   </table>
 
   <div style="margin-top: 24px;">
@@ -272,20 +273,20 @@ ${tecnicosHtml}
   </div>
 
   ${agenda.mensaje?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Mensaje para técnico</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.mensaje.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   ${agenda.notas?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Notas internas</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.notas.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 11px; color: #aaa; text-align: center;">
@@ -412,19 +413,19 @@ correoRouter.post("/enviar-agenda/:id", async (req: Request, res: Response) => {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.estado}</td>
     </tr>
     ${agenda.horaInicio?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora inicio</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaInicio.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
     ${agenda.horaFin?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora fin</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaFin.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
   </table>
 
   <div style="margin-top: 24px;">
@@ -435,20 +436,20 @@ ${tecnicosHtml}
   </div>
 
   ${agenda.mensaje?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Mensaje para técnico</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.mensaje.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   ${agenda.notas?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Notas internas</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.notas.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 11px; color: #aaa; text-align: center;">
@@ -525,15 +526,33 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
 
     // Resolver nombre del remitente una sola vez
     let sentBy: string | null = null;
+
     try {
       const user = (req as any).user;
+
       if (user?.id) {
-        const u = await prisma.usuario.findUnique({ where: { id: Number(user.id) } });
-        sentBy = (u as any)?.nombre ?? (u as any)?.email ?? null;
+        const tecnico = await prisma.tecnico.findUnique({
+          where: {
+            id_tecnico: Number(user.id),
+          },
+          select: {
+            nombre: true,
+            email: true,
+          },
+        });
+
+        sentBy =
+          tecnico?.nombre ??
+          tecnico?.email ??
+          user?.email ??
+          null;
       } else {
-        sentBy = (req as any)?.user?.email ?? null;
+        sentBy = user?.email ?? null;
       }
-    } catch { sentBy = (req as any)?.user?.email ?? null; }
+    } catch (error) {
+      console.warn("No se pudo resolver el remitente:", error);
+      sentBy = (req as any)?.user?.email ?? null;
+    }
 
     for (const t of validTargets) {
       // Extraer cotizacionId desde nombre del adjunto
@@ -612,10 +631,18 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
     })
   ).then((results) => {
     results.forEach((result, idx) => {
-      if (result.status === 'rejected') {
-        const err = result.reason;
-        jobRef.failures.push({ to: validTargets[idx]?.email, error: err?.message ?? String(err) });
-      }
+      if (result.status !== "rejected") return;
+
+      const err = result.reason;
+      const targetEmail = validTargets[idx]?.email;
+
+      jobRef.failures.push({
+        ...(targetEmail ? { to: targetEmail } : {}),
+        error:
+          err instanceof Error
+            ? err.message
+            : String(err),
+      });
     });
     jobRef.completed = validTargets.length;
     jobRef.status = 'done';
@@ -633,14 +660,16 @@ correoRouter.get("/enviar-masivo/status/:id", async (req: Request, res: Response
   const job = mailerJobs[id];
   if (!job) return res.status(404).json({ ok: false, message: "Job no encontrado" });
 
-  return res.json({ ok: true, job: {
-    id: job.id,
-    createdAt: job.createdAt,
-    ratePerMin: job.ratePerMin,
-    total: job.total,
-    successes: job.successes,
-    failures: job.failures,
-    completed: job.completed,
-    status: job.status,
-  }});
+  return res.json({
+    ok: true, job: {
+      id: job.id,
+      createdAt: job.createdAt,
+      ratePerMin: job.ratePerMin,
+      total: job.total,
+      successes: job.successes,
+      failures: job.failures,
+      completed: job.completed,
+      status: job.status,
+    }
+  });
 });
