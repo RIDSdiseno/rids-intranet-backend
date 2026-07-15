@@ -56,7 +56,20 @@ type EquipoAgentPayload = {
     macEthernet?: string | null;
 
     lastBootAt?: string | null;
+    uptimeText?: string | null;
+    uptimeSeconds?: number | string | null;
     agenteVersion?: string | null;
+
+    source?: string | null;
+    tecnicoEmail?: string | null; // compatibilidad con agentes antiguos
+    tecnicoInstaladorEmail?: string | null;
+    usuarioWindowsEjecutor?: string | null;
+    taskUserConfigurado?: string | null;
+
+    platform?: string | null;
+    usuarioMacEjecutor?: string | null;
+    launchdLabel?: string | null;
+    fileVaultEstado?: string | null;
 
     antivirusNombre?: string | null;
     antivirusActivo?: boolean | null;
@@ -330,6 +343,48 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const body = req.body as EquipoAgentPayload;
 
+        const source = cleanString(body.source) ?? "AGENT";
+        const isAgentSync = source === "AGENT";
+
+        const platform =
+            cleanString(body.platform)?.toUpperCase() === "MACOS"
+                ? "MACOS"
+                : "WINDOWS";
+
+        const tecnicoInstaladorEmail =
+            cleanString(body.tecnicoInstaladorEmail)?.toLowerCase() ??
+            cleanString(body.tecnicoEmail)?.toLowerCase() ??
+            null;
+
+        const usuarioWindowsEjecutor = cleanString(body.usuarioWindowsEjecutor);
+        const taskUserConfigurado = cleanString(body.taskUserConfigurado);
+
+        const usuarioMacEjecutor = cleanString(body.usuarioMacEjecutor);
+        const launchdLabel = cleanString(body.launchdLabel);
+        const fileVaultEstado = cleanString(body.fileVaultEstado);
+
+        const usuarioSistemaEjecutor =
+            platform === "MACOS"
+                ? usuarioMacEjecutor
+                : usuarioWindowsEjecutor;
+
+        const tecnicoInstalador = tecnicoInstaladorEmail
+            ? await prisma.tecnico.findFirst({
+                where: {
+                    email: {
+                        equals: tecnicoInstaladorEmail,
+                        mode: "insensitive",
+                    },
+                    status: true,
+                },
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                    email: true,
+                },
+            })
+            : null;
+
         const serial = cleanString(body.serial);
         const hostname = cleanString(body.hostname);
 
@@ -430,23 +485,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             });
         }
 
-        const empresaIdFinal =
-            equipo?.empresaId ??
-            solicitanteDetectado?.empresaId ??
-            empresaDetectada?.id_empresa ??
-            equipo?.solicitante?.empresaId ??
-            null;
-
         const solicitanteActualId = equipo?.idSolicitante ?? null;
         const solicitanteActual = equipo?.solicitante ?? null;
-
-        const solicitanteActualValido = Boolean(
-            solicitanteActualId &&
-            solicitanteActual &&
-            solicitanteActual.deletedAt === null &&
-            solicitanteActual.isActive !== false &&
-            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
-        );
 
         const solicitanteDetectadoId =
             solicitanteDetectado?.id_solicitante ?? null;
@@ -461,7 +501,39 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             !conflictoCorreos ||
             solicitanteEmailFuente === "OutlookProfile" ||
             solicitanteEmailFuente === "OfficeIdentity" ||
-            solicitanteEmailFuente === "UPN";
+            solicitanteEmailFuente === "UPN" ||
+            solicitanteEmailFuente === "MacInstallerConfig";
+
+        const solicitanteDetectadoBaseValido = Boolean(
+            solicitanteDetectadoId &&
+            solicitanteDetectado &&
+            solicitanteDetectado.deletedAt === null &&
+            solicitanteDetectado.isActive !== false &&
+            fuenteConfiableParaAsignar
+        );
+
+        const empresaIdActual =
+            equipo?.empresaId ??
+            equipo?.solicitante?.empresaId ??
+            null;
+
+        const empresaIdDetectada =
+            solicitanteDetectado?.empresaId ??
+            empresaDetectada?.id_empresa ??
+            null;
+
+        const empresaIdFinal =
+            solicitanteDetectadoBaseValido
+                ? empresaIdDetectada ?? null
+                : empresaIdActual ?? empresaIdDetectada ?? null;
+
+        const solicitanteActualValido = Boolean(
+            solicitanteActualId &&
+            solicitanteActual &&
+            solicitanteActual.deletedAt === null &&
+            solicitanteActual.isActive !== false &&
+            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
+        );
 
         const solicitanteDetectadoValido = Boolean(
             solicitanteDetectadoId &&
@@ -566,6 +638,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const lastBootAt = dateOrNull(body.lastBootAt);
         if (lastBootAt) equipoUpdateData.lastBootAt = lastBootAt;
 
+        const uptimeText = cleanString(body.uptimeText);
+        const uptimeSeconds = numberOrNull(body.uptimeSeconds);
+
         const agenteVersion = cleanString(body.agenteVersion);
         if (agenteVersion) equipoUpdateData.agenteVersion = agenteVersion;
 
@@ -578,6 +653,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         } else if (solicitanteActualId && !solicitanteActualValido) {
             equipoUpdateData.idSolicitante = null;
         }
+
+        const fueCreadoPorAgente = !equipo;
+        const equipoAntesUpdate = equipo;
 
         if (equipo) {
             equipo = await prisma.equipo.update({
@@ -626,7 +704,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado:
+                    platform === "MACOS"
+                        ? fileVaultEstado
+                        : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
                 revisado: fechaRevisionAgente,
 
@@ -659,13 +740,166 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 antivirusNombre: cleanString(body.antivirusNombre),
                 antivirusActivo: boolOrNull(body.antivirusActivo),
                 firewallActivo: boolOrNull(body.firewallActivo),
-                bitlockerEstado: cleanString(body.bitlockerEstado),
+                bitlockerEstado:
+                    platform === "MACOS"
+                        ? fileVaultEstado
+                        : cleanString(body.bitlockerEstado),
                 windowsUpdate: cleanString(body.windowsUpdate),
 
                 tipoDd: cleanString(body.tipoDd),
                 estadoAlm: cleanString(body.estadoAlm),
                 office: cleanString(body.office),
                 teamViewer: cleanString(body.teamViewer),
+            },
+        });
+
+        await prisma.auditLog.create({
+            data: {
+                entity: "Equipo",
+                entityId: String(equipo.id_equipo),
+                action: fueCreadoPorAgente ? ("CREATE" as any) : ("UPDATE" as any),
+
+                // Las sincronizaciones automáticas del agente quedan como Sistema.
+                actorId: null,
+
+                empresaId: empresaIdFinal ?? null,
+                description: fueCreadoPorAgente
+                    ? platform === "MACOS"
+                        ? "Equipo creado automáticamente desde agente macOS"
+                        : "Equipo creado automáticamente desde agente Windows"
+                    : platform === "MACOS"
+                        ? "Inventario actualizado automáticamente desde agente macOS"
+                        : "Inventario actualizado automáticamente desde agente Windows",
+
+                changes: fueCreadoPorAgente
+                    ? {
+                        origen: {
+                            before: null,
+                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
+                        },
+                        accionAgente: {
+                            before: null,
+                            after: "EQUIPO_CREADO",
+                        },
+                        serial: {
+                            before: null,
+                            after: equipo.serial ?? serial,
+                        },
+                        marca: {
+                            before: null,
+                            after: equipo.marca ?? marca,
+                        },
+                        modelo: {
+                            before: null,
+                            after: equipo.modelo ?? modelo,
+                        },
+                        hostname: {
+                            before: null,
+                            after: hostname,
+                        },
+                        propiedad: {
+                            before: null,
+                            after: equipo.propiedad ?? "Empresa",
+                        },
+                        propietarioExterno: {
+                            before: null,
+                            after: equipo.propietarioExterno ?? null,
+                        },
+                        empresaId: {
+                            before: null,
+                            after: empresaIdFinal,
+                        },
+                        idSolicitante: {
+                            before: null,
+                            after: idSolicitanteFinal,
+                        },
+                        solicitanteDetectadoEmail: {
+                            before: null,
+                            after: solicitanteDetectadoEmailFinal,
+                        },
+                        usuarioSistemaEjecutor: {
+                            before: null,
+                            after: usuarioSistemaEjecutor,
+                        },
+                        tecnicoInstaladorEmail: {
+                            before: null,
+                            after: tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+                        },
+                        lastSeenAt: {
+                            before: null,
+                            after: new Date().toISOString(),
+                        },
+                    }
+                    : {
+                        origen: {
+                            before: null,
+                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
+                        },
+                        accionAgente: {
+                            before: null,
+                            after: "INVENTARIO_ACTUALIZADO",
+                        },
+                        hostname: {
+                            before: equipoAntesUpdate?.hostname ?? null,
+                            after: equipo.hostname ?? null,
+                        },
+                        usuarioActual: {
+                            before: equipoAntesUpdate?.usuarioActual ?? null,
+                            after: equipo.usuarioActual ?? null,
+                        },
+                        procesador: {
+                            before: equipoAntesUpdate?.procesador ?? null,
+                            after: equipo.procesador ?? null,
+                        },
+                        ram: {
+                            before: equipoAntesUpdate?.ram ?? null,
+                            after: equipo.ram ?? null,
+                        },
+                        disco: {
+                            before: equipoAntesUpdate?.disco ?? null,
+                            after: equipo.disco ?? null,
+                        },
+                        localIp: {
+                            before: equipoAntesUpdate?.localIp ?? null,
+                            after: equipo.localIp ?? null,
+                        },
+                        macAddress: {
+                            before: equipoAntesUpdate?.macAddress ?? null,
+                            after: equipo.macAddress ?? null,
+                        },
+                        lastBootAt: {
+                            before: equipoAntesUpdate?.lastBootAt ?? null,
+                            after: equipo.lastBootAt ?? null,
+                        },
+                        lastSeenAt: {
+                            before: equipoAntesUpdate?.lastSeenAt ?? null,
+                            after: equipo.lastSeenAt ?? null,
+                        },
+                        estadoAgente: {
+                            before: equipoAntesUpdate?.estadoAgente ?? null,
+                            after: equipo.estadoAgente ?? null,
+                        },
+                        agenteVersion: {
+                            before: equipoAntesUpdate?.agenteVersion ?? null,
+                            after: equipo.agenteVersion ?? null,
+                        },
+                        empresaId: {
+                            before: equipoAntesUpdate?.empresaId ?? null,
+                            after: equipo.empresaId ?? null,
+                        },
+                        idSolicitante: {
+                            before: equipoAntesUpdate?.idSolicitante ?? null,
+                            after: equipo.idSolicitante ?? null,
+                        },
+                        solicitanteDetectadoEmail: {
+                            before: equipoAntesUpdate?.solicitanteDetectadoEmail ?? null,
+                            after: equipo.solicitanteDetectadoEmail ?? null,
+                        },
+                        requiereRevisionSolicitante: {
+                            before: equipoAntesUpdate?.requiereRevisionSolicitante ?? null,
+                            after: equipo.requiereRevisionSolicitante ?? null,
+                        },
+                    },
             },
         });
 
@@ -676,13 +910,47 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 equipoId: equipo.id_equipo,
                 tipo: requiereRevisionSolicitante
                     ? "REVISION_SOLICITANTE"
-                    : "INVENTORY_SYNC",
+                    : fueCreadoPorAgente
+                        ? "INVENTORY_CREATED"
+                        : "INVENTORY_SYNC",
+
                 mensaje: requiereRevisionSolicitante
-                    ? "El agente detectó un solicitante distinto al asignado actualmente."
-                    : "Inventario recibido desde agente Windows",
+                    ? "El agente detectó información de solicitante que requiere revisión manual."
+                    : fueCreadoPorAgente
+                        ? platform === "MACOS"
+                            ? "Equipo creado automáticamente desde agente macOS"
+                            : "Equipo creado automáticamente desde agente Windows"
+                        : platform === "MACOS"
+                            ? "Inventario sincronizado automáticamente desde agente macOS"
+                            : "Inventario sincronizado automáticamente desde agente Windows",
                 metadata: {
                     hostname,
                     serial,
+
+                    lastBootAt: body.lastBootAt ?? null,
+                    uptimeText,
+                    uptimeSeconds,
+
+                    source,
+                    platform,
+                    ejecutadoPor: "SISTEMA",
+
+                    accionAgente: fueCreadoPorAgente
+                        ? "EQUIPO_CREADO"
+                        : "INVENTARIO_ACTUALIZADO",
+
+                    tecnicoInstaladorId: tecnicoInstalador?.id_tecnico ?? null,
+                    tecnicoInstaladorNombre: tecnicoInstalador?.nombre ?? null,
+                    tecnicoInstaladorEmail:
+                        tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
+
+                    usuarioSistemaEjecutor,
+                    usuarioWindowsEjecutor,
+                    taskUserConfigurado,
+                    usuarioMacEjecutor,
+                    launchdLabel,
+                    fileVaultEstado,
+
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
                     conflictoCorreos,
@@ -725,6 +993,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         res.json({
             ok: true,
             message: "Inventario actualizado correctamente",
+            platform,
+            usuarioSistemaEjecutor,
+            usuarioMacEjecutor,
+            launchdLabel,
+            fileVaultEstado,
             equipoId: equipo.id_equipo,
             empresaId: empresaIdFinal,
             solicitanteId: idSolicitanteFinal,
@@ -740,6 +1013,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             macWifi,
             macEthernet,
             localIp,
+
+            lastBootAt: body.lastBootAt ?? null,
+            uptimeText,
+            uptimeSeconds,
 
             requiereRevisionSolicitante,
             motivoRevisionSolicitante,

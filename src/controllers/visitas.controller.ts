@@ -25,6 +25,23 @@ function parseLocalDateTime(value: Date | string | null | undefined): Date | nul
   return dt.toJSDate();
 }
 
+function obtenerFechaChile(
+  fecha: Date | string
+): string {
+  const dateTime =
+    fecha instanceof Date
+      ? DateTime.fromJSDate(fecha, {
+        zone: "utc",
+      })
+      : DateTime.fromISO(fecha, {
+        zone: "utc",
+      });
+
+  return dateTime
+    .setZone("America/Santiago")
+    .toFormat("yyyy-MM-dd");
+}
+
 const visitaSelect = {
   id_visita: true,
   empresaId: true,
@@ -49,6 +66,8 @@ const visitaSelect = {
   licenciaWindows: true,
   mantenimientoReloj: true,
   rendimientoEquipo: true,
+  agendaId: true,
+  origen: true,
   empresa: { select: { id_empresa: true, nombre: true } },
   tecnico: { select: { id_tecnico: true, nombre: true } },
   solicitanteRef: { select: { id_solicitante: true, nombre: true } },
@@ -59,6 +78,51 @@ const visitaSelect = {
     }
   }
 } as const;
+
+const agendaResumenSelect = {
+  id: true,
+  fecha: true,
+  estado: true,
+  horaInicio: true,
+  horaFin: true,
+  fechaInicioRuta: true,
+  fechaInicioVisita: true,
+  empresaExternaNombre: true,
+  empresa: { select: { id_empresa: true, nombre: true } },
+  tecnicos: {
+    include: {
+      tecnico: { select: { id_tecnico: true, nombre: true } },
+    },
+  },
+} as const;
+
+type VisitaConAgendaId = { agendaId?: number | null };
+
+async function adjuntarAgendaResumen<T extends VisitaConAgendaId>(rows: T[]) {
+  const agendaIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.agendaId)
+        .filter((agendaId): agendaId is number => typeof agendaId === "number")
+    )
+  );
+
+  if (agendaIds.length === 0) {
+    return rows.map((row) => ({ ...row, agenda: null }));
+  }
+
+  const agendas = await prisma.agendaVisita.findMany({
+    where: { id: { in: agendaIds } },
+    select: agendaResumenSelect,
+  });
+
+  const agendasPorId = new Map(agendas.map((agenda) => [agenda.id, agenda] as const));
+
+  return rows.map((row) => ({
+    ...row,
+    agenda: row.agendaId ? agendasPorId.get(row.agendaId) ?? null : null,
+  }));
+}
 
 const StatusEnum = z.enum(["PENDIENTE", "COMPLETADA", "CANCELADA"]);
 
@@ -214,12 +278,14 @@ export const listVisitas = async (req: Request, res: Response) => {
     }),
   ]);
 
+  const items = await adjuntarAgendaResumen(rows);
+
   return res.json({
     page,
     pageSize,
     total,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
-    items: rows,
+    items,
   });
 };
 
@@ -242,7 +308,9 @@ export const getVisitaById = async (req: Request, res: Response) => {
     return res.status(403).json({ error: "No autorizado" });
   }
 
-  return res.json(row);
+  const [visita] = await adjuntarAgendaResumen([row]);
+
+  return res.json(visita);
 
 };
 
@@ -941,5 +1009,531 @@ export const getVisitasDashboard = async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[visitas.dashboard] error:", err);
     return res.status(500).json({ error: "No se pudo obtener el dashboard de visitas" });
+  }
+};
+
+/* ------------------------------------ */
+/* Agenda y atenciones por día           */
+/* ------------------------------------ */
+
+export const getVisitasResumenDiario = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const fechaDesdeTexto = String(
+      req.query.fechaDesde ?? ""
+    ).trim();
+
+    const fechaHastaTexto = String(
+      req.query.fechaHasta ?? ""
+    ).trim();
+
+    const formatoFecha = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (
+      !formatoFecha.test(fechaDesdeTexto) ||
+      !formatoFecha.test(fechaHastaTexto)
+    ) {
+      return res.status(400).json({
+        error:
+          "Debe enviar fechaDesde y fechaHasta en formato YYYY-MM-DD.",
+      });
+    }
+
+    const fechaDesdeChile = DateTime.fromISO(
+      fechaDesdeTexto,
+      {
+        zone: "America/Santiago",
+      }
+    );
+
+    const fechaHastaChile = DateTime.fromISO(
+      fechaHastaTexto,
+      {
+        zone: "America/Santiago",
+      }
+    );
+
+    if (
+      !fechaDesdeChile.isValid ||
+      !fechaHastaChile.isValid
+    ) {
+      return res.status(400).json({
+        error: "El rango de fechas no es válido.",
+      });
+    }
+
+    if (
+      fechaDesdeChile.startOf("day").toMillis() >
+      fechaHastaChile.startOf("day").toMillis()
+    ) {
+      return res.status(400).json({
+        error:
+          "La fecha desde no puede ser posterior a la fecha hasta.",
+      });
+    }
+
+    const diasConsultados =
+      Math.floor(
+        fechaHastaChile
+          .startOf("day")
+          .diff(
+            fechaDesdeChile.startOf("day"),
+            "days"
+          ).days
+      ) + 1;
+
+    if (diasConsultados > 31) {
+      return res.status(400).json({
+        error:
+          "El periodo máximo permitido es de 31 días.",
+      });
+    }
+
+    /*
+      Para Visita.inicio se consulta el día completo de Chile
+      convertido a UTC.
+
+      Ejemplo:
+      2026-07-15 00:00 Chile
+      hasta
+      2026-07-16 00:00 Chile
+    */
+    const inicioVisitasUtc = fechaDesdeChile
+      .startOf("day")
+      .toUTC()
+      .toJSDate();
+
+    const finVisitasUtc = fechaHastaChile
+      .plus({ days: 1 })
+      .startOf("day")
+      .toUTC()
+      .toJSDate();
+
+    /*
+      AgendaVisita.fecha es @db.Date y se trabaja en tu servicio
+      como medianoche UTC.
+    */
+    const inicioAgendaUtc = new Date(
+      Date.UTC(
+        fechaDesdeChile.year,
+        fechaDesdeChile.month - 1,
+        fechaDesdeChile.day
+      )
+    );
+
+    const finAgendaUtc = new Date(
+      Date.UTC(
+        fechaHastaChile.year,
+        fechaHastaChile.month - 1,
+        fechaHastaChile.day,
+        23,
+        59,
+        59,
+        999
+      )
+    );
+
+    const tecnicoIdQ = parseId(req.query.tecnicoId);
+    const empresaIdQ = parseId(req.query.empresaId);
+
+    const user = (req as any).user;
+
+    const empresaIdForzada =
+      user?.rol === "CLIENTE"
+        ? Number(user.empresaId)
+        : empresaIdQ;
+
+    const [agendas, atenciones] = await Promise.all([
+      prisma.agendaVisita.findMany({
+        where: {
+          fecha: {
+            gte: inicioAgendaUtc,
+            lte: finAgendaUtc,
+          },
+
+          /*
+            No se muestran asignaciones canceladas como programación
+            vigente del técnico.
+          */
+          estado: {
+            not: "CANCELADA",
+          },
+
+          ...(empresaIdForzada
+            ? {
+              empresaId: empresaIdForzada,
+            }
+            : {}),
+
+          ...(tecnicoIdQ
+            ? {
+              tecnicos: {
+                some: {
+                  tecnicoId: tecnicoIdQ,
+                },
+              },
+            }
+            : {}),
+        },
+
+        select: {
+          id: true,
+          fecha: true,
+          tipo: true,
+          estado: true,
+          empresaId: true,
+          empresaExternaNombre: true,
+          horaInicio: true,
+          horaFin: true,
+          notas: true,
+          mensaje: true,
+
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+
+          tecnicos: {
+            select: {
+              tecnicoId: true,
+
+              tecnico: {
+                select: {
+                  id_tecnico: true,
+                  nombre: true,
+                  email: true,
+                  rol: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+
+        orderBy: [
+          {
+            horaInicio: "asc",
+          },
+          {
+            id: "asc",
+          },
+        ],
+      }),
+
+      prisma.visita.findMany({
+        where: {
+          inicio: {
+            gte: inicioVisitasUtc,
+            lt: finVisitasUtc,
+          },
+
+          ...(empresaIdForzada
+            ? {
+              empresaId: empresaIdForzada,
+            }
+            : {}),
+
+          ...(tecnicoIdQ
+            ? {
+              tecnicoId: tecnicoIdQ,
+            }
+            : {}),
+        },
+
+        select: {
+          id_visita: true,
+          empresaId: true,
+          tecnicoId: true,
+          solicitante: true,
+          solicitanteId: true,
+          inicio: true,
+          fin: true,
+          status: true,
+          direccion_visita: true,
+          sucursalId: true,
+          otrosDetalle: true,
+
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+            },
+          },
+
+          tecnico: {
+            select: {
+              id_tecnico: true,
+              nombre: true,
+              email: true,
+              rol: true,
+              status: true,
+            },
+          },
+
+          solicitanteRef: {
+            select: {
+              id_solicitante: true,
+              nombre: true,
+              email: true,
+              telefono: true,
+            },
+          },
+
+          sucursal: {
+            select: {
+              id_sucursal: true,
+              nombre: true,
+              direccion: true,
+            },
+          },
+        },
+
+        orderBy: [
+          {
+            tecnicoId: "asc",
+          },
+          {
+            inicio: "asc",
+          },
+        ],
+      }),
+    ]);
+
+    type TecnicoResumen = {
+      tecnico: {
+        id_tecnico: number;
+        nombre: string;
+        email: string;
+        rol: string;
+        status: boolean;
+      };
+
+      agendas: Array<{
+        id: number;
+        fecha: string;
+        tipo: string;
+        estado: string;
+        empresaId: number | null;
+        empresaNombre: string;
+        horaInicio: string | null;
+        horaFin: string | null;
+        notas: string | null;
+        mensaje: string | null;
+      }>;
+
+      atenciones: Array<{
+        id_visita: number;
+        empresaId: number;
+        empresaNombre: string;
+        solicitanteId: number | null;
+        solicitanteNombre: string;
+        inicio: Date;
+        fin: Date | null;
+        status: string;
+        direccion_visita: string | null;
+        otrosDetalle: string | null;
+        sucursal: {
+          id_sucursal: number;
+          nombre: string;
+          direccion: string | null;
+        } | null;
+      }>;
+    };
+
+    const resumenPorTecnico = new Map<number, TecnicoResumen>();
+
+    /*
+      Primero se agregan los técnicos programados en el calendario.
+    */
+    for (const agenda of agendas) {
+      for (const relacionTecnico of agenda.tecnicos) {
+        const tecnico = relacionTecnico.tecnico;
+        const tecnicoId = tecnico.id_tecnico;
+
+        if (!resumenPorTecnico.has(tecnicoId)) {
+          resumenPorTecnico.set(tecnicoId, {
+            tecnico,
+            agendas: [],
+            atenciones: [],
+          });
+        }
+
+        const registro = resumenPorTecnico.get(tecnicoId)!;
+
+        registro.agendas.push({
+          id: agenda.id,
+          fecha: agenda.fecha.toISOString().slice(0, 10),
+          tipo: agenda.tipo,
+          estado: agenda.estado,
+          empresaId: agenda.empresaId,
+          empresaNombre:
+            agenda.empresa?.nombre?.trim() ||
+            agenda.empresaExternaNombre?.trim() ||
+            "OFICINA",
+          horaInicio: agenda.horaInicio,
+          horaFin: agenda.horaFin,
+          notas: agenda.notas,
+          mensaje: agenda.mensaje,
+        });
+      }
+    }
+
+    /*
+      Después se agregan las atenciones registradas en Visita.
+      Si un técnico trabajó sin agenda, también aparece para
+      poder identificar actividad no programada.
+    */
+    for (const visita of atenciones) {
+      const tecnicoId = visita.tecnicoId;
+
+      if (!resumenPorTecnico.has(tecnicoId)) {
+        resumenPorTecnico.set(tecnicoId, {
+          tecnico: visita.tecnico,
+          agendas: [],
+          atenciones: [],
+        });
+      }
+
+      const registro = resumenPorTecnico.get(tecnicoId)!;
+
+      registro.atenciones.push({
+        id_visita: visita.id_visita,
+        empresaId: visita.empresaId,
+        empresaNombre: visita.empresa.nombre,
+        solicitanteId: visita.solicitanteId,
+        solicitanteNombre:
+          visita.solicitanteRef?.nombre?.trim() ||
+          visita.solicitante?.trim() ||
+          "Solicitante no indicado",
+        inicio: visita.inicio,
+        fin: visita.fin,
+        status: visita.status,
+        direccion_visita: visita.direccion_visita,
+        otrosDetalle: visita.otrosDetalle,
+        sucursal: visita.sucursal,
+      });
+    }
+
+    const tecnicos = Array.from(resumenPorTecnico.values())
+      .map((registro) => {
+        /*
+          Como el modo lote crea una Visita por solicitante,
+          varias atenciones pueden pertenecer a una misma jornada.
+
+          La clave identifica una jornada real única.
+        */
+        const jornadasUnicas = new Set(
+          registro.atenciones.map((atencion) =>
+            [
+              atencion.empresaId,
+              obtenerFechaChile(atencion.inicio),
+            ].join("|")
+          )
+        );
+
+        const totalJornadas = jornadasUnicas.size;
+
+        const empresasProgramadas = new Set(
+          registro.agendas
+            .map((agenda) => agenda.empresaId)
+            .filter((id): id is number => id !== null)
+        );
+
+        const atencionesEnEmpresasProgramadas =
+          registro.atenciones.filter((atencion) =>
+            empresasProgramadas.has(atencion.empresaId)
+          ).length;
+
+        const atencionesFueraAgenda =
+          registro.atenciones.length -
+          atencionesEnEmpresasProgramadas;
+
+        return {
+          tecnico: registro.tecnico,
+
+          tieneAgenda: registro.agendas.length > 0,
+
+          resumen: {
+            totalProgramadas: registro.agendas.length,
+            totalAtenciones: registro.atenciones.length,
+            totalJornadas: jornadasUnicas.size,
+
+            completadas: registro.atenciones.filter(
+              (atencion) => atencion.status === "COMPLETADA"
+            ).length,
+
+            pendientes: registro.atenciones.filter(
+              (atencion) => atencion.status === "PENDIENTE"
+            ).length,
+
+            canceladas: registro.atenciones.filter(
+              (atencion) => atencion.status === "CANCELADA"
+            ).length,
+
+            atencionesEnEmpresasProgramadas,
+            atencionesFueraAgenda,
+          },
+
+          agendas: registro.agendas,
+          atenciones: registro.atenciones,
+        };
+      })
+      .sort((a, b) => {
+        /*
+          Técnicos con agenda primero.
+        */
+        if (a.tieneAgenda !== b.tieneAgenda) {
+          return a.tieneAgenda ? -1 : 1;
+        }
+
+        return a.tecnico.nombre.localeCompare(
+          b.tecnico.nombre,
+          "es"
+        );
+      });
+
+    return res.json({
+      fechaDesde: fechaDesdeTexto,
+      fechaHasta: fechaHastaTexto,
+
+      totales: {
+        tecnicos: tecnicos.length,
+
+        tecnicosProgramados: tecnicos.filter(
+          (item) => item.tieneAgenda
+        ).length,
+
+        agendas: agendas.length,
+        atenciones: atenciones.length,
+
+        completadas: atenciones.filter(
+          (visita) => visita.status === "COMPLETADA"
+        ).length,
+
+        pendientes: atenciones.filter(
+          (visita) => visita.status === "PENDIENTE"
+        ).length,
+
+        canceladas: atenciones.filter(
+          (visita) => visita.status === "CANCELADA"
+        ).length,
+      },
+
+      tecnicos,
+    });
+  } catch (error) {
+    console.error(
+      "[visitas.resumen-diario] error:",
+      error
+    );
+
+    return res.status(500).json({
+      error:
+        "No se pudo obtener la agenda y las atenciones del día.",
+    });
   }
 };

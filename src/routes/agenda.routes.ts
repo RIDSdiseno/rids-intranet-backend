@@ -16,15 +16,21 @@ import {
 
 import type { Request, Response, NextFunction } from "express";
 
-const TECNICOS_AGENDA_ADMIN = [5, 6, 27, 36];
+const ROLES_AGENDA_ADMIN = ["ADMINISTRACION", "ADMIN"];
 
 function requireAgendaAdmin(req: Request, res: Response, next: NextFunction) {
-    const user = (req as any).user;
-    if (!user || !TECNICOS_AGENDA_ADMIN.includes(user.id)) {
-        return res.status(403).json({ error: "No tienes permisos para esta acción" });
-    }
-    next();
-    return;
+  const user = (req as any).user;
+
+  const rol = String(user?.rol ?? "").toUpperCase();
+
+  if (!user || !ROLES_AGENDA_ADMIN.includes(rol)) {
+    return res.status(403).json({
+      error: "No tienes permisos para crear o editar agenda.",
+    });
+  }
+
+  next();
+  return;
 }
 
 export const agendaRouter = Router();

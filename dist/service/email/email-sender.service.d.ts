@@ -2,6 +2,12 @@ declare class EmailSenderService {
     private transporter;
     sendStatusEmail(ticketId: number, nuevoEstado: string, toEmail: string): Promise<void>;
     constructor();
+    sendHtmlEmail(params: {
+        to: string | string[];
+        subject: string;
+        html: string;
+        cc?: string | string[];
+    }): Promise<void>;
     /**
      * Envía respuesta del agente al cliente
      */

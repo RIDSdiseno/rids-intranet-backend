@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
-import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
-import { generarAnalisisIA } from "../../service/ia-metricas-reportes/ia-reportes.service.js";
+import { buildReporteEmpresaData } from "../../service/reportes/ia-metricas-reportes/reportEmpresa.service.js";
+import { generarAnalisisIA } from "../../service/reportes/ia-metricas-reportes/ia-reportes.service.js";
 export async function generarInformeOperativoIA(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);

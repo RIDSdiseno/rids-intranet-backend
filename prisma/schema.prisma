@@ -37,6 +37,7 @@ model Empresa {
   analisisInventarioIAs AnalisisInventarioIA[]
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
+  equipoMantencions     EquipoMantencion[]
 }
 
 model Sucursal {
@@ -276,6 +277,7 @@ model Solicitante {
   mantencionesRemotas  MantencionRemota[]      @relation("SolicitanteMantencionesRemotas")
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   bitacoras            BitacoraTecnico[]
+  equipoMantenciones   EquipoMantencion[]
 
   @@index([empresaId])
   @@index([isActive])
@@ -304,20 +306,21 @@ model SolicitanteMsLicense {
 }
 
 model EntidadGestioo {
-  id               Int                     @id @default(autoincrement())
-  nombre           String
-  rut              String?                 @unique
-  correo           String?
-  telefono         String?
-  direccion        String?
-  tipo             TipoEntidadGestioo      @default(EMPRESA)
-  origen           OrigenGestioo           @default(RIDS)
-  empresaId        Int?
-  empresa          Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  productos        ProductoGestioo[]
-  trabajos         DetalleTrabajoGestioo[]
-  servicioGestioos ServicioGestioo[]
-  cotizaciones     CotizacionGestioo[]
+  id                        Int                                @id @default(autoincrement())
+  nombre                    String
+  rut                       String?                            @unique
+  correo                    String?
+  telefono                  String?
+  direccion                 String?
+  tipo                      TipoEntidadGestioo                 @default(EMPRESA)
+  origen                    OrigenGestioo                      @default(RIDS)
+  empresaId                 Int?
+  empresa                   Empresa?                           @relation(fields: [empresaId], references: [id_empresa])
+  productos                 ProductoGestioo[]
+  trabajos                  DetalleTrabajoGestioo[]
+  servicioGestioos          ServicioGestioo[]
+  cotizaciones              CotizacionGestioo[]
+  cotizacionMasivaEntidades CotizacionMasivaPlantillaEntidad[]
 }
 
 model PasswordResetToken {
@@ -334,30 +337,32 @@ model PasswordResetToken {
 }
 
 model ProductoGestioo {
-  id            Int                     @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  tipo          String                  @default("producto")
-  categoria     String?
-  serie         String?                 @unique
-  estado        String?                 @default("disponible")
-  precio        Float?
-  stock         Int?                    @default(0)
-  fechaIngreso  DateTime?               @default(now())
-  garantiaMeses Int?
-  activo        Boolean                 @default(true)
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
-  marca         MarcaGestioo?           @relation(fields: [marcaId], references: [id])
-  modelo        ModeloGestioo?          @relation(fields: [modeloId], references: [id])
-  entidad       EntidadGestioo?         @relation(fields: [entidadId], references: [id])
-  trabajos      DetalleTrabajoGestioo[]
-  equipo        Equipo?
+  id                                 Int                                 @id @default(autoincrement())
+  nombre                             String
+  descripcion                        String?
+  tipo                               String                              @default("producto")
+  categoria                          String?
+  serie                              String?                             @unique
+  estado                             String?                             @default("disponible")
+  precio                             Float?
+  stock                              Int?                                @default(0)
+  fechaIngreso                       DateTime?                           @default(now())
+  garantiaMeses                      Int?
+  activo                             Boolean                             @default(true)
+  marcaId                            Int?
+  modeloId                           Int?
+  entidadId                          Int?
+  porcGanancia                       Float?
+  precioTotal                        Float?
+  imagen                             String?
+  publicId                           String?
+  marca                              MarcaGestioo?                       @relation(fields: [marcaId], references: [id])
+  modelo                             ModeloGestioo?                      @relation(fields: [modeloId], references: [id])
+  entidad                            EntidadGestioo?                     @relation(fields: [entidadId], references: [id])
+  trabajos                           DetalleTrabajoGestioo[]
+  equipo                             Equipo?
+  cotizacionMasivaPlantillaCantidads CotizacionMasivaPlantillaCantidad[]
+  cotizacionMasivaPlantillaItems     CotizacionMasivaPlantillaItem[]
 
   @@index([marcaId])
   @@index([modeloId])
@@ -479,6 +484,15 @@ model Equipo {
   solicitanteDetectadoId      Int?
   usuarioActual               String?
   observaciones               String?
+  mantGeneralConfigPath       String?
+  mantGeneralExePath          String?
+  /// ===================== Mant.General RIDS =====================
+  mantGeneralInstalado        Boolean                 @default(false)
+  mantGeneralInstalledAt      DateTime?
+  mantGeneralLastSeenAt       DateTime?
+  mantGeneralTecnicoId        Int?
+  mantGeneralVersion          String?
+  propietarioExterno          String?
   solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                     DetalleEquipo?
   detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -490,6 +504,7 @@ model Equipo {
   bitacoras                   BitacoraTecnico[]
   softwares                   EquipoSoftware[]
   agenteEventos               EquipoAgenteEvento[]
+  equipoMantenciones          EquipoMantencion[]
 
   @@index([empresaId])
   @@index([productoId])
@@ -502,6 +517,9 @@ model Equipo {
   @@index([agenteActivo])
   @@index([requiereRevisionSolicitante])
   @@index([estado])
+  @@index([mantGeneralInstalado])
+  @@index([mantGeneralLastSeenAt])
+  @@index([mantGeneralTecnicoId])
 }
 
 model EquipoAdicional {
@@ -578,6 +596,51 @@ model EquipoAgenteEvento {
   @@index([createdAt])
 }
 
+model EquipoMantencion {
+  id               Int          @id @default(autoincrement())
+  equipoId         Int?
+  empresaId        Int?
+  solicitanteId    Int?
+  tecnicoId        Int?
+  tipo             String
+  estado           String
+  origen           String       @default("MANT_GENERAL_RIDS")
+  fechaInicio      DateTime
+  fechaFin         DateTime?
+  duracionSegundos Int?
+  duracionTexto    String?
+  tareasRealizadas Json         @default("[]")
+  tareasConError   Json         @default("[]")
+  resumen          String?
+  reporteTexto     String?
+  serial           String?
+  hostname         String?
+  usuarioActual    String?
+  localIp          String?
+  macAddress       String?
+  marca            String?
+  modelo           String?
+  agenteVersion    String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  equipo           Equipo?      @relation(fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+  empresa          Empresa?     @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  solicitante      Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+  tecnico          Tecnico?     @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([equipoId])
+  @@index([empresaId])
+  @@index([solicitanteId])
+  @@index([tecnicoId])
+  @@index([fechaInicio])
+  @@index([estado])
+  @@index([tipo])
+  @@index([origen])
+  @@index([serial])
+  @@index([hostname])
+  @@index([macAddress])
+}
+
 model Historial {
   tecnicoId          Int
   solicitante        String
@@ -627,48 +690,37 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico            Int                     @id @default(autoincrement())
-  nombre                String
-  email                 String                  @unique
-  passwordHash          String
-  status                Boolean                 @default(true)
-  empresaId             Int?
-  rol                   String                  @default("TECNICO")
-  teamviewerUserId      String?                 @unique
-  firmaTexto            String?
-  area                  String?
-  cargo                 String?
-  empresa               Empresa?                @relation(fields: [empresaId], references: [id_empresa])
-  tokens                RefreshToken[]
-  historiales           Historial[]
-  visitas               Visita[]
-  detalleTrabajos       DetalleTrabajoGestioo[]
-  entregas              Entrega[]
-  tickets               Ticket[]
-  firma                 Firma?
-  cotizaciones          CotizacionGestioo[]
-  auditLogs             AuditLog[]
-  mantencionesRemotas   MantencionRemota[]      @relation("TecnicoMantencionesRemotas")
-  passwordResetTokens   PasswordResetToken[]
-  agendasAsignadas      AgendaTecnico[]
-  analisisInventarioIAs AnalisisInventarioIA[]
-  manualTutoriales      ManualTutorial[]
-  bitacoras             BitacoraTecnico[]
+  id_tecnico                 Int                         @id @default(autoincrement())
+  nombre                     String
+  email                      String                      @unique
+  passwordHash               String
+  status                     Boolean                     @default(true)
+  empresaId                  Int?
+  rol                        String                      @default("TECNICO")
+  teamviewerUserId           String?                     @unique
+  firmaTexto                 String?
+  area                       String?
+  cargo                      String?
+  empresa                    Empresa?                    @relation(fields: [empresaId], references: [id_empresa])
+  tokens                     RefreshToken[]
+  historiales                Historial[]
+  visitas                    Visita[]
+  detalleTrabajos            DetalleTrabajoGestioo[]
+  entregas                   Entrega[]
+  tickets                    Ticket[]
+  firma                      Firma?
+  cotizaciones               CotizacionGestioo[]
+  auditLogs                  AuditLog[]
+  mantencionesRemotas        MantencionRemota[]          @relation("TecnicoMantencionesRemotas")
+  passwordResetTokens        PasswordResetToken[]
+  agendasAsignadas           AgendaTecnico[]
+  analisisInventarioIAs      AnalisisInventarioIA[]
+  manualTutoriales           ManualTutorial[]
+  bitacoras                  BitacoraTecnico[]
+  equipoMantenciones         EquipoMantencion[]
+  cotizacionMasivaPlantillas CotizacionMasivaPlantilla[]
 
   @@index([empresaId])
-}
-
-model RolePermission {
-  id        Int      @id @default(autoincrement())
-  rol       String
-  permiso   String
-  permitido Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([rol, permiso])
-  @@index([rol])
-  @@index([permiso])
 }
 
 model Visita {
@@ -696,6 +748,9 @@ model Visita {
   direccion_visita   String?
   ecografo           Boolean           @default(false)
   sucursalId         Int?
+  agendaId           Int?              @unique
+  origen             OrigenVisita      @default(MANUAL)
+  agenda             AgendaVisita?     @relation(fields: [agendaId], references: [id])
   empresa            Empresa           @relation("Empresa_Visita", fields: [empresaId], references: [id_empresa])
   tecnico            Tecnico           @relation(fields: [tecnicoId], references: [id_tecnico])
   solicitanteRef     Solicitante?      @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
@@ -1173,8 +1228,10 @@ model AgendaVisita {
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
   fechaInicioRuta      DateTime?
+  fechaInicioVisita    DateTime?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   tecnicos             AgendaTecnico[]
+  visita               Visita?
 
   @@index([empresaId])
   @@index([fecha])
@@ -1514,129 +1571,71 @@ model UbicacionTecnico {
   @@index([tecnicoId])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model ProductoGestioo_backup_deleted_duplicates_2026_06 {
-  id            Int?
-  nombre        String?
-  descripcion   String?
-  tipo          String?
-  categoria     String?
-  serie         String?
-  estado        String?
-  precio        Float?
-  stock         Int?
-  fechaIngreso  DateTime?
-  garantiaMeses Int?
-  activo        Boolean?
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
+model CotizacionMasivaEjecucion {
+  id                Int                       @id @default(autoincrement())
+  plantillaId       Int
+  fecha             DateTime                  @default(now())
+  nombre            String?
+  totalCotizaciones Int                       @default(0)
+  plantilla         CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
 
-  @@ignore
+  @@index([fecha])
+  @@index([plantillaId])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model ProductoGestioo_backup_deleted_similares_2026_06 {
-  id            Int?
-  nombre        String?
-  descripcion   String?
-  tipo          String?
-  categoria     String?
-  serie         String?
-  estado        String?
-  precio        Float?
-  stock         Int?
-  fechaIngreso  DateTime?
-  garantiaMeses Int?
-  activo        Boolean?
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
+model CotizacionMasivaPlantilla {
+  id          Int                                @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  activo      Boolean                            @default(true)
+  createdAt   DateTime                           @default(now())
+  updatedAt   DateTime                           @updatedAt
+  tecnicoId   Int?
+  tecnico     Tecnico?                           @relation(fields: [tecnicoId], references: [id_tecnico], onDelete: SetNull)
+  items       CotizacionMasivaPlantillaItem[]
+  entidades   CotizacionMasivaPlantillaEntidad[]
+  ejecuciones CotizacionMasivaEjecucion[]
 
-  @@ignore
+  @@index([activo])
+  @@index([tecnicoId])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model ProductoGestioo_backup_deleted_similares_manual_2026_06 {
-  id            Int?
-  nombre        String?
-  descripcion   String?
-  tipo          String?
-  categoria     String?
-  serie         String?
-  estado        String?
-  precio        Float?
-  stock         Int?
-  fechaIngreso  DateTime?
-  garantiaMeses Int?
-  activo        Boolean?
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
+model CotizacionMasivaPlantillaCantidad {
+  id                 Int                              @id @default(autoincrement())
+  plantillaEntidadId Int
+  productoId         Int
+  cantidad           Int                              @default(1)
+  plantillaEntidad   CotizacionMasivaPlantillaEntidad @relation(fields: [plantillaEntidadId], references: [id], onDelete: Cascade)
+  producto           ProductoGestioo                  @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
-  @@ignore
+  @@unique([plantillaEntidadId, productoId])
+  @@index([plantillaEntidadId])
+  @@index([productoId])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model ProductoGestioo_backup_encoding_2026_06 {
-  id            Int?
-  nombre        String?
-  descripcion   String?
-  tipo          String?
-  categoria     String?
-  serie         String?
-  estado        String?
-  precio        Float?
-  stock         Int?
-  fechaIngreso  DateTime?
-  garantiaMeses Int?
-  activo        Boolean?
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
+model CotizacionMasivaPlantillaEntidad {
+  id          Int                                 @id @default(autoincrement())
+  plantillaId Int
+  entidadId   Int
+  plantilla   CotizacionMasivaPlantilla           @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  entidad     EntidadGestioo                      @relation(fields: [entidadId], references: [id], onDelete: Restrict)
+  cantidades  CotizacionMasivaPlantillaCantidad[]
 
-  @@ignore
+  @@unique([plantillaId, entidadId])
+  @@index([entidadId])
+  @@index([plantillaId])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model ProductoGestioo_backup_normalizacion_2026_06 {
-  id            Int?
-  nombre        String?
-  descripcion   String?
-  tipo          String?
-  categoria     String?
-  serie         String?
-  estado        String?
-  precio        Float?
-  stock         Int?
-  fechaIngreso  DateTime?
-  garantiaMeses Int?
-  activo        Boolean?
-  marcaId       Int?
-  modeloId      Int?
-  entidadId     Int?
-  porcGanancia  Float?
-  precioTotal   Float?
-  imagen        String?
-  publicId      String?
+model CotizacionMasivaPlantillaItem {
+  id          Int                       @id @default(autoincrement())
+  plantillaId Int
+  productoId  Int
+  plantilla   CotizacionMasivaPlantilla @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  producto    ProductoGestioo           @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
-  @@ignore
+  @@unique([plantillaId, productoId])
+  @@index([plantillaId])
+  @@index([productoId])
 }
 
 enum TipoBitacoraTecnico {
@@ -1674,6 +1673,7 @@ enum EstadoAgenda {
   COMPLETADA
   CANCELADA
   EN_RUTA
+  INICIADA
 }
 
 enum EstadoDTE {
@@ -1875,4 +1875,9 @@ enum EstadoAgenteEquipo {
   SIN_CONEXION
   ADVERTENCIA
   CRITICO
+}
+
+enum OrigenVisita {
+  MANUAL
+  AGENDA
 }

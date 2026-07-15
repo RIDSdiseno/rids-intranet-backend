@@ -70,6 +70,19 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -124,6 +137,19 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -138,7 +164,7 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
     empresaId?: number | null | undefined;
-}): Promise<Omit<{
+}): Promise<(Omit<{
     empresa: {
         nombre: string;
         id_empresa: number;
@@ -171,9 +197,22 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
-}>;
+}) | undefined>;
 export declare function cerrarAgendasPendientesDelDia(): Promise<number>;
 /**
  * Reemplaza completamente los técnicos de una visita.
@@ -200,6 +239,7 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
 }>;
 /**
  * Elimina todas las visitas de un mes completo.
@@ -221,7 +261,7 @@ export declare function crearAgendaVisitaManual(data: {
     horaFin?: string | undefined;
     mensaje?: string | undefined;
     notas?: string | undefined;
-}): Promise<Omit<{
+}): Promise<(Omit<{
     empresa: {
         nombre: string;
         id_empresa: number;
@@ -254,9 +294,22 @@ export declare function crearAgendaVisitaManual(data: {
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+} & {
+    visita: {
+        origen: import("@prisma/client").$Enums.OrigenVisita;
+        inicio: Date;
+        fin: Date | null;
+        status: import("@prisma/client").$Enums.EstadoVisita;
+        id_visita: number;
+        agendaId: number | null;
+    } | null;
+    visitaId: number | null;
+    visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+    visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
 }, "fecha"> & {
     fecha: string;
-}>;
+}) | undefined>;
 /**
  * Envía correos reales a los técnicos de cada agenda pendiente del día.
  * Usa Microsoft Graph via graphReaderService.sendReplyEmail().

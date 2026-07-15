@@ -8,7 +8,7 @@ import { solicitantesRouter } from "./routes/solicitantes.routes.js";
 import { visitasRouter } from "./routes/visitas.routes.js";
 import { equiposRouter } from "./routes/equipos.routes.js";
 import { clientesRouter } from "./routes/clientes.routes.js";
-import reportesRouter from "./routes/reportes.routes.js";
+import reportesRouter from "./routes/reportes-routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
@@ -20,7 +20,7 @@ import solicitantesMaintenanceRouter from "./routes/solicitantesMaintenance.rout
 
 // Reportes e Inventario export
 import inventarioRoutes from "./routes/inventario.routes.js";
-import reportesUploadRouter from "./routes/reportes-upload.routes.js";
+import reportesUploadRouter from "./routes/reportes-routes/reportes-upload.routes.js";
 
 /* ===================== GESTIOO ===================== */
 import entidadesRouter from "./routes/entidades.routes.js";
@@ -29,7 +29,8 @@ import serviciosGestiooRouter from "./routes/servicios-gestioo.routes.js";
 import marcasGestiooRouter from "./routes/marcas-gestioo.routes.js";
 import modelosGestiooRouter from "./routes/modelos-gestioo.routes.js"; // <- si tu archivo real es modelos.routes.js, ajusta
 import detalleTrabajoGestiooRouter from "./routes/detalle-trabajo-gestioo.routes.js";
-import cotizacionesRouter from "./routes/cotizaciones.routes.js";
+import cotizacionesRouter from "./routes/cotizaciones-routes/cotizaciones.routes.js";
+import cotizacionesMasivasRouter from "./routes/cotizaciones-routes/cotizaciones-masivas.routes.js";
 
 import tecnicosRouter from "./routes/tecnicos.routes.js";
 
@@ -73,17 +74,8 @@ import { agendaRouter } from "./routes/agenda.routes.js";
 /* ===================== CORREO ===================== */
 import correoRouter from "./routes/correo.routes.js";
 
-/* ==================== SII simple api ================ */
-import simpleapiRouter from "./routes/Simpleapi.routes.js";
-
-/* ===================== SII API ===================== */
-import siiApiRoutes from "./modules/sii-api/routes/sii-api.routes.js";
-
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
-
-/* ===================== Permisos y Roles ===================== */
-import rolePermissionsRoutes from "./routes/permisos-routes/role-permissions.routes.js";
 
 /* ===================== BaseAPI RCV ===================== */
 import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
@@ -101,10 +93,14 @@ import ubicacionesRouter from "./routes/ubicaciones.routes.js";
 
 import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
 
+import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-mantencion.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
 export const api = Router();
+
+api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 
 api.use("/equipos/agent", equipoAgentRoutes);
 
@@ -115,7 +111,6 @@ api.use(onlyOwnEmpresa());
 api.use("/auth", authRouter);
 api.use("/solicitantes", solicitantesRouter);
 api.use("/agenda", agendaRouter);
-api.use("/role-permissions", rolePermissionsRoutes);
 api.use("/manuales-tutoriales", manualesTutorialesRouter);
 api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
 api.use("/ubicaciones", ubicacionesRouter);
@@ -158,6 +153,7 @@ api.use("/marcas-gestioo", marcasGestiooRouter);
 api.use("/modelos", modelosGestiooRouter);
 api.use("/detalle-trabajo-gestioo", detalleTrabajoGestiooRouter);
 api.use("/cotizaciones", cotizacionesRouter);
+api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
 
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)
@@ -191,12 +187,6 @@ api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 
 /* ===================== CORREO ===================== */
 api.use("/correo", correoRouter);
-
-/* ==================== SII simple api ================ */
-api.use("/facturas", simpleapiRouter);
-
-/* ===================== SII API ===================== */
-api.use("/sii", siiApiRoutes);
 
 /* ===================== Clientes ===================== */
 api.use("/clientes-ext", clientesExtRouter);

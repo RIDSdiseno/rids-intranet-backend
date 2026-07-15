@@ -1,3 +1,4 @@
+// src/service/agenda.service.ts
 import { prisma } from "../lib/prisma.js";
 import { TipoAgenda, EstadoAgenda } from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
@@ -68,6 +69,54 @@ function serializarAgendaVisita<T extends { fecha: Date }>(
     };
 }
 
+type AgendaConIdFecha = { id: number; fecha: Date };
+
+async function adjuntarFormularioVisita<T extends AgendaConIdFecha>(visitas: T[]) {
+    const agendaIds = visitas.map((visita) => visita.id);
+
+    if (agendaIds.length === 0) {
+        return visitas.map((visita) =>
+            serializarAgendaVisita({
+                ...visita,
+                visita: null,
+                visitaId: null,
+                visitaStatus: null,
+                visitaOrigen: null,
+            })
+        );
+    }
+
+    const formularios = await prisma.visita.findMany({
+        where: { agendaId: { in: agendaIds } },
+        select: {
+            id_visita: true,
+            agendaId: true,
+            status: true,
+            origen: true,
+            inicio: true,
+            fin: true,
+        },
+    });
+
+    const formulariosPorAgendaId = new Map(
+        formularios
+            .filter((formulario) => typeof formulario.agendaId === "number")
+            .map((formulario) => [formulario.agendaId!, formulario] as const)
+    );
+
+    return visitas.map((visita) => {
+        const formulario = formulariosPorAgendaId.get(visita.id) ?? null;
+
+        return serializarAgendaVisita({
+            ...visita,
+            visita: formulario,
+            visitaId: formulario?.id_visita ?? null,
+            visitaStatus: formulario?.status ?? null,
+            visitaOrigen: formulario?.origen ?? null,
+        });
+    });
+}
+
 let empresaRidsAgendaIdCache: number | null | undefined;
 
 async function obtenerEmpresaRidsAgendaId(): Promise<number | null> {
@@ -128,6 +177,46 @@ function escapeHtml(texto?: string | null): string {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function isEmailTecnicoValido(email?: string | null): email is string {
+    /*
+      Evita enviar correos a direcciones inexistentes o internas de Exchange.
+      Esto previene rebotes tipo:
+      microsoftexchange...@rids.cl
+    */
+    const limpio = email?.trim().toLowerCase();
+
+    if (!limpio) return false;
+
+    if (limpio.startsWith("microsoftexchange")) return false;
+    if (limpio.includes("microsoft exchange")) return false;
+    if (limpio.includes("no-reply") || limpio.includes("noreply")) return false;
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio)) return false;
+
+    // Si las notificaciones de agenda son solo para técnicos internos RIDS.
+    if (!limpio.endsWith("@rids.cl")) return false;
+
+    return true;
+}
+
+function normalizarEmailTecnico(email?: string | null): string | null {
+    const limpio = email?.trim().toLowerCase();
+
+    return isEmailTecnicoValido(limpio) ? limpio : null;
+}
+
+function filtrarCorreosTecnicosValidos(
+    correos: Array<string | null | undefined>
+): string[] {
+    return Array.from(
+        new Set(
+            correos
+                .map((correo) => normalizarEmailTecnico(correo))
+                .filter((correo): correo is string => Boolean(correo))
+        )
+    );
 }
 
 type AgendaOutlookVisita = {
@@ -323,15 +412,34 @@ function buildAgendaOutlookAttendees(visita: AgendaOutlookVisita): Array<{
     type: "required";
 }> {
     const seen = new Set<string>();
-    const attendees: Array<{ emailAddress: { address: string; name?: string }; type: "required" }> = [];
+    const attendees: Array<{
+        emailAddress: { address: string; name?: string };
+        type: "required";
+    }> = [];
 
     for (const { tecnico } of visita.tecnicos ?? []) {
-        const email = tecnico?.email?.trim().toLowerCase();
-        if (!email || seen.has(email)) continue;
+        const email = normalizarEmailTecnico(tecnico?.email);
+
+        if (!email) {
+            console.warn("[AGENDA OUTLOOK] Técnico omitido como asistente por email inválido", {
+                nombre: tecnico?.nombre,
+                email: tecnico?.email,
+            });
+
+            continue;
+        }
+
+        if (seen.has(email)) continue;
+
         seen.add(email);
+
         const nombre = tecnico?.nombre?.trim();
+
         attendees.push({
-            emailAddress: { address: email, ...(nombre ? { name: nombre } : {}) },
+            emailAddress: {
+                address: email,
+                ...(nombre ? { name: nombre } : {}),
+            },
             type: "required",
         });
     }
@@ -433,9 +541,9 @@ export async function generarMallaMensual(
     includeOficina?: boolean
 ): Promise<{ creadas: number; omitidas: number }> {
     // Extender hasta el domingo de la última semana visible del calendario mensual
-    const primerDia    = new Date(Date.UTC(year, month - 1, 1));
+    const primerDia = new Date(Date.UTC(year, month - 1, 1));
     const ultimoDiaMes = new Date(Date.UTC(year, month, 0));
-    const finVisible   = getDomingoDeLaSemana(ultimoDiaMes); // puede caer en el mes siguiente
+    const finVisible = getDomingoDeLaSemana(ultimoDiaMes); // puede caer en el mes siguiente
 
     const totalDias = Math.floor((finVisible.getTime() - primerDia.getTime()) / 86400000) + 1;
     const dias: Date[] = Array.from({ length: totalDias }, (_, d) =>
@@ -448,11 +556,12 @@ export async function generarMallaMensual(
 
     const tecnicos_excluidos = [23, 16, 5, 14, 7];
     const empresasFijas: Record<number, number> = {
-    30: 21, // Sony Music -> Gonzalo Villalobos
+        30: 21, // Sony Music -> Gonzalo Villalobos
     };
     const [tecnicos, empresas] = await Promise.all([
         prisma.tecnico.findMany({
-            where: { status: true, 
+            where: {
+                status: true,
                 id_tecnico: {
                     notIn: tecnicos_excluidos,
                 },
@@ -473,7 +582,7 @@ export async function generarMallaMensual(
     const empresaOficinaKey = empresaRidsAgendaId ?? null;
 
     if (tecnicos.length === 0 || (empresas.length === 0 && !includeOficina)) {
-       // console.log("[AGENDA] Sin técnicos activos o sin empresas — nada que generar.");
+        // console.log("[AGENDA] Sin técnicos activos o sin empresas — nada que generar.");
         return { creadas: 0, omitidas: 0 };
     }
 
@@ -526,9 +635,9 @@ export async function generarMallaMensual(
     const tecnicosFijosSet = new Set(Object.values(empresasFijas));
     // Pool de rotación: excluye empresas con asignación fija (ej: Sony no rota)
     const empresasPool = empresas.filter(e => !empresasFijasSet.has(e.id_empresa));
-    const tecnicosLMV  = tecnicos;                                                    // todos en LMV
-    const tecnicosMJ   = tecnicos.filter(t => !tecnicosFijosSet.has(t.id_tecnico));   // sin fijos en MJ
-    const N      = empresasPool.length;
+    const tecnicosLMV = tecnicos;                                                    // todos en LMV
+    const tecnicosMJ = tecnicos.filter(t => !tecnicosFijosSet.has(t.id_tecnico));   // sin fijos en MJ
+    const N = empresasPool.length;
     const halfMJ = Math.ceil(N / 2); // stagger: MJ empieza en la mitad del pool para evitar repetir empresas de LMV
 
     for (const fecha of dias) {
@@ -558,11 +667,11 @@ export async function generarMallaMensual(
 
         if (!esDiaSemana(fecha)) continue;
 
-        const utcDay       = fecha.getUTCDay();
-        const esLMV        = utcDay === 1 || utcDay === 3 || utcDay === 5;
-        const esMJ         = utcDay === 2 || utcDay === 4;
+        const utcDay = fecha.getUTCDay();
+        const esLMV = utcDay === 1 || utcDay === 3 || utcDay === 5;
+        const esMJ = utcDay === 2 || utcDay === 4;
         const offsetSemana = getSemanaISO(fecha);
-        const poolDelDia   = esLMV ? tecnicosLMV : tecnicosMJ;
+        const poolDelDia = esLMV ? tecnicosLMV : tecnicosMJ;
 
         // Mapa empresa → tecnicoIds para este día
         const asignaciones = new Map<number, number[]>();
@@ -642,7 +751,7 @@ export async function generarMallaMensual(
     }
 
     if (nuevas.length === 0) {
-      //  console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} ya existía completa | omitidas: ${omitidas}`);
+        //  console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} ya existía completa | omitidas: ${omitidas}`);
         return { creadas: 0, omitidas };
     }
 
@@ -695,7 +804,7 @@ export async function generarMallaMensual(
     await prisma.agendaTecnico.createMany({ data: relaciones, skipDuplicates: true });
 
     //console.log(
-       // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} generada | creadas: ${nuevas.length} | omitidas: ${omitidas}`
+    // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} generada | creadas: ${nuevas.length} | omitidas: ${omitidas}`
     //);
 
     return { creadas: nuevas.length, omitidas };
@@ -734,10 +843,10 @@ export async function getAgendaMensual(
     }
 ) {
     // Rango visible del calendario mensual: semana completa del primer al último día del mes
-    const primerDia  = new Date(Date.UTC(year, month - 1, 1));
-    const ultimoDia  = new Date(Date.UTC(year, month, 0));
+    const primerDia = new Date(Date.UTC(year, month - 1, 1));
+    const ultimoDia = new Date(Date.UTC(year, month, 0));
     const inicio = getLunesDeLaSemana(primerDia);
-    const fin    = getDomingoDeLaSemana(ultimoDia);
+    const fin = getDomingoDeLaSemana(ultimoDia);
 
     const tecnico = filtros?.tecnico?.trim();
     const empresa = filtros?.empresa?.trim();
@@ -802,7 +911,7 @@ export async function getAgendaMensual(
         orderBy: { fecha: "asc" },
     });
 
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 
 export async function getAgendaDesdeOutlook(
@@ -1210,7 +1319,7 @@ export async function sincronizarAgendaDesdeOutlook(
     const outlookIdsVigentes = new Set(
         events
             .map((event) => event.id?.trim())
-            .filter((id):id is string => Boolean(id))
+            .filter((id): id is string => Boolean(id))
     );
 
     const visitasLocalesSincronizadas = await prisma.agendaVisita.findMany({
@@ -1223,7 +1332,8 @@ export async function sincronizarAgendaDesdeOutlook(
                 not: null,
             },
         },
-        select: { id: true,
+        select: {
+            id: true,
             outlookEventId: true,
         },
     });
@@ -1242,8 +1352,8 @@ export async function sincronizarAgendaDesdeOutlook(
             },
         });
 
-      //  console.log(
-           // `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}` );
+        //  console.log(
+        // `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}` );
     }
 
     let creadas = 0;
@@ -1352,7 +1462,7 @@ export async function sincronizarAgendaDesdeOutlook(
 
             creadas++;
         } catch (error) {
-          ////  console.error(`[AGENDA OUTLOOK SYNC] Error procesando evento ${event.id || "(sin id)"}:`, error);
+            ////  console.error(`[AGENDA OUTLOOK SYNC] Error procesando evento ${event.id || "(sin id)"}:`, error);
             errores++;
         }
     }
@@ -1386,7 +1496,7 @@ export async function getAgendaPorDia(fecha: Date) {
         orderBy: { tipo: "asc" },
     });
 
-    return visitas.map(serializarAgendaVisita);
+    return adjuntarFormularioVisita(visitas);
 }
 
 /* ======================================================
@@ -1422,7 +1532,7 @@ async function validarConflictoHorario(params: {
         where: {
             fecha,
             horaInicio: { not: null },
-            horaFin:    { not: null },
+            horaFin: { not: null },
             ...(excluirVisitaId !== undefined && { id: { not: excluirVisitaId } }),
             tecnicos: { some: { tecnicoId: { in: tecnicoIds } } },
         },
@@ -1430,7 +1540,7 @@ async function validarConflictoHorario(params: {
     });
 
     const nuevoInicio = horaAMinutos(horaInicio);
-    const nuevoFin    = horaAMinutos(horaFin);
+    const nuevoFin = horaAMinutos(horaFin);
 
     if (nuevoInicio >= nuevoFin) {
         throw new AgendaConflictError("La hora de inicio debe ser menor que la hora de fin.");
@@ -1476,11 +1586,11 @@ export async function actualizarAgendaVisita(
     const actual = await prisma.agendaVisita.findUnique({
         where: { id },
         select: {
-            fecha:          true,
-            horaInicio:     true,
-            horaFin:        true,
+            fecha: true,
+            horaInicio: true,
+            horaFin: true,
             outlookEventId: true,
-            tecnicos:       { select: { tecnicoId: true } },
+            tecnicos: { select: { tecnicoId: true } },
         },
     });
 
@@ -1492,10 +1602,10 @@ export async function actualizarAgendaVisita(
 
         // Validar conflicto horario si se modifica fecha u horario
         if (fechaStr !== undefined || horaInicio !== undefined || horaFin !== undefined) {
-            const fechaFinal  = fechaStr    ? normalizarFechaDesdeString(fechaStr) : actual.fecha;
+            const fechaFinal = fechaStr ? normalizarFechaDesdeString(fechaStr) : actual.fecha;
             const inicioFinal = horaInicio ?? actual.horaInicio;
-            const finFinal    = horaFin    ?? actual.horaFin;
-            const tecnicoIds  = actual.tecnicos.map((t) => t.tecnicoId);
+            const finFinal = horaFin ?? actual.horaFin;
+            const tecnicoIds = actual.tecnicos.map((t) => t.tecnicoId);
             if (inicioFinal && finFinal && tecnicoIds.length > 0) {
                 await validarConflictoHorario({ fecha: fechaFinal, horaInicio: inicioFinal, horaFin: finFinal, tecnicoIds, excluirVisitaId: id });
             }
@@ -1574,11 +1684,12 @@ export async function actualizarAgendaVisita(
             });
             visita.outlookEventId = null;
         } catch (error) {
-           // console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
+            // console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
         }
     }
 
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 
 export async function cerrarAgendasPendientesDelDia(): Promise<number> {
@@ -1595,7 +1706,7 @@ export async function cerrarAgendasPendientesDelDia(): Promise<number> {
         },
     });
 
-   // console.log(`[AGENDA] Cierre automatico ejecutado - agendas cerradas: ${resultado.count}`);
+    // console.log(`[AGENDA] Cierre automatico ejecutado - agendas cerradas: ${resultado.count}`);
 
     return resultado.count;
 }
@@ -1619,10 +1730,10 @@ export async function reasignarTecnicos(
 
     if (visita?.horaInicio && visita?.horaFin) {
         await validarConflictoHorario({
-            fecha:           visita.fecha,
-            horaInicio:      visita.horaInicio,
-            horaFin:         visita.horaFin,
-            tecnicoIds:      nuevosTecnicoIds,
+            fecha: visita.fecha,
+            horaInicio: visita.horaInicio,
+            horaFin: visita.horaFin,
+            tecnicoIds: nuevosTecnicoIds,
             excluirVisitaId: agendaId,
         });
     }
@@ -1666,7 +1777,7 @@ export async function reasignarTecnicos(
 
                 await graphReaderService.updateCalendarEvent(visitaActualizada.outlookEventId, eventData);
             } catch (error) {
-               // console.error(`[AGENDA OUTLOOK] Error sincronizando reasignación agenda #${agendaId}:`, error);
+                // console.error(`[AGENDA OUTLOOK] Error sincronizando reasignación agenda #${agendaId}:`, error);
             }
         }
     }
@@ -1707,8 +1818,8 @@ export async function eliminarAgendaVisita(id: number) {
                     : null;
 
             if (errorCode === "ErrorItemNotFound") {
-               // console.warn(
-                  ////  `[AGENDA OUTLOOK] Evento no encontrado en Outlook para agenda #${id} (${visita.outlookEventId}). Se elimina solo en BD.`
+                // console.warn(
+                ////  `[AGENDA OUTLOOK] Evento no encontrado en Outlook para agenda #${id} (${visita.outlookEventId}). Se elimina solo en BD.`
                 //);
             } else {
                 //console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${id}:`, error);
@@ -1731,7 +1842,7 @@ export async function eliminarMallaMensual(
     const fin = getDomingoDeLaSemana(new Date(Date.UTC(year, month, 0)));
 
     // Solo borrar desde mañana en adelante — no tocar historial
-    const hoy    = new Date();
+    const hoy = new Date();
     const manana = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate() + 1));
 
     if (manana > fin) {
@@ -1744,8 +1855,8 @@ export async function eliminarMallaMensual(
     });
 
     //console.log(
-       // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} eliminada | visitas borradas: ${count}`
-   // );
+    // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} eliminada | visitas borradas: ${count}`
+    // );
 
     return { eliminadas: count };
 }
@@ -1768,9 +1879,9 @@ export async function crearAgendaVisitaManual(data: {
 
     if (data.horaInicio && data.horaFin) {
         await validarConflictoHorario({
-            fecha:      fechaUTC,
+            fecha: fechaUTC,
             horaInicio: data.horaInicio,
-            horaFin:    data.horaFin,
+            horaFin: data.horaFin,
             tecnicoIds: [data.tecnicoId],
         });
     }
@@ -1833,14 +1944,16 @@ export async function crearAgendaVisitaManual(data: {
                     },
                 });
 
-                return serializarAgendaVisita(visitaActualizada);
+                const [visitaConFormulario] = await adjuntarFormularioVisita([visitaActualizada]);
+                return visitaConFormulario;
             }
         } catch (error) {
             //console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
         }
     }
 
-    return serializarAgendaVisita(visita);
+    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    return visitaConFormulario;
 }
 
 /* ======================================================
@@ -1924,17 +2037,17 @@ export async function enviarNotificacionesPendientes(): Promise<number> {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(visita.estado)}</td>
     </tr>
     ${visita.horaInicio?.trim()
-            ? `<tr>
+                ? `<tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora inicio</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(visita.horaInicio?.trim())}</td>
     </tr>`
-            : ""}
+                : ""}
     ${visita.horaFin?.trim()
-            ? `<tr>
+                ? `<tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora fin</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(visita.horaFin?.trim())}</td>
     </tr>`
-            : ""}
+                : ""}
   </table>
 
   <div style="margin-top: 24px;">
@@ -1945,11 +2058,11 @@ ${tecnicosHtml}
   </div>
 
   ${visita.mensaje?.trim()
-            ? `<div style="margin-top: 24px;">
+                ? `<div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Mensaje adicional</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${escapeHtml(visita.mensaje?.trim())}</p>
   </div>`
-            : ""}
+                : ""}
 
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 11px; color: #aaa; text-align: center;">
@@ -1958,12 +2071,28 @@ ${tecnicosHtml}
 </div>
         `.trim();
 
-        const destinatarios = visita.tecnicos
-            .map(({ tecnico }) => tecnico.email?.trim())
-            .filter((email): email is string => Boolean(email));
+        const destinatarios = filtrarCorreosTecnicosValidos(
+            visita.tecnicos.map(({ tecnico }) => tecnico.email)
+        );
 
         if (destinatarios.length === 0) {
-            //console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos validos`);
+            console.warn(`[AGENDA] Agenda #${visita.id} (${nombreEmpresa}) omitida — sin correos técnicos válidos`, {
+                tecnicos: visita.tecnicos.map(({ tecnico }) => ({
+                    nombre: tecnico.nombre,
+                    email: tecnico.email,
+                })),
+            });
+
+            /*
+              Importante:
+              Marcamos como notificada para que no intente enviar todos los días
+              a técnicos sin correo válido.
+            */
+            await prisma.agendaVisita.update({
+                where: { id: visita.id },
+                data: { notificacionEnviada: true },
+            });
+
             continue;
         }
 
@@ -2003,10 +2132,10 @@ export async function enviarRecordatoriosPendientes(): Promise<number> {
             fecha: fechaHoy,
             estado: EstadoAgenda.PROGRAMADA,
             horaInicio: { not: null },
-            OR:[ 
-                { recordatorioEnviado: false }, 
+            OR: [
+                { recordatorioEnviado: false },
                 { recordatorioEnviado: null },
-                ],
+            ],
         },
         include: {
             empresa: { select: { nombre: true } },
@@ -2106,9 +2235,9 @@ ${tecnicosHtml}
 </div>
         `.trim();
 
-        const destinatarios = visita.tecnicos
-            .map(({ tecnico }) => tecnico.email?.trim())
-            .filter((email): email is string => Boolean(email));
+        const destinatarios = filtrarCorreosTecnicosValidos(
+            visita.tecnicos.map(({ tecnico }) => tecnico.email)
+        );
 
         if (destinatarios.length === 0) {
             //console.warn(`[AGENDA RECORDATORIOS] Agenda omitida sin email - agenda #${visita.id}`);
@@ -2141,7 +2270,7 @@ ${tecnicosHtml}
     }
 
     //console.log(
-       // `[AGENDA RECORDATORIOS] Agendas procesadas: ${agendasProcesadas} | Correos enviados: ${correosEnviados}`
+    // `[AGENDA RECORDATORIOS] Agendas procesadas: ${agendasProcesadas} | Correos enviados: ${correosEnviados}`
     //);
 
     return correosEnviados;
@@ -2166,12 +2295,18 @@ export async function enviarNotaAgendaPorCorreo(agendaId: number): Promise<numbe
 
     const nombreEmpresa = getNombreEmpresaAgenda(visita);
 
-    const destinatarios = visita.tecnicos
-        .map(({ tecnico }) => tecnico.email?.trim())
-        .filter((email): email is string => Boolean(email));
+    const destinatarios = filtrarCorreosTecnicosValidos(
+        visita.tecnicos.map(({ tecnico }) => tecnico.email)
+    );
 
     if (destinatarios.length === 0) {
-        console.warn(`[AGENDA NOTA] Agenda #${visita.id} sin correos validos para envio`);
+        console.warn(`[AGENDA NOTA] Agenda #${visita.id} sin correos técnicos válidos para envío`, {
+            tecnicos: visita.tecnicos.map(({ tecnico }) => ({
+                nombre: tecnico.nombre,
+                email: tecnico.email,
+            })),
+        });
+
         return 0;
     }
 
@@ -2295,7 +2430,7 @@ export async function sincronizarAgendaAutomaticaOutlook(): Promise<{
         //console.log(`[AGENDA OUTLOOK AUTO] Mes siguiente (${yearSiguiente}-${monthSiguiente}) sincronizado:`, resultadoSiguiente);
     } catch (err) {
         errorSiguiente = err instanceof Error ? err.message : String(err);
-       // console.error(`[AGENDA OUTLOOK AUTO] Error en mes siguiente (${yearSiguiente}-${monthSiguiente}):`, errorSiguiente);
+        // console.error(`[AGENDA OUTLOOK AUTO] Error en mes siguiente (${yearSiguiente}-${monthSiguiente}):`, errorSiguiente);
     }
 
     return {

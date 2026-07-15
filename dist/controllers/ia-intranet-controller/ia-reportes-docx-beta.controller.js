@@ -1,5 +1,5 @@
-import { buildReporteEmpresaData } from "../../service/ia-metricas-reportes/reportEmpresa.service.js";
-import { generarEstructuraWordIABeta } from "../../service/ia-metricas-reportes/ia-reportes-docx-beta.service.js";
+import { buildReporteEmpresaData } from "../../service/reportes/ia-metricas-reportes/reportEmpresa.service.js";
+import { generarEstructuraWordIABeta } from "../../service/reportes/ia-metricas-reportes/ia-reportes-docx-beta.service.js";
 export async function generarInformeWordIABeta(req, res) {
     try {
         const empresaId = Number(req.params.empresaId);

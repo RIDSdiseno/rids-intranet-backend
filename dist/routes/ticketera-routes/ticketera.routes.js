@@ -4,6 +4,7 @@ import { auth } from "../../middlewares/auth.js";
 import { onlyRole } from "../../middlewares/roles.js";
 import { onlyOwnEmpresa } from "../../middlewares/auth.js";
 import { createTicket, replyTicketAsAgent, listTickets, getTicketById, updateTicket, inboundEmail, downloadTicketAttachment, proxyExternalImage, bulkUpdateTickets, bulkMergeTickets, deleteTicket, getTicketsHomeSummary } from "../../controllers/tickets-rids/ticketera.controller.js";
+import { handleTicketAttachmentsUpload } from "../../middlewares/ticket-attachments-upload.middleware.js";
 import { uploadTicketAttachments } from "../../config/multer-tickets.js";
 import { getTicketSla } from "../../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
 import { buscarContactos } from "../../controllers/tickets-rids/contactos.controller.js";
@@ -31,11 +32,7 @@ ticketeraRouter.get("/external-image", proxyExternalImage);
 // CRUD BASE
 // =======================
 // Crear ticket — solo roles internos
-ticketeraRouter.post("/", auth(), onlyRole(...ROLES_INTERNOS), uploadTicketAttachments.array("attachments", 10), (err, _req, res, next) => {
-    if (err)
-        return res.status(400).json({ ok: false, message: err.message });
-    return next();
-}, createTicket);
+ticketeraRouter.post("/", auth(), onlyRole(...ROLES_INTERNOS), handleTicketAttachmentsUpload, createTicket);
 // Listar tickets — auth requerido; CLIENTE filtra por su empresa (lógica en controller)
 ticketeraRouter.get("/", auth(), onlyOwnEmpresa(), listTickets);
 // =======================
@@ -95,11 +92,7 @@ ticketeraRouter.get("/:id", auth(), onlyOwnEmpresa(), getTicketById);
 // Actualizar — solo internos
 ticketeraRouter.patch("/:id", auth(), onlyRole(...ROLES_INTERNOS), updateTicket);
 // Responder — solo internos
-ticketeraRouter.post("/:id/reply", auth(), onlyRole(...ROLES_INTERNOS), uploadTicketAttachments.array("attachments"), (err, _req, res, next) => {
-    if (err)
-        return res.status(400).json({ ok: false, message: err.message });
-    return next();
-}, replyTicketAsAgent);
+ticketeraRouter.post("/:id/reply", auth(), onlyRole(...ROLES_INTERNOS), handleTicketAttachmentsUpload, replyTicketAsAgent);
 // Eliminar — solo ADMIN
 ticketeraRouter.delete("/:id", auth(), onlyRole(...ROLES_ADMIN), deleteTicket);
 export default ticketeraRouter;

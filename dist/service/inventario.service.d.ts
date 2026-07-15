@@ -75,5 +75,13 @@ export declare function getInventarioByEmpresa(params: {
     solicitanteDetectadoEmail: string | null;
     solicitanteDetectadoId: number | null;
     usuarioActual: string | null;
+    mantGeneralConfigPath: string | null;
+    mantGeneralExePath: string | null;
+    mantGeneralInstalado: boolean;
+    mantGeneralInstalledAt: Date | null;
+    mantGeneralLastSeenAt: Date | null;
+    mantGeneralTecnicoId: number | null;
+    mantGeneralVersion: string | null;
+    propietarioExterno: string | null;
 })[]>;
 //# sourceMappingURL=inventario.service.d.ts.map
