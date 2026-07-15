@@ -9,4 +9,5 @@ export declare const visitasMetrics: (req: Request, res: Response) => Promise<vo
 export declare const getVisitasFilters: (_req: Request, res: Response) => Promise<void>;
 export declare const closeVisita: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 export declare const getVisitasDashboard: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
+export declare const getVisitasResumenDiario: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=visitas.controller.d.ts.map
