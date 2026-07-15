@@ -707,6 +707,7 @@ async function ensurePlaceholderSolicitante(empresaId: number) {
 export async function listEquipos(req: Request, res: Response) {
   try {
     const q = listQuerySchema.parse(req.query);
+
     const INS: Prisma.QueryMode = "insensitive";
 
     const user = (req as any).user;
@@ -957,11 +958,11 @@ export async function listEquipos(req: Request, res: Response) {
           some: {
             fechaInicio: {
               ...(q.mantencionDesde
-                ? { gte: new Date(`${q.mantencionDesde}T00:00:00.000Z`) }
+                ? { gte: new Date(`${q.mantencionDesde}T00:00:00.000-04:00`) }
                 : {}),
 
               ...(q.mantencionHasta
-                ? { lte: new Date(`${q.mantencionHasta}T23:59:59.999Z`) }
+                ? { lte: new Date(`${q.mantencionHasta}T23:59:59.999-04:00`) }
                 : {}),
             },
           },
@@ -970,8 +971,8 @@ export async function listEquipos(req: Request, res: Response) {
     }
 
     /* =========================
-   Filtro Mant.General RIDS
-========================= */
+    Filtro Mant.General RIDS
+    ========================= */
     if (q.mantGeneral === "INSTALADO") {
       andConditions.push({
         mantGeneralInstalado: true,
@@ -986,12 +987,22 @@ export async function listEquipos(req: Request, res: Response) {
 
     if (q.mantGeneralDesde || q.mantGeneralHasta) {
       andConditions.push({
+        mantGeneralInstalado: true,
+      });
+
+      andConditions.push({
+        mantGeneralLastSeenAt: {
+          not: null,
+        },
+      });
+
+      andConditions.push({
         mantGeneralLastSeenAt: {
           ...(q.mantGeneralDesde
-            ? { gte: new Date(`${q.mantGeneralDesde}T00:00:00.000Z`) }
+            ? { gte: new Date(`${q.mantGeneralDesde}T00:00:00.000-04:00`) }
             : {}),
           ...(q.mantGeneralHasta
-            ? { lte: new Date(`${q.mantGeneralHasta}T23:59:59.999Z`) }
+            ? { lte: new Date(`${q.mantGeneralHasta}T23:59:59.999-04:00`) }
             : {}),
         },
       });

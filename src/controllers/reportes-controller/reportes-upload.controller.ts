@@ -398,11 +398,6 @@ export async function previewDocxToPdf(
             }
         );
 
-        console.log(
-            "[LibreOffice] Ejecutando preview con:",
-            libreOfficePath
-        );
-
         await execFileAsync(
             libreOfficePath,
             [

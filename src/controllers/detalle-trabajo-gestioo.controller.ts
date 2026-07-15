@@ -201,30 +201,126 @@ export async function getDetallesTrabajo(req: Request, res: Response) {
         const isCliente = user?.rol === "CLIENTE";
 
         if (isCliente && !user.empresaId) {
-            return res.status(403).json({ error: "Tu cuenta no tiene empresa asociada" });
+            return res.status(403).json({
+                error: "Tu cuenta no tiene empresa asociada",
+            });
         }
 
-        const where = isCliente
-            ? { entidad: { empresaId: user.empresaId } }
-            : {};
+        const search =
+            typeof req.query.search === "string"
+                ? req.query.search.trim()
+                : "";
+
+        const where: any = {
+            ...(isCliente
+                ? {
+                    entidad: {
+                        empresaId: user.empresaId,
+                    },
+                }
+                : {}),
+            ...(search
+                ? {
+                    OR: [
+                        {
+                            numeroOrden: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            tipoTrabajo: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            descripcion: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            entidad: {
+                                nombre: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                        {
+                            equipo: {
+                                serial: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                        {
+                            equipo: {
+                                marca: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                        {
+                            equipo: {
+                                modelo: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                        {
+                            tecnico: {
+                                nombre: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        },
+                    ],
+                }
+                : {}),
+        };
 
         const detalles = await prisma.detalleTrabajoGestioo.findMany({
             where,
-            orderBy: { fecha: "desc" },
+            orderBy: {
+                fecha: "desc",
+            },
             include: {
                 entidad: true,
-                equipo: { include: { solicitante: true } },
+                equipo: {
+                    include: {
+                        solicitante: true,
+                    },
+                },
                 tecnico: isCliente
                     ? false
-                    : { select: { id_tecnico: true, nombre: true } },
-                cotizacion: { select: { id: true, estado: true } },
+                    : {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                        },
+                    },
+                cotizacion: {
+                    select: {
+                        id: true,
+                        estado: true,
+                    },
+                },
             },
         });
 
         return res.json(detalles);
     } catch (error) {
         console.error("❌ Error al obtener órdenes:", error);
-        return res.status(500).json({ error: "Error al obtener órdenes" });
+
+        return res.status(500).json({
+            error: "Error al obtener órdenes",
+        });
     }
 }
 
