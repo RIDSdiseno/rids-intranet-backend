@@ -2,12 +2,11 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-ENV NODE_ENV=production
 ENV LIBREOFFICE_PATH=/usr/bin/libreoffice
 ENV HOME=/tmp
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# LibreOffice, fuentes y certificados.
+# Instala LibreOffice, fuentes y certificados.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-writer \
@@ -19,24 +18,28 @@ RUN apt-get update \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar dependencias Node.
+# Copia archivos de dependencias.
 COPY package.json package-lock.json ./
 
-RUN npm ci
+# Instala dependencies y devDependencies.
+RUN npm ci --include=dev
 
-# Instalar Chromium y dependencias para Playwright.
+# Instala Chromium y dependencias de Playwright.
 RUN npx playwright install --with-deps chromium
 
-# Copiar el proyecto.
+# Copia el proyecto completo.
 COPY . .
 
-# Prisma generate + compilación TypeScript.
+# Prisma generate + TypeScript.
 RUN npm run build
 
-# Eliminar dependencias exclusivas de desarrollo.
+# Elimina dependencias de desarrollo después de compilar.
 RUN npm prune --omit=dev
 
-# Verificaciones durante el build.
+# Desde aquí la aplicación se ejecuta en producción.
+ENV NODE_ENV=production
+
+# Verificaciones.
 RUN /usr/bin/libreoffice --version
 RUN npx playwright install --list
 

@@ -22,6 +22,7 @@
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@supabase/supabase-js": "^2.104.0",
     "@xmldom/xmldom": "^0.9.10",
+    "@prisma/client": "^6.19.2",
     "argon2": "^0.44.0",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
@@ -60,7 +61,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@prisma/client": "^6.19.2",
     "@types/argon2": "^0.14.1",
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
