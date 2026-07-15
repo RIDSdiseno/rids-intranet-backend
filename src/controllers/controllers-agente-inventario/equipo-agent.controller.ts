@@ -485,23 +485,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             });
         }
 
-        const empresaIdFinal =
-            equipo?.empresaId ??
-            solicitanteDetectado?.empresaId ??
-            empresaDetectada?.id_empresa ??
-            equipo?.solicitante?.empresaId ??
-            null;
-
         const solicitanteActualId = equipo?.idSolicitante ?? null;
         const solicitanteActual = equipo?.solicitante ?? null;
-
-        const solicitanteActualValido = Boolean(
-            solicitanteActualId &&
-            solicitanteActual &&
-            solicitanteActual.deletedAt === null &&
-            solicitanteActual.isActive !== false &&
-            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
-        );
 
         const solicitanteDetectadoId =
             solicitanteDetectado?.id_solicitante ?? null;
@@ -516,7 +501,39 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             !conflictoCorreos ||
             solicitanteEmailFuente === "OutlookProfile" ||
             solicitanteEmailFuente === "OfficeIdentity" ||
-            solicitanteEmailFuente === "UPN";
+            solicitanteEmailFuente === "UPN" ||
+            solicitanteEmailFuente === "MacInstallerConfig";
+
+        const solicitanteDetectadoBaseValido = Boolean(
+            solicitanteDetectadoId &&
+            solicitanteDetectado &&
+            solicitanteDetectado.deletedAt === null &&
+            solicitanteDetectado.isActive !== false &&
+            fuenteConfiableParaAsignar
+        );
+
+        const empresaIdActual =
+            equipo?.empresaId ??
+            equipo?.solicitante?.empresaId ??
+            null;
+
+        const empresaIdDetectada =
+            solicitanteDetectado?.empresaId ??
+            empresaDetectada?.id_empresa ??
+            null;
+
+        const empresaIdFinal =
+            solicitanteDetectadoBaseValido
+                ? empresaIdDetectada ?? null
+                : empresaIdActual ?? empresaIdDetectada ?? null;
+
+        const solicitanteActualValido = Boolean(
+            solicitanteActualId &&
+            solicitanteActual &&
+            solicitanteActual.deletedAt === null &&
+            solicitanteActual.isActive !== false &&
+            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
+        );
 
         const solicitanteDetectadoValido = Boolean(
             solicitanteDetectadoId &&
