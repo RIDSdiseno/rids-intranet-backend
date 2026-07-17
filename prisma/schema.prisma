@@ -936,8 +936,28 @@ model CotizacionGestioo {
   trabajos              DetalleTrabajoGestioo[]
   equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
   bitacoras             BitacoraTecnico[]
+  envios                CotizacionEnviada[]
 
   @@index([entidadId])
+}
+
+model CotizacionEnviada {
+  id            Int                @id @default(autoincrement())
+  cotizacionId  Int?
+  to            String?
+  subject       String?
+  sentBy        String?
+  jobId         String?
+  meta          Json?
+  clienteNombre String?
+  creadoPor     String?
+  fechaCreacion DateTime?
+  sentAt        DateTime           @default(now())
+  cotizacion    CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
+
+  @@index([cotizacionId])
+  @@index([jobId])
+  @@index([sentAt])
 }
 
 model Factura {
@@ -1415,6 +1435,22 @@ model RcvConciliacion {
   @@unique([empresaKey, tipoRcv, tipoDoc, rutContraparte, folio])
   @@index([empresaKey, tipoRcv])
   @@index([empresaKey, tipoRcv, estadoConciliacion])
+}
+
+model RcvVencimiento {
+  id               Int      @id @default(autoincrement())
+  empresaKey       String
+  tipoDoc          String
+  folio            String
+  fechaVencimiento DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([empresaKey, tipoDoc, folio])
+  @@index([empresaKey])
+  @@index([tipoDoc])
+  @@index([folio])
+  @@index([fechaVencimiento])
 }
 
 model SiiApiRequestLog {

@@ -32,4 +32,16 @@ debugRouter.get("/facturas/ventas", async (req, res) => {
     }
     return {};
 });
+// Debug: devolver cotizaciones enviadas desde DB (SIN AUTH) para inspección rápida (solo GET)
+debugRouter.get("/cotizaciones/enviadas", async (_req, res) => {
+    try {
+        const { prisma } = await import('../lib/prisma.js');
+        const rows = await prisma.cotizacionEnviada.findMany({ orderBy: { sentAt: 'desc' } });
+        return res.json(rows);
+    }
+    catch (err) {
+        console.error('[DEBUG] error reading cotizaciones-enviadas:', err);
+        return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+    }
+});
 //# sourceMappingURL=debug.js.map

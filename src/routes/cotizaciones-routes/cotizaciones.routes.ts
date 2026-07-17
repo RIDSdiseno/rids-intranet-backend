@@ -30,6 +30,13 @@ const ROLES_FACTURA = ["ADMIN", "ADMINISTRACION", "VENTAS"] as const;
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem)
 cotizacionesRouter.get("/paginacion", getCotizacionesPaginadas);
+
+// Rutas para registro y consulta de cotizaciones enviadas (archivo JSON)
+// Deben definirse antes de la ruta dinámica "/:id" para evitar colisiones
+cotizacionesRouter.get("/enviadas", auth(), listCotizacionesEnviadas);
+cotizacionesRouter.post("/enviadas", auth(), createCotizacionEnvio);
+cotizacionesRouter.delete("/enviadas/:id", auth(), deleteCotizacionEnvio);
+
 cotizacionesRouter.post("/:id/facturar", facturarCotizacion);
 cotizacionesRouter.post("/:id/anular", anularFactura);
 cotizacionesRouter.post("/facturas/:id/pagar", pagarFactura);

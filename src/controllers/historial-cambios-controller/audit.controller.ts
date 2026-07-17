@@ -1,6 +1,8 @@
 // src/controllers/audit.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
+import { getCurrentUserId } from "../../lib/request-context.js";
+import { AuditAction, Prisma } from "@prisma/client";
 
 // Controlador para listar logs de auditoría con filtros y paginación
 export const listAuditLogs = async (req: Request, res: Response) => {
@@ -157,6 +159,107 @@ export const listAuditByEmpresa = async (req: Request, res: Response) => {
     }
 };
 
+// Crear un log de auditoría manual (útil para registrar envíos de recordatorios)
+export const createAuditLog = async (req: Request, res: Response) => {
+    try {
+        const {
+            entity,
+            entityId,
+            empresaId,
+            action,
+            changes,
+            description,
+        } = req.body as {
+            entity?: unknown;
+            entityId?: unknown;
+            empresaId?: unknown;
+            action?: unknown;
+            changes?: unknown;
+            description?: unknown;
+        };
+
+        const actorId = getCurrentUserId();
+
+        const actionNormalizada = String(action ?? "CREATE")
+            .trim()
+            .toUpperCase();
+
+        const auditAction: AuditAction =
+            actionNormalizada === AuditAction.UPDATE
+                ? AuditAction.UPDATE
+                : actionNormalizada === AuditAction.DELETE
+                    ? AuditAction.DELETE
+                    : AuditAction.CREATE;
+
+        const empresaIdNormalizada =
+            empresaId !== undefined &&
+                empresaId !== null &&
+                String(empresaId).trim() !== ""
+                ? Number(empresaId)
+                : null;
+
+        if (
+            empresaIdNormalizada !== null &&
+            !Number.isInteger(empresaIdNormalizada)
+        ) {
+            return res.status(400).json({
+                ok: false,
+                error: "empresaId inválido",
+            });
+        }
+
+        const auditData: Prisma.AuditLogUncheckedCreateInput = {
+            entity:
+                entity !== undefined &&
+                    entity !== null &&
+                    String(entity).trim()
+                    ? String(entity).trim()
+                    : "Recordatorio",
+
+            entityId:
+                entityId !== undefined &&
+                    entityId !== null &&
+                    String(entityId).trim()
+                    ? String(entityId).trim()
+                    : "unknown",
+
+            empresaId: empresaIdNormalizada,
+            action: auditAction,
+
+            description:
+                description !== undefined &&
+                    description !== null &&
+                    String(description).trim()
+                    ? String(description).trim()
+                    : "Recordatorio enviado",
+
+            actorId: actorId ?? null,
+
+            ...(changes !== undefined && changes !== null
+                ? {
+                    changes: changes as Prisma.InputJsonValue,
+                }
+                : {}),
+        };
+
+        const created = await prisma.auditLog.create({
+            data: auditData,
+        });
+
+        return res.status(201).json({
+            ok: true,
+            data: created,
+        });
+    } catch (error) {
+        console.error("Error createAuditLog:", error);
+
+        return res.status(500).json({
+            ok: false,
+            error: "Error interno al crear audit log",
+        });
+    }
+};
+
 export const listEmpresasAuditLogs = async (req: Request, res: Response) => {
     try {
         const user = (req as any).user;
@@ -217,9 +320,23 @@ export const listEmpresasAuditLogs = async (req: Request, res: Response) => {
         };
 
         if (action) {
-            where.action = String(action);
-        }
+            const actionNormalizada = String(action)
+                .trim()
+                .toUpperCase();
 
+            if (
+                !Object.values(AuditAction).includes(
+                    actionNormalizada as AuditAction
+                )
+            ) {
+                return res.status(400).json({
+                    ok: false,
+                    error: "Acción de auditoría inválida",
+                });
+            }
+
+            where.action = actionNormalizada as AuditAction;
+        }
         if (from || to) {
             where.createdAt = {};
 

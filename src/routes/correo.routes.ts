@@ -1,3 +1,4 @@
+// src/routes/correos.routes.ts
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { graphReaderService } from "../service/email/graph-reader.service.js";
@@ -249,19 +250,19 @@ correoRouter.post("/test-agenda/:id", async (req: Request, res: Response) => {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.estado}</td>
     </tr>
     ${agenda.horaInicio?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora inicio</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaInicio.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
     ${agenda.horaFin?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora fin</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaFin.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
   </table>
 
   <div style="margin-top: 24px;">
@@ -272,20 +273,20 @@ ${tecnicosHtml}
   </div>
 
   ${agenda.mensaje?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Mensaje para técnico</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.mensaje.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   ${agenda.notas?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Notas internas</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.notas.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 11px; color: #aaa; text-align: center;">
@@ -412,19 +413,19 @@ correoRouter.post("/enviar-agenda/:id", async (req: Request, res: Response) => {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.estado}</td>
     </tr>
     ${agenda.horaInicio?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora inicio</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaInicio.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
     ${agenda.horaFin?.trim()
-      ? `
+        ? `
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Hora fin</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${agenda.horaFin.trim()}</td>
     </tr>`
-      : ""}
+        : ""}
   </table>
 
   <div style="margin-top: 24px;">
@@ -435,20 +436,20 @@ ${tecnicosHtml}
   </div>
 
   ${agenda.mensaje?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Mensaje para técnico</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.mensaje.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   ${agenda.notas?.trim()
-    ? `
+        ? `
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Notas internas</h3>
     <p style="color: #555; margin: 0; line-height: 1.5;">${agenda.notas.trim()}</p>
   </div>`
-    : ""}
+        : ""}
 
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
   <p style="font-size: 11px; color: #aaa; text-align: center;">
@@ -500,20 +501,16 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
   // attachments opcionales en el body: [{ name, contentType, contentBytes }]
   const globalAttachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
 
-  const envRate = Number(process.env.MAILER_RATE_PER_MIN || 3);
-  const requestedRate = Number(req.body.ratePerMin || envRate || 3);
-  const ratePerMin = Math.max(1, Math.min(60, requestedRate));
-
-  const delayMs = Math.ceil(60000 / ratePerMin);
-
-  const validTargets = targets.filter((t) => typeof (t?.email || "").trim() === "string").map((t) => ({ ...t, email: (t.email || "").trim() })).filter((t) => t.email);
+  const validTargets = targets
+    .map((t) => ({ ...t, email: (t?.email ?? "").trim() }))
+    .filter((t) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t.email));
 
   const jobId = `mailjob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   mailerJobs[jobId] = {
     id: jobId,
     createdAt: Date.now(),
-    ratePerMin,
+    ratePerMin: 0,
     total: validTargets.length,
     successes: [],
     failures: [],
@@ -522,37 +519,137 @@ correoRouter.post("/enviar-masivo", async (req: Request, res: Response) => {
   };
 
   // Schedule sends spaced by delayMs
-  validTargets.forEach((t, idx) => {
-    const when = idx * delayMs;
-    setTimeout(async () => {
-      const jobRef = mailerJobs[jobId];
-      if (!jobRef) return;
+  // Registrar entradas iniciales para cada destinatario para garantizar que quede rastro
+  try {
+    const fs = await import('fs');
+    const { prisma } = await import('../lib/prisma.js');
 
-      jobRef.status = 'processing';
-      try {
-        const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
-        const attachments = [...globalAttachments, ...perTargetAttachments].map((a: any) => ({
-          name: a.name,
-          contentType: a.contentType,
-          contentBytes: a.contentBytes,
-        }));
+    // Resolver nombre del remitente una sola vez
+    let sentBy: string | null = null;
 
-        await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
-        jobRef.successes.push(t.email);
-      } catch (err: any) {
-        jobRef.failures.push({ to: t.email, error: err?.message ?? String(err) });
-      } finally {
-        jobRef.completed += 1;
-        if (jobRef.completed >= jobRef.total) {
-          jobRef.status = 'done';
+    try {
+      const user = (req as any).user;
+
+      if (user?.id) {
+        const tecnico = await prisma.tecnico.findUnique({
+          where: {
+            id_tecnico: Number(user.id),
+          },
+          select: {
+            nombre: true,
+            email: true,
+          },
+        });
+
+        sentBy =
+          tecnico?.nombre ??
+          tecnico?.email ??
+          user?.email ??
+          null;
+      } else {
+        sentBy = user?.email ?? null;
+      }
+    } catch (error) {
+      console.warn("No se pudo resolver el remitente:", error);
+      sentBy = (req as any)?.user?.email ?? null;
+    }
+
+    for (const t of validTargets) {
+      // Extraer cotizacionId desde nombre del adjunto
+      let cotizacionId: number | null = null;
+      const combined = [...globalAttachments, ...(Array.isArray(t.attachments) ? t.attachments : [])];
+      for (const a of combined) {
+        const m = String(a?.name ?? '').match(/Cotizacion_(\d+)\.pdf/i);
+        if (m?.[1]) { cotizacionId = Number(m[1]); break; }
+      }
+
+      // Enriquecer con datos de la cotización si existe
+      let clienteNombre: string | null = null;
+      let creadoPor: string | null = null;
+      let fechaCreacion: Date | null = null;
+      if (cotizacionId) {
+        try {
+          const cot = await prisma.cotizacionGestioo.findUnique({
+            where: { id: cotizacionId },
+            include: { entidad: true, tecnico: true },
+          });
+          if (cot) {
+            clienteNombre = cot.entidad?.nombre ?? null;
+            creadoPor = cot.tecnico?.nombre ?? null;
+            const f = (cot as any).fecha ?? (cot as any).createdAt ?? null;
+            fechaCreacion = f ? new Date(f) : null;
+          }
+        } catch (err) {
+          console.warn('Pre-registro: no se pudo enriquecer cotizacion', cotizacionId, err);
         }
       }
-    }, when);
+
+      // Upsert en DB (evita duplicados por jobId+to+cotizacionId)
+      try {
+        const existing = await prisma.cotizacionEnviada.findFirst({
+          where: { jobId, to: t.email ?? null, cotizacionId },
+        });
+        if (!existing) {
+          await prisma.cotizacionEnviada.create({
+            data: {
+              cotizacionId,
+              to: t.email ?? null,
+              subject: subject ?? null,
+              sentBy,
+              jobId,
+              meta: { attachments: combined.length },
+              clienteNombre,
+              creadoPor,
+              fechaCreacion,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('Pre-registro DB error para', t.email, err);
+      }
+    }
+  } catch (err) {
+    console.error('Error creando registros iniciales de envíos:', err);
+  }
+
+  const jobRef = mailerJobs[jobId];
+  jobRef.status = 'processing';
+
+  // Envío paralelo inmediato — sin throttling artificial.
+  // Microsoft Graph maneja su propio rate limiting (429) si se supera la cuota.
+  Promise.allSettled(
+    validTargets.map(async (t) => {
+      const perTargetAttachments = Array.isArray(t.attachments) ? t.attachments : [];
+      const attachments = [...globalAttachments, ...perTargetAttachments].map((a: any) => ({
+        name: a.name,
+        contentType: a.contentType,
+        contentBytes: a.contentBytes,
+      }));
+
+      await graphReaderService.sendReplyEmail({ to: t.email, subject, bodyHtml, attachments });
+      jobRef.successes.push(t.email);
+    })
+  ).then((results) => {
+    results.forEach((result, idx) => {
+      if (result.status !== "rejected") return;
+
+      const err = result.reason;
+      const targetEmail = validTargets[idx]?.email;
+
+      jobRef.failures.push({
+        ...(targetEmail ? { to: targetEmail } : {}),
+        error:
+          err instanceof Error
+            ? err.message
+            : String(err),
+      });
+    });
+    jobRef.completed = validTargets.length;
+    jobRef.status = 'done';
+    console.log(`[Mailer] Job ${jobId} completado: ${jobRef.successes.length} ok, ${jobRef.failures.length} errores`);
   });
 
-  const estimatedCompletionMs = delayMs * Math.max(0, validTargets.length - 1);
-
-  return res.json({ ok: true, queued: true, jobId, requested: targets.length, queuedCount: validTargets.length, ratePerMin, estimatedCompletionMs });
+  return res.json({ ok: true, queued: true, jobId, requested: targets.length, queuedCount: validTargets.length, ratePerMin: 0, estimatedCompletionMs: 0 });
 });
 
 // Obtener estado de job de envío masivo
@@ -563,14 +660,16 @@ correoRouter.get("/enviar-masivo/status/:id", async (req: Request, res: Response
   const job = mailerJobs[id];
   if (!job) return res.status(404).json({ ok: false, message: "Job no encontrado" });
 
-  return res.json({ ok: true, job: {
-    id: job.id,
-    createdAt: job.createdAt,
-    ratePerMin: job.ratePerMin,
-    total: job.total,
-    successes: job.successes,
-    failures: job.failures,
-    completed: job.completed,
-    status: job.status,
-  }});
+  return res.json({
+    ok: true, job: {
+      id: job.id,
+      createdAt: job.createdAt,
+      ratePerMin: job.ratePerMin,
+      total: job.total,
+      successes: job.successes,
+      failures: job.failures,
+      completed: job.completed,
+      status: job.status,
+    }
+  });
 });

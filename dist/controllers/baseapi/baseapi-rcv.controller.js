@@ -1,5 +1,6 @@
 import { consultarComprasRcvBaseApi, consultarVentasRcvBaseApi, } from "../../service/baseapi/baseapi-rcv.service.js";
 import { prisma } from "../../lib/prisma.js";
+import { getOverride as getVencimientoOverride } from "./rcv-vencimientos.store.js";
 // Función para parsear la empresa desde la query, validando que sea "econnet" o "rids", y lanzando un error descriptivo si no es así.
 function parseEmpresa(value) {
     const empresa = String(value ?? "").toLowerCase();
@@ -112,27 +113,6 @@ function normalizeRut(value) {
         .toUpperCase()
         .trim();
 }
-function extractRutCandidates(value) {
-    const raw = String(value ?? "").toUpperCase();
-    if (!raw.trim())
-        return [];
-    const candidates = new Set();
-    // Caso valor completo: 80.103.900-6, 80103900-6, 801039006
-    const normalizedFull = normalizeRut(raw);
-    if (/^\d{7,8}[\dK]$/.test(normalizedFull)) {
-        candidates.add(normalizedFull);
-    }
-    // Buscar RUT dentro de textos largos
-    const rutRegex = /\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dK]\b/g;
-    const matches = raw.match(rutRegex) ?? [];
-    for (const match of matches) {
-        const normalized = normalizeRut(match);
-        if (/^\d{7,8}[\dK]$/.test(normalized)) {
-            candidates.add(normalized);
-        }
-    }
-    return [...candidates];
-}
 function mergeRcvResponses(responses, tipo) {
     const detalleVentas = [];
     const detalleCompras = [];
@@ -209,12 +189,6 @@ async function getClienteRutPermitido(req) {
         throw error;
     }
     return normalizeRut(rut);
-}
-function documentoCoincideConRut(doc, rutClienteNormalizado) {
-    if (!doc || typeof doc !== "object")
-        return false;
-    const textoNormalizado = normalizeRut(JSON.stringify(doc));
-    return textoNormalizado.includes(rutClienteNormalizado);
 }
 function filtrarRcvPorRutCliente(data, rutClienteNormalizado, tipo) {
     if (!data || typeof data !== "object")
@@ -311,7 +285,113 @@ export async function getVentasRcvBaseApi(req, res) {
                 data: dataFiltrada,
             };
         }));
-        const data = mergeRcvResponses(resultados, "ventas");
+        let data = mergeRcvResponses(resultados, "ventas");
+        // Anotar estadoPago en cada documento: CONFIRMADA | VENCIDA | PENDIENTE
+        const now = new Date();
+        async function parseFechaVencimiento(d) {
+            const candidates = [
+                d?.FchVenc,
+                d?.FchVencimiento,
+                d?.fechaVencimiento,
+                d?.vencimiento,
+                d?.fecha_vencimiento,
+                d?.Vencimiento,
+            ];
+            for (const c of candidates) {
+                if (!c)
+                    continue;
+                const raw = String(c).trim();
+                const dt = new Date(raw);
+                if (!Number.isNaN(dt.getTime()))
+                    return dt;
+                if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+                    const [day, month, year] = raw.slice(0, 10).split('/');
+                    const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+                    if (!Number.isNaN(parsed.getTime()))
+                        return parsed;
+                }
+            }
+            return null;
+        }
+        async function annotateDocs(docs) {
+            return Promise.all(docs.map(async (doc) => {
+                try {
+                    const tipoDoc = String(doc?.["Tipo Doc"] ?? doc?.tipoDoc ?? doc?.tipoDTE ?? "").trim();
+                    const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
+                    const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
+                    let estadoPago = null;
+                    if (empresaKey && tipoDoc && folio) {
+                        const conciliacion = await prisma.rcvConciliacion.findFirst({
+                            where: {
+                                empresaKey: empresaKey,
+                                tipoDoc: tipoDoc,
+                                folio: folio,
+                            },
+                            orderBy: { conciliadoAt: 'desc' }
+                        });
+                        if (conciliacion && conciliacion.estadoConciliacion === 'CONCILIADA') {
+                            estadoPago = 'CONFIRMADA';
+                        }
+                    }
+                    if (!estadoPago) {
+                        // revisar si hay un override manual de vencimiento
+                        let override = null;
+                        // 1) intentar con la empresaKey del documento
+                        if (empresaKey) {
+                            override = await getVencimientoOverride(empresaKey, tipoDoc, folio);
+                        }
+                        // 2) si no se encontró, intentar con cualquiera de las empresas consultadas
+                        if (!override && Array.isArray(empresas) && empresas.length > 0) {
+                            for (const e of empresas) {
+                                try {
+                                    override = await getVencimientoOverride(String(e), tipoDoc, folio);
+                                    if (override)
+                                        break;
+                                }
+                                catch { /* ignore */ }
+                            }
+                        }
+                        if (override) {
+                            const dt = new Date(String(override));
+                            if (!Number.isNaN(dt.getTime())) {
+                                estadoPago = now > dt ? 'VENCIDA' : 'PENDIENTE';
+                                // inyectar el vencimiento override en el documento para que la UI lo vea
+                                try {
+                                    const isoDate = dt.toISOString().slice(0, 10);
+                                    for (const k of ["FchVenc", "FchVencimiento", "fechaVencimiento", "vencimiento", "fecha_vencimiento", "Vencimiento"]) {
+                                        try {
+                                            doc[k] = isoDate;
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        if (!estadoPago) {
+                            const fechaVenc = await parseFechaVencimiento(doc);
+                            if (fechaVenc) {
+                                estadoPago = now > fechaVenc ? 'VENCIDA' : 'PENDIENTE';
+                            }
+                            else {
+                                estadoPago = 'PENDIENTE';
+                            }
+                        }
+                    }
+                    return { ...doc, estadoPago };
+                }
+                catch (e) {
+                    return { ...doc, estadoPago: 'PENDIENTE' };
+                }
+            }));
+        }
+        data = {
+            ...data,
+            data: {
+                ...(data.data || {}),
+                datos: await annotateDocs(data.data?.datos ?? []),
+            },
+        };
         res.json({
             ok: true,
             provider: "baseapi",
@@ -364,7 +444,110 @@ export async function getComprasRcvBaseApi(req, res) {
                 data: dataFiltrada,
             };
         }));
-        const data = mergeRcvResponses(resultados, "compras");
+        let data = mergeRcvResponses(resultados, "compras");
+        // Anotar estadoPago en cada documento: CONFIRMADA | VENCIDA | PENDIENTE
+        const now = new Date();
+        async function parseFechaVencimientoCompras(d) {
+            const candidates = [
+                d?.FchVenc,
+                d?.FchVencimiento,
+                d?.fechaVencimiento,
+                d?.vencimiento,
+                d?.fecha_vencimiento,
+                d?.Vencimiento,
+            ];
+            for (const c of candidates) {
+                if (!c)
+                    continue;
+                const raw = String(c).trim();
+                const dt = new Date(raw);
+                if (!Number.isNaN(dt.getTime()))
+                    return dt;
+                if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+                    const [day, month, year] = raw.slice(0, 10).split('/');
+                    const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+                    if (!Number.isNaN(parsed.getTime()))
+                        return parsed;
+                }
+            }
+            return null;
+        }
+        async function annotateDocsCompras(docs) {
+            return Promise.all(docs.map(async (doc) => {
+                try {
+                    const tipoDoc = String(doc?.["Tipo Doc"] ?? doc?.tipoDoc ?? doc?.tipoDTE ?? "").trim();
+                    const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
+                    const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
+                    let estadoPago = null;
+                    if (empresaKey && tipoDoc && folio) {
+                        const conciliacion = await prisma.rcvConciliacion.findFirst({
+                            where: {
+                                empresaKey: empresaKey,
+                                tipoDoc: tipoDoc,
+                                folio: folio,
+                            },
+                            orderBy: { conciliadoAt: 'desc' }
+                        });
+                        if (conciliacion && conciliacion.estadoConciliacion === 'CONCILIADA') {
+                            estadoPago = 'CONFIRMADA';
+                        }
+                    }
+                    if (!estadoPago) {
+                        // intentar overrides manuales también para compras
+                        let override = null;
+                        if (empresaKey) {
+                            override = await getVencimientoOverride(empresaKey, tipoDoc, folio).catch(() => null);
+                        }
+                        if (!override && Array.isArray(empresas) && empresas.length > 0) {
+                            for (const e of empresas) {
+                                try {
+                                    override = await getVencimientoOverride(String(e), tipoDoc, folio);
+                                    if (override)
+                                        break;
+                                }
+                                catch { /* ignore */ }
+                            }
+                        }
+                        if (override) {
+                            const dt = new Date(String(override));
+                            if (!Number.isNaN(dt.getTime())) {
+                                estadoPago = now > dt ? 'VENCIDA' : 'PENDIENTE';
+                                try {
+                                    const isoDate = dt.toISOString().slice(0, 10);
+                                    for (const k of ["FchVenc", "FchVencimiento", "fechaVencimiento", "vencimiento", "fecha_vencimiento", "Vencimiento"]) {
+                                        try {
+                                            doc[k] = isoDate;
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        if (!estadoPago) {
+                            const fechaVenc = await parseFechaVencimientoCompras(doc);
+                            if (fechaVenc) {
+                                estadoPago = now > fechaVenc ? 'VENCIDA' : 'PENDIENTE';
+                            }
+                            else {
+                                estadoPago = 'PENDIENTE';
+                            }
+                        }
+                    }
+                    return { ...doc, estadoPago };
+                }
+                catch (e) {
+                    return { ...doc, estadoPago: 'PENDIENTE' };
+                }
+            }));
+        }
+        data = {
+            ...data,
+            data: {
+                ...(data.data || {}),
+                datos: await annotateDocsCompras(data.data?.datos ?? []),
+            },
+        };
         res.json({
             ok: true,
             provider: "baseapi",

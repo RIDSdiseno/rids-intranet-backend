@@ -123,6 +123,32 @@ function parseDteXmlForDb(xmlRaw) {
         items,
     };
 }
+// Extrae el contenido de <FRMT> dentro de TED (si existe) y devuelve su contenido (base64) o null
+function extractTimbreFrmtFromXml(xmlRaw) {
+    try {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(xmlRaw, "text/xml");
+        // Buscar elemento TED y luego FRMT dentro
+        const all = Array.from(xml.getElementsByTagName("*"));
+        const ted = all.find((el) => el.localName === "TED");
+        if (!ted)
+            return null;
+        const frmtEl = Array.from(ted.getElementsByTagName("*")).find((el) => el.localName === "FRMT");
+        const txt = frmtEl?.textContent?.trim() ?? null;
+        const result = txt || null;
+        if (result) {
+            console.log("🔎 extractTimbreFrmtFromXml: timbre encontrado, longitud=", result.length);
+        }
+        else {
+            console.log("🔎 extractTimbreFrmtFromXml: no se encontró timbre en XML");
+        }
+        return result;
+    }
+    catch (err) {
+        console.error("🔎 extractTimbreFrmtFromXml: error parsing XML", err);
+        return null;
+    }
+}
 // Función para mapear los datos de la factura obtenida (ya sea desde cache o desde BaseAPI)
 function mapFacturaCacheToBaseApiLikeResponse(factura) {
     return {
@@ -138,6 +164,8 @@ function mapFacturaCacheToBaseApiLikeResponse(factura) {
                 monto_total: factura.montoTotal,
                 estado: factura.estado,
                 xml_base64: encodeBase64Utf8(factura.xmlRaw),
+                // intentamos extraer el timbre (FRMT) desde el XML cacheado
+                timbre_base64: factura.xmlRaw ? extractTimbreFrmtFromXml(factura.xmlRaw) : null,
                 items: factura.items ?? [],
             },
         },

@@ -40,10 +40,11 @@ router.get(
   getBaseApiRcvDashboardController
 );
 
+// Lectura de conciliación: solo ADMINISTRACION (pestaña restringida a administradores)
 router.get(
   "/conciliacion",
   auth(),
-  onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"),
+  onlyRole("ADMINISTRACION"),
   getConciliacionRcv
 );
 
@@ -67,6 +68,29 @@ router.post(
   auth(),
   onlyRole("ADMINISTRACION"),
   postObservarRcv
+);
+
+// Permitir actualizar/crear un override de fecha de vencimiento para un documento RCV
+router.patch(
+  "/vencimiento",
+  // temporalmente permitir acceso sin auth para pruebas locales
+  auth(false),
+  async (req, res) => {
+    try {
+      const { empresaKey, tipoDoc, folio, fechaVencimiento } = req.body ?? {};
+      if (!empresaKey || !tipoDoc || !folio) {
+        return res.status(400).json({ ok: false, error: 'Faltan parametros empresaKey|tipoDoc|folio' });
+      }
+
+      // escribir override
+      const { setOverride } = await import('../../controllers/baseapi/rcv-vencimientos.store.js');
+      await setOverride(String(empresaKey), String(tipoDoc), String(folio), fechaVencimiento ? String(fechaVencimiento) : null);
+
+      return res.json({ ok: true });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
+    }
+  }
 );
 
 export default router;
