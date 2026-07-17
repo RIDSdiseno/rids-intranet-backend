@@ -819,10 +819,10 @@ export async function listEquipos(req, res) {
                     some: {
                         fechaInicio: {
                             ...(q.mantencionDesde
-                                ? { gte: new Date(`${q.mantencionDesde}T00:00:00.000Z`) }
+                                ? { gte: new Date(`${q.mantencionDesde}T00:00:00.000-04:00`) }
                                 : {}),
                             ...(q.mantencionHasta
-                                ? { lte: new Date(`${q.mantencionHasta}T23:59:59.999Z`) }
+                                ? { lte: new Date(`${q.mantencionHasta}T23:59:59.999-04:00`) }
                                 : {}),
                         },
                     },
@@ -830,8 +830,8 @@ export async function listEquipos(req, res) {
             });
         }
         /* =========================
-       Filtro Mant.General RIDS
-    ========================= */
+        Filtro Mant.General RIDS
+        ========================= */
         if (q.mantGeneral === "INSTALADO") {
             andConditions.push({
                 mantGeneralInstalado: true,
@@ -844,12 +844,20 @@ export async function listEquipos(req, res) {
         }
         if (q.mantGeneralDesde || q.mantGeneralHasta) {
             andConditions.push({
+                mantGeneralInstalado: true,
+            });
+            andConditions.push({
+                mantGeneralLastSeenAt: {
+                    not: null,
+                },
+            });
+            andConditions.push({
                 mantGeneralLastSeenAt: {
                     ...(q.mantGeneralDesde
-                        ? { gte: new Date(`${q.mantGeneralDesde}T00:00:00.000Z`) }
+                        ? { gte: new Date(`${q.mantGeneralDesde}T00:00:00.000-04:00`) }
                         : {}),
                     ...(q.mantGeneralHasta
-                        ? { lte: new Date(`${q.mantGeneralHasta}T23:59:59.999Z`) }
+                        ? { lte: new Date(`${q.mantGeneralHasta}T23:59:59.999-04:00`) }
                         : {}),
                 },
             });

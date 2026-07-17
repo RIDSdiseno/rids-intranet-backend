@@ -39,8 +39,6 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     // Base: empresas (solo id + nombre)
     const user = (req as any).user;
 
-    console.log("USER:", user);
-
     const whereEmpresa =
       user?.rol === "CLIENTE"
         ? { id_empresa: user.empresaId }

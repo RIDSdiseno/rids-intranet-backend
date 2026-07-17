@@ -2,6 +2,7 @@
 import * as argon2 from "argon2";
 import { prisma } from "../lib/prisma.js";
 import type { Request, Response } from "express";
+import type { Prisma } from "@prisma/client";
 
 const VALID_ROLES = [
     "ADMIN",
@@ -9,6 +10,34 @@ const VALID_ROLES = [
     "VENTAS",
     "ADMINISTRACION",
 ] as const;
+
+const VALID_AREAS = [
+    "SOPORTE TECNICO",
+    "INFORMATICA",
+    "SOPORTE TECNICO E INFORMATICA",
+    "VENTAS",
+    "ADMINISTRACION",
+] as const;
+
+function normalizeArea(area: unknown): string | null | undefined {
+    if (area === undefined) return undefined;
+    if (area === null || String(area).trim() === "") return null;
+
+    const value = String(area).trim().toUpperCase();
+
+    if (!VALID_AREAS.includes(value as any)) {
+        return undefined;
+    }
+
+    return value;
+}
+
+function normalizeCargo(cargo: unknown): string | null | undefined {
+    if (cargo === undefined) return undefined;
+    if (cargo === null || String(cargo).trim() === "") return null;
+
+    return String(cargo).trim();
+}
 
 function normalizeRole(rol: unknown): string | undefined {
     if (!rol) return undefined;
@@ -72,6 +101,8 @@ export const listUsuarios = async (req: Request, res: Response) => {
                 email: true,
                 status: true,
                 rol: true,
+                area: true,
+                cargo: true,
             },
         });
 
@@ -90,41 +121,118 @@ export async function updateTecnico(req: Request, res: Response) {
 
     try {
         const id = Number(req.params.id);
-        const { nombre, email, status, rol } = req.body;
+
+        const {
+            nombre,
+            email,
+            status,
+            rol,
+            area,
+            cargo,
+        } = req.body;
 
         if (!Number.isInteger(id) || id <= 0) {
-            return res.status(400).json({ error: "ID inválido" });
-        }
-
-        const normalizedRole = normalizeRole(rol);
-
-        if (rol && !normalizedRole) {
             return res.status(400).json({
-                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS, ADMINISTRACION",
+                error: "ID inválido",
             });
         }
 
+        const normalizedRole = normalizeRole(rol);
+        const normalizedArea = normalizeArea(area);
+        const normalizedCargo = normalizeCargo(cargo);
+
+        if (rol !== undefined && !normalizedRole) {
+            return res.status(400).json({
+                error:
+                    "Rol inválido. Roles permitidos: ADMIN, TECNICO, VENTAS, ADMINISTRACION",
+            });
+        }
+
+        if (
+            area !== undefined &&
+            normalizedArea === undefined
+        ) {
+            return res.status(400).json({
+                error:
+                    "Área inválida. Áreas permitidas: SOPORTE TECNICO, INFORMATICA, SOPORTE TECNICO E INFORMATICA, VENTAS, ADMINISTRACION",
+            });
+        }
+
+        const data: Prisma.TecnicoUpdateInput = {};
+
+        if (nombre !== undefined) {
+            data.nombre = String(nombre).trim();
+        }
+
+        if (email !== undefined) {
+            data.email = String(email)
+                .trim()
+                .toLowerCase();
+        }
+
+        if (status !== undefined) {
+            data.status = Boolean(status);
+        }
+
+        if (normalizedRole !== undefined) {
+            data.rol = normalizedRole;
+        }
+
+        if (area !== undefined) {
+            /*
+             * Llegados a este punto, normalizedArea solo puede ser:
+             * string o null.
+             */
+            data.area = normalizedArea as string | null;
+        }
+
+        if (cargo !== undefined) {
+            /*
+             * Llegados a este punto, normalizedCargo solo puede ser:
+             * string o null.
+             */
+            data.cargo = normalizedCargo as string | null;
+        }
+
         const tecnico = await prisma.tecnico.update({
-            where: { id_tecnico: id },
-            data: {
-                ...(nombre !== undefined && { nombre: String(nombre).trim() }),
-                ...(email !== undefined && { email: String(email).trim().toLowerCase() }),
-                ...(status !== undefined && { status: Boolean(status) }),
-                ...(normalizedRole && { rol: normalizedRole }),
+            where: {
+                id_tecnico: id,
             },
+            data,
             select: {
                 id_tecnico: true,
                 nombre: true,
                 email: true,
                 status: true,
                 rol: true,
+                area: true,
+                cargo: true,
             },
         });
 
         return res.json(tecnico);
-    } catch (error) {
-        console.error("Error al actualizar tecnico:", error);
-        return res.status(500).json({ error: "Error al actualizar tecnico" });
+    } catch (error: any) {
+        console.error("Error al actualizar técnico:", {
+            code: error?.code,
+            message: error?.message,
+            meta: error?.meta,
+        });
+
+        if (error?.code === "P2025") {
+            return res.status(404).json({
+                error: "Técnico no encontrado",
+            });
+        }
+
+        if (error?.code === "P2002") {
+            return res.status(409).json({
+                error: "El email ya está registrado",
+            });
+        }
+
+        return res.status(500).json({
+            error: "Error al actualizar técnico",
+        });
     }
 }
 
@@ -188,7 +296,15 @@ export async function deleteTecnico(req: Request, res: Response) {
 // Crear técnico
 export async function createTecnico(req: Request, res: Response) {
     try {
-        const { nombre, email, password, rol, status } = req.body;
+        const {
+            nombre,
+            email,
+            password,
+            rol,
+            status,
+            area,
+            cargo,
+        } = req.body;
 
         if (!nombre || !email || !password) {
             return res.status(400).json({
@@ -196,13 +312,26 @@ export async function createTecnico(req: Request, res: Response) {
             });
         }
 
-        const normalizedRole = normalizeRole(rol) ?? "TECNICO";
+        const normalizedArea = normalizeArea(area);
+        const normalizedCargo = normalizeCargo(cargo);
 
-        if (rol && !normalizeRole(rol)) {
+        if (area !== undefined && normalizedArea === undefined) {
             return res.status(400).json({
-                error: "Rol inválido. Roles permitidos: ADMIN, TECNICO, CLIENTE, VENTAS",
+                error:
+                    "Área inválida. Áreas permitidas: SOPORTE TECNICO, INFORMATICA, SOPORTE TECNICO E INFORMATICA, VENTAS, ADMINISTRACION",
             });
         }
+
+        const normalizedRole = normalizeRole(rol);
+
+        if (rol && !normalizedRole) {
+            return res.status(400).json({
+                error:
+                    "Rol inválido. Roles permitidos: ADMIN, TECNICO, VENTAS, ADMINISTRACION",
+            });
+        }
+
+        const finalRole = normalizedRole ?? "TECNICO";
 
         const cleanEmail = String(email).trim().toLowerCase();
 
@@ -226,8 +355,10 @@ export async function createTecnico(req: Request, res: Response) {
                 nombre: String(nombre).trim(),
                 email: cleanEmail,
                 passwordHash,
-                rol: normalizedRole,
+                rol: finalRole,
                 status: status ?? true,
+                area: normalizedArea ?? null,
+                cargo: normalizedCargo ?? null,
             },
             select: {
                 id_tecnico: true,
@@ -235,6 +366,8 @@ export async function createTecnico(req: Request, res: Response) {
                 email: true,
                 status: true,
                 rol: true,
+                area: true,
+                cargo: true,
             },
         });
 

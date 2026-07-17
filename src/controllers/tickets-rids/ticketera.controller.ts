@@ -852,8 +852,28 @@ export async function listTickets(req: Request, res: Response) {
         }
 
         if (!isCliente) {
-            if (priority) whereActual.priority = priority as TicketPriority;
-            if (assigneeId) whereActual.assigneeId = Number(assigneeId);
+            if (priority) {
+                whereActual.priority = priority as TicketPriority;
+            }
+
+            if (assigneeId) {
+                whereActual.assigneeId = Number(assigneeId);
+            }
+
+            if (
+                area &&
+                String(area).trim() &&
+                String(area).trim().toUpperCase() !== "TODAS"
+            ) {
+                whereActual.assignee = {
+                    is: {
+                        area: {
+                            equals: String(area).trim(),
+                            mode: "insensitive",
+                        },
+                    },
+                };
+            }
         }
 
         // ── Búsqueda (disponible para todos) ──────────────────────────────────
@@ -894,65 +914,73 @@ export async function listTickets(req: Request, res: Response) {
             : [{ createdAt: "desc" }];
 
         // ── Ejecutar query ────────────────────────────────────────────────────
-        let tickets: any[] = [];
-        let total = 0;
-
         const includeForList = {
-            empresa: { select: { nombre: true } },
-            assignee: { select: { id_tecnico: true, nombre: true } },
-            requester: { select: { nombre: true, email: true } },
+            empresa: {
+                select: {
+                    nombre: true,
+                },
+            },
+            assignee: {
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                },
+            },
+            requester: {
+                select: {
+                    nombre: true,
+                    email: true,
+                },
+            },
             messages: {
-                orderBy: { createdAt: "desc" as const },
-                take: 2,
+                orderBy: {
+                    createdAt: "desc" as const,
+                },
+                take: 1,
                 select: {
                     direction: true,
                     isInternal: true,
                     createdAt: true,
                 },
             },
-            events: {
-                where: {
-                    type: TicketEventType.ASSIGNED,
-                },
-                orderBy: {
-                    createdAt: "desc" as const,
-                },
-                select: {
-                    type: true,
-                    newValue: true,
-                    createdAt: true,
-                },
-            },
         };
 
-        const result = await Promise.all([
-            prisma.ticket.findMany({
-                where: whereActual,
-                include: includeForList,
-                orderBy,
-                skip,
-                take,
-            }),
-            prisma.ticket.count({ where: whereActual }),
-        ]);
+        const whereCounts: Prisma.TicketWhereInput = {
+            ...whereActual,
+        };
 
-        tickets = result[0];
-        total = result[1];
-
-        // ── Conteos por estado (con mismo where base, sin filtro de status) ───
-        const whereCounts: Prisma.TicketWhereInput = { ...whereActual };
         delete (whereCounts as any).status;
 
-        const statusCounts = await prisma.ticket.groupBy({
-            by: ["status"],
-            where: whereCounts,
-            _count: { status: true },
-        });
+        const [tickets, total, statusCounts, slaConfig] =
+            await Promise.all([
+                prisma.ticket.findMany({
+                    where: whereActual,
+                    include: includeForList,
+                    orderBy,
+                    skip,
+                    take,
+                }),
+
+                prisma.ticket.count({
+                    where: whereActual,
+                }),
+
+                prisma.ticket.groupBy({
+                    by: ["status"],
+                    where: whereCounts,
+                    _count: {
+                        status: true,
+                    },
+                }),
+
+                getSlaConfigFromDB(),
+            ]);
 
         const counts: Record<string, number> = {};
-        statusCounts.forEach(s => { counts[s.status] = s._count.status; });
 
-        const slaConfig = await getSlaConfigFromDB();
+        statusCounts.forEach((item) => {
+            counts[item.status] = item._count.status;
+        });
 
         const formattedTickets = tickets.map((ticket) => {
             const sla = buildTicketSla(ticket, slaConfig);
@@ -1007,7 +1035,6 @@ export async function getTicketById(req: Request, res: Response) {
                     orderBy: { createdAt: "desc" },
                     include: { attachments: true },
                 },
-                events: { orderBy: { createdAt: "desc" } },
             },
         });
 
@@ -1031,12 +1058,28 @@ export async function getTicketById(req: Request, res: Response) {
         if (!isCliente) {
             const tecnicoActual = agentId
                 ? await prisma.tecnico.findUnique({
-                    where: { id_tecnico: agentId },
-                    select: { id_tecnico: true, status: true },
+                    where: {
+                        id_tecnico: agentId,
+                    },
+                    select: {
+                        id_tecnico: true,
+                        status: true,
+                        rol: true,
+                    },
                 })
                 : null;
 
-            const puedeAutoAsignar = await canAssignTickets(agentId);
+            const rolActual = String(
+                tecnicoActual?.rol ?? ""
+            )
+                .trim()
+                .toUpperCase();
+
+            const puedeAutoAsignar =
+                Boolean(tecnicoActual?.status) &&
+                HELPDESK_ASSIGN_ALLOWED_ROLES.includes(
+                    rolActual as typeof HELPDESK_ASSIGN_ALLOWED_ROLES[number]
+                );
 
             if (!ticket.assigneeId && tecnicoActual?.status && puedeAutoAsignar) {
                 try {
@@ -1054,7 +1097,6 @@ export async function getTicketById(req: Request, res: Response) {
                                 orderBy: { createdAt: "desc" },
                                 include: { attachments: true },
                             },
-                            events: { orderBy: { createdAt: "desc" } },
                         },
                     });
 
@@ -1069,35 +1111,18 @@ export async function getTicketById(req: Request, res: Response) {
                         },
                     });
 
-                    const refreshedTicket = await prisma.ticket.findFirst({
-                        where: { id: ticket.id, deletedAt: null },
-                        include: {
-                            empresa: true,
-                            requester: true,
-                            assignee: true,
-                            messages: {
-                                orderBy: { createdAt: "desc" },
-                                include: { attachments: true },
-                            },
-                            events: { orderBy: { createdAt: "desc" } },
-                        },
-                    });
-
-                    if (refreshedTicket) {
-                        ticketFinal = refreshedTicket;
-                    }
-
                     bus.emit("ticket.updated", {
                         ticketId: ticket.id,
                         changes: { assigneeId: tecnicoActual.id_tecnico },
                         source: "auto_assign_on_open",
                     });
 
-                    try {
-                        await sendTicketAssignedEmail(ticket.id);
-                    } catch (err) {
-                        console.error("⚠️ Error enviando correo de autoasignación:", err);
-                    }
+                    void sendTicketAssignedEmail(ticket.id).catch((err) => {
+                        console.error(
+                            "⚠️ Error enviando correo de autoasignación:",
+                            err
+                        );
+                    });
                 } catch (error) {
                     console.error("[helpdesk] auto assign on open error:", error);
                 }
@@ -1266,11 +1291,12 @@ export async function updateTicket(req: Request, res: Response) {
             assigneeId !== null;
 
         if (assigneeChanged) {
-            try {
-                await sendTicketAssignedEmail(ticketId);
-            } catch (err) {
-                console.error("⚠️ Error enviando correo de asignación:", err);
-            }
+            void sendTicketAssignedEmail(ticketId).catch((err) => {
+                console.error(
+                    "⚠️ Error enviando correo de asignación:",
+                    err
+                );
+            });
         }
 
         if (status && status !== ticket.status) {
@@ -1318,7 +1344,7 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 1️⃣ Extraer dominio limpio
+        // Extraer dominio limpio
         const domain = from
             ?.split("@")[1]
             ?.replace(/[>"\s]/g, "")
@@ -1331,7 +1357,7 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 2️⃣ Buscar mapping
+        // Buscar mapping
         const mapping = await prisma.fdSourceMap.findFirst({
             where: { domain }
         });
@@ -1354,7 +1380,7 @@ export async function inboundEmail(req: Request, res: Response) {
             console.warn("⚠ Empresa no encontrada para dominio:", domain);
         }
 
-        // 3️⃣ Buscar solicitante EXISTENTE (NO crear)
+        // Buscar solicitante EXISTENTE (NO crear)
         const requester = await prisma.solicitante.findFirst({
             where: {
                 email: from,
@@ -1365,7 +1391,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 4️⃣ Crear ticket (con o sin requester)
+        // Crear ticket (con o sin requester)
         const ticket = await prisma.ticket.create({
             data: {
                 publicId: crypto.randomUUID(),
@@ -1385,7 +1411,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 5️⃣ Mensaje inicial
+        // Mensaje inicial
         await prisma.ticketMessage.create({
             data: {
                 ticketId: ticket.id,
@@ -1396,7 +1422,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 6️⃣ Evento
+        // Evento
         await prisma.ticketEvent.create({
             data: {
                 ticketId: ticket.id,
@@ -1625,16 +1651,26 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
 
         if (assigneeId !== undefined && assigneeId !== null) {
             const changedTicketIds = ticketsBefore
-                .filter(ticket => ticket.assigneeId !== assigneeId)
-                .map(ticket => ticket.id);
+                .filter(
+                    (ticket) =>
+                        ticket.assigneeId !== assigneeId
+                )
+                .map((ticket) => ticket.id);
 
-            for (const ticketId of changedTicketIds) {
-                try {
-                    await sendTicketAssignedEmail(ticketId);
-                } catch (err) {
-                    console.error(`⚠️ Error enviando correo de asignación para ticket #${ticketId}:`, err);
-                }
-            }
+            void Promise.allSettled(
+                changedTicketIds.map((ticketId) =>
+                    sendTicketAssignedEmail(ticketId)
+                )
+            ).then((results) => {
+                results.forEach((result, index) => {
+                    if (result.status !== "rejected") return;
+
+                    console.error(
+                        `⚠️ Error enviando correo de asignación para ticket #${changedTicketIds[index]}:`,
+                        result.reason
+                    );
+                });
+            });
         }
 
         return res.json({ ok: true });
@@ -1662,20 +1698,20 @@ export async function bulkMergeTickets(req: Request, res: Response) {
 
             for (const id of otherTickets) {
 
-                // 1️⃣ Obtener ticket actual
+                // Obtener ticket actual
                 const ticketToMerge = await tx.ticket.findUnique({
                     where: { id },
                 });
 
                 if (!ticketToMerge) continue;
 
-                // 2️⃣ Mover mensajes
+                // Mover mensajes
                 await tx.ticketMessage.updateMany({
                     where: { ticketId: id },
                     data: { ticketId: mainTicketId },
                 });
 
-                // 3️⃣ Cerrar ticket secundario
+                // Cerrar ticket secundario
                 await tx.ticket.update({
                     where: { id },
                     data: {
@@ -1684,7 +1720,7 @@ export async function bulkMergeTickets(req: Request, res: Response) {
                     },
                 });
 
-                // 4️⃣ Crear evento correcto
+                // Crear evento correcto
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: id,

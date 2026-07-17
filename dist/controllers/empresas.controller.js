@@ -31,7 +31,6 @@ export async function getEmpresas(req, res) {
         const full = String(req.query.full ?? "").toLowerCase() === "1";
         // Base: empresas (solo id + nombre)
         const user = req.user;
-        console.log("USER:", user);
         const whereEmpresa = user?.rol === "CLIENTE"
             ? { id_empresa: user.empresaId }
             : {};

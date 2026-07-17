@@ -88,7 +88,6 @@ console.log("[CORS] allowedOrigins =", allowedOrigins);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    console.log("[CORS] incoming origin =", origin);
 
     if (!origin) {
       return callback(null, true);
