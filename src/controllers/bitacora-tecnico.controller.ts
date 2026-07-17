@@ -1,13 +1,11 @@
 // src/controllers/bitacora-tecnico.controller.ts
 import type { Request, Response } from "express";
 import {
-    PrismaClient,
     Prisma,
     TipoBitacoraTecnico,
     EstadoBitacoraTecnico,
 } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 
 function parsePositiveInt(value: unknown): number | undefined {
     const n = Number(value);

@@ -7,25 +7,25 @@ type GetCacheParams = {
     ano: string;
 };
 export declare function getSiiApiCache(params: GetCacheParams): Promise<{
-    id: number;
-    updatedAt: Date;
     createdAt: Date;
+    updatedAt: Date;
+    id: number;
     tipo: string;
     mes: string | null;
+    ano: string | null;
     empresaKey: string;
     rutEmpresa: string;
-    ano: string | null;
     data: import("@prisma/client/runtime/library").JsonValue;
 } | null>;
 export declare function saveSiiApiCache(params: GetCacheParams, data: unknown): Promise<{
-    id: number;
-    updatedAt: Date;
     createdAt: Date;
+    updatedAt: Date;
+    id: number;
     tipo: string;
     mes: string | null;
+    ano: string | null;
     empresaKey: string;
     rutEmpresa: string;
-    ano: string | null;
     data: import("@prisma/client/runtime/library").JsonValue;
 }>;
 export {};

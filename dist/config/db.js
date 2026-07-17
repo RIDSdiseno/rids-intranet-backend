@@ -1,9 +1,2 @@
-import { PrismaClient } from "@prisma/client";
-const prismaClientSingleton = () => {
-    return new PrismaClient();
-};
-const prisma = globalThis.prisma ?? prismaClientSingleton();
-export default prisma;
-if (process.env.NODE_ENV !== "production")
-    globalThis.prisma = prisma;
+export { prismaBase as default, prismaBase as prisma } from "../lib/prisma.js";
 //# sourceMappingURL=db.js.map

@@ -25,11 +25,11 @@ export declare function upsertSolicitanteFromMicrosoft(u: MsUserInput, empresaId
 export declare function deactivateMissingMicrosoftSolicitantes(empresaId: number, microsoftIdsActivos: string[]): Promise<{
     count: number;
     users: {
-        id_solicitante: number;
-        microsoftUserId: string | null;
         nombre: string;
+        id_solicitante: number;
         email: string | null;
         empresaId: number;
+        microsoftUserId: string | null;
     }[];
 }>;
 //# sourceMappingURL=solicitanteSyncMs.d.ts.map

@@ -1,9 +1,8 @@
 // src/controllers/productos-gestioo.controller.ts
 import fs from "fs/promises";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
 import cloudinary from "../config/cloudinary.js";
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 /* ======================================
    HELPERS
 ====================================== */
