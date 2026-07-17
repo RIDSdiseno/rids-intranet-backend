@@ -1,10 +1,8 @@
 // Controlador para manejo de cotizaciones, con funciones para obtener cotizaciones paginadas con filtros avanzados, crear, actualizar y eliminar cotizaciones, vincular equipos a items, facturar cotizaciones y gestionar estados de facturas. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
-import { PrismaClient } from "@prisma/client";
 import type { Request, Response } from "express";
 
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../../lib/prisma.js";
 
 // UTILIDADES
 export function generarSKU(): string {

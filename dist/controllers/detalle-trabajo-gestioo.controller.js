@@ -1,5 +1,5 @@
-import { PrismaClient, EstadoEquipo, DestinoEquipoTaller } from "@prisma/client";
-const prisma = new PrismaClient();
+import { EstadoEquipo, DestinoEquipoTaller } from "@prisma/client";
+import { prismaBase as prisma } from "../lib/prisma.js";
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
 const DESTINOS_EQUIPO_TALLER_VALIDOS = Object.values(DestinoEquipoTaller);
 function estadoEquipoPorArea(area) {

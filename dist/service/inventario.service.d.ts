@@ -7,16 +7,16 @@ export declare function getInventarioByEmpresa(params: {
     updatedTo?: Date;
 }): Promise<({
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
     } | null;
     solicitante: {
+        empresa: {
+            id_empresa: number;
+            nombre: string;
+        };
         nombre: string;
         email: string | null;
-        empresa: {
-            nombre: string;
-            id_empresa: number;
-        };
     } | null;
     detalle: {
         id: number;
@@ -37,24 +37,23 @@ export declare function getInventarioByEmpresa(params: {
         redEthernet: string | null;
     } | null;
 } & {
-    updatedAt: Date;
     empresaId: number | null;
     deletedAt: Date | null;
     createdAt: Date;
-    observaciones: string | null;
-    estado: import("@prisma/client").$Enums.EstadoEquipo;
-    tipo: import("@prisma/client").$Enums.TipoEquipo;
-    marca: string;
-    modelo: string;
-    productoId: number | null;
+    updatedAt: Date;
     id_equipo: number;
     idSolicitante: number | null;
     serial: string | null;
+    marca: string;
+    modelo: string;
     procesador: string | null;
     ram: string | null;
     disco: string | null;
     propiedad: string;
+    tipo: import("@prisma/client").$Enums.TipoEquipo;
     origenCotizacionId: number | null;
+    productoId: number | null;
+    estado: import("@prisma/client").$Enums.EstadoEquipo;
     anioPc: number | null;
     anioPcOrigen: string | null;
     agenteActivo: boolean;
@@ -75,6 +74,7 @@ export declare function getInventarioByEmpresa(params: {
     solicitanteDetectadoEmail: string | null;
     solicitanteDetectadoId: number | null;
     usuarioActual: string | null;
+    observaciones: string | null;
     mantGeneralConfigPath: string | null;
     mantGeneralExePath: string | null;
     mantGeneralInstalado: boolean;

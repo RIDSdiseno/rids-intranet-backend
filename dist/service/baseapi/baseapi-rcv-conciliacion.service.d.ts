@@ -37,10 +37,10 @@ export declare function conciliarDocumentoRcv(params: {
     enviarCorreo?: boolean;
     correoDestino?: string[] | null;
 }): Promise<{
-    id: string;
-    updatedAt: Date;
-    createdAt: Date;
     razonSocial: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    id: string;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -65,10 +65,10 @@ export declare function desconciliarDocumentoRcv(params: {
     folio: string;
     rutContraparte: string;
 }): Promise<{
-    id: string;
-    updatedAt: Date;
-    createdAt: Date;
     razonSocial: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    id: string;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -95,10 +95,10 @@ export declare function observarDocumentoRcv(params: {
     observacion: string;
     responsable?: string | null;
 }): Promise<{
-    id: string;
-    updatedAt: Date;
-    createdAt: Date;
     razonSocial: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    id: string;
     folio: string;
     montoNeto: number;
     montoTotal: number;

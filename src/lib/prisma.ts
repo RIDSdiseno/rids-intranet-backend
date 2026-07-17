@@ -6,6 +6,10 @@ type AuditAction = "CREATE" | "UPDATE" | "DELETE";
 
 const CONNECTION_ERROR_CODES = new Set(["P1001", "P1002", "P1008", "P1017"]);
 
+const globalForPrisma = globalThis as unknown as {
+  ridsPrismaBase?: PrismaClient;
+};
+
 export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1500): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < retries; i++) {
@@ -16,9 +20,7 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
       if (code && CONNECTION_ERROR_CODES.has(code)) {
         lastErr = err;
         console.warn(`[prisma] connection error ${code}, retry ${i + 1}/${retries} in ${delayMs}ms`);
-        await prismaBase.$disconnect().catch(() => {});
         await new Promise(r => setTimeout(r, delayMs));
-        await prismaBase.$connect().catch(() => {});
       } else {
         throw err;
       }
@@ -27,12 +29,16 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
   throw lastErr;
 }
 
-const prismaBase = new PrismaClient({
+export const prismaBase = globalForPrisma.ridsPrismaBase ?? new PrismaClient({
   //log:
   //process.env.NODE_ENV === "development"
   //  ? ["query", "error", "warn"]
   //  : ["error"],
 });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.ridsPrismaBase = prismaBase;
+}
 
 /* =========================
    EXTRAER ID DINÁMICAMENTE

@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
 import type { Request, Response } from "express";
-
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 
 //  Obtener todos los servicios
 export async function getServicios(_req: Request, res: Response) {

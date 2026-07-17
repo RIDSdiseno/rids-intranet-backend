@@ -4,8 +4,8 @@ export declare function monthRange(ym: string): {
 };
 export declare function buildReporteEmpresaData(empresaId: number, ym: string): Promise<{
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
     };
     month: string;
     kpis: {
@@ -40,14 +40,13 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
             duracionMinutos: number;
             duracionTexto: string;
             solicitante: string;
-            sucursal: {
-                nombre: string;
-            } | null;
-            tecnico: {
-                nombre: string;
-            };
             inicio: Date;
             fin: Date | null;
+            confImpresoras: boolean;
+            confTelefonos: boolean;
+            confPiePagina: boolean;
+            otros: boolean;
+            otrosDetalle: string | null;
             actualizaciones: boolean;
             antivirus: boolean;
             ccleaner: boolean;
@@ -56,11 +55,12 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
             licenciaWindows: boolean;
             mantenimientoReloj: boolean;
             rendimientoEquipo: boolean;
-            confImpresoras: boolean;
-            confTelefonos: boolean;
-            confPiePagina: boolean;
-            otros: boolean;
-            otrosDetalle: string | null;
+            sucursal: {
+                nombre: string;
+            } | null;
+            tecnico: {
+                nombre: string;
+            };
         }[];
         porTipo: {
             tipo: string;
@@ -154,12 +154,12 @@ export declare function buildReporteEmpresaData(empresaId: number, ym: string): 
         total: number;
         detalle: {
             solicitante: string;
-            tecnico: {
-                nombre: string;
-            } | null;
             inicio: Date;
             fin: Date | null;
             status: string;
+            tecnico: {
+                nombre: string;
+            } | null;
             id_mantencion: number;
         }[];
         porStatus: {

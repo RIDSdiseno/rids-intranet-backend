@@ -1,8 +1,2 @@
-import { PrismaClient } from "@prisma/client";
-declare const prismaClientSingleton: () => PrismaClient<import("@prisma/client").Prisma.PrismaClientOptions, never, import("@prisma/client/runtime/library").DefaultArgs>;
-declare global {
-    var prisma: undefined | ReturnType<typeof prismaClientSingleton>;
-}
-declare const prisma: PrismaClient<import("@prisma/client").Prisma.PrismaClientOptions, never, import("@prisma/client/runtime/library").DefaultArgs>;
-export default prisma;
+export { prismaBase as default, prismaBase as prisma } from "../lib/prisma.js";
 //# sourceMappingURL=db.d.ts.map
