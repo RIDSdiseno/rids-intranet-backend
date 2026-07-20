@@ -1259,11 +1259,21 @@ async function buscarAgendaCoincidenteDesdeOutlook(params: {
     const tecnicoIdsObjetivo = Array.from(new Set(params.tecnicoIds));
     if (tecnicoIdsObjetivo.length === 0) return null;
 
+    // Solo se considera "candidata" una agenda local que aún no está vinculada
+    // a ningún evento de Outlook y que no tiene ningún avance operativo real.
+    // Sin estos filtros, la búsqueda por fecha/hora/técnico/empresa podía
+    // "reencontrar" una agenda ya vinculada, en ruta, iniciada o con visita
+    // asociada, y el sync la reprocesaba como si fuera un evento nuevo.
     const baseWhere = {
         fecha: params.fecha,
         horaInicio: params.horaInicio,
         horaFin: params.horaFin,
         tipo: params.tipo,
+        outlookEventId: null,
+        estado: { in: [EstadoAgenda.PROGRAMADA, EstadoAgenda.NOTIFICADA] },
+        visita: { is: null },
+        fechaInicioRuta: null,
+        fechaInicioVisita: null,
     };
 
     const empresaExternaNormalizada = normalizarNombreEmpresaOutlook(params.empresaExternaNombre);
@@ -1488,12 +1498,21 @@ export async function sincronizarAgendaDesdeOutlook(
                     select: {
                         estado: true,
                         visita: { select: { id_visita: true } },
+                        fechaInicioRuta: true,
+                        fechaInicioVisita: true,
                     },
                 });
 
+                // Este guard cubre tanto el match directo por outlookEventId como el
+                // match por buscarAgendaCoincidenteDesdeOutlook: una agenda con avance
+                // operativo real (visita vinculada, ruta o visita ya iniciada) o que no
+                // está en un estado editable nunca se reutiliza — se omite y, si
+                // corresponde, se crea una agenda nueva más abajo.
                 if (
                     !agendaExistente ||
                     agendaExistente.visita ||
+                    agendaExistente.fechaInicioRuta ||
+                    agendaExistente.fechaInicioVisita ||
                     (agendaExistente.estado !== EstadoAgenda.PROGRAMADA &&
                         agendaExistente.estado !== EstadoAgenda.NOTIFICADA)
                 ) {
