@@ -942,7 +942,7 @@ model CotizacionGestioo {
 }
 
 model CotizacionEnviada {
-  id            Int       @id @default(autoincrement())
+  id            Int                @id @default(autoincrement())
   cotizacionId  Int?
   to            String?
   subject       String?
@@ -952,9 +952,8 @@ model CotizacionEnviada {
   clienteNombre String?
   creadoPor     String?
   fechaCreacion DateTime?
-  sentAt        DateTime  @default(now())
-
-  cotizacion CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
+  sentAt        DateTime           @default(now())
+  cotizacion    CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
 
   @@index([cotizacionId])
   @@index([jobId])
