@@ -1,6 +1,6 @@
 // src/service/agenda.service.ts
 import { prisma } from "../lib/prisma.js";
-import { TipoAgenda, EstadoAgenda } from "@prisma/client";
+import { TipoAgenda, EstadoAgenda, EstadoVisita } from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
 import { string } from "zod";
 /* ======================================================
@@ -22,6 +22,45 @@ export class AgendaNotFoundError extends Error {
     constructor(message = "Visita de agenda no encontrada.") {
         super(message);
         this.name = "AgendaNotFoundError";
+    }
+}
+export class AgendaStateTransitionError extends Error {
+    constructor(message = "La transición de estado solicitada no está permitida.") {
+        super(message);
+        this.name = "AgendaStateTransitionError";
+    }
+}
+const TRANSICIONES_ESTADO_AGENDA = {
+    [EstadoAgenda.PROGRAMADA]: new Set([
+        EstadoAgenda.PROGRAMADA,
+        EstadoAgenda.NOTIFICADA,
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.NOTIFICADA]: new Set([
+        EstadoAgenda.NOTIFICADA,
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.EN_RUTA]: new Set([
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.INICIADA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.INICIADA]: new Set([
+        EstadoAgenda.INICIADA,
+        EstadoAgenda.COMPLETADA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.COMPLETADA]: new Set([EstadoAgenda.COMPLETADA]),
+    [EstadoAgenda.CANCELADA]: new Set([EstadoAgenda.CANCELADA]),
+};
+function validarTransicionEstadoAgenda(estadoActual, estadoSolicitado, visitaStatus) {
+    if (visitaStatus === EstadoVisita.COMPLETADA && estadoSolicitado !== EstadoAgenda.COMPLETADA) {
+        throw new AgendaStateTransitionError("Una agenda con formulario de visita completado no puede volver a un estado anterior.");
+    }
+    if (!TRANSICIONES_ESTADO_AGENDA[estadoActual].has(estadoSolicitado)) {
+        throw new AgendaStateTransitionError(`No se permite cambiar la agenda de ${estadoActual} a ${estadoSolicitado}.`);
     }
 }
 /* ======================================================
@@ -90,6 +129,11 @@ async function adjuntarFormularioVisita(visitas) {
             visitaId: formulario?.id_visita ?? null,
             visitaStatus: formulario?.status ?? null,
             visitaOrigen: formulario?.origen ?? null,
+            inconsistenciaEstado: formulario?.status === EstadoVisita.COMPLETADA &&
+                "estado" in visita &&
+                visita.estado !== EstadoAgenda.COMPLETADA
+                ? "VISITA_COMPLETADA_AGENDA_NO_COMPLETADA"
+                : null,
         });
     });
 }
@@ -1028,6 +1072,10 @@ async function buscarAgendaCoincidenteDesdeOutlook(params) {
 export async function sincronizarAgendaDesdeOutlook(year, month) {
     const { inicio, fin, startDateTime, endDateTime } = buildAgendaOutlookMonthRange(year, month);
     const events = await graphReaderService.readCalendarEvents(startDateTime, endDateTime);
+    let creadas = 0;
+    let actualizadas = 0;
+    let omitidas = 0;
+    let errores = 0;
     const outlookIdsVigentes = new Set(events
         .map((event) => event.id?.trim())
         .filter((id) => Boolean(id)));
@@ -1044,27 +1092,28 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
         select: {
             id: true,
             outlookEventId: true,
+            estado: true,
+            visita: { select: { id_visita: true } },
         },
     });
     const visitasEliminadasEnOutlook = visitasLocalesSincronizadas.filter((visita) => {
         const outlookId = visita.outlookEventId?.trim();
         return Boolean(outlookId) && !outlookIdsVigentes.has(outlookId);
     });
-    if (visitasEliminadasEnOutlook.length > 0) {
+    const visitasSegurasParaEliminar = visitasEliminadasEnOutlook.filter((visita) => !visita.visita &&
+        (visita.estado === EstadoAgenda.PROGRAMADA || visita.estado === EstadoAgenda.NOTIFICADA));
+    omitidas += visitasEliminadasEnOutlook.length - visitasSegurasParaEliminar.length;
+    if (visitasSegurasParaEliminar.length > 0) {
         await prisma.agendaVisita.deleteMany({
             where: {
                 id: {
-                    in: visitasEliminadasEnOutlook.map((visita) => visita.id),
+                    in: visitasSegurasParaEliminar.map((visita) => visita.id),
                 },
             },
         });
         //  console.log(
         // `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}` );
     }
-    let creadas = 0;
-    let actualizadas = 0;
-    let omitidas = 0;
-    let errores = 0;
     for (const event of events) {
         try {
             if (!event.id?.trim()) {
@@ -1111,6 +1160,20 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                 });
             }
             if (agendaObjetivo) {
+                const agendaExistente = await prisma.agendaVisita.findUnique({
+                    where: { id: agendaObjetivo.id },
+                    select: {
+                        estado: true,
+                        visita: { select: { id_visita: true } },
+                    },
+                });
+                if (!agendaExistente ||
+                    agendaExistente.visita ||
+                    (agendaExistente.estado !== EstadoAgenda.PROGRAMADA &&
+                        agendaExistente.estado !== EstadoAgenda.NOTIFICADA)) {
+                    omitidas++;
+                    continue;
+                }
                 await prisma.agendaVisita.update({
                     where: { id: agendaObjetivo.id },
                     data: {
@@ -1120,7 +1183,6 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
                         empresaId,
                         empresaExternaNombre,
                         tipo,
-                        estado: EstadoAgenda.PROGRAMADA,
                         outlookEventId: event.id,
                     },
                 });
@@ -1233,9 +1295,11 @@ export async function actualizarAgendaVisita(id, datos) {
         where: { id },
         select: {
             fecha: true,
+            estado: true,
             horaInicio: true,
             horaFin: true,
             outlookEventId: true,
+            visita: { select: { status: true } },
             tecnicos: { select: { tecnicoId: true } },
         },
     });
@@ -1253,6 +1317,9 @@ export async function actualizarAgendaVisita(id, datos) {
             if (inicioFinal && finFinal && tecnicoIds.length > 0) {
                 await validarConflictoHorario({ fecha: fechaFinal, horaInicio: inicioFinal, horaFin: finFinal, tecnicoIds, excluirVisitaId: id });
             }
+        }
+        if (estado !== undefined) {
+            validarTransicionEstadoAgenda(actual.estado, estado, actual.visita?.status);
         }
     }
     const visita = await prisma.agendaVisita.update({
@@ -1458,8 +1525,19 @@ export async function eliminarMallaMensual(year, month) {
         //console.log(`[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} — nada futuro que eliminar`);
         return { eliminadas: 0 };
     }
+    const agendasEliminables = await prisma.agendaVisita.findMany({
+        where: {
+            fecha: { gte: manana, lte: fin },
+            outlookEventId: null,
+            estado: { in: [EstadoAgenda.PROGRAMADA, EstadoAgenda.NOTIFICADA] },
+            visita: { is: null },
+        },
+        select: { id: true },
+    });
+    if (agendasEliminables.length === 0)
+        return { eliminadas: 0 };
     const { count } = await prisma.agendaVisita.deleteMany({
-        where: { fecha: { gte: manana, lte: fin }, outlookEventId: null },
+        where: { id: { in: agendasEliminables.map((agenda) => agenda.id) } },
     });
     //console.log(
     // `[AGENDA] Malla ${year}-${String(month).padStart(2, "0")} eliminada | visitas borradas: ${count}`

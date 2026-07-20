@@ -17,6 +17,7 @@ import {
   AgendaConflictError,
   AgendaNotFoundError,
   AgendaPastDateError,
+  AgendaStateTransitionError,
 } from "../service/agenda.service.js";
 
 /* ================== Schemas ================== */
@@ -201,7 +202,11 @@ export async function updateVisita(req: Request, res: Response) {
 
     return res.status(200).json(actualizado);
   } catch (err: any) {
-    if (err instanceof AgendaConflictError || err instanceof AgendaPastDateError) {
+    if (
+      err instanceof AgendaConflictError ||
+      err instanceof AgendaPastDateError ||
+      err instanceof AgendaStateTransitionError
+    ) {
       return res.status(409).json({ error: err.message });
     }
     console.error("Error al actualizar visita de agenda:", err);

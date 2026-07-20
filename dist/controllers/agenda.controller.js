@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EstadoAgenda } from "@prisma/client";
-import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, } from "../service/agenda.service.js";
+import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, } from "../service/agenda.service.js";
 /* ================== Schemas ================== */
 const generarMallaSchema = z.object({
     year: z.number().int().min(2020).max(2100),
@@ -160,7 +160,9 @@ export async function updateVisita(req, res) {
         return res.status(200).json(actualizado);
     }
     catch (err) {
-        if (err instanceof AgendaConflictError || err instanceof AgendaPastDateError) {
+        if (err instanceof AgendaConflictError ||
+            err instanceof AgendaPastDateError ||
+            err instanceof AgendaStateTransitionError) {
             return res.status(409).json({ error: err.message });
         }
         console.error("Error al actualizar visita de agenda:", err);
