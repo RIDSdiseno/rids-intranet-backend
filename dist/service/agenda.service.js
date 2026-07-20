@@ -30,6 +30,12 @@ export class AgendaStateTransitionError extends Error {
         this.name = "AgendaStateTransitionError";
     }
 }
+export class AgendaSucursalInvalidaError extends Error {
+    constructor(message = "La sucursal seleccionada no es válida para esta agenda.") {
+        super(message);
+        this.name = "AgendaSucursalInvalidaError";
+    }
+}
 const TRANSICIONES_ESTADO_AGENDA = {
     [EstadoAgenda.PROGRAMADA]: new Set([
         EstadoAgenda.PROGRAMADA,
@@ -70,7 +76,7 @@ function validarTransicionEstadoAgenda(estadoActual, estadoSolicitado, visitaSta
  * Parsea un string "YYYY-MM-DD" y devuelve UTC midnight sin pasar por new Date(string),
  * evitando cualquier ambigüedad de timezone en el servidor.
  */
-function normalizarFechaDesdeString(fecha) {
+export function normalizarFechaDesdeString(fecha) {
     const [year, month, day] = fecha.split("-").map(Number);
     return new Date(Date.UTC(year, month - 1, day));
 }
@@ -87,7 +93,7 @@ function getSemanaISO(fecha) {
     return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 /** Formatea un Date UTC midnight como "YYYY-MM-DD" para respuestas de agenda (sin timezone). */
-function formatearFechaAgenda(date) {
+export function formatearFechaAgenda(date) {
     return date.toISOString().slice(0, 10);
 }
 function serializarAgendaVisita(visita) {
@@ -284,6 +290,65 @@ function getNombreEmpresaAgenda(visita) {
         visita.empresaExternaNombre?.trim() ||
         "OFICINA");
 }
+const DESTINO_VACIO = {
+    sucursalId: null,
+    destinoNombre: null,
+    destinoDireccion: null,
+    destinoLatitud: null,
+    destinoLongitud: null,
+};
+/**
+ * Resuelve y congela ("snapshot") el destino de una agenda al crearla o al
+ * cambiar su empresa/sucursal. A diferencia de la inferencia usada en el mapa
+ * de técnicos (que adivina el destino de agendas antiguas sin snapshot), acá
+ * el destino ya viene elegido explícitamente por quien agenda:
+ *   - si eligió una sucursal -> se usa esa sucursal (nombre/dirección/coords);
+ *   - si no eligió sucursal pero hay empresa -> se usa la ubicación principal
+ *     de DetalleEmpresa ("Casa matriz");
+ *   - si no hay empresa (agenda externa) -> destino vacío.
+ */
+async function resolverDestinoSnapshot(params) {
+    if (params.sucursalId != null) {
+        const sucursal = await prisma.sucursal.findUnique({
+            where: { id_sucursal: params.sucursalId },
+            select: { nombre: true, direccion: true, latitud: true, longitud: true, empresaId: true },
+        });
+        if (!sucursal) {
+            throw new AgendaSucursalInvalidaError("La sucursal seleccionada no existe.");
+        }
+        if (params.empresaId != null && sucursal.empresaId !== params.empresaId) {
+            throw new AgendaSucursalInvalidaError("La sucursal seleccionada no pertenece a la empresa indicada.");
+        }
+        return {
+            sucursalId: params.sucursalId,
+            destinoNombre: sucursal.nombre,
+            destinoDireccion: sucursal.direccion ?? null,
+            destinoLatitud: sucursal.latitud ?? null,
+            destinoLongitud: sucursal.longitud ?? null,
+        };
+    }
+    if (params.empresaId != null) {
+        const detalle = await prisma.detalleEmpresa.findUnique({
+            where: { empresa_id: params.empresaId },
+            select: { direccion: true, latitud: true, longitud: true },
+        });
+        return {
+            sucursalId: null,
+            destinoNombre: "Casa matriz",
+            destinoDireccion: detalle?.direccion ?? null,
+            destinoLatitud: detalle?.latitud ?? null,
+            destinoLongitud: detalle?.longitud ?? null,
+        };
+    }
+    return DESTINO_VACIO;
+}
+function buildAgendaOutlookLocation(visita) {
+    const nombre = visita.destinoNombre?.trim();
+    const direccion = visita.destinoDireccion?.trim();
+    if (nombre && direccion)
+        return `${nombre} - ${direccion}`;
+    return nombre || direccion || undefined;
+}
 function buildAgendaDateTime(fecha, hora) {
     const horaNormalizada = hora?.trim();
     if (!horaNormalizada)
@@ -321,6 +386,10 @@ function buildAgendaOutlookBody(visita) {
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; width: 40%; border: 1px solid #eee;">Empresa</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(nombreEmpresa)}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Destino</td>
+      <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(buildAgendaOutlookLocation(visita)) || "Sin destino registrado"}</td>
     </tr>
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Fecha</td>
@@ -779,6 +848,7 @@ export async function getAgendaMensual(year, month, filtros) {
         where,
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true, direccion: true, latitud: true, longitud: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1308,8 +1378,9 @@ async function validarConflictoHorario(params) {
  * Actualiza una visita: puede cambiar fecha, estado, notas, mensaje, horario o empresa.
  */
 export async function actualizarAgendaVisita(id, datos) {
-    const { fecha: fechaStr, estado, notas, mensaje, horaInicio, horaFin, empresaId, } = datos;
-    // Fetch previo: necesario para validación de fecha pasada y conflicto horario
+    const { fecha: fechaStr, estado, notas, mensaje, horaInicio, horaFin, empresaId, sucursalId, } = datos;
+    // Fetch previo: necesario para validación de fecha pasada, conflicto horario
+    // y para saber el empresaId/sucursalId vigentes si solo cambia uno de los dos.
     const actual = await prisma.agendaVisita.findUnique({
         where: { id },
         select: {
@@ -1318,6 +1389,8 @@ export async function actualizarAgendaVisita(id, datos) {
             horaInicio: true,
             horaFin: true,
             outlookEventId: true,
+            empresaId: true,
+            sucursalId: true,
             visita: { select: { status: true } },
             tecnicos: { select: { tecnicoId: true } },
         },
@@ -1341,6 +1414,17 @@ export async function actualizarAgendaVisita(id, datos) {
             validarTransicionEstadoAgenda(actual.estado, estado, actual.visita?.status);
         }
     }
+    // El snapshot de destino solo se recalcula si empresa o sucursal cambian;
+    // el resto de las ediciones (fecha, hora, notas, estado) lo dejan intacto.
+    let destinoUpdate = {};
+    if (empresaId !== undefined || sucursalId !== undefined) {
+        const empresaIdFinal = empresaId !== undefined ? empresaId : actual?.empresaId ?? null;
+        const sucursalIdFinal = sucursalId !== undefined ? sucursalId : actual?.sucursalId ?? null;
+        destinoUpdate = await resolverDestinoSnapshot({
+            empresaId: empresaIdFinal,
+            sucursalId: sucursalIdFinal,
+        });
+    }
     const visita = await prisma.agendaVisita.update({
         where: { id },
         data: {
@@ -1351,9 +1435,11 @@ export async function actualizarAgendaVisita(id, datos) {
             ...(horaInicio !== undefined && { horaInicio }),
             ...(horaFin !== undefined && { horaFin }),
             ...(empresaId !== undefined && { empresaId }),
+            ...destinoUpdate,
         },
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1365,6 +1451,7 @@ export async function actualizarAgendaVisita(id, datos) {
     const endDateTime = buildAgendaDateTime(visita.fecha, visita.horaFin);
     if (startDateTime && endDateTime) {
         const categoriaOutlook = buildAgendaOutlookCategory(visita);
+        const destinoLocation = buildAgendaOutlookLocation(visita);
         try {
             if (actual?.outlookEventId) {
                 const eventData = {
@@ -1374,6 +1461,7 @@ export async function actualizarAgendaVisita(id, datos) {
                     endDateTime,
                     categories: [categoriaOutlook],
                     attendees: buildAgendaOutlookAttendees(visita),
+                    ...(destinoLocation !== undefined && { location: destinoLocation }),
                 };
                 await graphReaderService.updateCalendarEvent(actual.outlookEventId, eventData);
                 visita.outlookEventId = actual.outlookEventId;
@@ -1386,6 +1474,7 @@ export async function actualizarAgendaVisita(id, datos) {
                     endDateTime,
                     categories: [categoriaOutlook],
                     attendees: buildAgendaOutlookAttendees(visita),
+                    ...(destinoLocation !== undefined && { location: destinoLocation }),
                 };
                 const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
                 if (outlookEvent?.id) {
@@ -1579,12 +1668,21 @@ export async function crearAgendaVisitaManual(data) {
         });
     }
     const tipo = esSabado(fechaUTC) ? TipoAgenda.SABADO : TipoAgenda.SEMANA;
+    const destino = await resolverDestinoSnapshot({
+        empresaId: data.empresaId,
+        sucursalId: data.sucursalId ?? null,
+    });
     const visita = await prisma.agendaVisita.create({
         data: {
             fecha: fechaUTC,
             empresaId: data.empresaId,
             tipo,
             estado: EstadoAgenda.PROGRAMADA,
+            sucursalId: destino.sucursalId,
+            destinoNombre: destino.destinoNombre,
+            destinoDireccion: destino.destinoDireccion,
+            destinoLatitud: destino.destinoLatitud,
+            destinoLongitud: destino.destinoLongitud,
             ...(data.horaInicio !== undefined && { horaInicio: data.horaInicio }),
             ...(data.horaFin !== undefined && { horaFin: data.horaFin }),
             ...(data.mensaje !== undefined && { mensaje: data.mensaje }),
@@ -1595,6 +1693,7 @@ export async function crearAgendaVisitaManual(data) {
         },
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1607,6 +1706,7 @@ export async function crearAgendaVisitaManual(data) {
     if (startDateTime && endDateTime) {
         const categoriaOutlook = buildAgendaOutlookCategory(visita);
         try {
+            const destinoLocation = buildAgendaOutlookLocation(visita);
             const eventData = {
                 subject: buildAgendaOutlookSubject(visita),
                 bodyHtml: buildAgendaOutlookBody(visita),
@@ -1614,6 +1714,7 @@ export async function crearAgendaVisitaManual(data) {
                 endDateTime,
                 categories: [categoriaOutlook],
                 attendees: buildAgendaOutlookAttendees(visita),
+                ...(destinoLocation !== undefined && { location: destinoLocation }),
             };
             const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
             if (outlookEvent?.id) {
@@ -1622,6 +1723,7 @@ export async function crearAgendaVisitaManual(data) {
                     data: { outlookEventId: outlookEvent.id },
                     include: {
                         empresa: { select: { id_empresa: true, nombre: true } },
+                        sucursal: { select: { id_sucursal: true, nombre: true } },
                         tecnicos: {
                             include: {
                                 tecnico: { select: { id_tecnico: true, nombre: true, email: true } },

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EstadoAgenda } from "@prisma/client";
-import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, } from "../service/agenda.service.js";
+import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, AgendaSucursalInvalidaError, } from "../service/agenda.service.js";
 /* ================== Schemas ================== */
 const generarMallaSchema = z.object({
     year: z.number().int().min(2020).max(2100),
@@ -28,6 +28,7 @@ const updateVisitaSchema = z.object({
         .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora fin inválida, use HH:mm")
         .optional(),
     empresaId: z.number().nullable().optional(),
+    sucursalId: z.number().int().positive().nullable().optional(),
 });
 const reprogramarTecnicosSchema = z.object({
     nuevosTecnicoIds: z.array(z.number().int().positive()).min(1),
@@ -39,6 +40,7 @@ const eliminarMallaSchema = z.object({
 const crearVisitaManualSchema = z.object({
     fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
     empresaId: z.number().int().positive().nullable(),
+    sucursalId: z.number().int().positive().nullable().optional(),
     tecnicoId: z.number().int().positive(),
     horaInicio: z
         .string()
@@ -147,7 +149,7 @@ export async function updateVisita(req, res) {
         if (!parsed.success) {
             return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
         }
-        const { fecha, estado, notas, mensaje, horaInicio, horaFin, empresaId } = parsed.data;
+        const { fecha, estado, notas, mensaje, horaInicio, horaFin, empresaId, sucursalId } = parsed.data;
         const actualizado = await actualizarAgendaVisita(id, {
             ...(fecha !== undefined && { fecha }),
             ...(estado !== undefined && { estado }),
@@ -156,10 +158,14 @@ export async function updateVisita(req, res) {
             ...(horaInicio !== undefined && { horaInicio }),
             ...(horaFin !== undefined && { horaFin }),
             ...(empresaId !== undefined && { empresaId }),
+            ...(sucursalId !== undefined && { sucursalId }),
         });
         return res.status(200).json(actualizado);
     }
     catch (err) {
+        if (err instanceof AgendaSucursalInvalidaError) {
+            return res.status(400).json({ error: err.message });
+        }
         if (err instanceof AgendaConflictError ||
             err instanceof AgendaPastDateError ||
             err instanceof AgendaStateTransitionError) {
@@ -217,6 +223,8 @@ export async function crearVisitaManual(req, res) {
         return res.status(201).json(visita);
     }
     catch (err) {
+        if (err instanceof AgendaSucursalInvalidaError)
+            return res.status(400).json({ error: err.message });
         if (err instanceof AgendaConflictError)
             return res.status(409).json({ error: err.message });
         console.error("Error al crear visita manual:", err);

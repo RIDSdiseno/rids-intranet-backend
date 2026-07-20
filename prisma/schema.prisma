@@ -44,6 +44,8 @@ model Sucursal {
   id_sucursal           Int                    @id @default(autoincrement())
   nombre                String
   direccion             String?
+  latitud               Float?
+  longitud              Float?
   telefono              String?
   empresaId             Int
   empresa               Empresa                @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
@@ -54,6 +56,7 @@ model Sucursal {
   accesoRouterSucursals AccesoRouterSucursal[]
   empresaISPs           EmpresaISP[]
   contactoEmpresas      ContactoEmpresa[]
+  agendasVisita         AgendaVisita[]
 
   @@index([empresaId])
 }
@@ -74,6 +77,8 @@ model DetalleEmpresa {
   id          Int     @id @default(autoincrement())
   rut         String  @unique
   direccion   String?
+  latitud     Float?
+  longitud    Float?
   telefono    String?
   email       String?
   empresa_id  Int     @unique
@@ -1249,7 +1254,13 @@ model AgendaVisita {
   empresaExternaNombre String?
   fechaInicioRuta      DateTime?
   fechaInicioVisita    DateTime?
+  sucursalId           Int?
+  destinoNombre        String?
+  destinoDireccion     String?
+  destinoLatitud       Float?
+  destinoLongitud      Float?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
+  sucursal             Sucursal?       @relation(fields: [sucursalId], references: [id_sucursal])
   tecnicos             AgendaTecnico[]
   visita               Visita?
 
@@ -1258,6 +1269,7 @@ model AgendaVisita {
   @@index([tipo])
   @@index([estado])
   @@index([notificacionEnviada])
+  @@index([sucursalId])
 }
 
 model AgendaTecnico {
