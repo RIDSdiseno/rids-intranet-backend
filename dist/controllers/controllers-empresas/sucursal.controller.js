@@ -1,19 +1,26 @@
 import { prisma } from "../../lib/prisma.js";
+import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../../utils/coordenadas.js";
 /* =====================================================
    CREAR SUCURSAL
 ===================================================== */
 export async function crearSucursal(req, res) {
     const empresaId = Number(req.params.empresaId);
-    const { nombre, direccion, telefono, responsableSucursals, } = req.body;
+    const { nombre, direccion, latitud, longitud, telefono, responsableSucursals, } = req.body;
     if (!empresaId || !nombre) {
         return res.status(400).json({
             message: "empresaId y nombre son obligatorios",
         });
     }
+    if (clasificarCoordenadas(latitud, longitud) === "INVALIDAS") {
+        return res.status(400).json({ message: MENSAJE_COORDENADAS_INVALIDAS });
+    }
     const sucursal = await prisma.sucursal.create({
         data: {
             nombre,
             direccion,
+            // Creación: sin valor previo que preservar, omitidas/nulas equivalen a null.
+            latitud: latitud ?? null,
+            longitud: longitud ?? null,
             telefono,
             empresaId,
             responsableSucursals: {
@@ -69,25 +76,39 @@ export async function actualizarFichaSucursal(req, res) {
                 message: "sucursalId inválido",
             });
         }
-        const { nombre, direccion, telefono, responsableSucursals, } = req.body;
+        const { nombre, direccion, latitud, longitud, telefono, responsableSucursals, } = req.body;
+        const clasificacion = clasificarCoordenadas(latitud, longitud);
+        if (clasificacion === "INVALIDAS") {
+            return res.status(400).json({ message: MENSAJE_COORDENADAS_INVALIDAS });
+        }
+        const data = {
+            nombre,
+            direccion,
+            telefono,
+            responsableSucursals: {
+                deleteMany: {},
+                create: Array.isArray(responsableSucursals)
+                    ? responsableSucursals.map((r) => ({
+                        nombre: r.nombre,
+                        cargo: r.cargo,
+                        email: r.email,
+                        telefono: r.telefono,
+                    }))
+                    : [],
+            },
+        };
+        // OMITIDAS -> no tocar latitud/longitud, se preservan las existentes.
+        if (clasificacion === "NULAS") {
+            data.latitud = null;
+            data.longitud = null;
+        }
+        else if (clasificacion === "VALIDAS") {
+            data.latitud = latitud;
+            data.longitud = longitud;
+        }
         const sucursal = await prisma.sucursal.update({
             where: { id_sucursal: sucursalId },
-            data: {
-                nombre,
-                direccion,
-                telefono,
-                responsableSucursals: {
-                    deleteMany: {},
-                    create: Array.isArray(responsableSucursals)
-                        ? responsableSucursals.map((r) => ({
-                            nombre: r.nombre,
-                            cargo: r.cargo,
-                            email: r.email,
-                            telefono: r.telefono,
-                        }))
-                        : [],
-                },
-            },
+            data,
             include: {
                 responsableSucursals: true,
             },
