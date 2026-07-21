@@ -35,6 +35,16 @@ function translateTipoRcv(value: string | null | undefined) {
     return value ?? "-";
 }
 
+const NOMBRES_EMPRESA: Record<string, string> = {
+    econnet: "ECONNET",
+    rids: "ASESORÍAS RIDS LTDA.",
+};
+
+function translateEmpresa(value: string | null | undefined) {
+    const key = String(value ?? "").toLowerCase();
+    return NOMBRES_EMPRESA[key] ?? String(value ?? "-").toUpperCase();
+}
+
 export async function enviarCorreoConciliacionRcv(params: {
     to: string | string[];
     conciliacion: RcvConciliacion;
@@ -43,95 +53,75 @@ export async function enviarCorreoConciliacionRcv(params: {
 
     const subject = `Documento conciliado - Folio ${conciliacion.folio}`;
 
+    const empresaNombre = translateEmpresa(conciliacion.empresaKey);
+
+    function fila(label: string, valor: string, destacado = false) {
+        return `
+            <tr>
+                <td style="padding:11px 4px; border-bottom:1px solid #eef2f5; font-size:13px; color:#64748b; white-space:nowrap;">${escapeHtml(label)}</td>
+                <td style="padding:11px 4px; border-bottom:1px solid #eef2f5; font-size:14px; text-align:right; color:#0f172a; ${destacado ? "font-weight:700;" : "font-weight:500;"}">${valor}</td>
+            </tr>
+        `;
+    }
+
     const html = `
-        <div style="margin:0; padding:0; background:#f8fafc; font-family:Arial, sans-serif; color:#0f172a;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc; padding:24px 0;">
+        <div style="margin:0; padding:0; background:#f1f5f9; font-family:Arial, sans-serif; color:#0f172a;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9; padding:28px 0;">
                 <tr>
                     <td align="center">
-                        <table width="680" cellpadding="0" cellspacing="0" style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
+                        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #e2e8f0;">
                             <tr>
-                                <td style="background:#059669; padding:20px 24px; color:#ffffff;">
-                                    <h2 style="margin:0; font-size:20px;">Documento conciliado</h2>
-                                    <p style="margin:6px 0 0; font-size:14px;">
-                                        Se ha registrado una conciliación de un documento RCV.
+                                <td style="background:#059669; padding:22px 28px; color:#ffffff;">
+                                    <h2 style="margin:0; font-size:19px; font-weight:700;">Documento conciliado</h2>
+                                    <p style="margin:4px 0 0; font-size:13px; color:#d1fae5;">
+                                        Se registró la conciliación de un documento RCV.
                                     </p>
                                 </td>
                             </tr>
 
                             <tr>
-                                <td style="padding:24px;">
-                                    <p style="margin-top:0; font-size:14px; line-height:1.6;">
-                                        Se informa que el siguiente documento fue conciliado correctamente:
-                                    </p>
-
-                                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:14px;">
+                                <td style="padding:22px 28px 8px;">
+                                    <table width="100%" cellpadding="0" cellspacing="0">
                                         <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Empresa</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.empresaKey)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Tipo RCV</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(translateTipoRcv(conciliacion.tipoRcv))}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Tipo documento</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.tipoDoc)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Folio</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.folio)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Razón social</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.razonSocial ?? "-")}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>RUT contraparte</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.rutContraparte)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Monto neto</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${formatClp(conciliacion.montoNeto)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>IVA</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${formatClp(conciliacion.montoIva)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Total</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;"><strong>${formatClp(conciliacion.montoTotal)}</strong></td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Forma de pago / conciliación</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.formaPago ?? "-")}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Fecha conciliación</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${formatDate(conciliacion.conciliadoAt)}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Responsable</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.responsable ?? "-")}</td>
-                                        </tr>
-
-                                        <tr>
-                                            <td style="padding:10px; border:1px solid #e5e7eb; background:#f9fafb;"><strong>Observación</strong></td>
-                                            <td style="padding:10px; border:1px solid #e5e7eb;">${escapeHtml(conciliacion.observacion ?? "-")}</td>
+                                            <td width="33%" style="padding:2px;">
+                                                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px; text-align:center;">
+                                                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#94a3b8;">Empresa</div>
+                                                    <div style="margin-top:4px; font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(empresaNombre)}</div>
+                                                </div>
+                                            </td>
+                                            <td width="33%" style="padding:2px;">
+                                                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px; text-align:center;">
+                                                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#94a3b8;">Folio</div>
+                                                    <div style="margin-top:4px; font-size:13px; font-weight:700; color:#0f172a;">#${escapeHtml(conciliacion.folio)}</div>
+                                                </div>
+                                            </td>
+                                            <td width="34%" style="padding:2px;">
+                                                <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:12px; padding:12px; text-align:center;">
+                                                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:#059669;">Total</div>
+                                                    <div style="margin-top:4px; font-size:13px; font-weight:700; color:#047857;">${formatClp(conciliacion.montoTotal)}</div>
+                                                </div>
+                                            </td>
                                         </tr>
                                     </table>
+                                </td>
+                            </tr>
 
-                                    <p style="margin:20px 0 0; font-size:12px; color:#64748b;">
+                            <tr>
+                                <td style="padding:8px 28px 24px;">
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                                        ${fila("Tipo RCV", escapeHtml(translateTipoRcv(conciliacion.tipoRcv)))}
+                                        ${fila("Tipo documento", escapeHtml(conciliacion.tipoDoc))}
+                                        ${fila("Razón social", escapeHtml(conciliacion.razonSocial ?? "-"))}
+                                        ${fila("RUT contraparte", escapeHtml(conciliacion.rutContraparte))}
+                                        ${fila("Monto neto", formatClp(conciliacion.montoNeto))}
+                                        ${fila("IVA", formatClp(conciliacion.montoIva))}
+                                        ${fila("Forma de pago / conciliación", escapeHtml(conciliacion.formaPago ?? "-"))}
+                                        ${fila("Fecha conciliación", formatDate(conciliacion.conciliadoAt))}
+                                        ${fila("Responsable", escapeHtml(conciliacion.responsable ?? "-"))}
+                                        ${fila("Observación", escapeHtml(conciliacion.observacion ?? "-"))}
+                                    </table>
+
+                                    <p style="margin:20px 0 0; font-size:11.5px; color:#94a3b8;">
                                         Este correo fue generado automáticamente desde el sistema interno de la empresa.
                                     </p>
                                 </td>

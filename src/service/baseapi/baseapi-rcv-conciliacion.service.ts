@@ -279,3 +279,105 @@ export async function observarDocumentoRcv(params: {
         },
     });
 }
+
+function normalizarRut(value: string): string {
+    return String(value ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
+}
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+export type PuntualidadEstado = "SIN_HISTORIAL" | "BUEN_PAGADOR" | "IRREGULAR" | "RIESGO_MORA";
+
+export async function getPuntualidadCliente(params: {
+    empresa: EmpresaBaseApiKey;
+    rutContraparte: string;
+}): Promise<{
+    estado: PuntualidadEstado;
+    score: number | null;
+    totalConciliadas: number;
+    conVencimientoRegistrado: number;
+    aTiempo: number;
+    atrasadas: number;
+    promedioDiasAtraso: number;
+}> {
+    const { empresa, rutContraparte } = params;
+    const rutNormalizado = normalizarRut(rutContraparte);
+
+    const vacio = {
+        estado: "SIN_HISTORIAL" as PuntualidadEstado,
+        score: null,
+        totalConciliadas: 0,
+        conVencimientoRegistrado: 0,
+        aTiempo: 0,
+        atrasadas: 0,
+        promedioDiasAtraso: 0,
+    };
+
+    if (!rutNormalizado) return vacio;
+
+    const conciliaciones = await prisma.rcvConciliacion.findMany({
+        where: { empresaKey: empresa, tipoRcv: "ventas", estadoConciliacion: "CONCILIADA" },
+    });
+
+    const delCliente = conciliaciones.filter(
+        (c) => normalizarRut(c.rutContraparte) === rutNormalizado && c.conciliadoAt
+    );
+
+    if (delCliente.length === 0) return vacio;
+
+    const overrides = await prisma.rcvVencimiento.findMany({
+        where: {
+            empresaKey: empresa,
+            OR: delCliente.map((c) => ({ tipoDoc: c.tipoDoc, folio: c.folio })),
+        },
+    });
+    const overrideMap = new Map(overrides.map((o) => [`${o.tipoDoc}|${o.folio}`, o.fechaVencimiento]));
+
+    let aTiempo = 0;
+    let atrasadas = 0;
+    let sumaDiasAtraso = 0;
+
+    for (const c of delCliente) {
+        const vencimiento = overrideMap.get(`${c.tipoDoc}|${c.folio}`);
+        if (!vencimiento || !c.conciliadoAt) continue;
+
+        const diasAtraso = Math.round((c.conciliadoAt.getTime() - vencimiento.getTime()) / MS_POR_DIA);
+        if (diasAtraso > 0) {
+            atrasadas += 1;
+            sumaDiasAtraso += diasAtraso;
+        } else {
+            aTiempo += 1;
+        }
+    }
+
+    const conVencimientoRegistrado = aTiempo + atrasadas;
+
+    if (conVencimientoRegistrado < 3) {
+        return {
+            ...vacio,
+            totalConciliadas: delCliente.length,
+            conVencimientoRegistrado,
+            aTiempo,
+            atrasadas,
+        };
+    }
+
+    const pctATiempo = (aTiempo / conVencimientoRegistrado) * 100;
+    const promedioDiasAtraso = atrasadas > 0 ? Math.round(sumaDiasAtraso / atrasadas) : 0;
+    const score = Math.max(0, Math.min(100, Math.round(pctATiempo - promedioDiasAtraso * 0.5)));
+
+    let estado: PuntualidadEstado;
+    if (score >= 80) estado = "BUEN_PAGADOR";
+    else if (score >= 50) estado = "IRREGULAR";
+    else estado = "RIESGO_MORA";
+
+    return {
+        estado,
+        score,
+        totalConciliadas: delCliente.length,
+        conVencimientoRegistrado,
+        aTiempo,
+        atrasadas,
+        promedioDiasAtraso,
+    };
+}
