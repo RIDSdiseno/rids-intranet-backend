@@ -2392,7 +2392,19 @@ export async function getEquipoHistorial(req: Request, res: Response) {
 
     const auditItems = [...logsEquipo, ...logsDetalle]
       .map((log) => {
-        const filteredChanges = filterEquipoHistoryChanges((log as any).changes);
+        /*
+          CREATE y DELETE pueden guardar un snapshot completo con valores
+          primitivos. No deben pasar por el filtro pensado para UPDATE.
+        */
+        if (log.action !== AuditAction.UPDATE) {
+          return {
+            ...log,
+            origenHistorial: "AUDIT_LOG",
+          };
+        }
+
+        const filteredChanges =
+          filterEquipoHistoryChanges((log as any).changes);
 
         if (!filteredChanges) {
           return {
@@ -2408,8 +2420,20 @@ export async function getEquipoHistorial(req: Request, res: Response) {
         };
       })
       .filter((log) => {
-        const changes = normalizeAuditChanges((log as any).changes);
+        /*
+          CREATE y DELETE siempre se conservan.
+        */
+        if (log.action !== AuditAction.UPDATE) {
+          return true;
+        }
 
+        const changes =
+          normalizeAuditChanges((log as any).changes);
+
+        /*
+          Si no tiene estructura before/after, se conserva.
+          Puede tratarse de un registro contextual del agente.
+        */
         if (!changes) {
           return true;
         }

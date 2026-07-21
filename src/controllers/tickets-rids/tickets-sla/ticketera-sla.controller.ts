@@ -32,46 +32,48 @@ function getAssignedAt(ticket: {
         createdAt?: Date | string | null;
     }>;
 }): Date | null {
-    if (!ticket.assigneeId) return null;
+    /*
+     * Si actualmente no tiene técnico, se considera sin asignar.
+     * El SLA queda pausado.
+     */
+    if (!ticket.assigneeId) {
+        return null;
+    }
 
-    const events = Array.isArray(ticket.events) ? ticket.events : [];
+    const events = Array.isArray(ticket.events)
+        ? ticket.events
+        : [];
 
-    const currentAssigneeId = String(ticket.assigneeId);
-
-    const assignmentToCurrent = events
-        .filter((event) =>
-            event.type === TicketEventType.ASSIGNED &&
-            event.newValue === currentAssigneeId &&
-            event.createdAt
+    /*
+     * El SLA debe comenzar en la primera asignación del ticket,
+     * no en la asignación más reciente ni en la reasignación
+     * al técnico actual.
+     */
+    const firstAssignment = events
+        .filter(
+            (event) =>
+                event.type === TicketEventType.ASSIGNED &&
+                event.newValue &&
+                event.createdAt
         )
         .sort(
             (a, b) =>
-                new Date(b.createdAt!).getTime() -
-                new Date(a.createdAt!).getTime()
+                new Date(a.createdAt!).getTime() -
+                new Date(b.createdAt!).getTime()
         )[0];
 
-    if (assignmentToCurrent?.createdAt) {
-        return new Date(assignmentToCurrent.createdAt);
+    if (firstAssignment?.createdAt) {
+        return new Date(firstAssignment.createdAt);
     }
 
-    const lastAssignment = events
-        .filter((event) =>
-            event.type === TicketEventType.ASSIGNED &&
-            event.createdAt
-        )
-        .sort(
-            (a, b) =>
-                new Date(b.createdAt!).getTime() -
-                new Date(a.createdAt!).getTime()
-        )[0];
-
-    if (lastAssignment?.createdAt) {
-        return new Date(lastAssignment.createdAt);
-    }
-
-    // Fallback para tickets antiguos que ya tenían técnico,
-    // pero no tienen evento ASSIGNED registrado.
-    return new Date(ticket.createdAt);
+    /*
+     * No usar createdAt como fallback, porque eso haría que
+     * el SLA comenzara desde la creación.
+     *
+     * Los tickets antiguos sin evento ASSIGNED deberán corregirse
+     * mediante una migración o quedarán temporalmente sin SLA.
+     */
+    return null;
 }
 
 function signedDiffMinutes(from: Date, to: Date) {
@@ -223,13 +225,18 @@ export async function getTicketSla(req: Request, res: Response) {
 
         const tickets = await prisma.ticket.findMany({
             where: {
+                deletedAt: null,
+
                 ...(empresaId && { empresaId }),
-                ...(from || to ? {
-                    createdAt: {
-                        ...(from && { gte: from }),
-                        ...(to && { lte: to }),
-                    },
-                } : {}),
+
+                ...(from || to
+                    ? {
+                        createdAt: {
+                            ...(from && { gte: from }),
+                            ...(to && { lte: to }),
+                        },
+                    }
+                    : {}),
             },
             select: {
                 id: true,
@@ -273,8 +280,19 @@ export async function getTicketSla(req: Request, res: Response) {
         for (const t of tickets) {
             const sla = buildTicketSla(t, slaConfig);
 
+            /*
+             * Un ticket sin asignación todavía no participa
+             * en el resumen ni en el cumplimiento del SLA.
+             */
+            if (sla.waitingAssignment) {
+                continue;
+            }
+
             const tieneRespuesta = t.firstResponseAt !== null;
-            const tieneCierre = t.closedAt !== null || t.resolvedAt !== null;
+            const tieneCierre =
+                t.closedAt !== null ||
+                t.resolvedAt !== null;
+
             const estaActivo =
                 t.status !== TicketStatus.CLOSED &&
                 t.status !== TicketStatus.RESOLVED;
