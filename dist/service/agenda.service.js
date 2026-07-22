@@ -229,18 +229,52 @@ function filtrarCorreosTecnicosValidos(correos) {
 }
 function normalizarNombreEmpresaOutlook(nombre) {
     const nombreTrim = nombre?.trim().replace(/^@/, "").trim();
-    if (!nombreTrim)
+    return nombreTrim || null;
+}
+// Palabras/frases que indican que el evento de Outlook no es una visita a un
+// cliente (permisos, pruebas, trabajo remoto del tecnico, etc.). Se comparan
+// sin tildes y en minusculas contra el asunto completo del evento.
+const PALABRAS_CLAVE_NO_CLIENTE = [
+    "permiso",
+    "dia libre",
+    "prueba tecnica",
+    "home office",
+];
+function esEventoOutlookNoCliente(subject) {
+    const normalizado = normalizarTextoNombre(subject ?? "");
+    return PALABRAS_CLAVE_NO_CLIENTE.some((clave) => normalizado.includes(clave));
+}
+async function buscarEmpresaPorAliasOutlook(nombreNormalizado) {
+    const alias = await prisma.empresaAliasOutlook.findFirst({
+        where: {
+            alias: {
+                equals: nombreNormalizado,
+                mode: "insensitive",
+            },
+        },
+        select: {
+            empresa: { select: { id_empresa: true, nombre: true } },
+        },
+    });
+    return alias?.empresa ?? null;
+}
+// Fallback difuso: busca coincidencia "contiene" en cualquier direccion,
+// normalizando tildes/mayusculas (igual que el matching de tecnico). Si mas
+// de una empresa distinta calza, se trata como ambiguo y no se resuelve
+// automaticamente (mejor dejarla como "empresa externa" que asignarla mal).
+async function buscarEmpresaPorCoincidenciaParcial(nombreNormalizado) {
+    const candidato = normalizarTextoNombre(nombreNormalizado);
+    if (!candidato || candidato.length < 3)
         return null;
-    const mapaNormalizacion = {
-        "nace alameda": "CLN ALAMEDA",
-        "nace prov.": "CLN PROVIDENCIA",
-        "nace providencia": "CLN PROVIDENCIA",
-        "procret": "FIJACIONES PROCRET",
-        "jpl concon": "JPL",
-        "oficina": "OFICINA",
-        "t-sales latadia": "T-SALES",
-    };
-    return mapaNormalizacion[nombreTrim.toLowerCase()] ?? nombreTrim;
+    const empresas = await prisma.empresa.findMany({
+        select: { id_empresa: true, nombre: true },
+    });
+    const coincidencias = empresas.filter((empresa) => {
+        const nombreEmpresa = normalizarTextoNombre(empresa.nombre);
+        return nombreEmpresa.includes(candidato) || candidato.includes(nombreEmpresa);
+    });
+    const distintas = new Map(coincidencias.map((e) => [e.id_empresa, e]));
+    return distintas.size === 1 ? [...distintas.values()][0] : null;
 }
 async function resolverEmpresaDesdeOutlook(nombre) {
     const nombreNormalizado = normalizarNombreEmpresaOutlook(nombre);
@@ -260,7 +294,7 @@ async function resolverEmpresaDesdeOutlook(nombre) {
             nombreFinal: "OFICINA",
         };
     }
-    const empresa = await prisma.empresa.findFirst({
+    const empresaExacta = await prisma.empresa.findFirst({
         where: {
             nombre: {
                 equals: nombreNormalizado,
@@ -272,6 +306,9 @@ async function resolverEmpresaDesdeOutlook(nombre) {
             nombre: true,
         },
     });
+    const empresa = empresaExacta ??
+        (await buscarEmpresaPorAliasOutlook(nombreNormalizado)) ??
+        (await buscarEmpresaPorCoincidenciaParcial(nombreNormalizado));
     if (empresa) {
         return {
             empresaId: empresa.id_empresa,
@@ -1204,6 +1241,10 @@ export async function sincronizarAgendaDesdeOutlook(year, month) {
             const { hora: horaFin } = parseAgendaOutlookDateTime(event.end);
             if (!fecha) {
                 throw new Error(`Evento ${event.id} sin fecha de inicio válida`);
+            }
+            if (esEventoOutlookNoCliente(event.subject)) {
+                omitidas++;
+                continue;
             }
             const tecnicos = await resolverTecnicosDesdeOutlook({
                 subject: event.subject,

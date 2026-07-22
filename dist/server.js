@@ -1,4 +1,5 @@
 // src/server.ts
+// Redeploy manual (error de red en build anterior)
 import http from "http";
 import app from "./app.js"; // 👈 default import (sin llaves)
 import { Server as IOServer } from "socket.io";

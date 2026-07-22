@@ -40,9 +40,24 @@ model Empresa {
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
   equipoMantencions     EquipoMantencion[]
+<<<<<<< HEAD
 
   @@index([isActive])
   @@index([deactivatedAt])
+=======
+  aliasesOutlook        EmpresaAliasOutlook[]
+}
+
+model EmpresaAliasOutlook {
+  id        Int      @id @default(autoincrement())
+  alias     String   @unique
+  empresaId Int
+  empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([empresaId])
+  @@map("empresa_alias_outlook")
+>>>>>>> 7c4b4beee337b093a7a8b1c6725a3f03e1aa2d1a
 }
 
 model Sucursal {
