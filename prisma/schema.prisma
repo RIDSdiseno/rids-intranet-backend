@@ -15,6 +15,8 @@ model Empresa {
   tieneSucursales       Boolean                @default(false)
   razonSocial           String?
   dominios              String[]               @default([])
+  isActive              Boolean                @default(true)
+  deactivatedAt         DateTime?
   solicitantes          Solicitante[]
   visitas               Visita[]               @relation("Empresa_Visita")
   tickets               FreshdeskTicket[]
@@ -38,16 +40,19 @@ model Empresa {
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
   equipoMantencions     EquipoMantencion[]
+
+  @@index([isActive])
+  @@index([deactivatedAt])
 }
 
 model Sucursal {
   id_sucursal           Int                    @id @default(autoincrement())
   nombre                String
   direccion             String?
-  latitud               Float?
-  longitud              Float?
   telefono              String?
   empresaId             Int
+  latitud               Float?
+  longitud              Float?
   empresa               Empresa                @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   historiales           Historial[]
   visitas               Visita[]
@@ -77,12 +82,12 @@ model DetalleEmpresa {
   id          Int     @id @default(autoincrement())
   rut         String  @unique
   direccion   String?
-  latitud     Float?
-  longitud    Float?
   telefono    String?
   email       String?
   empresa_id  Int     @unique
   direcciones Json?
+  latitud     Float?
+  longitud    Float?
   empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
 
   @@map("detalle_empresas")
@@ -1684,6 +1689,15 @@ model CotizacionMasivaPlantillaItem {
   @@unique([plantillaId, productoId])
   @@index([plantillaId])
   @@index([productoId])
+}
+
+model empresa_alias_outlook {
+  id        Int      @id @default(autoincrement())
+  alias     String   @unique
+  empresaId Int
+  createdAt DateTime @default(now())
+
+  @@index([empresaId], map: "empresa_alias_outlook_empresaid_idx")
 }
 
 enum TipoBitacoraTecnico {

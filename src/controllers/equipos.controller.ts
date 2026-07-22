@@ -1586,68 +1586,6 @@ export async function createEquipo(req: Request, res: Response) {
           },
         });
 
-        await prisma.auditLog.create({
-          data: {
-            entity: "Equipo",
-            entityId: String(equipo.id_equipo),
-            action: AuditAction.CREATE,
-            actorId: (req as any).user?.id_tecnico ?? (req as any).user?.id ?? null,
-            empresaId:
-              equipo.empresaId ??
-              equipo.solicitante?.empresaId ??
-              data.empresaId ??
-              null,
-            description: `Equipo creado: ${equipo.marca} ${equipo.modelo} ${equipo.serial ? `(${equipo.serial})` : ""
-              }`,
-            changes: {
-              id_equipo: {
-                before: null,
-                after: equipo.id_equipo,
-              },
-              serial: {
-                before: null,
-                after: equipo.serial,
-              },
-              marca: {
-                before: null,
-                after: equipo.marca,
-              },
-              modelo: {
-                before: null,
-                after: equipo.modelo,
-              },
-              tipo: {
-                before: null,
-                after: equipo.tipo,
-              },
-              estado: {
-                before: null,
-                after: equipo.estado,
-              },
-              propiedad: {
-                before: null,
-                after: equipo.propiedad,
-              },
-              propietarioExterno: {
-                before: null,
-                after: equipo.propietarioExterno ?? null,
-              },
-              idSolicitante: {
-                before: null,
-                after: equipo.idSolicitante ?? null,
-              },
-              empresaId: {
-                before: null,
-                after:
-                  equipo.empresaId ??
-                  equipo.solicitante?.empresaId ??
-                  data.empresaId ??
-                  null,
-              },
-            },
-          },
-        });
-
         created.push(equipo);
 
       } catch (e: any) {
@@ -1745,6 +1683,7 @@ export async function getEquipoById(req: Request, res: Response) {
 
     return res.status(200).json({
       ...equipo,
+
       creadoPor: createLog?.actor
         ? {
           id_tecnico: createLog.actor.id_tecnico,
@@ -1752,7 +1691,16 @@ export async function getEquipoById(req: Request, res: Response) {
           email: createLog.actor.email,
         }
         : null,
-      creadoEn: createLog?.createdAt ?? null,
+
+      // Si existe AuditLog CREATE, usa esa fecha.
+      // Para equipos antiguos usa Equipo.createdAt.
+      creadoEn:
+        createLog?.createdAt ??
+        equipo.createdAt ??
+        null,
+
+      // Permite al frontend saber si el autor y fecha vienen de auditoría real.
+      creacionAuditada: Boolean(createLog),
     });
   } catch (err) {
     console.error("getEquipoById error:", err);
@@ -2229,13 +2177,35 @@ function isMinorDiskTextChange(before: unknown, after: unknown, thresholdGb = 5)
   return Math.abs(afterDisk.freeGb - beforeDisk.freeGb) < thresholdGb;
 }
 
-function normalizeAuditChanges(value: unknown): AuditChanges | null {
-  if (!isPlainObject(value)) return null;
+function normalizeAuditChanges(
+  value: unknown
+): AuditChanges | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
 
   const normalized: AuditChanges = {};
 
   for (const [field, change] of Object.entries(value)) {
-    if (!isPlainObject(change)) continue;
+    if (!isPlainObject(change)) {
+      continue;
+    }
+
+    const tieneBefore =
+      Object.prototype.hasOwnProperty.call(
+        change,
+        "before"
+      );
+
+    const tieneAfter =
+      Object.prototype.hasOwnProperty.call(
+        change,
+        "after"
+      );
+
+    if (!tieneBefore && !tieneAfter) {
+      continue;
+    }
 
     normalized[field] = {
       before: change.before,
@@ -2243,7 +2213,9 @@ function normalizeAuditChanges(value: unknown): AuditChanges | null {
     };
   }
 
-  return normalized;
+  return Object.keys(normalized).length > 0
+    ? normalized
+    : null;
 }
 
 function filterEquipoHistoryChanges(value: unknown): AuditChanges | null {
@@ -2255,6 +2227,13 @@ function filterEquipoHistoryChanges(value: unknown): AuditChanges | null {
 
   for (const [field, change] of Object.entries(changes)) {
     const normalizedField = field.trim();
+
+    if (
+      JSON.stringify(change.before ?? null) ===
+      JSON.stringify(change.after ?? null)
+    ) {
+      continue;
+    }
 
     if (
       [
@@ -2327,6 +2306,10 @@ export async function getEquipoHistorial(req: Request, res: Response) {
       select: {
         id_equipo: true,
         empresaId: true,
+        createdAt: true,
+        serial: true,
+        marca: true,
+        modelo: true,
       },
     });
 
@@ -2392,54 +2375,94 @@ export async function getEquipoHistorial(req: Request, res: Response) {
 
     const auditItems = [...logsEquipo, ...logsDetalle]
       .map((log) => {
-        /*
-          CREATE y DELETE pueden guardar un snapshot completo con valores
-          primitivos. No deben pasar por el filtro pensado para UPDATE.
-        */
         if (log.action !== AuditAction.UPDATE) {
           return {
             ...log,
             origenHistorial: "AUDIT_LOG",
+            ocultarHistorial: false,
+          };
+        }
+
+        const normalizedChanges =
+          normalizeAuditChanges((log as any).changes);
+
+        /*
+          JSON contextual del agente:
+          no tiene estructura before/after.
+          Se conserva sin filtrarlo.
+        */
+        if (!normalizedChanges) {
+          return {
+            ...log,
+            origenHistorial: "AUDIT_LOG",
+            ocultarHistorial: false,
           };
         }
 
         const filteredChanges =
           filterEquipoHistoryChanges((log as any).changes);
 
-        if (!filteredChanges) {
-          return {
-            ...log,
-            origenHistorial: "AUDIT_LOG",
-          };
-        }
+        const ocultarHistorial =
+          !filteredChanges ||
+          Object.keys(filteredChanges).length === 0;
 
         return {
           ...log,
-          changes: filteredChanges,
+          changes: filteredChanges ?? {},
           origenHistorial: "AUDIT_LOG",
+          ocultarHistorial,
         };
       })
-      .filter((log) => {
-        /*
-          CREATE y DELETE siempre se conservan.
-        */
-        if (log.action !== AuditAction.UPDATE) {
-          return true;
-        }
+      .filter((log) => !log.ocultarHistorial)
+      .map(({ ocultarHistorial, ...log }) => log);
 
-        const changes =
-          normalizeAuditChanges((log as any).changes);
+    const existeCreateAudit = auditItems.some(
+      (item) =>
+        item.entity === "Equipo" &&
+        item.action === AuditAction.CREATE
+    );
 
-        /*
-          Si no tiene estructura before/after, se conserva.
-          Puede tratarse de un registro contextual del agente.
-        */
-        if (!changes) {
-          return true;
-        }
+    const createFallbackItem = !existeCreateAudit
+      ? {
+        id: `equipo-created-${equipo.id_equipo}`,
+        entity: "Equipo",
+        entityId: String(equipo.id_equipo),
+        action: AuditAction.CREATE,
 
-        return Object.keys(changes).length > 0;
-      });
+        actorId: null,
+        actor: null,
+
+        empresaId: equipo.empresaId ?? null,
+
+        description:
+          "Equipo creado según la fecha original del registro. No existe una auditoría histórica para identificar al autor ni reconstruir todos sus datos iniciales.",
+
+        changes: {
+          id_equipo: {
+            before: null,
+            after: equipo.id_equipo,
+          },
+          serial: {
+            before: null,
+            after: equipo.serial ?? null,
+          },
+          marca: {
+            before: null,
+            after: equipo.marca ?? null,
+          },
+          modelo: {
+            before: null,
+            after: equipo.modelo ?? null,
+          },
+        },
+
+        createdAt: equipo.createdAt,
+        updatedAt: equipo.createdAt,
+
+        origenHistorial: "EQUIPO_CREATED_AT",
+        esFallback: true,
+      }
+      : null;
 
     const agenteItems = eventosAgente.map((ev) => ({
       id: `agent-${ev.id}`,
@@ -2462,9 +2485,14 @@ export async function getEquipoHistorial(req: Request, res: Response) {
       tipoEventoAgente: ev.tipo,
     }));
 
-    const merged = [...auditItems, ...agenteItems].sort(
+    const merged = [
+      ...auditItems,
+      ...agenteItems,
+      ...(createFallbackItem ? [createFallbackItem] : []),
+    ].sort(
       (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime()
     );
 
     return res.json({
