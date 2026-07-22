@@ -1026,7 +1026,7 @@ export async function getEmpresasAgenda() {
                 notIn: ["SIN EMPRESA"],
             },
         },
-        select: { id_empresa: true, nombre: true },
+        select: { id_empresa: true, nombre: true, isActive: true, },
         orderBy: { nombre: "asc" },
     });
 }

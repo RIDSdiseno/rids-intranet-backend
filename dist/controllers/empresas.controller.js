@@ -19,6 +19,16 @@ function normalizeDominios(input) {
         .filter((d) => d.length > 0);
     return Array.from(new Set(dominios));
 }
+function parseEstadoEmpresa(value) {
+    const estado = String(value ?? "ACTIVAS")
+        .trim()
+        .toUpperCase();
+    if (estado === "INACTIVAS" ||
+        estado === "TODAS") {
+        return estado;
+    }
+    return "ACTIVAS";
+}
 /* =======================================================
    GET /api/empresas  (rápido por defecto)
    Query flags:
@@ -31,12 +41,43 @@ export async function getEmpresas(req, res) {
         const full = String(req.query.full ?? "").toLowerCase() === "1";
         // Base: empresas (solo id + nombre)
         const user = req.user;
-        const whereEmpresa = user?.rol === "CLIENTE"
-            ? { id_empresa: user.empresaId }
-            : {};
+        const estado = parseEstadoEmpresa(req.query.estado);
+        const puedeVerInactivas = [
+            "ADMIN",
+            "ADMINISTRACION",
+        ].includes(String(user?.rol ?? ""));
+        const estadoAplicado = puedeVerInactivas
+            ? estado
+            : "ACTIVAS";
+        let whereEmpresa;
+        if (user?.rol === "CLIENTE") {
+            whereEmpresa = {
+                id_empresa: Number(user.empresaId),
+                isActive: true,
+            };
+        }
+        else {
+            whereEmpresa =
+                estadoAplicado === "TODAS"
+                    ? {}
+                    : estadoAplicado === "INACTIVAS"
+                        ? {
+                            isActive: false,
+                        }
+                        : {
+                            isActive: true,
+                        };
+        }
         const empresasBase = await prisma.empresa.findMany({
             where: whereEmpresa,
-            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                tieneSucursales: true,
+                dominios: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
             orderBy: { nombre: "asc" },
         });
         if (empresasBase.length === 0) {
@@ -130,8 +171,11 @@ export async function getEmpresas(req, res) {
                 return {
                     id_empresa: e.id_empresa,
                     nombre: e.nombre,
+                    tieneSucursales: e.tieneSucursales,
                     dominios: e.dominios ?? [],
                     dominioPrincipal: e.dominios?.[0] ?? null,
+                    isActive: e.isActive,
+                    deactivatedAt: e.deactivatedAt,
                     detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
                     solicitantes: solicitantesEmp,
                     estadisticas: {
@@ -154,8 +198,11 @@ export async function getEmpresas(req, res) {
                 data: empresasBase.map((e) => ({
                     id_empresa: e.id_empresa,
                     nombre: e.nombre,
+                    tieneSucursales: e.tieneSucursales,
                     dominios: e.dominios ?? [],
                     dominioPrincipal: e.dominios?.[0] ?? null,
+                    isActive: e.isActive,
+                    deactivatedAt: e.deactivatedAt,
                 })),
                 total: empresasBase.length,
             });
@@ -239,6 +286,8 @@ export async function getEmpresas(req, res) {
             tieneSucursales: e.tieneSucursales,
             dominios: e.dominios ?? [],
             dominioPrincipal: e.dominios?.[0] ?? null,
+            isActive: e.isActive,
+            deactivatedAt: e.deactivatedAt,
             detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
             estadisticas: {
                 totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
@@ -258,41 +307,113 @@ export async function getEmpresas(req, res) {
     }
 }
 /* =======================================================
-   GET /api/empresas/stats  (agregado total del sistema)
+   GET /api/empresas/stats
+   Estadísticas actuales: solo empresas activas
    ======================================================= */
 export async function getEmpresasStats(req, res) {
     try {
         const user = req.user;
-        console.log("USER:", user);
         if (user?.rol === "CLIENTE") {
-            res.status(403).json({ error: "No autorizado" });
+            res.status(403).json({
+                success: false,
+                error: "No autorizado",
+            });
             return;
         }
-        const [empresas, solicitantes, equipos, tickets, visitas] = await Promise.all([
-            prisma.empresa.count(),
+        const [empresasActivas, empresasInactivas, solicitantes, equipos, tickets, visitas, ticketsAbiertos, visitasPendientes,] = await Promise.all([
+            prisma.empresa.count({
+                where: {
+                    isActive: true,
+                },
+            }),
+            prisma.empresa.count({
+                where: {
+                    isActive: false,
+                },
+            }),
             prisma.solicitante.count({
                 where: {
                     isActive: true,
+                    deletedAt: null,
+                    empresa: {
+                        is: {
+                            isActive: true,
+                        },
+                    },
                 },
             }),
             prisma.equipo.count({
                 where: {
                     deletedAt: null,
+                    OR: [
+                        {
+                            empresa: {
+                                is: {
+                                    isActive: true,
+                                },
+                            },
+                        },
+                        {
+                            solicitante: {
+                                is: {
+                                    empresa: {
+                                        is: {
+                                            isActive: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    ],
                 },
             }),
-            prisma.freshdeskTicket.count(),
-            prisma.visita.count(),
+            prisma.freshdeskTicket.count({
+                where: {
+                    empresa: {
+                        is: {
+                            isActive: true,
+                        },
+                    },
+                },
+            }),
+            prisma.visita.count({
+                where: {
+                    empresa: {
+                        is: {
+                            isActive: true,
+                        },
+                    },
+                },
+            }),
+            prisma.freshdeskTicket.count({
+                where: {
+                    status: {
+                        not: 5,
+                    },
+                    empresa: {
+                        is: {
+                            isActive: true,
+                        },
+                    },
+                },
+            }),
+            prisma.visita.count({
+                where: {
+                    status: EstadoVisita.PENDIENTE,
+                    empresa: {
+                        is: {
+                            isActive: true,
+                        },
+                    },
+                },
+            }),
         ]);
-        const ticketsAbiertos = await prisma.freshdeskTicket.count({
-            where: { status: { not: 5 } },
-        });
-        const visitasPendientes = await prisma.visita.count({
-            where: { status: EstadoVisita.PENDIENTE },
-        });
         res.json({
             success: true,
             data: {
-                totalEmpresas: empresas,
+                totalEmpresas: empresasActivas,
+                totalEmpresasActivas: empresasActivas,
+                totalEmpresasInactivas: empresasInactivas,
                 totalSolicitantes: solicitantes,
                 totalEquipos: equipos,
                 totalTickets: tickets,
@@ -304,7 +425,10 @@ export async function getEmpresasStats(req, res) {
     }
     catch (error) {
         console.error("Error al obtener estadísticas:", error);
-        res.status(500).json({ success: false, error: "Error interno del servidor" });
+        res.status(500).json({
+            success: false,
+            error: "Error interno del servidor",
+        });
     }
 }
 /* =======================================================
@@ -320,10 +444,24 @@ export async function getEmpresaById(req, res) {
         }
         const empresa = await prisma.empresa.findUnique({
             where: { id_empresa: id },
-            select: { id_empresa: true, nombre: true, tieneSucursales: true, dominios: true, },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                tieneSucursales: true,
+                dominios: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
         });
         if (!empresa) {
             res.status(404).json({ success: false, error: "Empresa no encontrada" });
+            return;
+        }
+        if (user?.rol === "CLIENTE" && !empresa.isActive) {
+            res.status(403).json({
+                success: false,
+                error: "La empresa se encuentra inactiva",
+            });
             return;
         }
         // Traer anexos por separado
@@ -423,6 +561,8 @@ export async function createEmpresa(req, res) {
                     nombre: true,
                     tieneSucursales: true,
                     dominios: true,
+                    isActive: true,
+                    deactivatedAt: true,
                 },
             });
             let detalle = null;
@@ -476,11 +616,24 @@ export async function updateEmpresa(req, res) {
             return;
         }
         const empresaExistente = await prisma.empresa.findUnique({
-            where: { id_empresa: id },
-            select: { id_empresa: true },
+            where: {
+                id_empresa: id,
+            },
+            select: {
+                id_empresa: true,
+                isActive: true,
+            },
         });
         if (!empresaExistente) {
             res.status(404).json({ success: false, error: "Empresa no encontrada" });
+            return;
+        }
+        if (!empresaExistente.isActive) {
+            res.status(409).json({
+                success: false,
+                code: "EMPRESA_INACTIVA",
+                error: "La empresa se encuentra inactiva. Debes reactivarla antes de modificar sus datos.",
+            });
             return;
         }
         const result = await prisma.$transaction(async (tx) => {
@@ -520,12 +673,16 @@ export async function updateEmpresa(req, res) {
                 }
             }
             const empresaAct = await tx.empresa.findUnique({
-                where: { id_empresa: id },
+                where: {
+                    id_empresa: id,
+                },
                 select: {
                     id_empresa: true,
                     nombre: true,
                     tieneSucursales: true,
                     dominios: true,
+                    isActive: true,
+                    deactivatedAt: true,
                 },
             });
             return { empresaAct, detalle };
@@ -549,52 +706,173 @@ export async function updateEmpresa(req, res) {
     }
 }
 /* =======================================================
+   PATCH /api/empresas/:id/status
+   Activa o desactiva una empresa sin eliminar sus datos
+   ======================================================= */
+export async function updateEmpresaStatus(req, res) {
+    try {
+        const id = Number(req.params.id);
+        const isActive = req.body?.isActive;
+        const user = req.user;
+        if (!Number.isInteger(id) || id <= 0) {
+            res.status(400).json({
+                success: false,
+                error: "ID inválido",
+            });
+            return;
+        }
+        if (typeof isActive !== "boolean") {
+            res.status(400).json({
+                success: false,
+                error: "El campo isActive debe ser true o false",
+            });
+            return;
+        }
+        if (!["ADMIN", "ADMINISTRACION"].includes(String(user?.rol ?? ""))) {
+            res.status(403).json({
+                success: false,
+                error: "No tienes permisos para cambiar el estado de una empresa",
+            });
+            return;
+        }
+        const empresaActual = await prisma.empresa.findUnique({
+            where: {
+                id_empresa: id,
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
+        });
+        if (!empresaActual) {
+            res.status(404).json({
+                success: false,
+                error: "Empresa no encontrada",
+            });
+            return;
+        }
+        if (empresaActual.isActive === isActive) {
+            res.json({
+                success: true,
+                message: isActive
+                    ? "La empresa ya se encuentra activa"
+                    : "La empresa ya se encuentra inactiva",
+                data: empresaActual,
+            });
+            return;
+        }
+        const empresaActualizada = await prisma.empresa.update({
+            where: {
+                id_empresa: id,
+            },
+            data: {
+                isActive,
+                deactivatedAt: isActive
+                    ? null
+                    : new Date(),
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                tieneSucursales: true,
+                dominios: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
+        });
+        res.json({
+            success: true,
+            message: isActive
+                ? "Empresa reactivada correctamente"
+                : "Empresa desactivada correctamente",
+            data: empresaActualizada,
+        });
+    }
+    catch (error) {
+        console.error("Error actualizando estado de empresa:", error);
+        res.status(500).json({
+            success: false,
+            error: "Error al actualizar el estado de la empresa",
+        });
+    }
+}
+/* =======================================================
    DELETE /api/empresas/:id
+   Compatibilidad: realiza desactivación lógica
    ======================================================= */
 export async function deleteEmpresa(req, res) {
     try {
         const id = Number(req.params.id);
-        const existe = await prisma.empresa.findUnique({
-            where: { id_empresa: id },
-            select: { id_empresa: true },
-        });
-        if (!existe) {
-            res.status(404).json({ success: false, error: "Empresa no encontrada" });
-            return;
-        }
-        // Verificaciones de registros relacionados
-        const [solCount, tkCount, vsCount] = await Promise.all([
-            prisma.solicitante.count({ where: { empresaId: id } }),
-            prisma.freshdeskTicket.count({ where: { empresaId: id } }),
-            prisma.visita.count({ where: { empresaId: id } }),
-        ]);
-        if (solCount > 0 || tkCount > 0 || vsCount > 0) {
+        const user = req.user;
+        if (!Number.isInteger(id) || id <= 0) {
             res.status(400).json({
                 success: false,
-                error: "No se puede eliminar la empresa porque tiene registros relacionados (solicitantes, tickets, visitas o trabajos)",
+                error: "ID inválido",
             });
             return;
         }
-        await prisma.$transaction(async (tx) => {
-            // borrar detalle si existe
-            const detalle = await tx.detalleEmpresa.findUnique({ where: { empresa_id: id } });
-            if (detalle) {
-                await tx.detalleEmpresa.delete({ where: { empresa_id: id } });
-            }
-            await tx.empresa.delete({ where: { id_empresa: id } });
+        if (!["ADMIN", "ADMINISTRACION"].includes(String(user?.rol ?? ""))) {
+            res.status(403).json({
+                success: false,
+                error: "No tienes permisos para desactivar empresas",
+            });
+            return;
+        }
+        const empresa = await prisma.empresa.findUnique({
+            where: {
+                id_empresa: id,
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
         });
-        res.json({ success: true, message: "Empresa eliminada correctamente" });
+        if (!empresa) {
+            res.status(404).json({
+                success: false,
+                error: "Empresa no encontrada",
+            });
+            return;
+        }
+        if (!empresa.isActive) {
+            res.json({
+                success: true,
+                message: "La empresa ya se encuentra inactiva",
+                data: empresa,
+            });
+            return;
+        }
+        const empresaDesactivada = await prisma.empresa.update({
+            where: {
+                id_empresa: id,
+            },
+            data: {
+                isActive: false,
+                deactivatedAt: new Date(),
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                isActive: true,
+                deactivatedAt: true,
+            },
+        });
+        res.json({
+            success: true,
+            message: "Empresa desactivada correctamente. Sus datos históricos se conservaron.",
+            data: empresaDesactivada,
+        });
     }
     catch (error) {
-        console.error("Error al eliminar empresa:", error);
-        if (error.code === "P2003") {
-            res.status(400).json({
-                success: false,
-                error: "No se puede eliminar la empresa porque tiene registros relacionados",
-            });
-            return;
-        }
-        res.status(500).json({ success: false, error: "Error al eliminar empresa" });
+        console.error("Error desactivando empresa:", error);
+        res.status(500).json({
+            success: false,
+            error: "Error al desactivar empresa",
+        });
     }
 }
 //# sourceMappingURL=empresas.controller.js.map

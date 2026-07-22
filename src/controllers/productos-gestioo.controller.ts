@@ -32,6 +32,12 @@ function normalizarNombreComparacion(value: string): string {
         .toLowerCase();
 }
 
+const MAX_DESCRIPCION_PRODUCTO = 150;
+
+function normalizarDescripcionProducto(value: any): string {
+    return String(value ?? "").trim().slice(0, MAX_DESCRIPCION_PRODUCTO);
+}
+
 async function buscarProductoDuplicadoPorNombre(
     nombre: string,
     productoIdExcluir?: number
@@ -172,7 +178,7 @@ export async function createProducto(req: Request, res: Response) {
         const nuevo = await prisma.productoGestioo.create({
             data: {
                 nombre: nombreLimpio,
-                descripcion: descripcion?.trim() || null,
+                descripcion: normalizarDescripcionProducto(descripcion),
                 //Guardamos siempre el COSTO en "precio"
                 precio: costoReal,
                 categoria: categoria || null,
@@ -316,7 +322,10 @@ export async function updateProducto(req: Request, res: Response) {
 
         const data = {
             nombre: nombreLimpio,
-            descripcion: descripcion?.trim() || null,
+            descripcion:
+                descripcion !== undefined
+                    ? normalizarDescripcionProducto(descripcion)
+                    : normalizarDescripcionProducto(existe.descripcion),
             // Guardamos costo real en "precio"
             precio: costoReal,
             categoria: categoria || null,

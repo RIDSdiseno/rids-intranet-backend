@@ -105,13 +105,33 @@ export async function generarMalla(req: Request, res: Response) {
 }
 
 // GET /agenda/empresas
-export async function listarEmpresasAgenda(req: Request, res: Response) {
+export async function listarEmpresasAgenda(
+  _req: Request,
+  res: Response
+) {
   try {
-    const empresas = await getEmpresasAgenda();
-    return res.status(200).json(empresas);
-  } catch (err: any) {
-    console.error("Error al listar empresas de agenda:", err);
-    return res.status(500).json({ error: "Error al listar empresas de agenda" });
+    const empresas =
+      await getEmpresasAgenda();
+
+    const empresasActivas =
+      empresas.filter(
+        (empresa) =>
+          empresa.isActive !== false
+      );
+
+    return res
+      .status(200)
+      .json(empresasActivas);
+  } catch (err: unknown) {
+    console.error(
+      "Error al listar empresas de agenda:",
+      err
+    );
+
+    return res.status(500).json({
+      error:
+        "Error al listar empresas de agenda",
+    });
   }
 }
 
@@ -197,7 +217,7 @@ export async function updateVisita(req: Request, res: Response) {
       ...(fecha !== undefined && { fecha }),
       ...(estado !== undefined && { estado }),
       ...(notas !== undefined && { notas }),
-      ...(mensaje  !==  undefined && { mensaje  }),
+      ...(mensaje !== undefined && { mensaje }),
       ...(horaInicio !== undefined && { horaInicio }),
       ...(horaFin !== undefined && { horaFin }),
       ...(empresaId !== undefined && { empresaId }),

@@ -153,17 +153,37 @@ export function buildTicketSla(
             ? new Date(ticket.resolvedAt)
             : null;
 
+    const isTerminated =
+        ticket.status === TicketStatus.CLOSED ||
+        ticket.status === TicketStatus.RESOLVED;
+
+    /**
+     * Si el ticket fue cerrado/resuelto sin primera respuesta real,
+     * usamos closedAt/resolvedAt como fecha administrativa de término
+     * de la medición de primera respuesta.
+     *
+     * Importante:
+     * - Si cerró dentro del plazo de primera respuesta => OK
+     * - Si cerró fuera del plazo de primera respuesta => BREACHED
+     *
+     * Esto evita que un ticket spam cerrado tarde infle artificialmente
+     * el cumplimiento del SLA de primera respuesta.
+     */
+    const administrativeFirstResponseAt =
+        !firstResponseAt && isTerminated && resolutionEndAt
+            ? resolutionEndAt
+            : null;
+
+    const firstResponseEndAt =
+        firstResponseAt ?? administrativeFirstResponseAt;
+
     let firstResponseStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
 
-    if (firstResponseAt) {
+    if (firstResponseEndAt) {
         firstResponseStatus =
-            firstResponseAt <= firstResponseDueAt ? "OK" : "BREACHED";
+            firstResponseEndAt <= firstResponseDueAt ? "OK" : "BREACHED";
     } else if (now > firstResponseDueAt) {
-        const isTerminated =
-            ticket.status === TicketStatus.CLOSED ||
-            ticket.status === TicketStatus.RESOLVED;
-
-        firstResponseStatus = isTerminated ? "OK" : "BREACHED";
+        firstResponseStatus = "BREACHED";
     }
 
     let resolutionStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
@@ -189,12 +209,12 @@ export function buildTicketSla(
         waitingAssignment: false,
         firstResponse: {
             dueAt: firstResponseDueAt,
-            at: firstResponseAt,
-            elapsedMinutes: firstResponseAt
-                ? diffMinutes(firstResponseStartAt, firstResponseAt)
+            at: firstResponseEndAt,
+            elapsedMinutes: firstResponseEndAt
+                ? diffMinutes(firstResponseStartAt, firstResponseEndAt)
                 : null,
             status: firstResponseStatus,
-            remainingMinutes: firstResponseAt
+            remainingMinutes: firstResponseEndAt
                 ? 0
                 : signedDiffMinutes(now, firstResponseDueAt),
         },
@@ -298,7 +318,7 @@ export async function getTicketSla(req: Request, res: Response) {
                 t.status !== TicketStatus.RESOLVED;
 
             // Primera respuesta
-            if (tieneRespuesta || estaActivo) {
+            if (tieneRespuesta || tieneCierre || estaActivo) {
                 if (sla.firstResponse.status === "OK") frOk++;
                 if (sla.firstResponse.status === "BREACHED") frBreached++;
                 if (sla.firstResponse.status === "PENDING") frPending++;

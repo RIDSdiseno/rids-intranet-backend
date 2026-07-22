@@ -600,6 +600,50 @@ async function ensurePlaceholderSolicitante(empresaId) {
     });
     return created.id_solicitante;
 }
+function buildEquipoEmpresaActivaWhere() {
+    return {
+        OR: [
+            /*
+             * Si Equipo.empresaId está asignado,
+             * esa es la empresa principal.
+             */
+            {
+                empresaId: {
+                    not: null,
+                },
+                empresa: {
+                    is: {
+                        isActive: true,
+                    },
+                },
+            },
+            /*
+             * Si no tiene empresa directa,
+             * se utiliza la del solicitante.
+             */
+            {
+                empresaId: null,
+                solicitante: {
+                    is: {
+                        empresa: {
+                            is: {
+                                isActive: true,
+                            },
+                        },
+                    },
+                },
+            },
+            /*
+             * Equipos sin empresa ni solicitante
+             * permanecen visibles.
+             */
+            {
+                empresaId: null,
+                idSolicitante: null,
+            },
+        ],
+    };
+}
 /* ================== LIST ================== */
 export async function listEquipos(req, res) {
     try {
@@ -687,25 +731,46 @@ export async function listEquipos(req, res) {
             solicitanteIdsByRut = rowsRut.map((r) => r.id_solicitante);
         }
         const andConditions = [];
+        /*
+     * Ocultar equipos asociados a empresas inactivas.
+     */
+        andConditions.push(buildEquipoEmpresaActivaWhere());
         /* =========================
            Restricción por rol CLIENTE
         ========================= */
         if (user?.rol === "CLIENTE") {
+            const empresaClienteId = Number(user.empresaId);
             andConditions.push({
-                solicitante: {
-                    is: {
-                        empresaId: user.empresaId,
+                OR: [
+                    {
+                        empresaId: empresaClienteId,
                     },
-                },
+                    {
+                        empresaId: null,
+                        solicitante: {
+                            is: {
+                                empresaId: empresaClienteId,
+                            },
+                        },
+                    },
+                ],
             });
         }
         else if (q.empresaId) {
             andConditions.push({
-                solicitante: {
-                    is: {
+                OR: [
+                    {
                         empresaId: q.empresaId,
                     },
-                },
+                    {
+                        empresaId: null,
+                        solicitante: {
+                            is: {
+                                empresaId: q.empresaId,
+                            },
+                        },
+                    },
+                ],
             });
         }
         /* =========================
@@ -713,8 +778,8 @@ export async function listEquipos(req, res) {
         ========================= */
         if (q.empresaName) {
             andConditions.push({
-                solicitante: {
-                    is: {
+                OR: [
+                    {
                         empresa: {
                             is: {
                                 nombre: {
@@ -724,7 +789,22 @@ export async function listEquipos(req, res) {
                             },
                         },
                     },
-                },
+                    {
+                        empresaId: null,
+                        solicitante: {
+                            is: {
+                                empresa: {
+                                    is: {
+                                        nombre: {
+                                            contains: q.empresaName,
+                                            mode: INS,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
             });
         }
         /* =========================
@@ -1302,7 +1382,108 @@ export async function createEquipo(req, res) {
                     });
                     continue;
                 }
+                if (data.empresaId) {
+                    const empresa = await prisma.empresa.findUnique({
+                        where: {
+                            id_empresa: data.empresaId,
+                        },
+                        select: {
+                            id_empresa: true,
+                            isActive: true,
+                        },
+                    });
+                    if (!empresa) {
+                        errors.push({
+                            serial: data.serial,
+                            error: "La empresa no existe",
+                        });
+                        continue;
+                    }
+                    if (!empresa.isActive) {
+                        errors.push({
+                            serial: data.serial,
+                            error: "La empresa está inactiva y no puede recibir equipos.",
+                        });
+                        continue;
+                    }
+                }
                 let idSolicitanteFinal = data.idSolicitante ?? null;
+                if (data.idSolicitante) {
+                    const solicitante = await prisma.solicitante.findUnique({
+                        where: {
+                            id_solicitante: data.idSolicitante,
+                        },
+                        select: {
+                            id_solicitante: true,
+                            isActive: true,
+                            deletedAt: true,
+                            empresa: {
+                                select: {
+                                    isActive: true,
+                                },
+                            },
+                        },
+                    });
+                    if (!solicitante ||
+                        !solicitante.isActive ||
+                        solicitante.deletedAt ||
+                        !solicitante.empresa.isActive) {
+                        errors.push({
+                            serial: data.serial,
+                            error: "El solicitante o su empresa se encuentran inactivos.",
+                        });
+                        continue;
+                    }
+                }
+                if (data.empresaId !== undefined) {
+                    const empresa = await prisma.empresa.findUnique({
+                        where: {
+                            id_empresa: data.empresaId,
+                        },
+                        select: {
+                            id_empresa: true,
+                            isActive: true,
+                        },
+                    });
+                    if (!empresa) {
+                        return res.status(404).json({
+                            error: "La empresa no existe",
+                        });
+                    }
+                    if (!empresa.isActive) {
+                        return res.status(409).json({
+                            code: "EMPRESA_INACTIVA",
+                            error: "No se puede asignar el equipo a una empresa inactiva.",
+                        });
+                    }
+                }
+                if (data.idSolicitante !== undefined &&
+                    data.idSolicitante !== null) {
+                    const solicitante = await prisma.solicitante.findUnique({
+                        where: {
+                            id_solicitante: data.idSolicitante,
+                        },
+                        select: {
+                            id_solicitante: true,
+                            isActive: true,
+                            deletedAt: true,
+                            empresa: {
+                                select: {
+                                    isActive: true,
+                                },
+                            },
+                        },
+                    });
+                    if (!solicitante ||
+                        !solicitante.isActive ||
+                        solicitante.deletedAt ||
+                        !solicitante.empresa.isActive) {
+                        return res.status(409).json({
+                            code: "SOLICITANTE_O_EMPRESA_INACTIVA",
+                            error: "No se puede asignar el equipo a un solicitante o empresa inactivos.",
+                        });
+                    }
+                }
                 if (!idSolicitanteFinal && data.empresaId) {
                     idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
                 }
@@ -1376,64 +1557,6 @@ export async function createEquipo(req, res) {
                         adicionales: true,
                     },
                 });
-                await prisma.auditLog.create({
-                    data: {
-                        entity: "Equipo",
-                        entityId: String(equipo.id_equipo),
-                        action: AuditAction.CREATE,
-                        actorId: req.user?.id_tecnico ?? req.user?.id ?? null,
-                        empresaId: equipo.empresaId ??
-                            equipo.solicitante?.empresaId ??
-                            data.empresaId ??
-                            null,
-                        description: `Equipo creado: ${equipo.marca} ${equipo.modelo} ${equipo.serial ? `(${equipo.serial})` : ""}`,
-                        changes: {
-                            id_equipo: {
-                                before: null,
-                                after: equipo.id_equipo,
-                            },
-                            serial: {
-                                before: null,
-                                after: equipo.serial,
-                            },
-                            marca: {
-                                before: null,
-                                after: equipo.marca,
-                            },
-                            modelo: {
-                                before: null,
-                                after: equipo.modelo,
-                            },
-                            tipo: {
-                                before: null,
-                                after: equipo.tipo,
-                            },
-                            estado: {
-                                before: null,
-                                after: equipo.estado,
-                            },
-                            propiedad: {
-                                before: null,
-                                after: equipo.propiedad,
-                            },
-                            propietarioExterno: {
-                                before: null,
-                                after: equipo.propietarioExterno ?? null,
-                            },
-                            idSolicitante: {
-                                before: null,
-                                after: equipo.idSolicitante ?? null,
-                            },
-                            empresaId: {
-                                before: null,
-                                after: equipo.empresaId ??
-                                    equipo.solicitante?.empresaId ??
-                                    data.empresaId ??
-                                    null,
-                            },
-                        },
-                    },
-                });
                 created.push(equipo);
             }
             catch (e) {
@@ -1494,6 +1617,15 @@ export async function getEquipoById(req, res) {
         });
         if (!equipo)
             return res.status(404).json({ error: "Equipo no encontrado" });
+        const empresaEquipo = equipo.empresa ??
+            equipo.solicitante?.empresa ??
+            null;
+        if (empresaEquipo &&
+            empresaEquipo.isActive === false) {
+            return res.status(404).json({
+                error: "Equipo no encontrado",
+            });
+        }
         // Si es CLIENTE, valida que el equipo sea de su empresa
         if (user?.rol === "CLIENTE") {
             const empresaEquipoId = equipo.empresaId ??
@@ -1525,7 +1657,13 @@ export async function getEquipoById(req, res) {
                     email: createLog.actor.email,
                 }
                 : null,
-            creadoEn: createLog?.createdAt ?? null,
+            // Si existe AuditLog CREATE, usa esa fecha.
+            // Para equipos antiguos usa Equipo.createdAt.
+            creadoEn: createLog?.createdAt ??
+                equipo.createdAt ??
+                null,
+            // Permite al frontend saber si el autor y fecha vienen de auditoría real.
+            creacionAuditada: Boolean(createLog),
         });
     }
     catch (err) {
@@ -1760,11 +1898,46 @@ export async function getEquiposByEmpresa(req, res) {
         if (!Number.isInteger(empresaId) || empresaId <= 0) {
             return res.status(400).json({ error: "empresaId inválido" });
         }
+        const empresa = await prisma.empresa.findUnique({
+            where: {
+                id_empresa: empresaId,
+            },
+            select: {
+                id_empresa: true,
+                isActive: true,
+            },
+        });
+        if (!empresa) {
+            return res.status(404).json({
+                error: "Empresa no encontrada",
+            });
+        }
+        if (!empresa.isActive) {
+            return res.json({
+                total: 0,
+                items: [],
+            });
+        }
         const equipos = await prisma.equipo.findMany({
             where: {
-                solicitante: {
-                    empresaId,
-                },
+                OR: [
+                    {
+                        empresaId,
+                    },
+                    {
+                        empresaId: null,
+                        solicitante: {
+                            is: {
+                                empresaId,
+                                empresa: {
+                                    is: {
+                                        isActive: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
             },
             include: {
                 solicitante: {
@@ -1895,18 +2068,27 @@ function isMinorDiskTextChange(before, after, thresholdGb = 5) {
     return Math.abs(afterDisk.freeGb - beforeDisk.freeGb) < thresholdGb;
 }
 function normalizeAuditChanges(value) {
-    if (!isPlainObject(value))
+    if (!isPlainObject(value)) {
         return null;
+    }
     const normalized = {};
     for (const [field, change] of Object.entries(value)) {
-        if (!isPlainObject(change))
+        if (!isPlainObject(change)) {
             continue;
+        }
+        const tieneBefore = Object.prototype.hasOwnProperty.call(change, "before");
+        const tieneAfter = Object.prototype.hasOwnProperty.call(change, "after");
+        if (!tieneBefore && !tieneAfter) {
+            continue;
+        }
         normalized[field] = {
             before: change.before,
             after: change.after,
         };
     }
-    return normalized;
+    return Object.keys(normalized).length > 0
+        ? normalized
+        : null;
 }
 function filterEquipoHistoryChanges(value) {
     const changes = normalizeAuditChanges(value);
@@ -1915,6 +2097,10 @@ function filterEquipoHistoryChanges(value) {
     const filtered = {};
     for (const [field, change] of Object.entries(changes)) {
         const normalizedField = field.trim();
+        if (JSON.stringify(change.before ?? null) ===
+            JSON.stringify(change.after ?? null)) {
+            continue;
+        }
         if ([
             "updatedAt",
             "lastSeenAt",
@@ -1969,6 +2155,10 @@ export async function getEquipoHistorial(req, res) {
             select: {
                 id_equipo: true,
                 empresaId: true,
+                createdAt: true,
+                serial: true,
+                marca: true,
+                modelo: true,
             },
         });
         if (!equipo) {
@@ -2028,26 +2218,74 @@ export async function getEquipoHistorial(req, res) {
         ]);
         const auditItems = [...logsEquipo, ...logsDetalle]
             .map((log) => {
-            const filteredChanges = filterEquipoHistoryChanges(log.changes);
-            if (!filteredChanges) {
+            if (log.action !== AuditAction.UPDATE) {
                 return {
                     ...log,
                     origenHistorial: "AUDIT_LOG",
+                    ocultarHistorial: false,
                 };
             }
+            const normalizedChanges = normalizeAuditChanges(log.changes);
+            /*
+              JSON contextual del agente:
+              no tiene estructura before/after.
+              Se conserva sin filtrarlo.
+            */
+            if (!normalizedChanges) {
+                return {
+                    ...log,
+                    origenHistorial: "AUDIT_LOG",
+                    ocultarHistorial: false,
+                };
+            }
+            const filteredChanges = filterEquipoHistoryChanges(log.changes);
+            const ocultarHistorial = !filteredChanges ||
+                Object.keys(filteredChanges).length === 0;
             return {
                 ...log,
-                changes: filteredChanges,
+                changes: filteredChanges ?? {},
                 origenHistorial: "AUDIT_LOG",
+                ocultarHistorial,
             };
         })
-            .filter((log) => {
-            const changes = normalizeAuditChanges(log.changes);
-            if (!changes) {
-                return true;
+            .filter((log) => !log.ocultarHistorial)
+            .map(({ ocultarHistorial, ...log }) => log);
+        const existeCreateAudit = auditItems.some((item) => item.entity === "Equipo" &&
+            item.action === AuditAction.CREATE);
+        const createFallbackItem = !existeCreateAudit
+            ? {
+                id: `equipo-created-${equipo.id_equipo}`,
+                entity: "Equipo",
+                entityId: String(equipo.id_equipo),
+                action: AuditAction.CREATE,
+                actorId: null,
+                actor: null,
+                empresaId: equipo.empresaId ?? null,
+                description: "Equipo creado según la fecha original del registro. No existe una auditoría histórica para identificar al autor ni reconstruir todos sus datos iniciales.",
+                changes: {
+                    id_equipo: {
+                        before: null,
+                        after: equipo.id_equipo,
+                    },
+                    serial: {
+                        before: null,
+                        after: equipo.serial ?? null,
+                    },
+                    marca: {
+                        before: null,
+                        after: equipo.marca ?? null,
+                    },
+                    modelo: {
+                        before: null,
+                        after: equipo.modelo ?? null,
+                    },
+                },
+                createdAt: equipo.createdAt,
+                updatedAt: equipo.createdAt,
+                origenHistorial: "EQUIPO_CREATED_AT",
+                esFallback: true,
             }
-            return Object.keys(changes).length > 0;
-        });
+            : null;
         const agenteItems = eventosAgente.map((ev) => ({
             id: `agent-${ev.id}`,
             entity: "EquipoAgenteEvento",
@@ -2067,7 +2305,12 @@ export async function getEquipoHistorial(req, res) {
             origenHistorial: "AGENTE_EVENTO",
             tipoEventoAgente: ev.tipo,
         }));
-        const merged = [...auditItems, ...agenteItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const merged = [
+            ...auditItems,
+            ...agenteItems,
+            ...(createFallbackItem ? [createFallbackItem] : []),
+        ].sort((a, b) => new Date(b.createdAt).getTime() -
+            new Date(a.createdAt).getTime());
         return res.json({
             total: merged.length,
             items: merged,

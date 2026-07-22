@@ -15,8 +15,8 @@ model Empresa {
   tieneSucursales       Boolean                @default(false)
   razonSocial           String?
   dominios              String[]               @default([])
-  isActive              Boolean                @default(true)
   deactivatedAt         DateTime?
+  isActive              Boolean                @default(true)
   solicitantes          Solicitante[]
   visitas               Visita[]               @relation("Empresa_Visita")
   tickets               FreshdeskTicket[]
@@ -40,24 +40,21 @@ model Empresa {
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
   equipoMantencions     EquipoMantencion[]
-<<<<<<< HEAD
+  aliasesOutlook        EmpresaAliasOutlook[]
 
   @@index([isActive])
   @@index([deactivatedAt])
-=======
-  aliasesOutlook        EmpresaAliasOutlook[]
 }
 
 model EmpresaAliasOutlook {
   id        Int      @id @default(autoincrement())
   alias     String   @unique
   empresaId Int
-  empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   createdAt DateTime @default(now())
+  empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
-  @@index([empresaId])
+  @@index([empresaId], map: "empresa_alias_outlook_empresaid_idx")
   @@map("empresa_alias_outlook")
->>>>>>> 7c4b4beee337b093a7a8b1c6725a3f03e1aa2d1a
 }
 
 model Sucursal {
@@ -1704,15 +1701,6 @@ model CotizacionMasivaPlantillaItem {
   @@unique([plantillaId, productoId])
   @@index([plantillaId])
   @@index([productoId])
-}
-
-model empresa_alias_outlook {
-  id        Int      @id @default(autoincrement())
-  alias     String   @unique
-  empresaId Int
-  createdAt DateTime @default(now())
-
-  @@index([empresaId], map: "empresa_alias_outlook_empresaid_idx")
 }
 
 enum TipoBitacoraTecnico {

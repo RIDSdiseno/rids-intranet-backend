@@ -13,39 +13,39 @@ export type GoogleUser = {
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
     nombre: string;
+    deactivatedAt: Date | null;
+    isActive: boolean;
     id_solicitante: number;
     email: string | null;
     telefono: string | null;
     empresaId: number;
     clienteId: number | null;
     googleUserId: string | null;
-    isActive: boolean;
     microsoftUserId: string | null;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
     rut: string | null;
     createdAt: Date;
     updatedAt: Date;
-    deactivatedAt: Date | null;
 } | null>;
 /** Alias para compatibilidad */
 export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
     nombre: string;
+    deactivatedAt: Date | null;
+    isActive: boolean;
     id_solicitante: number;
     email: string | null;
     telefono: string | null;
     empresaId: number;
     clienteId: number | null;
     googleUserId: string | null;
-    isActive: boolean;
     microsoftUserId: string | null;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
     rut: string | null;
     createdAt: Date;
     updatedAt: Date;
-    deactivatedAt: Date | null;
 }>;
 export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsActivos: string[]): Promise<{
     count: number;

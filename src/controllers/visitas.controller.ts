@@ -213,6 +213,15 @@ const parseId = (raw: unknown) => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
+const buildVisitaEmpresaActivaWhere =
+  (): Prisma.VisitaWhereInput => ({
+    empresa: {
+      is: {
+        isActive: true,
+      },
+    },
+  });
+
 /* ------------------------------------ */
 /* Listado paginado + filtros            */
 /* ------------------------------------ */
@@ -245,26 +254,92 @@ export const listVisitas = async (req: Request, res: Response) => {
 
   const user = (req as any).user;
 
-  const where: Prisma.VisitaWhereInput = {
-    ...(user?.rol === "CLIENTE"
-      ? { empresaId: user.empresaId }
-      : empresaIdQ
-        ? { empresaId: Number(empresaIdQ) }
-        : {}),
-    ...(tecnicoIdQ ? { tecnicoId: Number(tecnicoIdQ) } : {}),
-    ...(statusQ ? { status: statusQ as any } : {}),
-    ...(dateFilter ? { inicio: dateFilter } : {}),
-    ...(q
-      ? {
-        OR: [
-          { solicitante: { contains: q, mode: INS } },
-          { otrosDetalle: { contains: q, mode: INS } },
-          { empresa: { is: { nombre: { contains: q, mode: INS } } } },
-          { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
-          { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-        ] satisfies Prisma.VisitaWhereInput[],
-      }
-      : {}),
+  const where:
+    Prisma.VisitaWhereInput = {
+    AND: [
+      buildVisitaEmpresaActivaWhere(),
+
+      user?.rol === "CLIENTE"
+        ? {
+          empresaId:
+            Number(user.empresaId),
+        }
+        : empresaIdQ
+          ? {
+            empresaId:
+              Number(empresaIdQ),
+          }
+          : {},
+
+      tecnicoIdQ
+        ? {
+          tecnicoId:
+            Number(tecnicoIdQ),
+        }
+        : {},
+
+      statusQ
+        ? {
+          status:
+            statusQ as any,
+        }
+        : {},
+
+      dateFilter
+        ? {
+          inicio: dateFilter,
+        }
+        : {},
+
+      q
+        ? {
+          OR: [
+            {
+              solicitante: {
+                contains: q,
+                mode: INS,
+              },
+            },
+            {
+              otrosDetalle: {
+                contains: q,
+                mode: INS,
+              },
+            },
+            {
+              empresa: {
+                is: {
+                  nombre: {
+                    contains: q,
+                    mode: INS,
+                  },
+                },
+              },
+            },
+            {
+              tecnico: {
+                is: {
+                  nombre: {
+                    contains: q,
+                    mode: INS,
+                  },
+                },
+              },
+            },
+            {
+              solicitanteRef: {
+                is: {
+                  nombre: {
+                    contains: q,
+                    mode: INS,
+                  },
+                },
+              },
+            },
+          ],
+        }
+        : {},
+    ],
   };
 
   const [total, rows] = await Promise.all([
@@ -321,6 +396,32 @@ export const getVisitaById = async (req: Request, res: Response) => {
 export const createVisita = async (req: Request, res: Response) => {
   try {
     const payload = CreateVisitaSchema.parse(req.body);
+
+    const empresa =
+      await prisma.empresa.findUnique({
+        where: {
+          id_empresa:
+            payload.empresaId,
+        },
+        select: {
+          id_empresa: true,
+          isActive: true,
+        },
+      });
+
+    if (!empresa) {
+      return res.status(404).json({
+        error: "La empresa no existe",
+      });
+    }
+
+    if (!empresa.isActive) {
+      return res.status(409).json({
+        code: "EMPRESA_INACTIVA",
+        error:
+          "La empresa está inactiva y no puede recibir nuevas visitas.",
+      });
+    }
 
     // ¿Lote?
     const isBatch =
@@ -553,12 +654,32 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
     const to = toQ ? new Date(toQ) : endDefault;
 
     const total = await prisma.visita.count({
-      where: { inicio: { gte: from, lt: to } },
+      where: {
+        inicio: {
+          gte: from,
+          lt: to,
+        },
+        empresa: {
+          is: {
+            isActive: true,
+          },
+        },
+      },
     });
 
     const grouped = await prisma.visita.groupBy({
       by: ["tecnicoId"],
-      where: { inicio: { gte: from, lt: to } },
+      where: {
+        inicio: {
+          gte: from,
+          lt: to,
+        },
+        empresa: {
+          is: {
+            isActive: true,
+          },
+        },
+      },
       _count: { _all: true },
     });
 
@@ -594,12 +715,25 @@ export const visitasMetrics = async (req: Request, res: Response) => {
   const to = new Date(`${req.query.to as string}T00:00:00`);
 
   const total = await prisma.visita.count({
-    where: { inicio: { gte: from, lt: to } },
+    where: {
+      inicio: { gte: from, lt: to },
+      empresa: {
+        is: {
+          isActive: true,
+        },
+      },
+    },
   });
 
   const rows = await prisma.visita.groupBy({
     by: ["tecnicoId"],
-    where: { inicio: { gte: from, lt: to } },
+    where: {
+      inicio: { gte: from, lt: to }, empresa: {
+        is: {
+          isActive: true,
+        },
+      },
+    },
     _count: { _all: true },
   });
 
@@ -611,14 +745,32 @@ export const visitasMetrics = async (req: Request, res: Response) => {
 
   const porTecnicoEmpresaRaw = await prisma.visita.groupBy({
     by: ["tecnicoId", "empresaId"],
-    where: { inicio: { gte: from, lt: to } },
+    where: {
+      inicio: { gte: from, lt: to }, empresa: {
+        is: {
+          isActive: true,
+        },
+      },
+    },
     _count: { _all: true },
   });
 
-  const empresas = await prisma.empresa.findMany({
-    where: { id_empresa: { in: porTecnicoEmpresaRaw.map((r) => r.empresaId) } },
-    select: { id_empresa: true, nombre: true },
-  });
+  const empresas =
+    await prisma.empresa.findMany({
+      where: {
+        id_empresa: {
+          in:
+            porTecnicoEmpresaRaw.map(
+              (r) => r.empresaId
+            ),
+        },
+        isActive: true,
+      },
+      select: {
+        id_empresa: true,
+        nombre: true,
+      },
+    });
   const empresaMap = new Map(empresas.map((e) => [e.id_empresa, e.nombre]));
 
   const empresasByTech = new Map<number, { empresaId: number; empresa: string; cantidad: number }[]>();
@@ -669,8 +821,16 @@ export const getVisitasFilters = async (_req: Request, res: Response) => {
     }),
 
     prisma.empresa.findMany({
-      orderBy: { nombre: "asc" },
-      select: { id_empresa: true, nombre: true },
+      where: {
+        isActive: true,
+      },
+      orderBy: {
+        nombre: "asc",
+      },
+      select: {
+        id_empresa: true,
+        nombre: true,
+      },
     }),
   ]);
 
@@ -734,6 +894,11 @@ export const getVisitasDashboard = async (req: Request, res: Response) => {
     const empresaIdForzada = user?.rol === "CLIENTE" ? user.empresaId : undefined;
 
     const where: Prisma.VisitaWhereInput = {
+      empresa: {
+        is: {
+          isActive: true,
+        },
+      },
       ...(empresaIdForzada
         ? { empresaId: empresaIdForzada }
         : empresaIdQ ? { empresaId: Number(empresaIdQ) } : {}),
@@ -1163,9 +1328,28 @@ export const getVisitasResumenDiario = async (
 
           ...(empresaIdForzada
             ? {
-              empresaId: empresaIdForzada,
+              empresaId:
+                empresaIdForzada,
+              empresa: {
+                is: {
+                  isActive: true,
+                },
+              },
             }
-            : {}),
+            : {
+              OR: [
+                {
+                  empresaId: null,
+                },
+                {
+                  empresa: {
+                    is: {
+                      isActive: true,
+                    },
+                  },
+                },
+              ],
+            }),
 
           ...(tecnicoIdQ
             ? {
@@ -1227,19 +1411,29 @@ export const getVisitasResumenDiario = async (
       prisma.visita.findMany({
         where: {
           inicio: {
-            gte: inicioVisitasUtc,
-            lt: finVisitasUtc,
+            gte:
+              inicioVisitasUtc,
+            lt:
+              finVisitasUtc,
+          },
+
+          empresa: {
+            is: {
+              isActive: true,
+            },
           },
 
           ...(empresaIdForzada
             ? {
-              empresaId: empresaIdForzada,
+              empresaId:
+                empresaIdForzada,
             }
             : {}),
 
           ...(tecnicoIdQ
             ? {
-              tecnicoId: tecnicoIdQ,
+              tecnicoId:
+                tecnicoIdQ,
             }
             : {}),
         },

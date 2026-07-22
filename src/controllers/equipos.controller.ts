@@ -703,6 +703,54 @@ async function ensurePlaceholderSolicitante(empresaId: number) {
   return created.id_solicitante;
 }
 
+function buildEquipoEmpresaActivaWhere():
+  Prisma.EquipoWhereInput {
+  return {
+    OR: [
+      /*
+       * Si Equipo.empresaId está asignado,
+       * esa es la empresa principal.
+       */
+      {
+        empresaId: {
+          not: null,
+        },
+        empresa: {
+          is: {
+            isActive: true,
+          },
+        },
+      },
+
+      /*
+       * Si no tiene empresa directa,
+       * se utiliza la del solicitante.
+       */
+      {
+        empresaId: null,
+        solicitante: {
+          is: {
+            empresa: {
+              is: {
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+
+      /*
+       * Equipos sin empresa ni solicitante
+       * permanecen visibles.
+       */
+      {
+        empresaId: null,
+        idSolicitante: null,
+      },
+    ],
+  };
+}
+
 /* ================== LIST ================== */
 export async function listEquipos(req: Request, res: Response) {
   try {
@@ -814,24 +862,54 @@ export async function listEquipos(req: Request, res: Response) {
 
     const andConditions: Prisma.EquipoWhereInput[] = [];
 
+    /*
+ * Ocultar equipos asociados a empresas inactivas.
+ */
+    andConditions.push(
+      buildEquipoEmpresaActivaWhere()
+    );
+
     /* =========================
        Restricción por rol CLIENTE
     ========================= */
     if (user?.rol === "CLIENTE") {
+      const empresaClienteId =
+        Number(user.empresaId);
+
       andConditions.push({
-        solicitante: {
-          is: {
-            empresaId: user.empresaId,
+        OR: [
+          {
+            empresaId:
+              empresaClienteId,
           },
-        },
+          {
+            empresaId: null,
+            solicitante: {
+              is: {
+                empresaId:
+                  empresaClienteId,
+              },
+            },
+          },
+        ],
       });
     } else if (q.empresaId) {
       andConditions.push({
-        solicitante: {
-          is: {
-            empresaId: q.empresaId,
+        OR: [
+          {
+            empresaId:
+              q.empresaId,
           },
-        },
+          {
+            empresaId: null,
+            solicitante: {
+              is: {
+                empresaId:
+                  q.empresaId,
+              },
+            },
+          },
+        ],
       });
     }
 
@@ -840,18 +918,35 @@ export async function listEquipos(req: Request, res: Response) {
     ========================= */
     if (q.empresaName) {
       andConditions.push({
-        solicitante: {
-          is: {
+        OR: [
+          {
             empresa: {
               is: {
                 nombre: {
-                  contains: q.empresaName,
+                  contains:
+                    q.empresaName,
                   mode: INS,
                 },
               },
             },
           },
-        },
+          {
+            empresaId: null,
+            solicitante: {
+              is: {
+                empresa: {
+                  is: {
+                    nombre: {
+                      contains:
+                        q.empresaName,
+                      mode: INS,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
       });
     }
 
@@ -1493,7 +1588,138 @@ export async function createEquipo(req: Request, res: Response) {
           continue;
         }
 
+        if (data.empresaId) {
+          const empresa =
+            await prisma.empresa.findUnique({
+              where: {
+                id_empresa:
+                  data.empresaId,
+              },
+              select: {
+                id_empresa: true,
+                isActive: true,
+              },
+            });
+
+          if (!empresa) {
+            errors.push({
+              serial: data.serial,
+              error:
+                "La empresa no existe",
+            });
+            continue;
+          }
+
+          if (!empresa.isActive) {
+            errors.push({
+              serial: data.serial,
+              error:
+                "La empresa está inactiva y no puede recibir equipos.",
+            });
+            continue;
+          }
+        }
+
         let idSolicitanteFinal: number | null = data.idSolicitante ?? null;
+
+        if (data.idSolicitante) {
+          const solicitante =
+            await prisma.solicitante.findUnique({
+              where: {
+                id_solicitante:
+                  data.idSolicitante,
+              },
+              select: {
+                id_solicitante: true,
+                isActive: true,
+                deletedAt: true,
+                empresa: {
+                  select: {
+                    isActive: true,
+                  },
+                },
+              },
+            });
+
+          if (
+            !solicitante ||
+            !solicitante.isActive ||
+            solicitante.deletedAt ||
+            !solicitante.empresa.isActive
+          ) {
+            errors.push({
+              serial: data.serial,
+              error:
+                "El solicitante o su empresa se encuentran inactivos.",
+            });
+            continue;
+          }
+        }
+
+        if (data.empresaId !== undefined) {
+          const empresa =
+            await prisma.empresa.findUnique({
+              where: {
+                id_empresa:
+                  data.empresaId,
+              },
+              select: {
+                id_empresa: true,
+                isActive: true,
+              },
+            });
+
+          if (!empresa) {
+            return res.status(404).json({
+              error: "La empresa no existe",
+            });
+          }
+
+          if (!empresa.isActive) {
+            return res.status(409).json({
+              code: "EMPRESA_INACTIVA",
+              error:
+                "No se puede asignar el equipo a una empresa inactiva.",
+            });
+          }
+        }
+
+        if (
+          data.idSolicitante !== undefined &&
+          data.idSolicitante !== null
+        ) {
+          const solicitante =
+            await prisma.solicitante.findUnique({
+              where: {
+                id_solicitante:
+                  data.idSolicitante,
+              },
+              select: {
+                id_solicitante: true,
+                isActive: true,
+                deletedAt: true,
+                empresa: {
+                  select: {
+                    isActive: true,
+                  },
+                },
+              },
+            });
+
+          if (
+            !solicitante ||
+            !solicitante.isActive ||
+            solicitante.deletedAt ||
+            !solicitante.empresa.isActive
+          ) {
+            return res.status(409).json({
+              code:
+                "SOLICITANTE_O_EMPRESA_INACTIVA",
+              error:
+                "No se puede asignar el equipo a un solicitante o empresa inactivos.",
+            });
+          }
+        }
 
         if (!idSolicitanteFinal && data.empresaId) {
           idSolicitanteFinal = await ensurePlaceholderSolicitante(data.empresaId);
@@ -1654,6 +1880,20 @@ export async function getEquipoById(req: Request, res: Response) {
     });
 
     if (!equipo) return res.status(404).json({ error: "Equipo no encontrado" });
+
+    const empresaEquipo =
+      equipo.empresa ??
+      equipo.solicitante?.empresa ??
+      null;
+
+    if (
+      empresaEquipo &&
+      empresaEquipo.isActive === false
+    ) {
+      return res.status(404).json({
+        error: "Equipo no encontrado",
+      });
+    }
 
     // Si es CLIENTE, valida que el equipo sea de su empresa
     if (user?.rol === "CLIENTE") {
@@ -2006,11 +2246,50 @@ export async function getEquiposByEmpresa(req: Request, res: Response) {
       return res.status(400).json({ error: "empresaId inválido" });
     }
 
+    const empresa =
+      await prisma.empresa.findUnique({
+        where: {
+          id_empresa: empresaId,
+        },
+        select: {
+          id_empresa: true,
+          isActive: true,
+        },
+      });
+
+    if (!empresa) {
+      return res.status(404).json({
+        error: "Empresa no encontrada",
+      });
+    }
+
+    if (!empresa.isActive) {
+      return res.json({
+        total: 0,
+        items: [],
+      });
+    }
+
     const equipos = await prisma.equipo.findMany({
       where: {
-        solicitante: {
-          empresaId,
-        },
+        OR: [
+          {
+            empresaId,
+          },
+          {
+            empresaId: null,
+            solicitante: {
+              is: {
+                empresaId,
+                empresa: {
+                  is: {
+                    isActive: true,
+                  },
+                },
+              },
+            },
+          },
+        ],
       },
       include: {
         solicitante: {

@@ -74,14 +74,19 @@ export async function generarMalla(req, res) {
     }
 }
 // GET /agenda/empresas
-export async function listarEmpresasAgenda(req, res) {
+export async function listarEmpresasAgenda(_req, res) {
     try {
         const empresas = await getEmpresasAgenda();
-        return res.status(200).json(empresas);
+        const empresasActivas = empresas.filter((empresa) => empresa.isActive !== false);
+        return res
+            .status(200)
+            .json(empresasActivas);
     }
     catch (err) {
         console.error("Error al listar empresas de agenda:", err);
-        return res.status(500).json({ error: "Error al listar empresas de agenda" });
+        return res.status(500).json({
+            error: "Error al listar empresas de agenda",
+        });
     }
 }
 // GET /agenda

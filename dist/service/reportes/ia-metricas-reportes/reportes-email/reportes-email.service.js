@@ -41,7 +41,7 @@ function buildInformeResumenEmailHtml(params) {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     const titulo = esDocx ? "Informe mensual Soporte TI RIDS" : "Informe resumido RIDS";
     const descripcion = esDocx
-        ? "Reporte ejecutivo generado desde el sitema interno de RIDS"
+        ? "Reporte ejecutivo generado desde el sistema interno de RIDS"
         : "Reporte ejecutivo generado desde el sistema.";
     const tipoArchivo = esDocx ? "Documento Word (.docx)" : "Documento PDF";
     return `
@@ -127,7 +127,7 @@ function buildInformeResumenEmailHtml(params) {
 
                                     <p style="margin:22px 0 0; font-size:13px; line-height:1.6; color:#64748b;">
                                         Este correo fue enviado automáticamente desde el módulo de reportes de RIDS.
-                                        Ante cualquier duda, favor responder a este mismo correo o contactar al equipo de soporte.
+                                        Ante cualquier duda, favor responder a este mismo correo o contactar al equipo de soporte (soporte@rids.cl).
                                     </p>
                                 </td>
                             </tr>

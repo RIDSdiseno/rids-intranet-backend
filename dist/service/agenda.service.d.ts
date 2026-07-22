@@ -43,6 +43,7 @@ export declare function generarMallaMensual(year: number, month: number, empresa
 export declare function getEmpresasAgenda(): Promise<{
     id_empresa: number;
     nombre: string;
+    isActive: boolean;
 }[]>;
 /**
  * Devuelve todas las visitas del mes con técnicos y empresa incluidos.

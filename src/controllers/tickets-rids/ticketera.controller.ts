@@ -1313,6 +1313,8 @@ export async function updateTicket(req: Request, res: Response) {
             }
         }
 
+        const now = new Date();
+
         const updateData: any = {};
 
         const events: any[] = [];
@@ -1323,17 +1325,22 @@ export async function updateTicket(req: Request, res: Response) {
 
             if (status === TicketStatus.RESOLVED) {
                 if (!ticket.resolvedAt) {
-                    updateData.resolvedAt = new Date();
+                    updateData.resolvedAt = now;
                 }
+
+                updateData.lastActivityAt = now;
             }
 
             if (status === TicketStatus.CLOSED) {
                 if (!ticket.closedAt) {
-                    updateData.closedAt = new Date();
+                    updateData.closedAt = now;
                 }
+
                 if (!ticket.resolvedAt) {
-                    updateData.resolvedAt = new Date();
+                    updateData.resolvedAt = now;
                 }
+
+                updateData.lastActivityAt = now;
             }
 
             events.push({
