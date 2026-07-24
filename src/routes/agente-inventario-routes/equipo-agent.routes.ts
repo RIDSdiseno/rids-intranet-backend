@@ -4,6 +4,9 @@ import {
   listEquiposAgent,
   getEquipoAgentById,
 } from "../../controllers/controllers-agente-inventario/equipo-agent.controller.js";
+import {
+    getEquipoAgentDashboard,
+} from "../../controllers/controllers-agente-inventario/equipo-agent-dashboard.controller.js";
 import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
 
 const router = Router();
@@ -13,6 +16,11 @@ const router = Router();
  * Se protege con x-agent-api-key dentro del controller.
  */
 router.post("/inventory", receiveEquipoAgentInventory);
+
+router.get("/dashboard",
+    auth(false),
+    getEquipoAgentDashboard
+);
 
 /**
  * Protegido para el CRM.
