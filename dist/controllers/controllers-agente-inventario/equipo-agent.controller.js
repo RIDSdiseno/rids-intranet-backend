@@ -502,6 +502,22 @@ export async function receiveEquipoAgentInventory(req, res) {
         }
         const soTexto = buildSoText(osName, osVersion, osBuild);
         const fechaRevisionAgente = formatFechaRevisionChileISO();
+        const detalleAntesUpdate = equipo?.id_equipo
+            ? await prisma.detalleEquipo.findUnique({
+                where: {
+                    idEquipo: equipo.id_equipo,
+                },
+                select: {
+                    oneDrive: true,
+                    oneDriveEstado: true,
+                    oneDriveInstalado: true,
+                    oneDriveEnEjecucion: true,
+                    oneDriveOperativo: true,
+                    oneDriveVersion: true,
+                    oneDriveUsuario: true,
+                },
+            })
+            : null;
         const hasOneDriveInstalado = Object.prototype.hasOwnProperty.call(body, "oneDriveInstalado");
         const hasOneDriveEnEjecucion = Object.prototype.hasOwnProperty.call(body, "oneDriveEnEjecucion");
         const hasOneDriveOperativo = Object.prototype.hasOwnProperty.call(body, "oneDriveOperativo");
@@ -521,7 +537,7 @@ export async function receiveEquipoAgentInventory(req, res) {
         const oneDriveDetalle = body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
             ? body.oneDriveDetalle
             : undefined;
-        await prisma.detalleEquipo.upsert({
+        const detalleDespuesUpdate = await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
             },
@@ -650,6 +666,11 @@ export async function receiveEquipoAgentInventory(req, res) {
             addAgentAuditChange(agentAuditChanges, "requiereRevisionSolicitante", equipoAntesUpdate?.requiereRevisionSolicitante, equipo.requiereRevisionSolicitante);
             addAgentAuditChange(agentAuditChanges, "motivoRevisionSolicitante", equipoAntesUpdate?.motivoRevisionSolicitante, equipo.motivoRevisionSolicitante);
         }
+        addAgentAuditChange(agentAuditChanges, "oneDriveEstado", detalleAntesUpdate?.oneDriveEstado, detalleDespuesUpdate.oneDriveEstado);
+        addAgentAuditChange(agentAuditChanges, "oneDriveUsuario", detalleAntesUpdate?.oneDriveUsuario, detalleDespuesUpdate.oneDriveUsuario);
+        addAgentAuditChange(agentAuditChanges, "oneDriveOperativo", detalleAntesUpdate?.oneDriveOperativo, detalleDespuesUpdate.oneDriveOperativo);
+        addAgentAuditChange(agentAuditChanges, "oneDriveInstalado", detalleAntesUpdate?.oneDriveInstalado, detalleDespuesUpdate.oneDriveInstalado);
+        addAgentAuditChange(agentAuditChanges, "oneDriveEnEjecucion", detalleAntesUpdate?.oneDriveEnEjecucion, detalleDespuesUpdate.oneDriveEnEjecucion);
         const camposCambioReal = Object.keys(agentAuditChanges).filter((field) => field !== "origen" &&
             field !== "accionAgente");
         const debeCrearAudit = fueCreadoPorAgente ||
