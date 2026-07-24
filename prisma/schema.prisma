@@ -583,7 +583,17 @@ model DetalleEquipo {
   firewallActivo    Boolean?
   observacionAgente String?
   windowsUpdate     String?
-  equipo            Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+
+  oneDrive            String?
+  oneDriveEstado      String?
+  oneDriveInstalado   Boolean?
+  oneDriveEnEjecucion Boolean?
+  oneDriveOperativo   Boolean?
+  oneDriveVersion     String?
+  oneDriveUsuario     String?
+  oneDriveDetalle     Json?
+
+  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }

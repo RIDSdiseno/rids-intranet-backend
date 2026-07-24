@@ -83,6 +83,15 @@ type EquipoAgentPayload = {
     office?: string | null;
     teamViewer?: string | null;
 
+    oneDrive?: string | null;
+    oneDriveEstado?: string | null;
+    oneDriveInstalado?: boolean | string | null;
+    oneDriveEnEjecucion?: boolean | string | null;
+    oneDriveOperativo?: boolean | string | null;
+    oneDriveVersion?: string | null;
+    oneDriveUsuario?: string | null;
+    oneDriveDetalle?: any;
+
     softwares?: Array<{
         nombre?: string | null;
         version?: string | null;
@@ -741,6 +750,37 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const soTexto = buildSoText(osName, osVersion, osBuild);
         const fechaRevisionAgente = formatFechaRevisionChileISO();
 
+        const hasOneDriveInstalado = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveInstalado"
+        );
+        const hasOneDriveEnEjecucion = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveEnEjecucion"
+        );
+        const hasOneDriveOperativo = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveOperativo"
+        );
+
+        const oneDrive = cleanString(body.oneDrive);
+        const oneDriveEstado = cleanString(body.oneDriveEstado);
+        const oneDriveInstalado = hasOneDriveInstalado
+            ? boolFromUnknown(body.oneDriveInstalado)
+            : null;
+        const oneDriveEnEjecucion = hasOneDriveEnEjecucion
+            ? boolFromUnknown(body.oneDriveEnEjecucion)
+            : null;
+        const oneDriveOperativo = hasOneDriveOperativo
+            ? boolFromUnknown(body.oneDriveOperativo)
+            : null;
+        const oneDriveVersion = cleanString(body.oneDriveVersion);
+        const oneDriveUsuario = cleanString(body.oneDriveUsuario);
+        const oneDriveDetalle =
+            body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
+                ? body.oneDriveDetalle
+                : undefined;
+
         await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
@@ -778,6 +818,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 ...(cleanString(body.teamViewer)
                     ? { teamViewer: cleanString(body.teamViewer) }
                     : {}),
+                ...(oneDrive ? { oneDrive } : {}),
+                ...(oneDriveEstado ? { oneDriveEstado } : {}),
+                ...(hasOneDriveInstalado ? { oneDriveInstalado } : {}),
+                ...(hasOneDriveEnEjecucion ? { oneDriveEnEjecucion } : {}),
+                ...(hasOneDriveOperativo ? { oneDriveOperativo } : {}),
+                ...(oneDriveVersion ? { oneDriveVersion } : {}),
+                ...(oneDriveUsuario ? { oneDriveUsuario } : {}),
+                ...(oneDriveDetalle !== undefined ? { oneDriveDetalle } : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
@@ -805,6 +853,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 estadoAlm: cleanString(body.estadoAlm),
                 office: cleanString(body.office),
                 teamViewer: cleanString(body.teamViewer),
+
+                oneDrive,
+                oneDriveEstado,
+                oneDriveInstalado,
+                oneDriveEnEjecucion,
+                oneDriveOperativo,
+                oneDriveVersion,
+                oneDriveUsuario,
+                oneDriveDetalle,
             },
         });
 
@@ -1189,6 +1246,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     macEthernet,
                     localIp,
 
+                    oneDrive,
+                    oneDriveEstado,
+                    oneDriveInstalado,
+                    oneDriveEnEjecucion,
+                    oneDriveOperativo,
+                    oneDriveVersion,
+                    oneDriveUsuario,
+                    oneDriveDetalle: oneDriveDetalle ?? null,
+
                     requiereRevisionSolicitante,
                     motivoRevisionSolicitante,
 
@@ -1227,6 +1293,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             macWifi,
             macEthernet,
             localIp,
+
+            oneDrive,
+            oneDriveEstado,
+            oneDriveInstalado,
+            oneDriveEnEjecucion,
+            oneDriveOperativo,
+            oneDriveVersion,
+            oneDriveUsuario,
 
             lastBootAt: body.lastBootAt ?? null,
             uptimeText,
