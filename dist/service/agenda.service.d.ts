@@ -14,6 +14,9 @@ export declare class AgendaStateTransitionError extends Error {
 export declare class AgendaSucursalInvalidaError extends Error {
     constructor(message?: string);
 }
+export declare class AgendaVisitaVinculadaError extends Error {
+    constructor(message?: string);
+}
 /**
  * Parsea un string "YYYY-MM-DD" y devuelve UTC midnight sin pasar por new Date(string),
  * evitando cualquier ambigüedad de timezone en el servidor.

@@ -43,6 +43,13 @@ export class AgendaSucursalInvalidaError extends Error {
     }
 }
 
+export class AgendaVisitaVinculadaError extends Error {
+    constructor(message = "No se puede eliminar esta agenda porque tiene un formulario de visita vinculado.") {
+        super(message);
+        this.name = "AgendaVisitaVinculadaError";
+    }
+}
+
 const TRANSICIONES_ESTADO_AGENDA: Record<EstadoAgenda, ReadonlySet<EstadoAgenda>> = {
     [EstadoAgenda.PROGRAMADA]: new Set([
         EstadoAgenda.PROGRAMADA,
@@ -2068,8 +2075,15 @@ export async function reasignarTecnicos(
 export async function eliminarAgendaVisita(id: number) {
     const visita = await prisma.agendaVisita.findUnique({
         where: { id },
-        select: { outlookEventId: true },
+        select: {
+            outlookEventId: true,
+            visita: { select: { id_visita: true } },
+        },
     });
+
+    if (visita?.visita) {
+        throw new AgendaVisitaVinculadaError();
+    }
 
     if (visita?.outlookEventId) {
         try {
