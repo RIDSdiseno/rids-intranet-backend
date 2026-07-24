@@ -559,41 +559,39 @@ model EquipoAdicional {
 }
 
 model DetalleEquipo {
-  id                Int      @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo          Int      @unique
-  macWifi           String?
-  so                String?
-  tipoDd            String?
-  estadoAlm         String?
-  office            String?
-  teamViewer        String?
-  claveTv           String?
-  revisado          String?
-  adminRidsPassword String?
-  adminRidsUsuario  String?
-  passwordEmpresa   String?
-  passwordPersonal  String?
-  usuarioEmpresa    String?
-  usuarioPersonal   String?
-  redEthernet       String?
-  antivirusActivo   Boolean?
+  id                  Int      @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo            Int      @unique
+  macWifi             String?
+  so                  String?
+  tipoDd              String?
+  estadoAlm           String?
+  office              String?
+  teamViewer          String?
+  claveTv             String?
+  revisado            String?
+  adminRidsPassword   String?
+  adminRidsUsuario    String?
+  passwordEmpresa     String?
+  passwordPersonal    String?
+  usuarioEmpresa      String?
+  usuarioPersonal     String?
+  redEthernet         String?
+  antivirusActivo     Boolean?
   /// ===================== Agente Windows / Seguridad =====================
-  antivirusNombre   String?
-  bitlockerEstado   String?
-  firewallActivo    Boolean?
-  observacionAgente String?
-  windowsUpdate     String?
-
+  antivirusNombre     String?
+  bitlockerEstado     String?
+  firewallActivo      Boolean?
+  observacionAgente   String?
+  windowsUpdate       String?
   oneDrive            String?
+  oneDriveDetalle     Json?
+  oneDriveEnEjecucion Boolean?
   oneDriveEstado      String?
   oneDriveInstalado   Boolean?
-  oneDriveEnEjecucion Boolean?
   oneDriveOperativo   Boolean?
-  oneDriveVersion     String?
   oneDriveUsuario     String?
-  oneDriveDetalle     Json?
-
-  equipo Equipo @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+  oneDriveVersion     String?
+  equipo              Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
