@@ -1042,6 +1042,8 @@ model Entrega {
   receptorNombre String
   fecha          DateTime           @default(now())
   tecnicoId      Int?
+  origen         String?
+  tipo           String?
   tecnico        Tecnico?           @relation(fields: [tecnicoId], references: [id_tecnico])
   evidencias     EvidenciaEntrega[]
 
