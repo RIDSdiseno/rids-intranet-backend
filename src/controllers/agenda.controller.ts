@@ -19,6 +19,7 @@ import {
   AgendaPastDateError,
   AgendaStateTransitionError,
   AgendaSucursalInvalidaError,
+  AgendaVisitaVinculadaError,
 } from "../service/agenda.service.js";
 
 /* ================== Schemas ================== */
@@ -251,6 +252,9 @@ export async function eliminarVisita(req: Request, res: Response) {
     await eliminarAgendaVisita(id);
     return res.status(204).send();
   } catch (err: any) {
+    if (err instanceof AgendaVisitaVinculadaError) {
+      return res.status(409).json({ error: err.message });
+    }
     console.error("Error al eliminar visita de agenda:", err);
     if (err.code === "P2025") return res.status(404).json({ error: "Visita no encontrada" });
     return res.status(500).json({ error: "Error al eliminar visita de agenda" });
