@@ -81,20 +81,10 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
             forceRefresh,
         });
 
-        // Exponer timbre_base64 a nivel superior también para depuración rápida
+        // Exponer ted_xml (bloque <TED> completo, usado para el PDF417 del Timbre Electrónico SII) a nivel superior también, para acceso rápido
         const documento = resultado.data?.data?.documento as
-            | {
-                timbre_base64?: string | null;
-                TED?: {
-                    FRMT?: string | null;
-                } | null;
-            }
+            | { ted_xml?: string | null }
             | undefined;
-
-        const timbreBase64 =
-            documento?.timbre_base64 ??
-            documento?.TED?.FRMT ??
-            null;
 
         res.json({
             ok: true,
@@ -104,7 +94,7 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
             folio,
             tipoDTE,
             cached: resultado.cached,
-            timbre_base64: timbreBase64,
+            ted_xml: documento?.ted_xml ?? null,
             data: resultado.data,
         });
     } catch (error) {

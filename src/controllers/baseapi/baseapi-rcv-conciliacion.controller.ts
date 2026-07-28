@@ -1,8 +1,10 @@
 // src/controllers/baseapi/baseapi-rcv-concilacion.controller.ts
 import type { Request, Response } from "express";
+import { prisma } from "../../lib/prisma.js";
 import {
     conciliarDocumentoRcv,
     desconciliarDocumentoRcv,
+    getPuntualidadCliente,
     listarConciliacionRcv,
     observarDocumentoRcv,
 } from "../../service/baseapi/baseapi-rcv-conciliacion.service.js";
@@ -76,12 +78,20 @@ function getErrorStatus(error: unknown): number {
     return 500;
 }
 
-function getResponsable(req: Request): string | null {
+async function getResponsable(req: Request): Promise<string | null> {
     const user = req.user as { id?: number; rol?: string; email?: string; nombre?: string } | undefined;
 
+    if (user?.id) {
+        const tecnico = await prisma.tecnico.findUnique({
+            where: { id_tecnico: user.id },
+            select: { nombre: true },
+        });
+        if (tecnico?.nombre) return tecnico.nombre;
+    }
+
     return (
-        user?.email ??
         user?.nombre ??
+        user?.email ??
         req.body.responsable ??
         (user?.id ? `usuario:${user.id}` : null)
     );
@@ -191,7 +201,7 @@ export async function postConciliarRcv(req: Request, res: Response) {
             formaPago,
             observacion: req.body.observacion ?? null,
             conciliadoAt: parseConciliadoAt(req.body.conciliadoAt),
-            responsable: getResponsable(req),
+            responsable: await getResponsable(req),
 
             enviarCorreo,
             correoDestino: enviarCorreo ? correosDestino : [],
@@ -239,6 +249,29 @@ export async function postDesconciliarRcv(req: Request, res: Response) {
     }
 }
 
+export async function getPuntualidadClienteRcv(req: Request, res: Response) {
+    try {
+        const empresa = parseEmpresa(req.query.empresa);
+        const rut = String(req.query.rut ?? "").trim();
+
+        if (!rut) {
+            return res.status(400).json({ ok: false, error: "Debes indicar el RUT del cliente" });
+        }
+
+        const resultado = await getPuntualidadCliente({ empresa, rutContraparte: rut });
+
+        res.json({ ok: true, data: resultado });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        res.status(getErrorStatus(error)).json({
+            ok: false,
+            error: message,
+        });
+    }
+    return
+}
+
 export async function postObservarRcv(req: Request, res: Response) {
     try {
         const empresa = parseEmpresa(req.body.empresa);
@@ -251,7 +284,7 @@ export async function postObservarRcv(req: Request, res: Response) {
             folio: String(req.body.folio),
             rutContraparte: String(req.body.rutContraparte),
             observacion: String(req.body.observacion ?? ""),
-            responsable: getResponsable(req),
+            responsable: await getResponsable(req),
         });
 
         res.json({

@@ -959,6 +959,7 @@ model CotizacionGestioo {
   imagen                String?
   tecnicoId             Int?
   ordenGenerada         Boolean                 @default(false)
+  oportunidadVentaId    Int?
   tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
@@ -969,6 +970,7 @@ model CotizacionGestioo {
   envios                CotizacionEnviada[]
 
   @@index([entidadId])
+  @@index([oportunidadVentaId])
 }
 
 model CotizacionEnviada {
@@ -1042,6 +1044,8 @@ model Entrega {
   receptorNombre String
   fecha          DateTime           @default(now())
   tecnicoId      Int?
+  origen         String?
+  tipo           String?
   tecnico        Tecnico?           @relation(fields: [tecnicoId], references: [id_tecnico])
   evidencias     EvidenciaEntrega[]
 
@@ -1711,6 +1715,87 @@ model CotizacionMasivaPlantillaItem {
   @@index([productoId])
 }
 
+model HistorialEtapaOportunidadVenta {
+  id            Int                    @id @default(autoincrement())
+  oportunidadId Int
+  etapaAnterior EtapaOportunidadVenta?
+  etapaNueva    EtapaOportunidadVenta
+  actorId       Int?
+  createdAt     DateTime               @default(now())
+
+  @@index([createdAt])
+  @@index([oportunidadId])
+}
+
+model OportunidadVenta {
+  id                        Int                        @id @default(autoincrement())
+  codigo                    String                     @unique
+  titulo                    String
+  entidadId                 Int?
+  proyecto                  String?
+  contactoNombre            String?
+  contactoEmail             String?
+  contactoTelefono          String?
+  responsableId             Int
+  etapa                     EtapaOportunidadVenta      @default(NUEVA)
+  prioridad                 PrioridadOportunidadVenta  @default(MEDIA)
+  montoEstimado             Decimal?                   @db.Decimal(14, 2)
+  moneda                    MonedaGestioo              @default(CLP)
+  probabilidadCierre        Int?
+  proximaAccion             String?
+  fechaProximaAccion        DateTime?
+  fechaUltimoContacto       DateTime?
+  observaciones             String?
+  motivoPerdida             String?
+  fechaCierre               DateTime?
+  montoFinal                Decimal?                   @db.Decimal(14, 2)
+  orden                     Int                        @default(0)
+  activo                    Boolean                    @default(true)
+  desactivadoAt             DateTime?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime
+  comentariosInternos       String?
+  condicionesEspeciales     String?
+  estadoDesarrolloPropuesta EstadoDesarrolloPropuesta?
+  fechaComprometidaEnvio    DateTime?                  @db.Date
+  informacionPendiente      String?
+  riesgoTecnico             RiesgoTecnicoOportunidad?
+  tipoServicio              TipoServicioOportunidad?
+  tipoServicioOtro          String?
+  montoPropuesto            Decimal?                   @db.Decimal(14, 2)
+  fechaEnvioPropuesta       DateTime?                  @db.Date
+  fechaVencimientoPropuesta DateTime?                  @db.Date
+  comentariosCliente        String?
+  objeciones                String?
+  versionPropuesta          String?
+  contrapropuestas          String?
+  ajustesSolicitados        String?
+  motivoPostergacion        String?
+  fechaReactivacion         DateTime?                  @db.Date
+  fechaProbableCierre       DateTime?                  @db.Date
+
+  @@index([activo])
+  @@index([entidadId])
+  @@index([etapa])
+  @@index([etapa, orden])
+  @@index([prioridad])
+  @@index([responsableId])
+}
+
+model SeguimientoOportunidadVenta {
+  id                 Int       @id @default(autoincrement())
+  oportunidadId      Int
+  autorId            Int
+  comentario         String
+  fechaContacto      DateTime?
+  proximaAccion      String?
+  fechaProximaAccion DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([oportunidadId])
+}
+
 enum TipoBitacoraTecnico {
   SOPORTE
   TERRENO
@@ -1953,4 +2038,42 @@ enum EstadoAgenteEquipo {
 enum OrigenVisita {
   MANUAL
   AGENDA
+}
+
+enum EstadoDesarrolloPropuesta {
+  PENDIENTE
+  EN_PREPARACION
+  ESPERANDO_ANTECEDENTES
+  REVISION_INTERNA
+  LISTA_PARA_COTIZAR
+}
+
+enum EtapaOportunidadVenta {
+  NUEVA
+  COTIZACION_PREPARACION
+  COTIZACION_ENVIADA
+  NEGOCIACION
+  GANADA
+  PERDIDA
+  POSTERGADA
+}
+
+enum PrioridadOportunidadVenta {
+  BAJA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+enum RiesgoTecnicoOportunidad {
+  BAJO
+  MEDIO
+  ALTO
+}
+
+enum TipoServicioOportunidad {
+  SOPORTE_TI
+  DESARROLLO_WEB
+  VENTA_PRODUCTOS
+  OTRO
 }

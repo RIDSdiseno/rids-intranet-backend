@@ -123,29 +123,18 @@ function parseDteXmlForDb(xmlRaw) {
         items,
     };
 }
-// Extrae el contenido de <FRMT> dentro de TED (si existe) y devuelve su contenido (base64) o null
-function extractTimbreFrmtFromXml(xmlRaw) {
+// Extrae el bloque <TED>...</TED> completo (DD + FRMT) tal cual aparece en el XML firmado.
+// Este es el contenido que debe codificarse en el PDF417 del Timbre Electrónico SII —
+// no basta con el FRMT (la firma) por sí solo.
+function extractTedXml(xmlRaw) {
+    if (!xmlRaw)
+        return null;
     try {
-        const parser = new DOMParser();
-        const xml = parser.parseFromString(xmlRaw, "text/xml");
-        // Buscar elemento TED y luego FRMT dentro
-        const all = Array.from(xml.getElementsByTagName("*"));
-        const ted = all.find((el) => el.localName === "TED");
-        if (!ted)
-            return null;
-        const frmtEl = Array.from(ted.getElementsByTagName("*")).find((el) => el.localName === "FRMT");
-        const txt = frmtEl?.textContent?.trim() ?? null;
-        const result = txt || null;
-        if (result) {
-            console.log("🔎 extractTimbreFrmtFromXml: timbre encontrado, longitud=", result.length);
-        }
-        else {
-            console.log("🔎 extractTimbreFrmtFromXml: no se encontró timbre en XML");
-        }
-        return result;
+        const match = xmlRaw.match(/<TED[^>]*>[\s\S]*?<\/TED>/);
+        return match ? match[0] : null;
     }
     catch (err) {
-        console.error("🔎 extractTimbreFrmtFromXml: error parsing XML", err);
+        console.error("🔎 extractTedXml: error extrayendo TED", err);
         return null;
     }
 }
@@ -164,8 +153,8 @@ function mapFacturaCacheToBaseApiLikeResponse(factura) {
                 monto_total: factura.montoTotal,
                 estado: factura.estado,
                 xml_base64: encodeBase64Utf8(factura.xmlRaw),
-                // intentamos extraer el timbre (FRMT) desde el XML cacheado
-                timbre_base64: factura.xmlRaw ? extractTimbreFrmtFromXml(factura.xmlRaw) : null,
+                // Bloque <TED> completo (DD + FRMT), usado para generar el PDF417 del Timbre Electrónico SII
+                ted_xml: factura.xmlRaw ? extractTedXml(factura.xmlRaw) : null,
                 items: factura.items ?? [],
             },
         },

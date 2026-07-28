@@ -8,6 +8,7 @@ import { getBaseApiRcvDashboardController } from "../../controllers/baseapi/base
 
 import {
   getConciliacionRcv,
+  getPuntualidadClienteRcv,
   postConciliarRcv,
   postDesconciliarRcv,
   postObservarRcv,
@@ -46,6 +47,14 @@ router.get(
   auth(),
   onlyRole("ADMINISTRACION"),
   getConciliacionRcv
+);
+
+// Puntualidad de cliente: visible para quienes gestionan cobranza
+router.get(
+  "/conciliacion/puntualidad",
+  auth(),
+  onlyRole("ADMINISTRACION", "VENTAS"),
+  getPuntualidadClienteRcv
 );
 
 // Acciones: solo ADMINISTRACION
