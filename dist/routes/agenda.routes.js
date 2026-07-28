@@ -1,6 +1,6 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
-import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
+import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, crearVisitasManualLote, eliminarVisitasLote, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
 const ROLES_AGENDA_ADMIN = ["ADMINISTRACION", "ADMIN"];
 function requireAgendaAdmin(req, res, next) {
     const user = req.user;
@@ -37,6 +37,12 @@ agendaRouter.delete("/malla", requireAgendaAdmin, (req, res, next) => {
 });
 agendaRouter.post("/manual", requireAgendaAdmin, (req, res, next) => {
     Promise.resolve(crearVisitaManual(req, res)).catch(next);
+});
+agendaRouter.post("/manual/lote", requireAgendaAdmin, (req, res, next) => {
+    Promise.resolve(crearVisitasManualLote(req, res)).catch(next);
+});
+agendaRouter.delete("/lote", requireAgendaAdmin, (req, res, next) => {
+    Promise.resolve(eliminarVisitasLote(req, res)).catch(next);
 });
 agendaRouter.post("/:id/enviar-nota", (req, res, next) => {
     Promise.resolve(enviarNotaAgenda(req, res)).catch(next);

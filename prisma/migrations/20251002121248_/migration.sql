@@ -1,0 +1,3 @@
+-- Placeholder: migración histórica ya reflejada en la base de datos.
+-- Se crea únicamente para permitir 'prisma migrate resolve --applied',
+-- ya que la carpeta original nunca se versionó en este repositorio.
