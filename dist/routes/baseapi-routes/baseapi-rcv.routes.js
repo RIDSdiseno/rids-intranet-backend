@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { getComprasRcvBaseApi, getVentasRcvBaseApi, } from "../../controllers/baseapi/baseapi-rcv.controller.js";
 import { getBaseApiRcvDashboardController } from "../../controllers/baseapi/baseapi-rcv-dashboard.controller.js";
-import { getConciliacionRcv, postConciliarRcv, postDesconciliarRcv, postObservarRcv, } from "../../controllers/baseapi/baseapi-rcv-conciliacion.controller.js";
+import { getConciliacionRcv, getPuntualidadClienteRcv, postConciliarRcv, postDesconciliarRcv, postObservarRcv, } from "../../controllers/baseapi/baseapi-rcv-conciliacion.controller.js";
 import { auth } from "../../middlewares/auth.js";
 import { onlyRole } from "../../middlewares/roles.js";
 const router = Router();
@@ -12,6 +12,8 @@ router.get("/compras", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), 
 router.get("/dashboard", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), getBaseApiRcvDashboardController);
 // Lectura de conciliación: solo ADMINISTRACION (pestaña restringida a administradores)
 router.get("/conciliacion", auth(), onlyRole("ADMINISTRACION"), getConciliacionRcv);
+// Puntualidad de cliente: visible para quienes gestionan cobranza
+router.get("/conciliacion/puntualidad", auth(), onlyRole("ADMINISTRACION", "VENTAS"), getPuntualidadClienteRcv);
 // Acciones: solo ADMINISTRACION
 router.post("/conciliacion/conciliar", auth(), onlyRole("ADMINISTRACION"), postConciliarRcv);
 router.post("/conciliacion/desconciliar", auth(), onlyRole("ADMINISTRACION"), postDesconciliarRcv);

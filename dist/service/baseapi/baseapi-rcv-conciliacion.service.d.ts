@@ -116,5 +116,18 @@ export declare function observarDocumentoRcv(params: {
     responsable: string | null;
     conciliadoAt: Date | null;
 }>;
+export type PuntualidadEstado = "SIN_HISTORIAL" | "BUEN_PAGADOR" | "IRREGULAR" | "RIESGO_MORA";
+export declare function getPuntualidadCliente(params: {
+    empresa: EmpresaBaseApiKey;
+    rutContraparte: string;
+}): Promise<{
+    estado: PuntualidadEstado;
+    score: number | null;
+    totalConciliadas: number;
+    conVencimientoRegistrado: number;
+    aTiempo: number;
+    atrasadas: number;
+    promedioDiasAtraso: number;
+}>;
 export {};
 //# sourceMappingURL=baseapi-rcv-conciliacion.service.d.ts.map

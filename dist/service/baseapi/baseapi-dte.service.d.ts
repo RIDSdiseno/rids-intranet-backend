@@ -21,7 +21,7 @@ export declare function consultarDtePorFolioBaseApi(params: ConsultarDtePorFolio
                 monto_total: any;
                 estado: any;
                 xml_base64: string | null;
-                timbre_base64: string | null;
+                ted_xml: string | null;
                 items: any;
             };
         };

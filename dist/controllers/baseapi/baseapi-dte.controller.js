@@ -60,11 +60,8 @@ export async function getDtePorFolioBaseApi(req, res) {
             tipoDTE,
             forceRefresh,
         });
-        // Exponer timbre_base64 a nivel superior también para depuración rápida
+        // Exponer ted_xml (bloque <TED> completo, usado para el PDF417 del Timbre Electrónico SII) a nivel superior también, para acceso rápido
         const documento = resultado.data?.data?.documento;
-        const timbreBase64 = documento?.timbre_base64 ??
-            documento?.TED?.FRMT ??
-            null;
         res.json({
             ok: true,
             provider: "baseapi",
@@ -73,7 +70,7 @@ export async function getDtePorFolioBaseApi(req, res) {
             folio,
             tipoDTE,
             cached: resultado.cached,
-            timbre_base64: timbreBase64,
+            ted_xml: documento?.ted_xml ?? null,
             data: resultado.data,
         });
     }
