@@ -75,6 +75,7 @@ export async function getTicketsDashboardMonthly(req: Request, res: Response) {
             FROM "Ticket" t
             JOIN "Empresa" e ON e.id_empresa = t."empresaId"
             WHERE t."createdAt" IS NOT NULL
+              AND e."isActive" = TRUE
             ${empresaFilter}
             ${dateFilter}
             GROUP BY e.id_empresa, e.nombre, DATE_TRUNC('month', t."createdAt")
@@ -139,6 +140,7 @@ export async function getTicketsDashboardRanking(req: Request, res: Response) {
             FROM "Ticket" t
             JOIN "Empresa" e ON e.id_empresa = t."empresaId"
             WHERE t."createdAt" IS NOT NULL
+              AND e."isActive" = TRUE
             ${dateFilter}
             GROUP BY e.id_empresa, e.nombre
             ORDER BY horas_cap8h DESC, total_tickets DESC

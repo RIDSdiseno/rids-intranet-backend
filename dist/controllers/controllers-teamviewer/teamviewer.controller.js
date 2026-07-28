@@ -133,11 +133,30 @@ export async function runTeamViewerSyncInternal(opts) {
     }
     // 5) Traer solicitantes para fallback (una sola vez)
     const solicitantes = await prisma.solicitante.findMany({
-        select: { id_solicitante: true, empresaId: true, nombre: true },
+        where: {
+            isActive: true,
+            deletedAt: null,
+            empresa: {
+                is: {
+                    isActive: true,
+                },
+            },
+        },
+        select: {
+            id_solicitante: true,
+            empresaId: true,
+            nombre: true,
+        },
     });
     // 6) Traer empresas UNA sola vez (optimización)
     const empresas = await prisma.empresa.findMany({
-        select: { id_empresa: true, nombre: true },
+        where: {
+            isActive: true,
+        },
+        select: {
+            id_empresa: true,
+            nombre: true,
+        },
     });
     // Para cada sesión de TeamViewer, intentamos asociarla con una empresa y un solicitante usando varios métodos (mapa explícito, inventario, fallback por nombre, match por groupname). Si logramos resolver la empresa, creamos o actualizamos la mantención remota correspondiente. También contamos cuántas sesiones se crean, cuántas ya existían y cuántas no se pudieron asociar a una empresa.
     for (const session of sessions) {
@@ -220,16 +239,19 @@ export async function runTeamViewerSyncInternal(opts) {
                     empresaId = solAlias.empresaId;
                     solicitanteNombreFinal = solAlias.nombre;
                 }
-                // 🔹 Intentar match por grupo (empresa)
+                // Intentar match por grupo (empresa)
                 if (!empresaId && group) {
                     const empresa = await prisma.empresa.findFirst({
                         where: {
+                            isActive: true,
                             nombre: {
                                 contains: group,
                                 mode: "insensitive",
                             },
                         },
-                        select: { id_empresa: true },
+                        select: {
+                            id_empresa: true,
+                        },
                     });
                     if (empresa) {
                         empresaId = empresa.id_empresa;

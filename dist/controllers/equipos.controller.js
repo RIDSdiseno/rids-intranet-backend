@@ -528,9 +528,16 @@ function flattenRow(e) {
         solicitante: e.solicitante?.nombre ?? "[Sin solicitante]",
         solicitanteRut: e.solicitante?.rut ?? null,
         solicitanteEmail: e.solicitante?.email ?? null,
+        idSolicitante: e.idSolicitante ?? null,
+        solicitanteEmpresaId: e.solicitante?.empresaId ??
+            e.solicitante?.empresa?.id_empresa ??
+            null,
+        solicitanteEmpresa: e.solicitante?.empresa?.nombre ??
+            null,
         empresa: empresaFinal?.nombre ?? null,
-        empresaId: e.empresaId ?? empresaFinal?.id_empresa ?? null,
-        idSolicitante: e.idSolicitante,
+        empresaId: e.empresaId ??
+            empresaFinal?.id_empresa ??
+            null,
         // ===============================
         // AGENTE WINDOWS
         // ===============================
@@ -1507,6 +1514,7 @@ export async function createEquipo(req, res) {
                 // Si no se dio ni idSolicitante ni empresaId, el equipo quedará sin solicitante (idSolicitante = null), lo cual es permitido. Luego se podrá reasignar desde el update indicando el idSolicitante o la empresaId para conectar al placeholder.
                 const equipo = await prisma.equipo.create({
                     data: {
+                        empresaId: data.empresaId ?? null,
                         tipo: data.tipo,
                         marca: data.marca,
                         modelo: data.modelo,
@@ -1683,6 +1691,9 @@ export async function updateEquipo(req, res) {
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
             select: {
+                id_equipo: true,
+                empresaId: true,
+                idSolicitante: true,
                 anioPc: true,
                 anioPcOrigen: true,
                 serial: true,
@@ -1693,6 +1704,7 @@ export async function updateEquipo(req, res) {
                 propietarioExterno: true,
                 solicitante: {
                     select: {
+                        id_solicitante: true,
                         empresaId: true,
                     },
                 },
@@ -1700,6 +1712,36 @@ export async function updateEquipo(req, res) {
         });
         if (!equipoActual) {
             return res.status(404).json({ error: "Equipo no encontrado" });
+        }
+        const empresaIdFinal = data.empresaId ??
+            equipoActual.empresaId ??
+            equipoActual.solicitante?.empresaId ??
+            null;
+        if (!empresaIdFinal) {
+            return res.status(400).json({
+                error: "El equipo debe quedar asociado a una empresa.",
+            });
+        }
+        const empresaFinal = await prisma.empresa.findUnique({
+            where: {
+                id_empresa: empresaIdFinal,
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+                isActive: true,
+            },
+        });
+        if (!empresaFinal) {
+            return res.status(404).json({
+                error: "La empresa seleccionada no existe.",
+            });
+        }
+        if (!empresaFinal.isActive) {
+            return res.status(409).json({
+                code: "EMPRESA_INACTIVA",
+                error: "No se puede asignar el equipo a una empresa inactiva.",
+            });
         }
         const propiedadFinal = normalizarPropiedadEquipo(data.propiedad ?? equipoActual.propiedad);
         const propietarioExternoFinal = normalizarPropietarioExterno(propiedadFinal, data.propietarioExterno ?? equipoActual.propietarioExterno);
@@ -1731,21 +1773,93 @@ export async function updateEquipo(req, res) {
             }
             equipoData.serial = serialNuevo;
         }
-        let solicitanteUpdate;
-        // Si se dio idSolicitante, conectamos al solicitante indicado (puede ser null para desasignar)
-        if (data.idSolicitante !== undefined) {
-            if (data.idSolicitante === null) {
-                const empresaId = data.empresaId ?? equipoActual.solicitante?.empresaId;
-                if (!empresaId) {
-                    return res.status(400).json({
-                        error: "Para desasignar solicitante debes indicar empresaId",
-                    });
-                }
-                const placeholderId = await ensurePlaceholderSolicitante(empresaId);
-                solicitanteUpdate = { connect: { id_solicitante: placeholderId } };
+        let solicitanteIdFinal;
+        if (data.idSolicitante !== undefined &&
+            data.idSolicitante !== null) {
+            const solicitante = await prisma.solicitante.findUnique({
+                where: {
+                    id_solicitante: data.idSolicitante,
+                },
+                select: {
+                    id_solicitante: true,
+                    empresaId: true,
+                    isActive: true,
+                    deletedAt: true,
+                    empresa: {
+                        select: {
+                            id_empresa: true,
+                            isActive: true,
+                        },
+                    },
+                },
+            });
+            if (!solicitante) {
+                return res.status(404).json({
+                    error: "El solicitante seleccionado no existe.",
+                });
+            }
+            if (!solicitante.isActive ||
+                solicitante.deletedAt ||
+                !solicitante.empresa.isActive) {
+                return res.status(409).json({
+                    code: "SOLICITANTE_INACTIVO",
+                    error: "El solicitante seleccionado o su empresa se encuentran inactivos.",
+                });
+            }
+            if (solicitante.empresaId !== empresaIdFinal) {
+                return res.status(409).json({
+                    code: "SOLICITANTE_EMPRESA_NO_COINCIDE",
+                    error: "El solicitante seleccionado no pertenece a la empresa del equipo.",
+                });
+            }
+            solicitanteIdFinal = solicitante.id_solicitante;
+        }
+        else if (data.idSolicitante === null ||
+            data.empresaId !== undefined) {
+            /*
+             * Si se cambió la empresa sin indicar solicitante,
+             * usamos el placeholder de esa empresa.
+             */
+            solicitanteIdFinal =
+                await ensurePlaceholderSolicitante(empresaIdFinal);
+        }
+        else {
+            /*
+             * No se modificó ni empresa ni solicitante.
+             * Conservamos el solicitante actual solo si pertenece
+             * a la empresa final.
+             */
+            const solicitanteActualId = equipoActual.idSolicitante;
+            if (solicitanteActualId) {
+                const solicitanteActual = await prisma.solicitante.findUnique({
+                    where: {
+                        id_solicitante: solicitanteActualId,
+                    },
+                    select: {
+                        id_solicitante: true,
+                        empresaId: true,
+                        isActive: true,
+                        deletedAt: true,
+                        empresa: {
+                            select: {
+                                isActive: true,
+                            },
+                        },
+                    },
+                });
+                const actualValido = solicitanteActual &&
+                    solicitanteActual.empresaId ===
+                        empresaIdFinal &&
+                    solicitanteActual.isActive &&
+                    !solicitanteActual.deletedAt &&
+                    solicitanteActual.empresa.isActive;
+                solicitanteIdFinal = actualValido
+                    ? solicitanteActual.id_solicitante
+                    : await ensurePlaceholderSolicitante(empresaIdFinal);
             }
             else {
-                solicitanteUpdate = { connect: { id_solicitante: data.idSolicitante } };
+                solicitanteIdFinal =
+                    await ensurePlaceholderSolicitante(empresaIdFinal);
             }
         }
         const serialFinal = equipoData.serial ?? equipoActual.serial;
@@ -1771,6 +1885,8 @@ export async function updateEquipo(req, res) {
         const actualizado = await prisma.equipo.update({
             where: { id_equipo: id },
             data: {
+                empresaId: empresaIdFinal,
+                idSolicitante: solicitanteIdFinal,
                 ...(equipoData.tipo ? { tipo: equipoData.tipo } : {}),
                 ...(equipoData.serial ? { serial: equipoData.serial } : {}),
                 ...(equipoData.marca ? { marca: equipoData.marca } : {}),
@@ -1780,7 +1896,6 @@ export async function updateEquipo(req, res) {
                 ...(equipoData.disco ? { disco: equipoData.disco } : {}),
                 propiedad: propiedadFinal,
                 propietarioExterno: propietarioExternoFinal,
-                ...(solicitanteUpdate ? { solicitante: solicitanteUpdate } : {}),
                 ...(equipoData.estado !== undefined ? { estado: equipoData.estado } : {}),
                 ...(equipoData.observaciones !== undefined ? { observaciones: equipoData.observaciones } : {}),
                 anioPc: anioPcFinal,

@@ -198,6 +198,7 @@ export async function getTeamViewerMonthlyAverages(req, res) {
                 FROM "MantencionRemota" m
                 JOIN "Empresa" e ON e.id_empresa = m."empresaId"
                 WHERE m.origen = 'TEAMVIEWER'
+                  AND e."isActive" = TRUE
                 ${dateFilter}
                 GROUP BY e.id_empresa, e.nombre, DATE_TRUNC('month', m.inicio)
             )
@@ -214,14 +215,17 @@ export async function getTeamViewerMonthlyAverages(req, res) {
         // buildDateFilter con los mismos params desde idx=1
         const { sql: dateFilter2, params: params2 } = buildDateFilter(fromDate, toDate, 1);
         const totals = await prisma.$queryRawUnsafe(`
-            SELECT
-                COUNT(DISTINCT m."empresaId")           AS empresas,
-                COUNT(m.id_mantencion)                  AS "totalSesiones",
-                COALESCE(SUM(m."duracionMinutos"), 0)   AS "totalMinutos"
-            FROM "MantencionRemota" m
-            WHERE m.origen = 'TEAMVIEWER'
-            ${dateFilter2}
-        `, ...params2);
+    SELECT
+        COUNT(DISTINCT m."empresaId") AS empresas,
+        COUNT(m.id_mantencion) AS "totalSesiones",
+        COALESCE(SUM(m."duracionMinutos"), 0) AS "totalMinutos"
+    FROM "MantencionRemota" m
+    INNER JOIN "Empresa" e
+        ON e.id_empresa = m."empresaId"
+    WHERE m.origen = 'TEAMVIEWER'
+      AND e."isActive" = TRUE
+    ${dateFilter2}
+`, ...params2);
         const raw = totals[0] ?? { empresas: 0, totalSesiones: 0, totalMinutos: 0 };
         const totalMinutos = Number(raw.totalMinutos ?? 0);
         // ── Serializar BigInt ──
@@ -264,6 +268,7 @@ export async function getTeamViewerMonthlyBreakdown(req, res) {
             FROM "MantencionRemota" m
             JOIN "Empresa" e ON e.id_empresa = m."empresaId"
             WHERE m.origen = 'TEAMVIEWER'
+              AND e."isActive" = TRUE
             ${dateFilter}
             GROUP BY
                 e.id_empresa,

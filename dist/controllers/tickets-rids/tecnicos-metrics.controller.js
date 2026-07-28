@@ -276,8 +276,18 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
                 closedAt: true,
                 assigneeId: true,
                 events: {
+                    where: {
+                        type: {
+                            in: ["ASSIGNED", "REOPENED"],
+                        },
+                    },
                     select: {
                         type: true,
+                        newValue: true,
+                        createdAt: true,
+                    },
+                    orderBy: {
+                        createdAt: "desc",
                     },
                 },
             },

@@ -802,8 +802,25 @@ export const mantencionesRemotasMetrics = async (req: Request, res: Response) =>
         : null;
 
     const baseWhere: Prisma.MantencionRemotaWhereInput = {
-      ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
-      inicio: { gte: from, lt: to },
+      /*
+       * Las métricas solo consideran empresas activas.
+       */
+      empresa: {
+        is: {
+          isActive: true,
+        },
+      },
+
+      ...(empresaIdFilter
+        ? {
+          empresaId: empresaIdFilter,
+        }
+        : {}),
+
+      inicio: {
+        gte: from,
+        lt: to,
+      },
     };
 
     const total = await prisma.mantencionRemota.count({ where: baseWhere });
