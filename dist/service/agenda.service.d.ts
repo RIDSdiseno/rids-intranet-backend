@@ -442,6 +442,20 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     destinoLongitud: number | null;
 }>;
 /**
+ * Elimina varias visitas de una sola vez (selección múltiple desde el
+ * calendario). Reutiliza eliminarAgendaVisita por id para no duplicar la
+ * limpieza del evento de Outlook ni la validación de visita vinculada. Si
+ * alguna falla (ej. ya tiene una visita real vinculada), las demás igual se
+ * eliminan — se informan los errores por id.
+ */
+export declare function eliminarAgendaVisitasEnLote(ids: number[]): Promise<{
+    eliminadas: number[];
+    errores: {
+        id: number;
+        error: string;
+    }[];
+}>;
+/**
  * Elimina todas las visitas de un mes completo.
  * Útil para regenerar la malla desde cero.
  */
@@ -571,6 +585,139 @@ export declare function crearAgendaVisitaManual(data: {
 }, "fecha"> & {
     fecha: string;
 }) | undefined>;
+/**
+ * Crea varias visitas manuales de una sola vez (una por cada fecha elegida
+ * en el calendario del front), cada una con su propio horario. Reutiliza
+ * crearAgendaVisitaManual por fecha para no duplicar la validación de
+ * conflictos ni la integración con Outlook. Si una fecha falla (ej. conflicto
+ * de horario), las demás igual se crean — se informan los errores por fecha.
+ */
+export declare function crearAgendaVisitasEnLote(data: {
+    empresaId: number | null;
+    sucursalId?: number | null | undefined;
+    tecnicoId: number;
+    mensaje?: string | undefined;
+    notas?: string | undefined;
+    fechas: {
+        fecha: string;
+        horaInicio?: string | undefined;
+        horaFin?: string | undefined;
+    }[];
+}): Promise<{
+    creadas: ((Omit<{
+        empresa: {
+            id_empresa: number;
+            nombre: string;
+        } | null;
+        sucursal: {
+            nombre: string;
+            id_sucursal: number;
+        } | null;
+        tecnicos: ({
+            tecnico: {
+                nombre: string;
+                email: string;
+                id_tecnico: number;
+            };
+        } & {
+            tecnicoId: number;
+            agendaId: number;
+            id: number;
+        })[];
+    } & {
+        empresaId: number | null;
+        createdAt: Date;
+        updatedAt: Date;
+        sucursalId: number | null;
+        id: number;
+        tipo: import("@prisma/client").$Enums.TipoAgenda;
+        estado: import("@prisma/client").$Enums.EstadoAgenda;
+        fecha: Date;
+        notificacionEnviada: boolean;
+        notas: string | null;
+        horaFin: string | null;
+        horaInicio: string | null;
+        mensaje: string | null;
+        recordatorioEnviado: boolean | null;
+        outlookEventId: string | null;
+        empresaExternaNombre: string | null;
+        fechaInicioRuta: Date | null;
+        fechaInicioVisita: Date | null;
+        destinoNombre: string | null;
+        destinoDireccion: string | null;
+        destinoLatitud: number | null;
+        destinoLongitud: number | null;
+    } & {
+        visita: null;
+        visitaId: null;
+        visitaStatus: null;
+        visitaOrigen: null;
+    }, "fecha"> & {
+        fecha: string;
+    }) | (Omit<{
+        empresa: {
+            id_empresa: number;
+            nombre: string;
+        } | null;
+        sucursal: {
+            nombre: string;
+            id_sucursal: number;
+        } | null;
+        tecnicos: ({
+            tecnico: {
+                nombre: string;
+                email: string;
+                id_tecnico: number;
+            };
+        } & {
+            tecnicoId: number;
+            agendaId: number;
+            id: number;
+        })[];
+    } & {
+        empresaId: number | null;
+        createdAt: Date;
+        updatedAt: Date;
+        sucursalId: number | null;
+        id: number;
+        tipo: import("@prisma/client").$Enums.TipoAgenda;
+        estado: import("@prisma/client").$Enums.EstadoAgenda;
+        fecha: Date;
+        notificacionEnviada: boolean;
+        notas: string | null;
+        horaFin: string | null;
+        horaInicio: string | null;
+        mensaje: string | null;
+        recordatorioEnviado: boolean | null;
+        outlookEventId: string | null;
+        empresaExternaNombre: string | null;
+        fechaInicioRuta: Date | null;
+        fechaInicioVisita: Date | null;
+        destinoNombre: string | null;
+        destinoDireccion: string | null;
+        destinoLatitud: number | null;
+        destinoLongitud: number | null;
+    } & {
+        visita: {
+            id_visita: number;
+            inicio: Date;
+            fin: Date | null;
+            status: import("@prisma/client").$Enums.EstadoVisita;
+            agendaId: number | null;
+            origen: import("@prisma/client").$Enums.OrigenVisita;
+        } | null;
+        visitaId: number | null;
+        visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
+        visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
+        inconsistenciaEstado: string | null;
+    }, "fecha"> & {
+        fecha: string;
+    }) | undefined)[];
+    errores: {
+        fecha: string;
+        error: string;
+    }[];
+}>;
 /**
  * Envía correos reales a los técnicos de cada agenda pendiente del día.
  * Usa Microsoft Graph via graphReaderService.sendReplyEmail().

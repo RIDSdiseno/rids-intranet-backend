@@ -2123,6 +2123,32 @@ export async function eliminarAgendaVisita(id: number) {
 }
 
 /**
+ * Elimina varias visitas de una sola vez (selección múltiple desde el
+ * calendario). Reutiliza eliminarAgendaVisita por id para no duplicar la
+ * limpieza del evento de Outlook ni la validación de visita vinculada. Si
+ * alguna falla (ej. ya tiene una visita real vinculada), las demás igual se
+ * eliminan — se informan los errores por id.
+ */
+export async function eliminarAgendaVisitasEnLote(ids: number[]) {
+    const eliminadas: number[] = [];
+    const errores: { id: number; error: string }[] = [];
+
+    for (const id of ids) {
+        try {
+            await eliminarAgendaVisita(id);
+            eliminadas.push(id);
+        } catch (err) {
+            errores.push({
+                id,
+                error: err instanceof Error ? err.message : "Error al eliminar la visita",
+            });
+        }
+    }
+
+    return { eliminadas, errores };
+}
+
+/**
  * Elimina todas las visitas de un mes completo.
  * Útil para regenerar la malla desde cero.
  */
@@ -2271,6 +2297,48 @@ export async function crearAgendaVisitaManual(data: {
 
     const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
     return visitaConFormulario;
+}
+
+/**
+ * Crea varias visitas manuales de una sola vez (una por cada fecha elegida
+ * en el calendario del front), cada una con su propio horario. Reutiliza
+ * crearAgendaVisitaManual por fecha para no duplicar la validación de
+ * conflictos ni la integración con Outlook. Si una fecha falla (ej. conflicto
+ * de horario), las demás igual se crean — se informan los errores por fecha.
+ */
+export async function crearAgendaVisitasEnLote(data: {
+    empresaId: number | null;
+    sucursalId?: number | null | undefined;
+    tecnicoId: number;
+    mensaje?: string | undefined;
+    notas?: string | undefined;
+    fechas: { fecha: string; horaInicio?: string | undefined; horaFin?: string | undefined }[];
+}) {
+    const creadas: Awaited<ReturnType<typeof crearAgendaVisitaManual>>[] = [];
+    const errores: { fecha: string; error: string }[] = [];
+
+    for (const item of data.fechas) {
+        try {
+            const visita = await crearAgendaVisitaManual({
+                fecha: item.fecha,
+                empresaId: data.empresaId,
+                sucursalId: data.sucursalId,
+                tecnicoId: data.tecnicoId,
+                horaInicio: item.horaInicio,
+                horaFin: item.horaFin,
+                mensaje: data.mensaje,
+                notas: data.notas,
+            });
+            creadas.push(visita);
+        } catch (err) {
+            errores.push({
+                fecha: item.fecha,
+                error: err instanceof Error ? err.message : "Error al crear la visita",
+            });
+        }
+    }
+
+    return { creadas, errores };
 }
 
 /* ======================================================

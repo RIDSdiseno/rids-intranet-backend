@@ -343,6 +343,7 @@ model EntidadGestioo {
   servicioGestioos          ServicioGestioo[]
   cotizaciones              CotizacionGestioo[]
   cotizacionMasivaEntidades CotizacionMasivaPlantillaEntidad[]
+  oportunidadesVenta        OportunidadVenta[]
 }
 
 model PasswordResetToken {
@@ -720,18 +721,18 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico                 Int                         @id @default(autoincrement())
+  id_tecnico                 Int                              @id @default(autoincrement())
   nombre                     String
-  email                      String                      @unique
+  email                      String                           @unique
   passwordHash               String
-  status                     Boolean                     @default(true)
+  status                     Boolean                          @default(true)
   empresaId                  Int?
-  rol                        String                      @default("TECNICO")
-  teamviewerUserId           String?                     @unique
+  rol                        String                           @default("TECNICO")
+  teamviewerUserId           String?                          @unique
   firmaTexto                 String?
   area                       String?
   cargo                      String?
-  empresa                    Empresa?                    @relation(fields: [empresaId], references: [id_empresa])
+  empresa                    Empresa?                         @relation(fields: [empresaId], references: [id_empresa])
   tokens                     RefreshToken[]
   historiales                Historial[]
   visitas                    Visita[]
@@ -741,7 +742,7 @@ model Tecnico {
   firma                      Firma?
   cotizaciones               CotizacionGestioo[]
   auditLogs                  AuditLog[]
-  mantencionesRemotas        MantencionRemota[]          @relation("TecnicoMantencionesRemotas")
+  mantencionesRemotas        MantencionRemota[]               @relation("TecnicoMantencionesRemotas")
   passwordResetTokens        PasswordResetToken[]
   agendasAsignadas           AgendaTecnico[]
   analisisInventarioIAs      AnalisisInventarioIA[]
@@ -749,6 +750,9 @@ model Tecnico {
   bitacoras                  BitacoraTecnico[]
   equipoMantenciones         EquipoMantencion[]
   cotizacionMasivaPlantillas CotizacionMasivaPlantilla[]
+  oportunidadesVenta         OportunidadVenta[]               @relation("ResponsableOportunidadVenta")
+  historialEtapasOportunidad HistorialEtapaOportunidadVenta[]
+  seguimientosOportunidad    SeguimientoOportunidadVenta[]
 
   @@index([empresaId])
 }
@@ -959,7 +963,6 @@ model CotizacionGestioo {
   imagen                String?
   tecnicoId             Int?
   ordenGenerada         Boolean                 @default(false)
-  oportunidadVentaId    Int?
   tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
@@ -968,6 +971,11 @@ model CotizacionGestioo {
   equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
   bitacoras             BitacoraTecnico[]
   envios                CotizacionEnviada[]
+
+  // Relación opcional con el funnel comercial de oportunidades de venta.
+  // Nullable: cotizaciones históricas y cotizaciones creadas fuera del funnel no tienen oportunidad asociada.
+  oportunidadVentaId Int?
+  oportunidadVenta   OportunidadVenta? @relation(fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
 
   @@index([entidadId])
   @@index([oportunidadVentaId])
@@ -1715,87 +1723,6 @@ model CotizacionMasivaPlantillaItem {
   @@index([productoId])
 }
 
-model HistorialEtapaOportunidadVenta {
-  id            Int                    @id @default(autoincrement())
-  oportunidadId Int
-  etapaAnterior EtapaOportunidadVenta?
-  etapaNueva    EtapaOportunidadVenta
-  actorId       Int?
-  createdAt     DateTime               @default(now())
-
-  @@index([createdAt])
-  @@index([oportunidadId])
-}
-
-model OportunidadVenta {
-  id                        Int                        @id @default(autoincrement())
-  codigo                    String                     @unique
-  titulo                    String
-  entidadId                 Int?
-  proyecto                  String?
-  contactoNombre            String?
-  contactoEmail             String?
-  contactoTelefono          String?
-  responsableId             Int
-  etapa                     EtapaOportunidadVenta      @default(NUEVA)
-  prioridad                 PrioridadOportunidadVenta  @default(MEDIA)
-  montoEstimado             Decimal?                   @db.Decimal(14, 2)
-  moneda                    MonedaGestioo              @default(CLP)
-  probabilidadCierre        Int?
-  proximaAccion             String?
-  fechaProximaAccion        DateTime?
-  fechaUltimoContacto       DateTime?
-  observaciones             String?
-  motivoPerdida             String?
-  fechaCierre               DateTime?
-  montoFinal                Decimal?                   @db.Decimal(14, 2)
-  orden                     Int                        @default(0)
-  activo                    Boolean                    @default(true)
-  desactivadoAt             DateTime?
-  createdAt                 DateTime                   @default(now())
-  updatedAt                 DateTime
-  comentariosInternos       String?
-  condicionesEspeciales     String?
-  estadoDesarrolloPropuesta EstadoDesarrolloPropuesta?
-  fechaComprometidaEnvio    DateTime?                  @db.Date
-  informacionPendiente      String?
-  riesgoTecnico             RiesgoTecnicoOportunidad?
-  tipoServicio              TipoServicioOportunidad?
-  tipoServicioOtro          String?
-  montoPropuesto            Decimal?                   @db.Decimal(14, 2)
-  fechaEnvioPropuesta       DateTime?                  @db.Date
-  fechaVencimientoPropuesta DateTime?                  @db.Date
-  comentariosCliente        String?
-  objeciones                String?
-  versionPropuesta          String?
-  contrapropuestas          String?
-  ajustesSolicitados        String?
-  motivoPostergacion        String?
-  fechaReactivacion         DateTime?                  @db.Date
-  fechaProbableCierre       DateTime?                  @db.Date
-
-  @@index([activo])
-  @@index([entidadId])
-  @@index([etapa])
-  @@index([etapa, orden])
-  @@index([prioridad])
-  @@index([responsableId])
-}
-
-model SeguimientoOportunidadVenta {
-  id                 Int       @id @default(autoincrement())
-  oportunidadId      Int
-  autorId            Int
-  comentario         String
-  fechaContacto      DateTime?
-  proximaAccion      String?
-  fechaProximaAccion DateTime?
-  createdAt          DateTime  @default(now())
-
-  @@index([createdAt])
-  @@index([oportunidadId])
-}
-
 enum TipoBitacoraTecnico {
   SOPORTE
   TERRENO
@@ -2040,14 +1967,11 @@ enum OrigenVisita {
   AGENDA
 }
 
-enum EstadoDesarrolloPropuesta {
-  PENDIENTE
-  EN_PREPARACION
-  ESPERANDO_ANTECEDENTES
-  REVISION_INTERNA
-  LISTA_PARA_COTIZAR
-}
-
+/**
+ * =========================================================
+ * FUNNEL COMERCIAL — OPORTUNIDADES DE VENTA
+ * =========================================================
+ */
 enum EtapaOportunidadVenta {
   NUEVA
   COTIZACION_PREPARACION
@@ -2065,10 +1989,12 @@ enum PrioridadOportunidadVenta {
   URGENTE
 }
 
-enum RiesgoTecnicoOportunidad {
-  BAJO
-  MEDIO
-  ALTO
+enum EstadoDesarrolloPropuesta {
+  PENDIENTE
+  EN_PREPARACION
+  ESPERANDO_ANTECEDENTES
+  REVISION_INTERNA
+  LISTA_PARA_COTIZAR
 }
 
 enum TipoServicioOportunidad {
@@ -2076,4 +2002,124 @@ enum TipoServicioOportunidad {
   DESARROLLO_WEB
   VENTA_PRODUCTOS
   OTRO
+}
+
+enum RiesgoTecnicoOportunidad {
+  BAJO
+  MEDIO
+  ALTO
+}
+
+model OportunidadVenta {
+  id     Int    @id @default(autoincrement())
+  codigo String @unique
+  titulo String
+
+  entidadId Int?
+  entidad   EntidadGestioo? @relation(fields: [entidadId], references: [id])
+
+  proyecto         String?
+  contactoNombre   String?
+  contactoEmail    String?
+  contactoTelefono String?
+
+  responsableId Int
+  responsable   Tecnico @relation("ResponsableOportunidadVenta", fields: [responsableId], references: [id_tecnico])
+
+  etapa     EtapaOportunidadVenta     @default(NUEVA)
+  prioridad PrioridadOportunidadVenta @default(MEDIA)
+
+  montoEstimado       Decimal?      @db.Decimal(14, 2)
+  moneda              MonedaGestioo @default(CLP)
+  probabilidadCierre  Int?
+  fechaProbableCierre DateTime?     @db.Date
+
+  proximaAccion       String?
+  fechaProximaAccion  DateTime?
+  fechaUltimoContacto DateTime?
+
+  observaciones      String?
+  motivoPerdida      String?
+  motivoPostergacion String?
+  fechaReactivacion  DateTime? @db.Date
+  fechaCierre        DateTime?
+  montoFinal         Decimal?  @db.Decimal(14, 2)
+
+  // Desarrollo de la propuesta/cotización (relevante en COTIZACION_PREPARACION).
+  estadoDesarrolloPropuesta EstadoDesarrolloPropuesta?
+  tipoServicio              TipoServicioOportunidad?
+  tipoServicioOtro          String?
+  informacionPendiente      String?
+  riesgoTecnico             RiesgoTecnicoOportunidad?
+  condicionesEspeciales     String?
+  fechaComprometidaEnvio    DateTime?                  @db.Date
+  comentariosInternos       String?
+
+  // Seguimiento post-envío de la cotización (relevante en COTIZACION_ENVIADA).
+  montoPropuesto            Decimal?  @db.Decimal(14, 2)
+  fechaEnvioPropuesta       DateTime? @db.Date
+  fechaVencimientoPropuesta DateTime? @db.Date
+  comentariosCliente        String?
+  objeciones                String?
+
+  // Negociación (relevante en NEGOCIACION). fechaEnvioPropuesta/montoPropuesto/
+  // objeciones se reutilizan de la sección anterior (ya vienen rellenos).
+  versionPropuesta   String?
+  contrapropuestas   String?
+  ajustesSolicitados String?
+
+  orden Int @default(0)
+
+  activo        Boolean   @default(true)
+  desactivadoAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  historialEtapas HistorialEtapaOportunidadVenta[]
+  seguimientos    SeguimientoOportunidadVenta[]
+  cotizaciones    CotizacionGestioo[]
+
+  @@index([etapa])
+  @@index([responsableId])
+  @@index([entidadId])
+  @@index([prioridad])
+  @@index([activo])
+  @@index([etapa, orden])
+}
+
+model HistorialEtapaOportunidadVenta {
+  id            Int              @id @default(autoincrement())
+  oportunidadId Int
+  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+
+  etapaAnterior EtapaOportunidadVenta?
+  etapaNueva    EtapaOportunidadVenta
+
+  actorId Int?
+  actor   Tecnico? @relation(fields: [actorId], references: [id_tecnico])
+
+  createdAt DateTime @default(now())
+
+  @@index([oportunidadId])
+  @@index([createdAt])
+}
+
+model SeguimientoOportunidadVenta {
+  id            Int              @id @default(autoincrement())
+  oportunidadId Int
+  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+
+  autorId Int
+  autor   Tecnico @relation(fields: [autorId], references: [id_tecnico])
+
+  comentario         String
+  fechaContacto      DateTime?
+  proximaAccion      String?
+  fechaProximaAccion DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([oportunidadId])
+  @@index([createdAt])
 }

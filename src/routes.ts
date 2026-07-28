@@ -32,6 +32,9 @@ import detalleTrabajoGestiooRouter from "./routes/detalle-trabajo-gestioo.routes
 import cotizacionesRouter from "./routes/cotizaciones-routes/cotizaciones.routes.js";
 import cotizacionesMasivasRouter from "./routes/cotizaciones-routes/cotizaciones-masivas.routes.js";
 
+/* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
+import oportunidadesRouter from "./routes/oportunidades-routes/oportunidades.routes.js";
+
 import tecnicosRouter from "./routes/tecnicos.routes.js";
 
 /* ===================== Freshdesk ===================== */
@@ -162,6 +165,9 @@ api.use("/modelos", modelosGestiooRouter);
 api.use("/detalle-trabajo-gestioo", detalleTrabajoGestiooRouter);
 api.use("/cotizaciones", cotizacionesRouter);
 api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
+
+/* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
+api.use("/oportunidades", oportunidadesRouter);
 
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)

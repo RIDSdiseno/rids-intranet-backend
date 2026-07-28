@@ -6,3 +6,6 @@ node_modules
 NUL
 .DS_Store
 src/certs/*.pfx
+
+# Respaldos de datos generados por scripts de migración (contienen datos reales)
+scripts/*backup*.json

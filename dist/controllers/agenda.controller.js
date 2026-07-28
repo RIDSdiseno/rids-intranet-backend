@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EstadoAgenda } from "@prisma/client";
-import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, AgendaSucursalInvalidaError, AgendaVisitaVinculadaError, } from "../service/agenda.service.js";
+import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, eliminarAgendaVisitasEnLote, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, crearAgendaVisitasEnLote, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, AgendaSucursalInvalidaError, AgendaVisitaVinculadaError, } from "../service/agenda.service.js";
 /* ================== Schemas ================== */
 const generarMallaSchema = z.object({
     year: z.number().int().min(2020).max(2100),
@@ -52,6 +52,33 @@ const crearVisitaManualSchema = z.object({
         .optional(),
     mensaje: z.string().optional(),
     notas: z.string().optional(),
+});
+const crearVisitasLoteSchema = z.object({
+    empresaId: z.number().int().positive().nullable(),
+    sucursalId: z.number().int().positive().nullable().optional(),
+    tecnicoId: z.number().int().positive(),
+    mensaje: z.string().optional(),
+    notas: z.string().optional(),
+    fechas: z
+        .array(z.object({
+        fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
+        horaInicio: z
+            .string()
+            .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora inicio inválida, use HH:mm")
+            .optional(),
+        horaFin: z
+            .string()
+            .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora fin inválida, use HH:mm")
+            .optional(),
+    }))
+        .min(1, "Debe seleccionar al menos una fecha")
+        .max(60, "No se pueden crear más de 60 visitas a la vez"),
+});
+const eliminarVisitasLoteSchema = z.object({
+    ids: z
+        .array(z.number().int().positive())
+        .min(1, "Debe seleccionar al menos una visita")
+        .max(200, "No se pueden eliminar más de 200 visitas a la vez"),
 });
 /* ================== Handlers ================== */
 // POST /agenda/generar
@@ -201,6 +228,25 @@ export async function eliminarVisita(req, res) {
         return res.status(500).json({ error: "Error al eliminar visita de agenda" });
     }
 }
+// DELETE /agenda/lote — elimina varias visitas seleccionadas a la vez.
+export async function eliminarVisitasLote(req, res) {
+    try {
+        const parsed = eliminarVisitasLoteSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
+        }
+        const { eliminadas, errores } = await eliminarAgendaVisitasEnLote(parsed.data.ids);
+        return res.status(200).json({
+            eliminadas,
+            errores,
+            mensaje: `${eliminadas.length} visita(s) eliminada(s)${errores.length > 0 ? `, ${errores.length} con error` : ""}`,
+        });
+    }
+    catch (err) {
+        console.error("Error al eliminar visitas en lote:", err);
+        return res.status(500).json({ error: "Error al eliminar visitas en lote" });
+    }
+}
 // DELETE /agenda/malla
 export async function eliminarMalla(req, res) {
     try {
@@ -237,6 +283,25 @@ export async function crearVisitaManual(req, res) {
             return res.status(409).json({ error: err.message });
         console.error("Error al crear visita manual:", err);
         return res.status(500).json({ error: "Error al crear visita manual" });
+    }
+}
+// POST /agenda/manual/lote — crea varias visitas manuales (una por fecha elegida en el calendario del front).
+export async function crearVisitasManualLote(req, res) {
+    try {
+        const parsed = crearVisitasLoteSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
+        }
+        const { creadas, errores } = await crearAgendaVisitasEnLote(parsed.data);
+        return res.status(201).json({
+            creadas,
+            errores,
+            mensaje: `${creadas.length} visita(s) creada(s)${errores.length > 0 ? `, ${errores.length} con error` : ""}`,
+        });
+    }
+    catch (err) {
+        console.error("Error al crear visitas en lote:", err);
+        return res.status(500).json({ error: "Error al crear visitas en lote" });
     }
 }
 // PUT /agenda/:id/tecnicos

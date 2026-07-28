@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 import { prismaBase as prisma } from "../../lib/prisma.js";
+import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades.service.js";
 
 // UTILIDADES
 export function generarSKU(): string {
@@ -638,6 +639,19 @@ export async function updateCotizacion(req: Request, res: Response) {
                 },
             },
         });
+
+        // Punto de integración con el funnel de oportunidades: si la cotización
+        // quedó vinculada a una oportunidad y su estado pasó a APROBADA/FACTURADA,
+        // sincroniza la etapa de la oportunidad (no bloqueante, ver oportunidades.service.ts).
+        if (
+            updated?.oportunidadVentaId &&
+            data.estado &&
+            existe.estado !== updated.estado &&
+            (updated.estado === "APROBADA" || updated.estado === "FACTURADA")
+        ) {
+            const actorId = (req as any).user?.id ? Number((req as any).user.id) : null;
+            await sincronizarOportunidadPorCotizacionAprobada(updated.id, actorId);
+        }
 
         return res.json({ data: updated });
     } catch (error: any) {
