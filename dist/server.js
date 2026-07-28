@@ -1,4 +1,5 @@
 // src/server.ts
+// Redeploy manual (error de red en build anterior)
 import http from "http";
 import app from "./app.js"; // 👈 default import (sin llaves)
 import { Server as IOServer } from "socket.io";
@@ -12,6 +13,7 @@ import { startAgendaNotificacionesCron } from "./jobs/agenda-jobs/agenda-notific
 import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordatorios.cron.js";
 import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
 import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
+import { prismaBase } from "./lib/prisma.js";
 function parseOrigins(raw) {
     if (!raw || !raw.trim())
         return ["http://localhost:5173"];
@@ -86,21 +88,48 @@ server.listen(PORT, () => {
     }
 });
 // Graceful shutdown (Ctrl+C / plataforma)
-const shutdown = (signal) => {
-    console.log(`\n${signal} recibido. Cerrando…`);
-    io.close(() => {
-        server.close((err) => {
-            if (err) {
-                console.error("Error al cerrar el servidor:", err);
-                process.exit(1);
-            }
-            console.log("✅ Servidor cerrado correctamente");
-            process.exit(0);
-        });
+let shuttingDown = false;
+const closeSocketIo = () => new Promise((resolve) => {
+    io.close(() => resolve());
+});
+const closeHttpServer = () => new Promise((resolve, reject) => {
+    if (!server.listening) {
+        resolve();
+        return;
+    }
+    server.close((err) => {
+        if (err)
+            reject(err);
+        else
+            resolve();
     });
+});
+const shutdown = async (signal) => {
+    if (shuttingDown)
+        return;
+    shuttingDown = true;
+    console.log(`\n${signal} recibido. Cerrando…`);
+    const forceExitTimer = setTimeout(() => {
+        console.error("Tiempo de cierre agotado. Terminando proceso.");
+        process.exit(1);
+    }, 10_000);
+    forceExitTimer.unref();
+    try {
+        await closeSocketIo();
+        await closeHttpServer();
+        await prismaBase.$disconnect();
+        clearTimeout(forceExitTimer);
+        console.log("✅ Servidor y Prisma cerrados correctamente");
+        process.exit(0);
+    }
+    catch (err) {
+        clearTimeout(forceExitTimer);
+        console.error("Error al cerrar el servidor:", err);
+        process.exit(1);
+    }
 };
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 // (Opcional) para loguear problemas no capturados:
 process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e));
 process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));

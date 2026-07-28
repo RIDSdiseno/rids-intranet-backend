@@ -8,6 +8,22 @@ export declare class AgendaPastDateError extends Error {
 export declare class AgendaNotFoundError extends Error {
     constructor(message?: string);
 }
+export declare class AgendaStateTransitionError extends Error {
+    constructor(message?: string);
+}
+export declare class AgendaSucursalInvalidaError extends Error {
+    constructor(message?: string);
+}
+export declare class AgendaVisitaVinculadaError extends Error {
+    constructor(message?: string);
+}
+/**
+ * Parsea un string "YYYY-MM-DD" y devuelve UTC midnight sin pasar por new Date(string),
+ * evitando cualquier ambigüedad de timezone en el servidor.
+ */
+export declare function normalizarFechaDesdeString(fecha: string): Date;
+/** Formatea un Date UTC midnight como "YYYY-MM-DD" para respuestas de agenda (sin timezone). */
+export declare function formatearFechaAgenda(date: Date): string;
 /**
  * Genera todas las AgendaVisita del mes para:
  *   - Días de semana: cada empresa recibe exactamente 1 técnico,
@@ -28,8 +44,9 @@ export declare function generarMallaMensual(year: number, month: number, empresa
  * Misma fuente que generarMallaMensual: sin nombres vacíos ni "SIN EMPRESA".
  */
 export declare function getEmpresasAgenda(): Promise<{
-    nombre: string;
     id_empresa: number;
+    nombre: string;
+    isActive: boolean;
 }[]>;
 /**
  * Devuelve todas las visitas del mes con técnicos y empresa incluidos.
@@ -39,8 +56,15 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     empresa?: string;
 }): Promise<(Omit<{
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
+        direccion: string | null;
+        latitud: number | null;
+        longitud: number | null;
     } | null;
     tecnicos: ({
         tecnico: {
@@ -49,40 +73,99 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
             id_tecnico: number;
         };
     } & {
-        id: number;
         tecnicoId: number;
         agendaId: number;
+        id: number;
     })[];
 } & {
-    id: number;
-    updatedAt: Date;
     empresaId: number | null;
     createdAt: Date;
-    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
     tipo: import("@prisma/client").$Enums.TipoAgenda;
-    notas: string | null;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
     fecha: Date;
-    mensaje: string | null;
     notificacionEnviada: boolean;
+    notas: string | null;
     horaFin: string | null;
     horaInicio: string | null;
+    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
+} & {
+    visita: null;
+    visitaId: null;
+    visitaStatus: null;
+    visitaOrigen: null;
+}, "fecha"> & {
+    fecha: string;
+})[] | (Omit<{
+    empresa: {
+        id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
+        direccion: string | null;
+        latitud: number | null;
+        longitud: number | null;
+    } | null;
+    tecnicos: ({
+        tecnico: {
+            nombre: string;
+            email: string;
+            id_tecnico: number;
+        };
+    } & {
+        tecnicoId: number;
+        agendaId: number;
+        id: number;
+    })[];
+} & {
+    empresaId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
+    tipo: import("@prisma/client").$Enums.TipoAgenda;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    fecha: Date;
+    notificacionEnviada: boolean;
+    notas: string | null;
+    horaFin: string | null;
+    horaInicio: string | null;
+    mensaje: string | null;
+    recordatorioEnviado: boolean | null;
+    outlookEventId: string | null;
+    empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
 } & {
     visita: {
-        origen: import("@prisma/client").$Enums.OrigenVisita;
+        id_visita: number;
         inicio: Date;
         fin: Date | null;
         status: import("@prisma/client").$Enums.EstadoVisita;
-        id_visita: number;
         agendaId: number | null;
+        origen: import("@prisma/client").$Enums.OrigenVisita;
     } | null;
     visitaId: number | null;
     visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
     visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
+    inconsistenciaEstado: string | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -107,8 +190,8 @@ export declare function sincronizarAgendaDesdeOutlook(year: number, month: numbe
  */
 export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
     } | null;
     tecnicos: ({
         tecnico: {
@@ -116,40 +199,91 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
             id_tecnico: number;
         };
     } & {
-        id: number;
         tecnicoId: number;
         agendaId: number;
+        id: number;
     })[];
 } & {
-    id: number;
-    updatedAt: Date;
     empresaId: number | null;
     createdAt: Date;
-    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
     tipo: import("@prisma/client").$Enums.TipoAgenda;
-    notas: string | null;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
     fecha: Date;
-    mensaje: string | null;
     notificacionEnviada: boolean;
+    notas: string | null;
     horaFin: string | null;
     horaInicio: string | null;
+    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
+} & {
+    visita: null;
+    visitaId: null;
+    visitaStatus: null;
+    visitaOrigen: null;
+}, "fecha"> & {
+    fecha: string;
+})[] | (Omit<{
+    empresa: {
+        id_empresa: number;
+        nombre: string;
+    } | null;
+    tecnicos: ({
+        tecnico: {
+            nombre: string;
+            id_tecnico: number;
+        };
+    } & {
+        tecnicoId: number;
+        agendaId: number;
+        id: number;
+    })[];
+} & {
+    empresaId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
+    tipo: import("@prisma/client").$Enums.TipoAgenda;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    fecha: Date;
+    notificacionEnviada: boolean;
+    notas: string | null;
+    horaFin: string | null;
+    horaInicio: string | null;
+    mensaje: string | null;
+    recordatorioEnviado: boolean | null;
+    outlookEventId: string | null;
+    empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
 } & {
     visita: {
-        origen: import("@prisma/client").$Enums.OrigenVisita;
+        id_visita: number;
         inicio: Date;
         fin: Date | null;
         status: import("@prisma/client").$Enums.EstadoVisita;
-        id_visita: number;
         agendaId: number | null;
+        origen: import("@prisma/client").$Enums.OrigenVisita;
     } | null;
     visitaId: number | null;
     visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
     visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
+    inconsistenciaEstado: string | null;
 }, "fecha"> & {
     fecha: string;
 })[]>;
@@ -164,10 +298,15 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
     empresaId?: number | null | undefined;
+    sucursalId?: number | null | undefined;
 }): Promise<(Omit<{
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
     } | null;
     tecnicos: ({
         tecnico: {
@@ -176,40 +315,96 @@ export declare function actualizarAgendaVisita(id: number, datos: {
             id_tecnico: number;
         };
     } & {
-        id: number;
         tecnicoId: number;
         agendaId: number;
+        id: number;
     })[];
 } & {
-    id: number;
-    updatedAt: Date;
     empresaId: number | null;
     createdAt: Date;
-    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
     tipo: import("@prisma/client").$Enums.TipoAgenda;
-    notas: string | null;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
     fecha: Date;
-    mensaje: string | null;
     notificacionEnviada: boolean;
+    notas: string | null;
     horaFin: string | null;
     horaInicio: string | null;
+    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
+} & {
+    visita: null;
+    visitaId: null;
+    visitaStatus: null;
+    visitaOrigen: null;
+}, "fecha"> & {
+    fecha: string;
+}) | (Omit<{
+    empresa: {
+        id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
+    } | null;
+    tecnicos: ({
+        tecnico: {
+            nombre: string;
+            email: string;
+            id_tecnico: number;
+        };
+    } & {
+        tecnicoId: number;
+        agendaId: number;
+        id: number;
+    })[];
+} & {
+    empresaId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
+    tipo: import("@prisma/client").$Enums.TipoAgenda;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    fecha: Date;
+    notificacionEnviada: boolean;
+    notas: string | null;
+    horaFin: string | null;
+    horaInicio: string | null;
+    mensaje: string | null;
+    recordatorioEnviado: boolean | null;
+    outlookEventId: string | null;
+    empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
 } & {
     visita: {
-        origen: import("@prisma/client").$Enums.OrigenVisita;
+        id_visita: number;
         inicio: Date;
         fin: Date | null;
         status: import("@prisma/client").$Enums.EstadoVisita;
-        id_visita: number;
         agendaId: number | null;
+        origen: import("@prisma/client").$Enums.OrigenVisita;
     } | null;
     visitaId: number | null;
     visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
     visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
+    inconsistenciaEstado: string | null;
 }, "fecha"> & {
     fecha: string;
 }) | undefined>;
@@ -223,23 +418,28 @@ export declare function reasignarTecnicos(agendaId: number, nuevosTecnicoIds: nu
  * Elimina una visita y sus técnicos asociados (Cascade en el schema).
  */
 export declare function eliminarAgendaVisita(id: number): Promise<{
-    id: number;
-    updatedAt: Date;
     empresaId: number | null;
     createdAt: Date;
-    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
     tipo: import("@prisma/client").$Enums.TipoAgenda;
-    notas: string | null;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
     fecha: Date;
-    mensaje: string | null;
     notificacionEnviada: boolean;
+    notas: string | null;
     horaFin: string | null;
     horaInicio: string | null;
+    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
 }>;
 /**
  * Elimina todas las visitas de un mes completo.
@@ -256,6 +456,7 @@ export declare function eliminarMallaMensual(year: number, month: number): Promi
 export declare function crearAgendaVisitaManual(data: {
     fecha: string;
     empresaId: number | null;
+    sucursalId?: number | null | undefined;
     tecnicoId: number;
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
@@ -263,8 +464,12 @@ export declare function crearAgendaVisitaManual(data: {
     notas?: string | undefined;
 }): Promise<(Omit<{
     empresa: {
-        nombre: string;
         id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
     } | null;
     tecnicos: ({
         tecnico: {
@@ -273,40 +478,96 @@ export declare function crearAgendaVisitaManual(data: {
             id_tecnico: number;
         };
     } & {
-        id: number;
         tecnicoId: number;
         agendaId: number;
+        id: number;
     })[];
 } & {
-    id: number;
-    updatedAt: Date;
     empresaId: number | null;
     createdAt: Date;
-    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
     tipo: import("@prisma/client").$Enums.TipoAgenda;
-    notas: string | null;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
     fecha: Date;
-    mensaje: string | null;
     notificacionEnviada: boolean;
+    notas: string | null;
     horaFin: string | null;
     horaInicio: string | null;
+    mensaje: string | null;
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
+} & {
+    visita: null;
+    visitaId: null;
+    visitaStatus: null;
+    visitaOrigen: null;
+}, "fecha"> & {
+    fecha: string;
+}) | (Omit<{
+    empresa: {
+        id_empresa: number;
+        nombre: string;
+    } | null;
+    sucursal: {
+        nombre: string;
+        id_sucursal: number;
+    } | null;
+    tecnicos: ({
+        tecnico: {
+            nombre: string;
+            email: string;
+            id_tecnico: number;
+        };
+    } & {
+        tecnicoId: number;
+        agendaId: number;
+        id: number;
+    })[];
+} & {
+    empresaId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    sucursalId: number | null;
+    id: number;
+    tipo: import("@prisma/client").$Enums.TipoAgenda;
+    estado: import("@prisma/client").$Enums.EstadoAgenda;
+    fecha: Date;
+    notificacionEnviada: boolean;
+    notas: string | null;
+    horaFin: string | null;
+    horaInicio: string | null;
+    mensaje: string | null;
+    recordatorioEnviado: boolean | null;
+    outlookEventId: string | null;
+    empresaExternaNombre: string | null;
+    fechaInicioRuta: Date | null;
+    fechaInicioVisita: Date | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
 } & {
     visita: {
-        origen: import("@prisma/client").$Enums.OrigenVisita;
+        id_visita: number;
         inicio: Date;
         fin: Date | null;
         status: import("@prisma/client").$Enums.EstadoVisita;
-        id_visita: number;
         agendaId: number | null;
+        origen: import("@prisma/client").$Enums.OrigenVisita;
     } | null;
     visitaId: number | null;
     visitaStatus: import("@prisma/client").$Enums.EstadoVisita | null;
     visitaOrigen: import("@prisma/client").$Enums.OrigenVisita | null;
+    inconsistenciaEstado: string | null;
 }, "fecha"> & {
     fecha: string;
 }) | undefined>;

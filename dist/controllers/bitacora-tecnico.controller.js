@@ -1,5 +1,5 @@
-import { PrismaClient, Prisma, TipoBitacoraTecnico, EstadoBitacoraTecnico, } from "@prisma/client";
-const prisma = new PrismaClient();
+import { Prisma, TipoBitacoraTecnico, EstadoBitacoraTecnico, } from "@prisma/client";
+import { prismaBase as prisma } from "../lib/prisma.js";
 function parsePositiveInt(value) {
     const n = Number(value);
     return Number.isInteger(n) && n > 0 ? n : undefined;

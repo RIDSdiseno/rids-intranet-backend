@@ -2,9 +2,8 @@
 import fs from "fs/promises";
 import path from "path";
 import type { Request, Response } from "express";
-import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
+import { prismaBase as prisma } from "../lib/prisma.js";
 
 /* =====================================================
    HELPERS

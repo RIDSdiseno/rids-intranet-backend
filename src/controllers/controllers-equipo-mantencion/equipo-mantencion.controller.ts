@@ -26,6 +26,125 @@ function normalizarMac(value: unknown): string | null {
     return limpio.match(/.{1,2}/g)?.join("-") ?? null;
 }
 
+function normalizarMacCompacta(value: unknown): string | null {
+    const text = limpiarTexto(value);
+
+    if (!text) return null;
+
+    const limpio = text.replace(/[^a-fA-F0-9]/g, "").toUpperCase();
+
+    return limpio.length >= 12 ? limpio.slice(0, 12) : null;
+}
+
+type EquipoMantGeneralEncontrado = {
+    id_equipo: number;
+    empresaId: number | null;
+    idSolicitante: number | null;
+    serial: string | null;
+    hostname: string | null;
+    macAddress: string | null;
+    mantGeneralInstalledAt: Date | null;
+};
+
+async function buscarEquipoMantGeneral(params: {
+    serial: string | null;
+    hostname: string | null;
+    macAddress?: string | null;
+    macEthernet?: string | null;
+    macWifi?: string | null;
+}) {
+    const serial = params.serial;
+    const hostname = params.hostname;
+
+    const macsCompactas = [
+        normalizarMacCompacta(params.macAddress),
+        normalizarMacCompacta(params.macEthernet),
+        normalizarMacCompacta(params.macWifi),
+    ].filter((mac): mac is string => Boolean(mac));
+
+    const macsUnicas = Array.from(new Set(macsCompactas));
+    const select = {
+        id_equipo: true,
+        empresaId: true,
+        idSolicitante: true,
+        serial: true,
+        hostname: true,
+        macAddress: true,
+        mantGeneralInstalledAt: true,
+    };
+
+    if (serial) {
+        const equipo = await prisma.equipo.findFirst({
+            where: {
+                deletedAt: null,
+                serial: {
+                    equals: serial,
+                    mode: "insensitive",
+                },
+            },
+            select,
+        });
+
+        if (equipo) return equipo;
+    }
+
+    if (hostname) {
+        const equipo = await prisma.equipo.findFirst({
+            where: {
+                deletedAt: null,
+                hostname: {
+                    equals: hostname,
+                    mode: "insensitive",
+                },
+            },
+            select,
+        });
+
+        if (equipo) return equipo;
+    }
+
+    for (const macCompacta of macsUnicas) {
+        const rows = await prisma.$queryRaw<EquipoMantGeneralEncontrado[]>`
+        SELECT
+            "id_equipo",
+            "empresaId",
+            "idSolicitante",
+            "serial",
+            "hostname",
+            "macAddress",
+            "mantGeneralInstalledAt"
+        FROM "Equipo"
+        WHERE "deletedAt" IS NULL
+          AND (
+            (
+              "macAddress" IS NOT NULL
+              AND REGEXP_REPLACE(UPPER("macAddress"), '[^A-F0-9]', '', 'g') = ${macCompacta}
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM "DetalleEquipo" d
+              WHERE d."idEquipo" = "Equipo"."id_equipo"
+                AND (
+                  (
+                    d."macWifi" IS NOT NULL
+                    AND REGEXP_REPLACE(UPPER(d."macWifi"), '[^A-F0-9]', '', 'g') = ${macCompacta}
+                  )
+                  OR (
+                    d."redEthernet" IS NOT NULL
+                    AND REGEXP_REPLACE(UPPER(d."redEthernet"), '[^A-F0-9]', '', 'g') = ${macCompacta}
+                  )
+                )
+            )
+          )
+        LIMIT 1
+    `;
+
+        if (rows[0]) return rows[0];
+    }
+
+    return null;
+}
+
 function fechaValida(value: unknown): Date | null {
     if (!value) return null;
 
@@ -73,6 +192,8 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
         const usuarioActual = limpiarTexto(equipo.usuarioActual);
         const localIp = limpiarTexto(equipo.localIp);
         const macAddress = normalizarMac(equipo.macAddress ?? equipo.mac);
+        const macWifi = normalizarMac(equipo.macWifi);
+        const macEthernet = normalizarMac(equipo.macEthernet);
 
         const marca = limpiarTexto(equipo.marca) ?? "No detectado";
         const modelo = limpiarTexto(equipo.modelo) ?? "No detectado";
@@ -126,51 +247,27 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
             });
         }
 
-        if (!serial && !hostname && !macAddress) {
+        if (!serial && !hostname && !macAddress && !macEthernet && !macWifi) {
             return res.status(400).json({
                 ok: false,
-                error: "No se pudo identificar el equipo. Se requiere serial, hostname o macAddress.",
+                error: "No se pudo identificar el equipo. Se requiere serial, hostname, macAddress, macEthernet o macWifi.",
             });
         }
 
-        type EquipoEncontrado = NonNullable<
-            Awaited<ReturnType<typeof prisma.equipo.findFirst>>
-        >;
-
-        let equipoEncontrado: EquipoEncontrado | null = null;
-
-        if (serial) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    serial,
-                },
-            });
-        }
-
-        if (!equipoEncontrado && hostname) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    hostname,
-                },
-            });
-        }
-
-        if (!equipoEncontrado && macAddress) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    macAddress,
-                },
-            });
-        }
+        const equipoEncontrado = await buscarEquipoMantGeneral({
+            serial,
+            hostname,
+            macAddress,
+            macEthernet,
+            macWifi,
+        });
 
         if (!equipoEncontrado) {
             return res.status(202).json({
                 ok: true,
                 registrado: false,
                 equipoEncontrado: false,
+                vinculado: false,
                 message:
                     "La mantención fue realizada, pero no se registró en la intranet porque no se encontró un equipo asociado.",
                 detalle: {
@@ -181,19 +278,20 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
             });
         }
 
+        const equipoVinculado = equipoEncontrado;
+
         const tareasRealizadas = Array.isArray(mantencion.tareasRealizadas)
             ? mantencion.tareasRealizadas
             : [];
-
         const tareasConError = Array.isArray(mantencion.tareasConError)
             ? mantencion.tareasConError
             : [];
 
         const registro = await prisma.equipoMantencion.create({
             data: {
-                equipoId: equipoEncontrado.id_equipo,
-                empresaId: equipoEncontrado.empresaId ?? null,
-                solicitanteId: equipoEncontrado.idSolicitante ?? null,
+                equipoId: equipoVinculado.id_equipo,
+                empresaId: equipoVinculado.empresaId ?? null,
+                solicitanteId: equipoVinculado.idSolicitante ?? null,
                 tecnicoId: tecnicoResponsable?.id_tecnico ?? null,
 
                 tipo: String(mantencion.tipo || "Mantención general"),
@@ -223,7 +321,7 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
 
         await prisma.equipo.update({
             where: {
-                id_equipo: equipoEncontrado.id_equipo,
+                id_equipo: equipoVinculado.id_equipo,
             },
             data: {
                 mantGeneralInstalado: true,
@@ -237,9 +335,15 @@ export async function registrarMantencionEquipo(req: Request, res: Response) {
             ok: true,
             registrado: true,
             equipoEncontrado: true,
+            vinculado: true,
             message: "Mantención registrada correctamente.",
-            equipoId: equipoEncontrado.id_equipo,
+            equipoId: equipoVinculado.id_equipo,
             mantencionId: registro.id,
+            detalle: {
+                serial,
+                hostname,
+                macAddress,
+            },
         });
     } catch (error) {
         console.error("registrarMantencionEquipo error:", error);
@@ -395,46 +499,23 @@ export async function registrarInstalacionMantGeneral(req: Request, res: Respons
         const serial = limpiarTexto(equipo.serial);
         const hostname = limpiarTexto(equipo.hostname);
         const macAddress = normalizarMac(equipo.macAddress ?? equipo.mac);
+        const macWifi = normalizarMac(equipo.macWifi);
+        const macEthernet = normalizarMac(equipo.macEthernet);
 
-        if (!serial && !hostname && !macAddress) {
+        if (!serial && !hostname && !macAddress && !macEthernet && !macWifi) {
             return res.status(400).json({
                 ok: false,
-                error: "No se pudo identificar el equipo. Se requiere serial, hostname o macAddress.",
+                error: "No se pudo identificar el equipo. Se requiere serial, hostname, macAddress, macEthernet o macWifi.",
             });
         }
 
-        type EquipoEncontrado = NonNullable<
-            Awaited<ReturnType<typeof prisma.equipo.findFirst>>
-        >;
-
-        let equipoEncontrado: EquipoEncontrado | null = null;
-
-        if (serial) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    serial,
-                },
-            });
-        }
-
-        if (!equipoEncontrado && hostname) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    hostname,
-                },
-            });
-        }
-
-        if (!equipoEncontrado && macAddress) {
-            equipoEncontrado = await prisma.equipo.findFirst({
-                where: {
-                    deletedAt: null,
-                    macAddress,
-                },
-            });
-        }
+        const equipoEncontrado = await buscarEquipoMantGeneral({
+            serial,
+            hostname,
+            macAddress,
+            macEthernet,
+            macWifi,
+        });
 
         if (!equipoEncontrado) {
             return res.status(202).json({

@@ -1,5 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 /**
  * Guarda un mensaje en la base de datos vinculándolo al número de teléfono.
  */

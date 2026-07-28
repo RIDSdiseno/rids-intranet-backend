@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 export declare function generarMalla(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
-export declare function listarEmpresasAgenda(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listarEmpresasAgenda(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getAgenda(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getAgendaDesdeOutlookController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function syncAgendaOutlook(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

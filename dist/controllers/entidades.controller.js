@@ -1,8 +1,8 @@
 // src/controllers/entidades.controller.ts
 import fs from "fs/promises";
 import path from "path";
-import { PrismaClient, TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
-const prisma = new PrismaClient();
+import { TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
+import { prismaBase as prisma } from "../lib/prisma.js";
 /* =====================================================
    HELPERS
 ===================================================== */

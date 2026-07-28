@@ -2,6 +2,13 @@ import cron from "node-cron";
 import { sincronizarAgendaAutomaticaOutlook } from "../../service/agenda.service.js";
 
 export function startAgendaOutlookSyncCron() {
+    if (process.env.ENABLE_OUTLOOK_SYNC_CRON !== "true") {
+        console.log(
+            "[AGENDA OUTLOOK AUTO CRON] Desactivado (ENABLE_OUTLOOK_SYNC_CRON distinto de \"true\")."
+        );
+        return;
+    }
+
     const EXPRESION_CRON = "*/10 * * * *";
     let isRunning = false;
 

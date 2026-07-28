@@ -275,7 +275,6 @@ export async function previewDocxToPdf(req, res) {
                         : "/tmp"),
             },
         });
-        console.log("[LibreOffice] Ejecutando preview con:", libreOfficePath);
         await execFileAsync(libreOfficePath, [
             "--headless",
             "--convert-to",

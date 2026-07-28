@@ -12,49 +12,49 @@ export type GoogleUser = {
     deleted?: boolean;
 };
 export declare function upsertSolicitanteFromGoogle_min(user: GoogleUser, empresaId: number): Promise<{
-    updatedAt: Date;
-    id_solicitante: number;
-    clienteId: number | null;
-    googleUserId: string | null;
-    microsoftUserId: string | null;
-    rut: string | null;
     nombre: string;
+    deactivatedAt: Date | null;
+    isActive: boolean;
+    id_solicitante: number;
     email: string | null;
     telefono: string | null;
     empresaId: number;
-    isActive: boolean;
+    clienteId: number | null;
+    googleUserId: string | null;
+    microsoftUserId: string | null;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
+    rut: string | null;
     createdAt: Date;
-    deactivatedAt: Date | null;
+    updatedAt: Date;
 } | null>;
 /** Alias para compatibilidad */
 export { upsertSolicitanteFromGoogle_full as upsertSolicitanteFromGoogle };
 export declare function upsertSolicitanteFromGoogle_full(user: GoogleUser, empresaId: number): Promise<{
-    updatedAt: Date;
-    id_solicitante: number;
-    clienteId: number | null;
-    googleUserId: string | null;
-    microsoftUserId: string | null;
-    rut: string | null;
     nombre: string;
+    deactivatedAt: Date | null;
+    isActive: boolean;
+    id_solicitante: number;
     email: string | null;
     telefono: string | null;
     empresaId: number;
-    isActive: boolean;
+    clienteId: number | null;
+    googleUserId: string | null;
+    microsoftUserId: string | null;
     accountType: import("@prisma/client").$Enums.AccountType | null;
     deletedAt: Date | null;
+    rut: string | null;
     createdAt: Date;
-    deactivatedAt: Date | null;
+    updatedAt: Date;
 }>;
 export declare function deactivateMissingGoogleSolicitantes(empresaId: number, googleIdsActivos: string[]): Promise<{
     count: number;
     users: {
-        id_solicitante: number;
-        googleUserId: string | null;
         nombre: string;
+        id_solicitante: number;
         email: string | null;
         empresaId: number;
+        googleUserId: string | null;
     }[];
 }>;
 //# sourceMappingURL=solicitanteSync.d.ts.map

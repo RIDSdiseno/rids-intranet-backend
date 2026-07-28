@@ -17,6 +17,9 @@ import {
   AgendaConflictError,
   AgendaNotFoundError,
   AgendaPastDateError,
+  AgendaStateTransitionError,
+  AgendaSucursalInvalidaError,
+  AgendaVisitaVinculadaError,
 } from "../service/agenda.service.js";
 
 /* ================== Schemas ================== */
@@ -49,6 +52,7 @@ const updateVisitaSchema = z.object({
     .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora fin inválida, use HH:mm")
     .optional(),
   empresaId: z.number().nullable().optional(),
+  sucursalId: z.number().int().positive().nullable().optional(),
 });
 
 const reprogramarTecnicosSchema = z.object({
@@ -63,6 +67,7 @@ const eliminarMallaSchema = z.object({
 const crearVisitaManualSchema = z.object({
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
   empresaId: z.number().int().positive().nullable(),
+  sucursalId: z.number().int().positive().nullable().optional(),
   tecnicoId: z.number().int().positive(),
   horaInicio: z
     .string()
@@ -101,13 +106,33 @@ export async function generarMalla(req: Request, res: Response) {
 }
 
 // GET /agenda/empresas
-export async function listarEmpresasAgenda(req: Request, res: Response) {
+export async function listarEmpresasAgenda(
+  _req: Request,
+  res: Response
+) {
   try {
-    const empresas = await getEmpresasAgenda();
-    return res.status(200).json(empresas);
-  } catch (err: any) {
-    console.error("Error al listar empresas de agenda:", err);
-    return res.status(500).json({ error: "Error al listar empresas de agenda" });
+    const empresas =
+      await getEmpresasAgenda();
+
+    const empresasActivas =
+      empresas.filter(
+        (empresa) =>
+          empresa.isActive !== false
+      );
+
+    return res
+      .status(200)
+      .json(empresasActivas);
+  } catch (err: unknown) {
+    console.error(
+      "Error al listar empresas de agenda:",
+      err
+    );
+
+    return res.status(500).json({
+      error:
+        "Error al listar empresas de agenda",
+    });
   }
 }
 
@@ -187,21 +212,29 @@ export async function updateVisita(req: Request, res: Response) {
       return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
     }
 
-    const { fecha, estado, notas, mensaje, horaInicio, horaFin, empresaId } = parsed.data;
+    const { fecha, estado, notas, mensaje, horaInicio, horaFin, empresaId, sucursalId } = parsed.data;
 
     const actualizado = await actualizarAgendaVisita(id, {
       ...(fecha !== undefined && { fecha }),
       ...(estado !== undefined && { estado }),
       ...(notas !== undefined && { notas }),
-      ...(mensaje  !==  undefined && { mensaje  }),
+      ...(mensaje !== undefined && { mensaje }),
       ...(horaInicio !== undefined && { horaInicio }),
       ...(horaFin !== undefined && { horaFin }),
       ...(empresaId !== undefined && { empresaId }),
+      ...(sucursalId !== undefined && { sucursalId }),
     });
 
     return res.status(200).json(actualizado);
   } catch (err: any) {
-    if (err instanceof AgendaConflictError || err instanceof AgendaPastDateError) {
+    if (err instanceof AgendaSucursalInvalidaError) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (
+      err instanceof AgendaConflictError ||
+      err instanceof AgendaPastDateError ||
+      err instanceof AgendaStateTransitionError
+    ) {
       return res.status(409).json({ error: err.message });
     }
     console.error("Error al actualizar visita de agenda:", err);
@@ -219,6 +252,9 @@ export async function eliminarVisita(req: Request, res: Response) {
     await eliminarAgendaVisita(id);
     return res.status(204).send();
   } catch (err: any) {
+    if (err instanceof AgendaVisitaVinculadaError) {
+      return res.status(409).json({ error: err.message });
+    }
     console.error("Error al eliminar visita de agenda:", err);
     if (err.code === "P2025") return res.status(404).json({ error: "Visita no encontrada" });
     return res.status(500).json({ error: "Error al eliminar visita de agenda" });
@@ -260,6 +296,7 @@ export async function crearVisitaManual(req: Request, res: Response) {
 
     return res.status(201).json(visita);
   } catch (err: any) {
+    if (err instanceof AgendaSucursalInvalidaError) return res.status(400).json({ error: err.message });
     if (err instanceof AgendaConflictError) return res.status(409).json({ error: err.message });
     console.error("Error al crear visita manual:", err);
     return res.status(500).json({ error: "Error al crear visita manual" });

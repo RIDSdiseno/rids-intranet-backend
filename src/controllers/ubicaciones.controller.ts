@@ -88,9 +88,6 @@ export async function listarUltimasUbicacionesTecnicos(req: Request, res: Respon
     );
 
     const tecnicoIds = ubicacionesUnicas.map((ubicacion) => ubicacion.tecnicoId);
-    const agendaIds = ubicacionesUnicas
-      .map((ubicacion) => ubicacion.agendaId)
-      .filter((agendaId): agendaId is number => typeof agendaId === "number");
 
     const tecnicosPromise = prisma.tecnico.findMany({
       where: {
@@ -107,12 +104,17 @@ export async function listarUltimasUbicacionesTecnicos(req: Request, res: Respon
       },
     });
 
-    const agendasPromise = agendaIds.length
+    // La empresa/destino que se muestra en el mapa se resuelve por la agenda del
+    // técnico que está EN_RUTA o INICIADA: es decir, desde que presiona "iniciar
+    // ruta" hasta que guarda el formulario (momento en que la agenda pasa a
+    // COMPLETADA y deja de mostrarse, volviendo a "sin visita asociada").
+    // Ya NO se usa el agendaId del punto GPS, porque con el tracking de jornada
+    // los puntos llegan con agendaId nulo aunque el técnico tenga visita en curso.
+    const agendasActivasPromise = tecnicoIds.length
       ? prisma.agendaVisita.findMany({
           where: {
-            id: {
-              in: agendaIds,
-            },
+            estado: { in: ["EN_RUTA", "INICIADA"] },
+            tecnicos: { some: { tecnicoId: { in: tecnicoIds } } },
           },
           select: {
             id: true,
@@ -122,8 +124,6 @@ export async function listarUltimasUbicacionesTecnicos(req: Request, res: Respon
             fechaInicioVisita: true,
             estado: true,
             empresaExternaNombre: true,
-            notas: true,
-            mensaje: true,
             empresa: {
               select: {
                 nombre: true,
@@ -135,27 +135,59 @@ export async function listarUltimasUbicacionesTecnicos(req: Request, res: Respon
                 },
               },
             },
+            sucursal: {
+              select: {
+                direccion: true,
+              },
+            },
+            tecnicos: {
+              select: {
+                tecnicoId: true,
+              },
+            },
           },
         })
       : Promise.resolve([]);
 
-    const [tecnicos, agendas] = await Promise.all([tecnicosPromise, agendasPromise]);
+    const [tecnicos, agendasActivas] = await Promise.all([tecnicosPromise, agendasActivasPromise]);
 
     const tecnicosPorId = new Map(tecnicos.map((tecnico) => [tecnico.id_tecnico, tecnico] as const));
-    const agendasPorId = new Map(agendas.map((agenda) => [agenda.id, agenda] as const));
+
+    // Si un técnico tiene más de una agenda activa, se prioriza la que ya está
+    // INICIADA (visita en sitio) por sobre EN_RUTA (aún en camino) y, dentro de
+    // cada grupo, la más reciente según su marca de inicio.
+    const marcaInicio = (agenda: (typeof agendasActivas)[number]) =>
+      new Date(agenda.fechaInicioVisita ?? agenda.fechaInicioRuta ?? agenda.fecha).getTime();
+
+    const agendasOrdenadas = [...agendasActivas].sort((a, b) => {
+      const pa = a.estado === "INICIADA" ? 0 : 1;
+      const pb = b.estado === "INICIADA" ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      return marcaInicio(b) - marcaInicio(a);
+    });
+
+    const agendaActivaPorTecnico = new Map<number, (typeof agendasActivas)[number]>();
+    for (const agenda of agendasOrdenadas) {
+      for (const asignado of agenda.tecnicos) {
+        if (!agendaActivaPorTecnico.has(asignado.tecnicoId)) {
+          agendaActivaPorTecnico.set(asignado.tecnicoId, agenda);
+        }
+      }
+    }
 
     const respuesta = ubicacionesUnicas.map((ubicacion) => {
       const tecnico = tecnicosPorId.get(ubicacion.tecnicoId);
-      const agenda = ubicacion.agendaId ? agendasPorId.get(ubicacion.agendaId) : null;
+      const agenda = agendaActivaPorTecnico.get(ubicacion.tecnicoId) ?? null;
       const detalleEmpresa = agenda?.empresa?.detalleEmpresa;
 
       return {
         tecnicoId: ubicacion.tecnicoId,
         tecnicoNombre: tecnico?.nombre ?? `Tecnico #${ubicacion.tecnicoId}`,
         tecnicoEmail: tecnico?.email ?? null,
-        agendaId: ubicacion.agendaId,
+        agendaId: agenda?.id ?? null,
         empresa: agenda?.empresa?.nombre ?? agenda?.empresaExternaNombre ?? null,
         direccion:
+          agenda?.sucursal?.direccion ??
           detalleEmpresa?.direccion ??
           getDireccionDesdeJson(detalleEmpresa?.direcciones) ??
           null,

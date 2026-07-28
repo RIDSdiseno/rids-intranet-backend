@@ -11,10 +11,10 @@ declare class TicketEmailTemplateService {
     private defaultLogo;
     ensureDefaults(): Promise<void>;
     getTemplate(key: TemplateKey): Promise<import("./ticket-email-template.defaults.js").TicketEmailTemplateDefault | {
-        id: number;
-        updatedAt: Date;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        id: number;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -31,10 +31,10 @@ declare class TicketEmailTemplateService {
         tecnico?: TecnicoFirmaInput | null;
     }): Promise<{
         template: import("./ticket-email-template.defaults.js").TicketEmailTemplateDefault | {
-            id: number;
-            updatedAt: Date;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            id: number;
             key: string;
             subjectTpl: string;
             bodyHtmlTpl: string;
@@ -45,10 +45,10 @@ declare class TicketEmailTemplateService {
         isEnabled: boolean;
     }>;
     list(): Promise<{
-        id: number;
-        updatedAt: Date;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        id: number;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -61,10 +61,10 @@ declare class TicketEmailTemplateService {
         isEnabled?: boolean;
         name?: string;
     }): Promise<{
-        id: number;
-        updatedAt: Date;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        id: number;
         key: string;
         subjectTpl: string;
         bodyHtmlTpl: string;
@@ -79,12 +79,12 @@ declare class TicketEmailTemplateService {
         bodyHtml: string;
     }>;
     getSignatureSettings(): Promise<{
-        id: number;
-        updatedAt: Date;
         nombre: string;
         email: string;
         telefono: string | null;
         createdAt: Date;
+        updatedAt: Date;
+        id: number;
         cargo: string;
         area: string;
         isEnabled: boolean;

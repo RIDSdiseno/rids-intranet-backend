@@ -1,9 +1,8 @@
 // src/controllers/productos-gestioo.controller.ts
 import fs from "fs/promises";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
 import cloudinary from "../config/cloudinary.js";
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 /* ======================================
    HELPERS
 ====================================== */
@@ -25,6 +24,10 @@ function normalizarNombreComparacion(value) {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase();
+}
+const MAX_DESCRIPCION_PRODUCTO = 150;
+function normalizarDescripcionProducto(value) {
+    return String(value ?? "").trim().slice(0, MAX_DESCRIPCION_PRODUCTO);
 }
 async function buscarProductoDuplicadoPorNombre(nombre, productoIdExcluir) {
     const nombreComparacion = normalizarNombreComparacion(nombre);
@@ -135,7 +138,7 @@ export async function createProducto(req, res) {
         const nuevo = await prisma.productoGestioo.create({
             data: {
                 nombre: nombreLimpio,
-                descripcion: descripcion?.trim() || null,
+                descripcion: normalizarDescripcionProducto(descripcion),
                 //Guardamos siempre el COSTO en "precio"
                 precio: costoReal,
                 categoria: categoria || null,
@@ -248,7 +251,9 @@ export async function updateProducto(req, res) {
         const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
         const data = {
             nombre: nombreLimpio,
-            descripcion: descripcion?.trim() || null,
+            descripcion: descripcion !== undefined
+                ? normalizarDescripcionProducto(descripcion)
+                : normalizarDescripcionProducto(existe.descripcion),
             // Guardamos costo real en "precio"
             precio: costoReal,
             categoria: categoria || null,

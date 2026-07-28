@@ -1,6 +1,6 @@
 // src/service/agenda.service.ts
 import { prisma } from "../lib/prisma.js";
-import { TipoAgenda, EstadoAgenda } from "@prisma/client";
+import { TipoAgenda, EstadoAgenda, EstadoVisita } from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
 import { string } from "zod";
 
@@ -29,6 +29,71 @@ export class AgendaNotFoundError extends Error {
     }
 }
 
+export class AgendaStateTransitionError extends Error {
+    constructor(message = "La transición de estado solicitada no está permitida.") {
+        super(message);
+        this.name = "AgendaStateTransitionError";
+    }
+}
+
+export class AgendaSucursalInvalidaError extends Error {
+    constructor(message = "La sucursal seleccionada no es válida para esta agenda.") {
+        super(message);
+        this.name = "AgendaSucursalInvalidaError";
+    }
+}
+
+export class AgendaVisitaVinculadaError extends Error {
+    constructor(message = "No se puede eliminar esta agenda porque tiene un formulario de visita vinculado.") {
+        super(message);
+        this.name = "AgendaVisitaVinculadaError";
+    }
+}
+
+const TRANSICIONES_ESTADO_AGENDA: Record<EstadoAgenda, ReadonlySet<EstadoAgenda>> = {
+    [EstadoAgenda.PROGRAMADA]: new Set([
+        EstadoAgenda.PROGRAMADA,
+        EstadoAgenda.NOTIFICADA,
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.NOTIFICADA]: new Set([
+        EstadoAgenda.NOTIFICADA,
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.EN_RUTA]: new Set([
+        EstadoAgenda.EN_RUTA,
+        EstadoAgenda.INICIADA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.INICIADA]: new Set([
+        EstadoAgenda.INICIADA,
+        EstadoAgenda.COMPLETADA,
+        EstadoAgenda.CANCELADA,
+    ]),
+    [EstadoAgenda.COMPLETADA]: new Set([EstadoAgenda.COMPLETADA]),
+    [EstadoAgenda.CANCELADA]: new Set([EstadoAgenda.CANCELADA]),
+};
+
+function validarTransicionEstadoAgenda(
+    estadoActual: EstadoAgenda,
+    estadoSolicitado: EstadoAgenda,
+    visitaStatus?: EstadoVisita | null
+) {
+    if (visitaStatus === EstadoVisita.COMPLETADA && estadoSolicitado !== EstadoAgenda.COMPLETADA) {
+        throw new AgendaStateTransitionError(
+            "Una agenda con formulario de visita completado no puede volver a un estado anterior."
+        );
+    }
+
+    if (!TRANSICIONES_ESTADO_AGENDA[estadoActual].has(estadoSolicitado)) {
+        throw new AgendaStateTransitionError(
+            `No se permite cambiar la agenda de ${estadoActual} a ${estadoSolicitado}.`
+        );
+    }
+}
+
 /* ======================================================
    🗓️ Utilidades de fecha
 ====================================================== */
@@ -37,7 +102,7 @@ export class AgendaNotFoundError extends Error {
  * Parsea un string "YYYY-MM-DD" y devuelve UTC midnight sin pasar por new Date(string),
  * evitando cualquier ambigüedad de timezone en el servidor.
  */
-function normalizarFechaDesdeString(fecha: string): Date {
+export function normalizarFechaDesdeString(fecha: string): Date {
     const [year, month, day] = fecha.split("-").map(Number);
     return new Date(Date.UTC(year!, month! - 1, day!));
 }
@@ -56,7 +121,7 @@ function getSemanaISO(fecha: Date): number {
 }
 
 /** Formatea un Date UTC midnight como "YYYY-MM-DD" para respuestas de agenda (sin timezone). */
-function formatearFechaAgenda(date: Date): string {
+export function formatearFechaAgenda(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
 
@@ -113,6 +178,12 @@ async function adjuntarFormularioVisita<T extends AgendaConIdFecha>(visitas: T[]
             visitaId: formulario?.id_visita ?? null,
             visitaStatus: formulario?.status ?? null,
             visitaOrigen: formulario?.origen ?? null,
+            inconsistenciaEstado:
+                formulario?.status === EstadoVisita.COMPLETADA &&
+                "estado" in visita &&
+                visita.estado !== EstadoAgenda.COMPLETADA
+                    ? "VISITA_COMPLETADA_AGENDA_NO_COMPLETADA"
+                    : null,
         });
     });
 }
@@ -230,6 +301,8 @@ type AgendaOutlookVisita = {
     mensaje?: string | null;
     empresa?: { nombre: string } | null;
     empresaExternaNombre?: string | null;
+    destinoNombre?: string | null;
+    destinoDireccion?: string | null;
     tecnicos?: Array<{
         tecnico?: {
             nombre?: string | null;
@@ -240,19 +313,65 @@ type AgendaOutlookVisita = {
 
 function normalizarNombreEmpresaOutlook(nombre?: string | null): string | null {
     const nombreTrim = nombre?.trim().replace(/^@/, "").trim();
-    if (!nombreTrim) return null;
+    return nombreTrim || null;
+}
 
-    const mapaNormalizacion: Record<string, string> = {
-        "nace alameda": "CLN ALAMEDA",
-        "nace prov.": "CLN PROVIDENCIA",
-        "nace providencia": "CLN PROVIDENCIA",
-        "procret": "FIJACIONES PROCRET",
-        "jpl concon": "JPL",
-        "oficina": "OFICINA",
-        "t-sales latadia": "T-SALES",
-    };
+// Palabras/frases que indican que el evento de Outlook no es una visita a un
+// cliente (permisos, pruebas, trabajo remoto del tecnico, etc.). Se comparan
+// sin tildes y en minusculas contra el asunto completo del evento.
+const PALABRAS_CLAVE_NO_CLIENTE = [
+    "permiso",
+    "dia libre",
+    "prueba tecnica",
+    "home office",
+];
 
-    return mapaNormalizacion[nombreTrim.toLowerCase()] ?? nombreTrim;
+function esEventoOutlookNoCliente(subject?: string | null): boolean {
+    const normalizado = normalizarTextoNombre(subject ?? "");
+    return PALABRAS_CLAVE_NO_CLIENTE.some((clave) => normalizado.includes(clave));
+}
+
+async function buscarEmpresaPorAliasOutlook(nombreNormalizado: string): Promise<{
+    id_empresa: number;
+    nombre: string;
+} | null> {
+    const alias = await prisma.empresaAliasOutlook.findFirst({
+        where: {
+            alias: {
+                equals: nombreNormalizado,
+                mode: "insensitive",
+            },
+        },
+        select: {
+            empresa: { select: { id_empresa: true, nombre: true } },
+        },
+    });
+
+    return alias?.empresa ?? null;
+}
+
+// Fallback difuso: busca coincidencia "contiene" en cualquier direccion,
+// normalizando tildes/mayusculas (igual que el matching de tecnico). Si mas
+// de una empresa distinta calza, se trata como ambiguo y no se resuelve
+// automaticamente (mejor dejarla como "empresa externa" que asignarla mal).
+async function buscarEmpresaPorCoincidenciaParcial(nombreNormalizado: string): Promise<{
+    id_empresa: number;
+    nombre: string;
+} | null> {
+    const candidato = normalizarTextoNombre(nombreNormalizado);
+    if (!candidato || candidato.length < 3) return null;
+
+    const empresas = await prisma.empresa.findMany({
+        select: { id_empresa: true, nombre: true },
+    });
+
+    const coincidencias = empresas.filter((empresa) => {
+        const nombreEmpresa = normalizarTextoNombre(empresa.nombre);
+        return nombreEmpresa.includes(candidato) || candidato.includes(nombreEmpresa);
+    });
+
+    const distintas = new Map(coincidencias.map((e) => [e.id_empresa, e]));
+    return distintas.size === 1 ? [...distintas.values()][0]! : null;
 }
 
 async function resolverEmpresaDesdeOutlook(nombre?: string | null): Promise<{
@@ -280,7 +399,7 @@ async function resolverEmpresaDesdeOutlook(nombre?: string | null): Promise<{
         };
     }
 
-    const empresa = await prisma.empresa.findFirst({
+    const empresaExacta = await prisma.empresa.findFirst({
         where: {
             nombre: {
                 equals: nombreNormalizado,
@@ -292,6 +411,11 @@ async function resolverEmpresaDesdeOutlook(nombre?: string | null): Promise<{
             nombre: true,
         },
     });
+
+    const empresa =
+        empresaExacta ??
+        (await buscarEmpresaPorAliasOutlook(nombreNormalizado)) ??
+        (await buscarEmpresaPorCoincidenciaParcial(nombreNormalizado));
 
     if (empresa) {
         return {
@@ -317,6 +441,85 @@ function getNombreEmpresaAgenda(visita: {
         visita.empresaExternaNombre?.trim() ||
         "OFICINA"
     );
+}
+
+type DestinoSnapshot = {
+    sucursalId: number | null;
+    destinoNombre: string | null;
+    destinoDireccion: string | null;
+    destinoLatitud: number | null;
+    destinoLongitud: number | null;
+};
+
+const DESTINO_VACIO: DestinoSnapshot = {
+    sucursalId: null,
+    destinoNombre: null,
+    destinoDireccion: null,
+    destinoLatitud: null,
+    destinoLongitud: null,
+};
+
+/**
+ * Resuelve y congela ("snapshot") el destino de una agenda al crearla o al
+ * cambiar su empresa/sucursal. A diferencia de la inferencia usada en el mapa
+ * de técnicos (que adivina el destino de agendas antiguas sin snapshot), acá
+ * el destino ya viene elegido explícitamente por quien agenda:
+ *   - si eligió una sucursal -> se usa esa sucursal (nombre/dirección/coords);
+ *   - si no eligió sucursal pero hay empresa -> se usa la ubicación principal
+ *     de DetalleEmpresa ("Casa matriz");
+ *   - si no hay empresa (agenda externa) -> destino vacío.
+ */
+async function resolverDestinoSnapshot(params: {
+    empresaId: number | null;
+    sucursalId: number | null;
+}): Promise<DestinoSnapshot> {
+    if (params.sucursalId != null) {
+        const sucursal = await prisma.sucursal.findUnique({
+            where: { id_sucursal: params.sucursalId },
+            select: { nombre: true, direccion: true, latitud: true, longitud: true, empresaId: true },
+        });
+
+        if (!sucursal) {
+            throw new AgendaSucursalInvalidaError("La sucursal seleccionada no existe.");
+        }
+
+        if (params.empresaId != null && sucursal.empresaId !== params.empresaId) {
+            throw new AgendaSucursalInvalidaError("La sucursal seleccionada no pertenece a la empresa indicada.");
+        }
+
+        return {
+            sucursalId: params.sucursalId,
+            destinoNombre: sucursal.nombre,
+            destinoDireccion: sucursal.direccion ?? null,
+            destinoLatitud: sucursal.latitud ?? null,
+            destinoLongitud: sucursal.longitud ?? null,
+        };
+    }
+
+    if (params.empresaId != null) {
+        const detalle = await prisma.detalleEmpresa.findUnique({
+            where: { empresa_id: params.empresaId },
+            select: { direccion: true, latitud: true, longitud: true },
+        });
+
+        return {
+            sucursalId: null,
+            destinoNombre: "Casa matriz",
+            destinoDireccion: detalle?.direccion ?? null,
+            destinoLatitud: detalle?.latitud ?? null,
+            destinoLongitud: detalle?.longitud ?? null,
+        };
+    }
+
+    return DESTINO_VACIO;
+}
+
+function buildAgendaOutlookLocation(visita: { destinoNombre?: string | null; destinoDireccion?: string | null }): string | undefined {
+    const nombre = visita.destinoNombre?.trim();
+    const direccion = visita.destinoDireccion?.trim();
+
+    if (nombre && direccion) return `${nombre} - ${direccion}`;
+    return nombre || direccion || undefined;
 }
 
 function buildAgendaDateTime(fecha: Date, hora?: string | null): string | undefined {
@@ -364,6 +567,10 @@ function buildAgendaOutlookBody(visita: AgendaOutlookVisita): string {
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; width: 40%; border: 1px solid #eee;">Empresa</td>
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(nombreEmpresa)}</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Destino</td>
+      <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(buildAgendaOutlookLocation(visita)) || "Sin destino registrado"}</td>
     </tr>
     <tr>
       <td style="padding: 8px 12px; background: #f9f9f9; font-weight: bold; border: 1px solid #eee;">Fecha</td>
@@ -826,7 +1033,7 @@ export async function getEmpresasAgenda() {
                 notIn: ["SIN EMPRESA"],
             },
         },
-        select: { id_empresa: true, nombre: true },
+        select: { id_empresa: true, nombre: true, isActive: true, },
         orderBy: { nombre: "asc" },
     });
 }
@@ -902,6 +1109,7 @@ export async function getAgendaMensual(
         where,
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true, direccion: true, latitud: true, longitud: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1202,11 +1410,21 @@ async function buscarAgendaCoincidenteDesdeOutlook(params: {
     const tecnicoIdsObjetivo = Array.from(new Set(params.tecnicoIds));
     if (tecnicoIdsObjetivo.length === 0) return null;
 
+    // Solo se considera "candidata" una agenda local que aún no está vinculada
+    // a ningún evento de Outlook y que no tiene ningún avance operativo real.
+    // Sin estos filtros, la búsqueda por fecha/hora/técnico/empresa podía
+    // "reencontrar" una agenda ya vinculada, en ruta, iniciada o con visita
+    // asociada, y el sync la reprocesaba como si fuera un evento nuevo.
     const baseWhere = {
         fecha: params.fecha,
         horaInicio: params.horaInicio,
         horaFin: params.horaFin,
         tipo: params.tipo,
+        outlookEventId: null,
+        estado: { in: [EstadoAgenda.PROGRAMADA, EstadoAgenda.NOTIFICADA] },
+        visita: { is: null },
+        fechaInicioRuta: null,
+        fechaInicioVisita: null,
     };
 
     const empresaExternaNormalizada = normalizarNombreEmpresaOutlook(params.empresaExternaNombre);
@@ -1315,6 +1533,10 @@ export async function sincronizarAgendaDesdeOutlook(
 }> {
     const { inicio, fin, startDateTime, endDateTime } = buildAgendaOutlookMonthRange(year, month);
     const events = await graphReaderService.readCalendarEvents(startDateTime, endDateTime);
+    let creadas = 0;
+    let actualizadas = 0;
+    let omitidas = 0;
+    let errores = 0;
 
     const outlookIdsVigentes = new Set(
         events
@@ -1335,6 +1557,8 @@ export async function sincronizarAgendaDesdeOutlook(
         select: {
             id: true,
             outlookEventId: true,
+            estado: true,
+            visita: { select: { id_visita: true } },
         },
     });
 
@@ -1343,11 +1567,17 @@ export async function sincronizarAgendaDesdeOutlook(
         return Boolean(outlookId) && !outlookIdsVigentes.has(outlookId!);
     });
 
-    if (visitasEliminadasEnOutlook.length > 0) {
+    const visitasSegurasParaEliminar = visitasEliminadasEnOutlook.filter((visita) =>
+        !visita.visita &&
+        (visita.estado === EstadoAgenda.PROGRAMADA || visita.estado === EstadoAgenda.NOTIFICADA)
+    );
+    omitidas += visitasEliminadasEnOutlook.length - visitasSegurasParaEliminar.length;
+
+    if (visitasSegurasParaEliminar.length > 0) {
         await prisma.agendaVisita.deleteMany({
             where: {
                 id: {
-                    in: visitasEliminadasEnOutlook.map((visita) => visita.id),
+                    in: visitasSegurasParaEliminar.map((visita) => visita.id),
                 },
             },
         });
@@ -1355,11 +1585,6 @@ export async function sincronizarAgendaDesdeOutlook(
         //  console.log(
         // `[AGENDA OUTLOOK SYNC] Eliminadas en intranet por borrado en Outlook: ${visitasEliminadasEnOutlook.length}` );
     }
-
-    let creadas = 0;
-    let actualizadas = 0;
-    let omitidas = 0;
-    let errores = 0;
 
     for (const event of events) {
         try {
@@ -1373,6 +1598,11 @@ export async function sincronizarAgendaDesdeOutlook(
 
             if (!fecha) {
                 throw new Error(`Evento ${event.id} sin fecha de inicio válida`);
+            }
+
+            if (esEventoOutlookNoCliente(event.subject)) {
+                omitidas++;
+                continue;
             }
 
             const tecnicos = await resolverTecnicosDesdeOutlook({
@@ -1419,6 +1649,33 @@ export async function sincronizarAgendaDesdeOutlook(
             }
 
             if (agendaObjetivo) {
+                const agendaExistente = await prisma.agendaVisita.findUnique({
+                    where: { id: agendaObjetivo.id },
+                    select: {
+                        estado: true,
+                        visita: { select: { id_visita: true } },
+                        fechaInicioRuta: true,
+                        fechaInicioVisita: true,
+                    },
+                });
+
+                // Este guard cubre tanto el match directo por outlookEventId como el
+                // match por buscarAgendaCoincidenteDesdeOutlook: una agenda con avance
+                // operativo real (visita vinculada, ruta o visita ya iniciada) o que no
+                // está en un estado editable nunca se reutiliza — se omite y, si
+                // corresponde, se crea una agenda nueva más abajo.
+                if (
+                    !agendaExistente ||
+                    agendaExistente.visita ||
+                    agendaExistente.fechaInicioRuta ||
+                    agendaExistente.fechaInicioVisita ||
+                    (agendaExistente.estado !== EstadoAgenda.PROGRAMADA &&
+                        agendaExistente.estado !== EstadoAgenda.NOTIFICADA)
+                ) {
+                    omitidas++;
+                    continue;
+                }
+
                 await prisma.agendaVisita.update({
                     where: { id: agendaObjetivo.id },
                     data: {
@@ -1428,7 +1685,6 @@ export async function sincronizarAgendaDesdeOutlook(
                         empresaId,
                         empresaExternaNombre,
                         tipo,
-                        estado: EstadoAgenda.PROGRAMADA,
                         outlookEventId: event.id,
                     },
                 });
@@ -1570,6 +1826,7 @@ export async function actualizarAgendaVisita(
         horaInicio?: string | undefined;
         horaFin?: string | undefined;
         empresaId?: number | null | undefined;
+        sucursalId?: number | null | undefined;
     }
 ) {
     const {
@@ -1580,16 +1837,22 @@ export async function actualizarAgendaVisita(
         horaInicio,
         horaFin,
         empresaId,
+        sucursalId,
     } = datos;
 
-    // Fetch previo: necesario para validación de fecha pasada y conflicto horario
+    // Fetch previo: necesario para validación de fecha pasada, conflicto horario
+    // y para saber el empresaId/sucursalId vigentes si solo cambia uno de los dos.
     const actual = await prisma.agendaVisita.findUnique({
         where: { id },
         select: {
             fecha: true,
+            estado: true,
             horaInicio: true,
             horaFin: true,
             outlookEventId: true,
+            empresaId: true,
+            sucursalId: true,
+            visita: { select: { status: true } },
             tecnicos: { select: { tecnicoId: true } },
         },
     });
@@ -1610,6 +1873,22 @@ export async function actualizarAgendaVisita(
                 await validarConflictoHorario({ fecha: fechaFinal, horaInicio: inicioFinal, horaFin: finFinal, tecnicoIds, excluirVisitaId: id });
             }
         }
+
+        if (estado !== undefined) {
+            validarTransicionEstadoAgenda(actual.estado, estado, actual.visita?.status);
+        }
+    }
+
+    // El snapshot de destino solo se recalcula si empresa o sucursal cambian;
+    // el resto de las ediciones (fecha, hora, notas, estado) lo dejan intacto.
+    let destinoUpdate: Partial<DestinoSnapshot> = {};
+    if (empresaId !== undefined || sucursalId !== undefined) {
+        const empresaIdFinal = empresaId !== undefined ? empresaId : actual?.empresaId ?? null;
+        const sucursalIdFinal = sucursalId !== undefined ? sucursalId : actual?.sucursalId ?? null;
+        destinoUpdate = await resolverDestinoSnapshot({
+            empresaId: empresaIdFinal,
+            sucursalId: sucursalIdFinal,
+        });
     }
 
     const visita = await prisma.agendaVisita.update({
@@ -1622,9 +1901,11 @@ export async function actualizarAgendaVisita(
             ...(horaInicio !== undefined && { horaInicio }),
             ...(horaFin !== undefined && { horaFin }),
             ...(empresaId !== undefined && { empresaId }),
+            ...destinoUpdate,
         },
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1638,6 +1919,7 @@ export async function actualizarAgendaVisita(
 
     if (startDateTime && endDateTime) {
         const categoriaOutlook = buildAgendaOutlookCategory(visita);
+        const destinoLocation = buildAgendaOutlookLocation(visita);
 
         try {
             if (actual?.outlookEventId) {
@@ -1648,6 +1930,7 @@ export async function actualizarAgendaVisita(
                     endDateTime,
                     categories: [categoriaOutlook],
                     attendees: buildAgendaOutlookAttendees(visita),
+                    ...(destinoLocation !== undefined && { location: destinoLocation }),
                 };
 
                 await graphReaderService.updateCalendarEvent(actual.outlookEventId, eventData);
@@ -1660,6 +1943,7 @@ export async function actualizarAgendaVisita(
                     endDateTime,
                     categories: [categoriaOutlook],
                     attendees: buildAgendaOutlookAttendees(visita),
+                    ...(destinoLocation !== undefined && { location: destinoLocation }),
                 };
 
                 const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
@@ -1791,8 +2075,15 @@ export async function reasignarTecnicos(
 export async function eliminarAgendaVisita(id: number) {
     const visita = await prisma.agendaVisita.findUnique({
         where: { id },
-        select: { outlookEventId: true },
+        select: {
+            outlookEventId: true,
+            visita: { select: { id_visita: true } },
+        },
     });
+
+    if (visita?.visita) {
+        throw new AgendaVisitaVinculadaError();
+    }
 
     if (visita?.outlookEventId) {
         try {
@@ -1850,8 +2141,20 @@ export async function eliminarMallaMensual(
         return { eliminadas: 0 };
     }
 
+    const agendasEliminables = await prisma.agendaVisita.findMany({
+        where: {
+            fecha: { gte: manana, lte: fin },
+            outlookEventId: null,
+            estado: { in: [EstadoAgenda.PROGRAMADA, EstadoAgenda.NOTIFICADA] },
+            visita: { is: null },
+        },
+        select: { id: true },
+    });
+
+    if (agendasEliminables.length === 0) return { eliminadas: 0 };
+
     const { count } = await prisma.agendaVisita.deleteMany({
-        where: { fecha: { gte: manana, lte: fin }, outlookEventId: null },
+        where: { id: { in: agendasEliminables.map((agenda) => agenda.id) } },
     });
 
     //console.log(
@@ -1869,6 +2172,7 @@ export async function eliminarMallaMensual(
 export async function crearAgendaVisitaManual(data: {
     fecha: string;
     empresaId: number | null;
+    sucursalId?: number | null | undefined;
     tecnicoId: number;
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
@@ -1887,6 +2191,10 @@ export async function crearAgendaVisitaManual(data: {
     }
 
     const tipo = esSabado(fechaUTC) ? TipoAgenda.SABADO : TipoAgenda.SEMANA;
+    const destino = await resolverDestinoSnapshot({
+        empresaId: data.empresaId,
+        sucursalId: data.sucursalId ?? null,
+    });
 
     const visita = await prisma.agendaVisita.create({
         data: {
@@ -1894,6 +2202,11 @@ export async function crearAgendaVisitaManual(data: {
             empresaId: data.empresaId,
             tipo,
             estado: EstadoAgenda.PROGRAMADA,
+            sucursalId: destino.sucursalId,
+            destinoNombre: destino.destinoNombre,
+            destinoDireccion: destino.destinoDireccion,
+            destinoLatitud: destino.destinoLatitud,
+            destinoLongitud: destino.destinoLongitud,
             ...(data.horaInicio !== undefined && { horaInicio: data.horaInicio }),
             ...(data.horaFin !== undefined && { horaFin: data.horaFin }),
             ...(data.mensaje !== undefined && { mensaje: data.mensaje }),
@@ -1904,6 +2217,7 @@ export async function crearAgendaVisitaManual(data: {
         },
         include: {
             empresa: { select: { id_empresa: true, nombre: true } },
+            sucursal: { select: { id_sucursal: true, nombre: true } },
             tecnicos: {
                 include: {
                     tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
@@ -1919,6 +2233,7 @@ export async function crearAgendaVisitaManual(data: {
         const categoriaOutlook = buildAgendaOutlookCategory(visita);
 
         try {
+            const destinoLocation = buildAgendaOutlookLocation(visita);
             const eventData = {
                 subject: buildAgendaOutlookSubject(visita),
                 bodyHtml: buildAgendaOutlookBody(visita),
@@ -1926,6 +2241,7 @@ export async function crearAgendaVisitaManual(data: {
                 endDateTime,
                 categories: [categoriaOutlook],
                 attendees: buildAgendaOutlookAttendees(visita),
+                ...(destinoLocation !== undefined && { location: destinoLocation }),
             };
 
             const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
@@ -1936,6 +2252,7 @@ export async function crearAgendaVisitaManual(data: {
                     data: { outlookEventId: outlookEvent.id },
                     include: {
                         empresa: { select: { id_empresa: true, nombre: true } },
+                        sucursal: { select: { id_sucursal: true, nombre: true } },
                         tecnicos: {
                             include: {
                                 tecnico: { select: { id_tecnico: true, nombre: true, email: true } },

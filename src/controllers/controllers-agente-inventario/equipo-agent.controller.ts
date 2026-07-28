@@ -13,6 +13,7 @@ type EquipoAgentPayload = {
     solicitanteNombre?: string | null;
     solicitanteEmailFuente?: string | null;
     conflictoCorreos?: boolean | string | null;
+    correoSeleccionadoPorTecnico?: boolean | string | null;
     emailsDetectados?: Array<{
         email?: string | null;
         source?: string | null;
@@ -81,6 +82,15 @@ type EquipoAgentPayload = {
     estadoAlm?: string | null;
     office?: string | null;
     teamViewer?: string | null;
+
+    oneDrive?: string | null;
+    oneDriveEstado?: string | null;
+    oneDriveInstalado?: boolean | string | null;
+    oneDriveEnEjecucion?: boolean | string | null;
+    oneDriveOperativo?: boolean | string | null;
+    oneDriveVersion?: string | null;
+    oneDriveUsuario?: string | null;
+    oneDriveDetalle?: any;
 
     softwares?: Array<{
         nombre?: string | null;
@@ -327,6 +337,55 @@ async function syncSoftwares(
     });
 }
 
+type AgentAuditChange = {
+    before: unknown;
+    after: unknown;
+};
+
+type AgentAuditChanges = Record<string, AgentAuditChange>;
+
+function auditValuesEqual(before: unknown, after: unknown): boolean {
+    if (before instanceof Date && after instanceof Date) {
+        return before.getTime() === after.getTime();
+    }
+
+    if (before instanceof Date && typeof after === "string") {
+        const parsedAfter = new Date(after);
+
+        return (
+            !Number.isNaN(parsedAfter.getTime()) &&
+            before.getTime() === parsedAfter.getTime()
+        );
+    }
+
+    if (after instanceof Date && typeof before === "string") {
+        const parsedBefore = new Date(before);
+
+        return (
+            !Number.isNaN(parsedBefore.getTime()) &&
+            parsedBefore.getTime() === after.getTime()
+        );
+    }
+
+    return JSON.stringify(before ?? null) === JSON.stringify(after ?? null);
+}
+
+function addAgentAuditChange(
+    changes: AgentAuditChanges,
+    field: string,
+    before: unknown,
+    after: unknown
+) {
+    if (auditValuesEqual(before, after)) {
+        return;
+    }
+
+    changes[field] = {
+        before: before ?? null,
+        after: after ?? null,
+    };
+}
+
 /* =========================
    POST /api/equipos/agent/inventory
 ========================= */
@@ -395,6 +454,10 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             cleanString(body.solicitanteEmailFuente) ?? null;
 
         const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
+
+        const correoSeleccionadoPorTecnico = boolFromUnknown(
+            body.correoSeleccionadoPorTecnico
+        );
 
         const emailsDetectados = Array.isArray(body.emailsDetectados)
             ? body.emailsDetectados
@@ -498,6 +561,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
 
         const fuenteConfiableParaAsignar =
+            correoSeleccionadoPorTecnico ||
             !conflictoCorreos ||
             solicitanteEmailFuente === "OutlookProfile" ||
             solicitanteEmailFuente === "OfficeIdentity" ||
@@ -558,7 +622,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 motivoRevisionSolicitante =
                     "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
             }
-        } else if (conflictoCorreos && solicitanteDetectadoId) {
+        } else if (conflictoCorreos && !correoSeleccionadoPorTecnico && solicitanteDetectadoId) {
             idSolicitanteFinal = solicitanteActualValido
                 ? solicitanteActualId
                 : null;
@@ -686,7 +750,55 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const soTexto = buildSoText(osName, osVersion, osBuild);
         const fechaRevisionAgente = formatFechaRevisionChileISO();
 
-        await prisma.detalleEquipo.upsert({
+        const detalleAntesUpdate = equipo?.id_equipo
+            ? await prisma.detalleEquipo.findUnique({
+                where: {
+                    idEquipo: equipo.id_equipo,
+                },
+                select: {
+                    oneDrive: true,
+                    oneDriveEstado: true,
+                    oneDriveInstalado: true,
+                    oneDriveEnEjecucion: true,
+                    oneDriveOperativo: true,
+                    oneDriveVersion: true,
+                    oneDriveUsuario: true,
+                },
+            })
+            : null;
+
+        const hasOneDriveInstalado = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveInstalado"
+        );
+        const hasOneDriveEnEjecucion = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveEnEjecucion"
+        );
+        const hasOneDriveOperativo = Object.prototype.hasOwnProperty.call(
+            body,
+            "oneDriveOperativo"
+        );
+
+        const oneDrive = cleanString(body.oneDrive);
+        const oneDriveEstado = cleanString(body.oneDriveEstado);
+        const oneDriveInstalado = hasOneDriveInstalado
+            ? boolFromUnknown(body.oneDriveInstalado)
+            : null;
+        const oneDriveEnEjecucion = hasOneDriveEnEjecucion
+            ? boolFromUnknown(body.oneDriveEnEjecucion)
+            : null;
+        const oneDriveOperativo = hasOneDriveOperativo
+            ? boolFromUnknown(body.oneDriveOperativo)
+            : null;
+        const oneDriveVersion = cleanString(body.oneDriveVersion);
+        const oneDriveUsuario = cleanString(body.oneDriveUsuario);
+        const oneDriveDetalle =
+            body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
+                ? body.oneDriveDetalle
+                : undefined;
+
+        const detalleDespuesUpdate = await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
             },
@@ -723,6 +835,14 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 ...(cleanString(body.teamViewer)
                     ? { teamViewer: cleanString(body.teamViewer) }
                     : {}),
+                ...(oneDrive ? { oneDrive } : {}),
+                ...(oneDriveEstado ? { oneDriveEstado } : {}),
+                ...(hasOneDriveInstalado ? { oneDriveInstalado } : {}),
+                ...(hasOneDriveEnEjecucion ? { oneDriveEnEjecucion } : {}),
+                ...(hasOneDriveOperativo ? { oneDriveOperativo } : {}),
+                ...(oneDriveVersion ? { oneDriveVersion } : {}),
+                ...(oneDriveUsuario ? { oneDriveUsuario } : {}),
+                ...(oneDriveDetalle !== undefined ? { oneDriveDetalle } : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
@@ -750,158 +870,359 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 estadoAlm: cleanString(body.estadoAlm),
                 office: cleanString(body.office),
                 teamViewer: cleanString(body.teamViewer),
+
+                oneDrive,
+                oneDriveEstado,
+                oneDriveInstalado,
+                oneDriveEnEjecucion,
+                oneDriveOperativo,
+                oneDriveVersion,
+                oneDriveUsuario,
+                oneDriveDetalle,
             },
         });
 
-        await prisma.auditLog.create({
-            data: {
-                entity: "Equipo",
-                entityId: String(equipo.id_equipo),
-                action: fueCreadoPorAgente ? ("CREATE" as any) : ("UPDATE" as any),
+        const agentAuditChanges: AgentAuditChanges = {};
 
-                // Las sincronizaciones automáticas del agente quedan como Sistema.
-                actorId: null,
+        if (fueCreadoPorAgente) {
+            addAgentAuditChange(
+                agentAuditChanges,
+                "origen",
+                null,
+                platform === "MACOS"
+                    ? "MACOS_AGENT"
+                    : "WINDOWS_AGENT"
+            );
 
-                empresaId: empresaIdFinal ?? null,
-                description: fueCreadoPorAgente
-                    ? platform === "MACOS"
-                        ? "Equipo creado automáticamente desde agente macOS"
-                        : "Equipo creado automáticamente desde agente Windows"
-                    : platform === "MACOS"
-                        ? "Inventario actualizado automáticamente desde agente macOS"
-                        : "Inventario actualizado automáticamente desde agente Windows",
+            addAgentAuditChange(
+                agentAuditChanges,
+                "accionAgente",
+                null,
+                "EQUIPO_CREADO"
+            );
 
-                changes: fueCreadoPorAgente
-                    ? {
-                        origen: {
-                            before: null,
-                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
-                        },
-                        accionAgente: {
-                            before: null,
-                            after: "EQUIPO_CREADO",
-                        },
-                        serial: {
-                            before: null,
-                            after: equipo.serial ?? serial,
-                        },
-                        marca: {
-                            before: null,
-                            after: equipo.marca ?? marca,
-                        },
-                        modelo: {
-                            before: null,
-                            after: equipo.modelo ?? modelo,
-                        },
-                        hostname: {
-                            before: null,
-                            after: hostname,
-                        },
-                        propiedad: {
-                            before: null,
-                            after: equipo.propiedad ?? "Empresa",
-                        },
-                        propietarioExterno: {
-                            before: null,
-                            after: equipo.propietarioExterno ?? null,
-                        },
-                        empresaId: {
-                            before: null,
-                            after: empresaIdFinal,
-                        },
-                        idSolicitante: {
-                            before: null,
-                            after: idSolicitanteFinal,
-                        },
-                        solicitanteDetectadoEmail: {
-                            before: null,
-                            after: solicitanteDetectadoEmailFinal,
-                        },
-                        usuarioSistemaEjecutor: {
-                            before: null,
-                            after: usuarioSistemaEjecutor,
-                        },
-                        tecnicoInstaladorEmail: {
-                            before: null,
-                            after: tecnicoInstalador?.email ?? tecnicoInstaladorEmail,
-                        },
-                        lastSeenAt: {
-                            before: null,
-                            after: new Date().toISOString(),
-                        },
-                    }
-                    : {
-                        origen: {
-                            before: null,
-                            after: platform === "MACOS" ? "MACOS_AGENT" : "WINDOWS_AGENT",
-                        },
-                        accionAgente: {
-                            before: null,
-                            after: "INVENTARIO_ACTUALIZADO",
-                        },
-                        hostname: {
-                            before: equipoAntesUpdate?.hostname ?? null,
-                            after: equipo.hostname ?? null,
-                        },
-                        usuarioActual: {
-                            before: equipoAntesUpdate?.usuarioActual ?? null,
-                            after: equipo.usuarioActual ?? null,
-                        },
-                        procesador: {
-                            before: equipoAntesUpdate?.procesador ?? null,
-                            after: equipo.procesador ?? null,
-                        },
-                        ram: {
-                            before: equipoAntesUpdate?.ram ?? null,
-                            after: equipo.ram ?? null,
-                        },
-                        disco: {
-                            before: equipoAntesUpdate?.disco ?? null,
-                            after: equipo.disco ?? null,
-                        },
-                        localIp: {
-                            before: equipoAntesUpdate?.localIp ?? null,
-                            after: equipo.localIp ?? null,
-                        },
-                        macAddress: {
-                            before: equipoAntesUpdate?.macAddress ?? null,
-                            after: equipo.macAddress ?? null,
-                        },
-                        lastBootAt: {
-                            before: equipoAntesUpdate?.lastBootAt ?? null,
-                            after: equipo.lastBootAt ?? null,
-                        },
-                        lastSeenAt: {
-                            before: equipoAntesUpdate?.lastSeenAt ?? null,
-                            after: equipo.lastSeenAt ?? null,
-                        },
-                        estadoAgente: {
-                            before: equipoAntesUpdate?.estadoAgente ?? null,
-                            after: equipo.estadoAgente ?? null,
-                        },
-                        agenteVersion: {
-                            before: equipoAntesUpdate?.agenteVersion ?? null,
-                            after: equipo.agenteVersion ?? null,
-                        },
-                        empresaId: {
-                            before: equipoAntesUpdate?.empresaId ?? null,
-                            after: equipo.empresaId ?? null,
-                        },
-                        idSolicitante: {
-                            before: equipoAntesUpdate?.idSolicitante ?? null,
-                            after: equipo.idSolicitante ?? null,
-                        },
-                        solicitanteDetectadoEmail: {
-                            before: equipoAntesUpdate?.solicitanteDetectadoEmail ?? null,
-                            after: equipo.solicitanteDetectadoEmail ?? null,
-                        },
-                        requiereRevisionSolicitante: {
-                            before: equipoAntesUpdate?.requiereRevisionSolicitante ?? null,
-                            after: equipo.requiereRevisionSolicitante ?? null,
-                        },
-                    },
-            },
-        });
+            addAgentAuditChange(
+                agentAuditChanges,
+                "serial",
+                null,
+                equipo.serial ?? serial
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "marca",
+                null,
+                equipo.marca ?? marca
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "modelo",
+                null,
+                equipo.modelo ?? modelo
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "hostname",
+                null,
+                equipo.hostname ?? hostname
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "propiedad",
+                null,
+                equipo.propiedad ?? "Empresa"
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "propietarioExterno",
+                null,
+                equipo.propietarioExterno ?? null
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "empresaId",
+                null,
+                equipo.empresaId ?? empresaIdFinal
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "idSolicitante",
+                null,
+                equipo.idSolicitante ?? idSolicitanteFinal
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "solicitanteDetectadoEmail",
+                null,
+                equipo.solicitanteDetectadoEmail ??
+                solicitanteDetectadoEmailFinal
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "usuarioSistemaEjecutor",
+                null,
+                usuarioSistemaEjecutor
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "tecnicoInstaladorEmail",
+                null,
+                tecnicoInstalador?.email ??
+                tecnicoInstaladorEmail
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "lastSeenAt",
+                null,
+                equipo.lastSeenAt
+            );
+        } else {
+            /*
+             * Campos contextuales para identificar que el cambio
+             * provino del agente.
+             */
+            addAgentAuditChange(
+                agentAuditChanges,
+                "origen",
+                null,
+                platform === "MACOS"
+                    ? "MACOS_AGENT"
+                    : "WINDOWS_AGENT"
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "accionAgente",
+                null,
+                "INVENTARIO_ACTUALIZADO"
+            );
+
+            /*
+             * Solo se agregan los campos realmente modificados.
+             */
+            addAgentAuditChange(
+                agentAuditChanges,
+                "hostname",
+                equipoAntesUpdate?.hostname,
+                equipo.hostname
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "usuarioActual",
+                equipoAntesUpdate?.usuarioActual,
+                equipo.usuarioActual
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "procesador",
+                equipoAntesUpdate?.procesador,
+                equipo.procesador
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "ram",
+                equipoAntesUpdate?.ram,
+                equipo.ram
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "ramGb",
+                equipoAntesUpdate?.ramGb,
+                equipo.ramGb
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "disco",
+                equipoAntesUpdate?.disco,
+                equipo.disco
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "diskTotalGb",
+                equipoAntesUpdate?.diskTotalGb,
+                equipo.diskTotalGb
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "diskFreeGb",
+                equipoAntesUpdate?.diskFreeGb,
+                equipo.diskFreeGb
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "localIp",
+                equipoAntesUpdate?.localIp,
+                equipo.localIp
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "publicIp",
+                equipoAntesUpdate?.publicIp,
+                equipo.publicIp
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "macAddress",
+                equipoAntesUpdate?.macAddress,
+                equipo.macAddress
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "lastBootAt",
+                equipoAntesUpdate?.lastBootAt,
+                equipo.lastBootAt
+            );
+
+            /*
+             * lastSeenAt cambia en cada sincronización.
+             * Lo dejamos fuera del historial visual para evitar ruido.
+             */
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "estadoAgente",
+                equipoAntesUpdate?.estadoAgente,
+                equipo.estadoAgente
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "agenteVersion",
+                equipoAntesUpdate?.agenteVersion,
+                equipo.agenteVersion
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "empresaId",
+                equipoAntesUpdate?.empresaId,
+                equipo.empresaId
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "idSolicitante",
+                equipoAntesUpdate?.idSolicitante,
+                equipo.idSolicitante
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "solicitanteDetectadoEmail",
+                equipoAntesUpdate?.solicitanteDetectadoEmail,
+                equipo.solicitanteDetectadoEmail
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "requiereRevisionSolicitante",
+                equipoAntesUpdate?.requiereRevisionSolicitante,
+                equipo.requiereRevisionSolicitante
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "motivoRevisionSolicitante",
+                equipoAntesUpdate?.motivoRevisionSolicitante,
+                equipo.motivoRevisionSolicitante
+            );
+        }
+
+        addAgentAuditChange(
+            agentAuditChanges,
+            "oneDriveEstado",
+            detalleAntesUpdate?.oneDriveEstado,
+            detalleDespuesUpdate.oneDriveEstado
+        );
+
+        addAgentAuditChange(
+            agentAuditChanges,
+            "oneDriveUsuario",
+            detalleAntesUpdate?.oneDriveUsuario,
+            detalleDespuesUpdate.oneDriveUsuario
+        );
+
+        addAgentAuditChange(
+            agentAuditChanges,
+            "oneDriveOperativo",
+            detalleAntesUpdate?.oneDriveOperativo,
+            detalleDespuesUpdate.oneDriveOperativo
+        );
+
+        addAgentAuditChange(
+            agentAuditChanges,
+            "oneDriveInstalado",
+            detalleAntesUpdate?.oneDriveInstalado,
+            detalleDespuesUpdate.oneDriveInstalado
+        );
+
+        addAgentAuditChange(
+            agentAuditChanges,
+            "oneDriveEnEjecucion",
+            detalleAntesUpdate?.oneDriveEnEjecucion,
+            detalleDespuesUpdate.oneDriveEnEjecucion
+        );
+
+        const camposCambioReal = Object.keys(agentAuditChanges).filter(
+            (field) =>
+                field !== "origen" &&
+                field !== "accionAgente"
+        );
+
+        const debeCrearAudit =
+            fueCreadoPorAgente ||
+            camposCambioReal.length > 0;
+
+        if (debeCrearAudit) {
+            await prisma.auditLog.create({
+                data: {
+                    entity: "Equipo",
+                    entityId: String(equipo.id_equipo),
+
+                    action: fueCreadoPorAgente
+                        ? ("CREATE" as any)
+                        : ("UPDATE" as any),
+
+                    actorId: null,
+
+                    empresaId:
+                        equipo.empresaId ??
+                        empresaIdFinal ??
+                        null,
+
+                    description: fueCreadoPorAgente
+                        ? platform === "MACOS"
+                            ? "Equipo creado automáticamente desde agente macOS"
+                            : "Equipo creado automáticamente desde agente Windows"
+                        : platform === "MACOS"
+                            ? "Inventario actualizado automáticamente desde agente macOS"
+                            : "Inventario actualizado automáticamente desde agente Windows",
+
+                    changes: agentAuditChanges,
+                },
+            });
+        }
 
         await syncSoftwares(equipo.id_equipo, body.softwares);
 
@@ -954,6 +1275,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
                     conflictoCorreos,
+                    correoSeleccionadoPorTecnico,
                     emailsDetectados,
                     dominioEmpresa,
 
@@ -975,6 +1297,15 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     macWifi,
                     macEthernet,
                     localIp,
+
+                    oneDrive,
+                    oneDriveEstado,
+                    oneDriveInstalado,
+                    oneDriveEnEjecucion,
+                    oneDriveOperativo,
+                    oneDriveVersion,
+                    oneDriveUsuario,
+                    oneDriveDetalle: oneDriveDetalle ?? null,
 
                     requiereRevisionSolicitante,
                     motivoRevisionSolicitante,
@@ -1007,12 +1338,21 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteDetectadoEmail: solicitanteDetectadoEmailFinal,
             solicitanteEmailFuente,
             conflictoCorreos,
+            correoSeleccionadoPorTecnico,
             emailsDetectados,
 
             macAddress,
             macWifi,
             macEthernet,
             localIp,
+
+            oneDrive,
+            oneDriveEstado,
+            oneDriveInstalado,
+            oneDriveEnEjecucion,
+            oneDriveOperativo,
+            oneDriveVersion,
+            oneDriveUsuario,
 
             lastBootAt: body.lastBootAt ?? null,
             uptimeText,

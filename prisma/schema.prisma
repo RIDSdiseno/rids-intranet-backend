@@ -15,6 +15,8 @@ model Empresa {
   tieneSucursales       Boolean                @default(false)
   razonSocial           String?
   dominios              String[]               @default([])
+  deactivatedAt         DateTime?
+  isActive              Boolean                @default(true)
   solicitantes          Solicitante[]
   visitas               Visita[]               @relation("Empresa_Visita")
   tickets               FreshdeskTicket[]
@@ -38,6 +40,21 @@ model Empresa {
   manualTutoriales      ManualTutorial[]
   bitacoras             BitacoraTecnico[]
   equipoMantencions     EquipoMantencion[]
+  aliasesOutlook        EmpresaAliasOutlook[]
+
+  @@index([isActive])
+  @@index([deactivatedAt])
+}
+
+model EmpresaAliasOutlook {
+  id        Int      @id @default(autoincrement())
+  alias     String   @unique
+  empresaId Int
+  createdAt DateTime @default(now())
+  empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@index([empresaId], map: "empresa_alias_outlook_empresaid_idx")
+  @@map("empresa_alias_outlook")
 }
 
 model Sucursal {
@@ -46,6 +63,8 @@ model Sucursal {
   direccion             String?
   telefono              String?
   empresaId             Int
+  latitud               Float?
+  longitud              Float?
   empresa               Empresa                @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   historiales           Historial[]
   visitas               Visita[]
@@ -54,6 +73,7 @@ model Sucursal {
   accesoRouterSucursals AccesoRouterSucursal[]
   empresaISPs           EmpresaISP[]
   contactoEmpresas      ContactoEmpresa[]
+  agendasVisita         AgendaVisita[]
 
   @@index([empresaId])
 }
@@ -78,6 +98,8 @@ model DetalleEmpresa {
   email       String?
   empresa_id  Int     @unique
   direcciones Json?
+  latitud     Float?
+  longitud    Float?
   empresa     Empresa @relation(fields: [empresa_id], references: [id_empresa], onDelete: Cascade)
 
   @@map("detalle_empresas")
@@ -537,31 +559,39 @@ model EquipoAdicional {
 }
 
 model DetalleEquipo {
-  id                Int      @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo          Int      @unique
-  macWifi           String?
-  so                String?
-  tipoDd            String?
-  estadoAlm         String?
-  office            String?
-  teamViewer        String?
-  claveTv           String?
-  revisado          String?
-  adminRidsPassword String?
-  adminRidsUsuario  String?
-  passwordEmpresa   String?
-  passwordPersonal  String?
-  usuarioEmpresa    String?
-  usuarioPersonal   String?
-  redEthernet       String?
-  antivirusActivo   Boolean?
+  id                  Int      @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo            Int      @unique
+  macWifi             String?
+  so                  String?
+  tipoDd              String?
+  estadoAlm           String?
+  office              String?
+  teamViewer          String?
+  claveTv             String?
+  revisado            String?
+  adminRidsPassword   String?
+  adminRidsUsuario    String?
+  passwordEmpresa     String?
+  passwordPersonal    String?
+  usuarioEmpresa      String?
+  usuarioPersonal     String?
+  redEthernet         String?
+  antivirusActivo     Boolean?
   /// ===================== Agente Windows / Seguridad =====================
-  antivirusNombre   String?
-  bitlockerEstado   String?
-  firewallActivo    Boolean?
-  observacionAgente String?
-  windowsUpdate     String?
-  equipo            Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+  antivirusNombre     String?
+  bitlockerEstado     String?
+  firewallActivo      Boolean?
+  observacionAgente   String?
+  windowsUpdate       String?
+  oneDrive            String?
+  oneDriveDetalle     Json?
+  oneDriveEnEjecucion Boolean?
+  oneDriveEstado      String?
+  oneDriveInstalado   Boolean?
+  oneDriveOperativo   Boolean?
+  oneDriveUsuario     String?
+  oneDriveVersion     String?
+  equipo              Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
@@ -1012,6 +1042,8 @@ model Entrega {
   receptorNombre String
   fecha          DateTime           @default(now())
   tecnicoId      Int?
+  origen         String?
+  tipo           String?
   tecnico        Tecnico?           @relation(fields: [tecnicoId], references: [id_tecnico])
   evidencias     EvidenciaEntrega[]
 
@@ -1249,7 +1281,13 @@ model AgendaVisita {
   empresaExternaNombre String?
   fechaInicioRuta      DateTime?
   fechaInicioVisita    DateTime?
+  sucursalId           Int?
+  destinoNombre        String?
+  destinoDireccion     String?
+  destinoLatitud       Float?
+  destinoLongitud      Float?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
+  sucursal             Sucursal?       @relation(fields: [sucursalId], references: [id_sucursal])
   tecnicos             AgendaTecnico[]
   visita               Visita?
 
@@ -1258,6 +1296,7 @@ model AgendaVisita {
   @@index([tipo])
   @@index([estado])
   @@index([notificacionEnviada])
+  @@index([sucursalId])
 }
 
 model AgendaTecnico {

@@ -32,46 +32,48 @@ function getAssignedAt(ticket: {
         createdAt?: Date | string | null;
     }>;
 }): Date | null {
-    if (!ticket.assigneeId) return null;
+    /*
+     * Si actualmente no tiene técnico, se considera sin asignar.
+     * El SLA queda pausado.
+     */
+    if (!ticket.assigneeId) {
+        return null;
+    }
 
-    const events = Array.isArray(ticket.events) ? ticket.events : [];
+    const events = Array.isArray(ticket.events)
+        ? ticket.events
+        : [];
 
-    const currentAssigneeId = String(ticket.assigneeId);
-
-    const assignmentToCurrent = events
-        .filter((event) =>
-            event.type === TicketEventType.ASSIGNED &&
-            event.newValue === currentAssigneeId &&
-            event.createdAt
+    /*
+     * El SLA debe comenzar en la primera asignación del ticket,
+     * no en la asignación más reciente ni en la reasignación
+     * al técnico actual.
+     */
+    const firstAssignment = events
+        .filter(
+            (event) =>
+                event.type === TicketEventType.ASSIGNED &&
+                event.newValue &&
+                event.createdAt
         )
         .sort(
             (a, b) =>
-                new Date(b.createdAt!).getTime() -
-                new Date(a.createdAt!).getTime()
+                new Date(a.createdAt!).getTime() -
+                new Date(b.createdAt!).getTime()
         )[0];
 
-    if (assignmentToCurrent?.createdAt) {
-        return new Date(assignmentToCurrent.createdAt);
+    if (firstAssignment?.createdAt) {
+        return new Date(firstAssignment.createdAt);
     }
 
-    const lastAssignment = events
-        .filter((event) =>
-            event.type === TicketEventType.ASSIGNED &&
-            event.createdAt
-        )
-        .sort(
-            (a, b) =>
-                new Date(b.createdAt!).getTime() -
-                new Date(a.createdAt!).getTime()
-        )[0];
-
-    if (lastAssignment?.createdAt) {
-        return new Date(lastAssignment.createdAt);
-    }
-
-    // Fallback para tickets antiguos que ya tenían técnico,
-    // pero no tienen evento ASSIGNED registrado.
-    return new Date(ticket.createdAt);
+    /*
+     * No usar createdAt como fallback, porque eso haría que
+     * el SLA comenzara desde la creación.
+     *
+     * Los tickets antiguos sin evento ASSIGNED deberán corregirse
+     * mediante una migración o quedarán temporalmente sin SLA.
+     */
+    return null;
 }
 
 function signedDiffMinutes(from: Date, to: Date) {
@@ -151,17 +153,37 @@ export function buildTicketSla(
             ? new Date(ticket.resolvedAt)
             : null;
 
+    const isTerminated =
+        ticket.status === TicketStatus.CLOSED ||
+        ticket.status === TicketStatus.RESOLVED;
+
+    /**
+     * Si el ticket fue cerrado/resuelto sin primera respuesta real,
+     * usamos closedAt/resolvedAt como fecha administrativa de término
+     * de la medición de primera respuesta.
+     *
+     * Importante:
+     * - Si cerró dentro del plazo de primera respuesta => OK
+     * - Si cerró fuera del plazo de primera respuesta => BREACHED
+     *
+     * Esto evita que un ticket spam cerrado tarde infle artificialmente
+     * el cumplimiento del SLA de primera respuesta.
+     */
+    const administrativeFirstResponseAt =
+        !firstResponseAt && isTerminated && resolutionEndAt
+            ? resolutionEndAt
+            : null;
+
+    const firstResponseEndAt =
+        firstResponseAt ?? administrativeFirstResponseAt;
+
     let firstResponseStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
 
-    if (firstResponseAt) {
+    if (firstResponseEndAt) {
         firstResponseStatus =
-            firstResponseAt <= firstResponseDueAt ? "OK" : "BREACHED";
+            firstResponseEndAt <= firstResponseDueAt ? "OK" : "BREACHED";
     } else if (now > firstResponseDueAt) {
-        const isTerminated =
-            ticket.status === TicketStatus.CLOSED ||
-            ticket.status === TicketStatus.RESOLVED;
-
-        firstResponseStatus = isTerminated ? "OK" : "BREACHED";
+        firstResponseStatus = "BREACHED";
     }
 
     let resolutionStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
@@ -187,12 +209,12 @@ export function buildTicketSla(
         waitingAssignment: false,
         firstResponse: {
             dueAt: firstResponseDueAt,
-            at: firstResponseAt,
-            elapsedMinutes: firstResponseAt
-                ? diffMinutes(firstResponseStartAt, firstResponseAt)
+            at: firstResponseEndAt,
+            elapsedMinutes: firstResponseEndAt
+                ? diffMinutes(firstResponseStartAt, firstResponseEndAt)
                 : null,
             status: firstResponseStatus,
-            remainingMinutes: firstResponseAt
+            remainingMinutes: firstResponseEndAt
                 ? 0
                 : signedDiffMinutes(now, firstResponseDueAt),
         },
@@ -223,13 +245,18 @@ export async function getTicketSla(req: Request, res: Response) {
 
         const tickets = await prisma.ticket.findMany({
             where: {
+                deletedAt: null,
+
                 ...(empresaId && { empresaId }),
-                ...(from || to ? {
-                    createdAt: {
-                        ...(from && { gte: from }),
-                        ...(to && { lte: to }),
-                    },
-                } : {}),
+
+                ...(from || to
+                    ? {
+                        createdAt: {
+                            ...(from && { gte: from }),
+                            ...(to && { lte: to }),
+                        },
+                    }
+                    : {}),
             },
             select: {
                 id: true,
@@ -273,14 +300,25 @@ export async function getTicketSla(req: Request, res: Response) {
         for (const t of tickets) {
             const sla = buildTicketSla(t, slaConfig);
 
+            /*
+             * Un ticket sin asignación todavía no participa
+             * en el resumen ni en el cumplimiento del SLA.
+             */
+            if (sla.waitingAssignment) {
+                continue;
+            }
+
             const tieneRespuesta = t.firstResponseAt !== null;
-            const tieneCierre = t.closedAt !== null || t.resolvedAt !== null;
+            const tieneCierre =
+                t.closedAt !== null ||
+                t.resolvedAt !== null;
+
             const estaActivo =
                 t.status !== TicketStatus.CLOSED &&
                 t.status !== TicketStatus.RESOLVED;
 
             // Primera respuesta
-            if (tieneRespuesta || estaActivo) {
+            if (tieneRespuesta || tieneCierre || estaActivo) {
                 if (sla.firstResponse.status === "OK") frOk++;
                 if (sla.firstResponse.status === "BREACHED") frBreached++;
                 if (sla.firstResponse.status === "PENDING") frPending++;

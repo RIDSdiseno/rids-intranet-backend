@@ -1,15 +1,21 @@
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../utils/coordenadas.js";
 /* ================== Schemas ================== */
 const direccionItemSchema = z.object({
     tipo: z.string(),
     direccion: z.string(),
 });
+// latitud/longitud solo validan tipo aquí (number | null | undefined); el rango y
+// la consistencia entre ambas se validan con clasificarCoordenadas (misma regla
+// que Sucursal, ver src/utils/coordenadas.ts) para no duplicar criterios distintos.
 const detalleEmpresaSchema = z.object({
     rut: z.string(),
     direccion: z.string().optional(), // mantener temporalmente
     direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
+    latitud: z.number().nullable().optional(),
+    longitud: z.number().nullable().optional(),
     telefono: z.string().nullable().optional().or(z.literal("")),
     email: z.string().email().nullable().optional().or(z.literal("")),
     empresa_id: z.number(),
@@ -20,6 +26,9 @@ const detalleEmpresaUpdateSchema = detalleEmpresaSchema.partial();
 export async function createDetalleEmpresa(req, res) {
     try {
         const parsed = detalleEmpresaSchema.parse(req.body);
+        if (clasificarCoordenadas(parsed.latitud, parsed.longitud) === "INVALIDAS") {
+            return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+        }
         const nuevo = await prisma.detalleEmpresa.create({
             data: {
                 rut: parsed.rut,
@@ -28,6 +37,8 @@ export async function createDetalleEmpresa(req, res) {
                 direcciones: parsed.direcciones !== undefined
                     ? parsed.direcciones
                     : Prisma.JsonNull,
+                latitud: parsed.latitud ?? null,
+                longitud: parsed.longitud ?? null,
                 telefono: parsed.telefono ?? null,
                 email: parsed.email ?? null,
             },
@@ -40,6 +51,9 @@ export async function createDetalleEmpresa(req, res) {
         return res.status(201).json(nuevo);
     }
     catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+        }
         console.error("Error al crear detalle empresa:", err);
         if (err.code === "P2002")
             return res.status(400).json({ error: "RUT ya existe" });
@@ -128,7 +142,10 @@ export async function updateDetalleEmpresa(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const parsed = detalleEmpresaUpdateSchema.parse(req.body);
-        const { empresa_id, rut, direccion, direcciones, telefono, email } = parsed;
+        const { empresa_id, rut, direccion, direcciones, latitud, longitud, telefono, email } = parsed;
+        if (clasificarCoordenadas(latitud, longitud) === "INVALIDAS") {
+            return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+        }
         const data = {};
         if (rut !== undefined)
             data.rut = rut;
@@ -136,6 +153,10 @@ export async function updateDetalleEmpresa(req, res) {
         if (direccion !== undefined) {
             data.direccion = direccion ?? null;
         }
+        if (latitud !== undefined)
+            data.latitud = latitud ?? null;
+        if (longitud !== undefined)
+            data.longitud = longitud ?? null;
         // 🟢 Direcciones adicionales (JSON limpio)
         if (direcciones !== undefined) {
             const cleaned = Array.isArray(direcciones)
@@ -165,6 +186,9 @@ export async function updateDetalleEmpresa(req, res) {
         return res.status(200).json(actualizado);
     }
     catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+        }
         console.error("Error al actualizar detalle empresa:", err);
         if (err.code === "P2002")
             return res.status(400).json({ error: "RUT ya existe" });

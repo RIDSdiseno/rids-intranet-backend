@@ -58,6 +58,30 @@ function normalizeEmail(email?: string | null): string | null {
     return cleaned || null;
 }
 
+function normalizarAreaTecnico(area?: string | null): string {
+    if (!area?.trim()) {
+        return "Soporte Técnico";
+    }
+
+    const areaNormalizada = area
+        .trim()
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\s_-]+/g, " ");
+
+    const labels: Record<string, string> = {
+        "SOPORTE TECNICO": "Soporte Técnico",
+        "INFORMATICA": "Informática",
+        "SOPORTE TECNICO E INFORMATICA":
+            "Soporte Técnico e Informática",
+        "VENTAS": "Ventas",
+        "ADMINISTRACION": "Administración",
+    };
+
+    return labels[areaNormalizada] ?? area.trim();
+}
+
 function splitEmails(value?: string | null): string[] {
     if (!value) return [];
     return value
@@ -423,12 +447,16 @@ export async function createTicket(req: Request, res: Response) {
             normalizedFromEmail !== process.env.EMAIL_USER?.trim().toLowerCase()
         ) {
             try {
+                const areaTecnicoNormalizada = normalizarAreaTecnico(
+                    tecnico?.area
+                );
+
                 const tecnicoRender = tecnico
                     ? {
                         nombre: tecnico.nombre,
                         email: tecnico.email,
                         cargo: tecnico.cargo,
-                        area: tecnico.area,
+                        area: areaTecnicoNormalizada,
                         firmaPath: tecnico.firma?.path ?? null,
                     }
                     : null;
@@ -444,10 +472,14 @@ export async function createTicket(req: Request, res: Response) {
                         messageHtml: ticketEmailTemplateService.textToHtml(
                             message?.trim() || "Sin detalle adicional."
                         ),
-                        nombreTecnico: tecnico?.nombre || "Equipo de Soporte Técnico",
-                        emailTecnico: tecnico?.email || "soporte@rids.cl",
-                        cargoTecnico: tecnico?.cargo || "Soporte Técnico",
-                        areaTecnico: tecnico?.area || "Soporte Técnico",
+                        nombreTecnico:
+                            tecnico?.nombre || "Equipo de Soporte Técnico",
+                        emailTecnico:
+                            tecnico?.email || "soporte@rids.cl",
+                        cargoTecnico:
+                            tecnico?.cargo || "Soporte Técnico",
+                        areaTecnico:
+                            areaTecnicoNormalizada,
                     },
                 });
 
@@ -684,12 +716,16 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
 
             const tecnico = ticket.assignee ?? null;
 
+            const areaTecnicoNormalizada = normalizarAreaTecnico(
+                tecnico?.area
+            );
+
             const tecnicoRender = tecnico
                 ? {
                     nombre: tecnico.nombre,
                     email: tecnico.email,
                     cargo: tecnico.cargo,
-                    area: tecnico.area,
+                    area: areaTecnicoNormalizada,
                     firmaPath: tecnico.firma?.path ?? null,
                 }
                 : null;
@@ -698,15 +734,24 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
                 key: "AGENT_REPLY",
                 tecnico: tecnicoRender,
                 vars: {
-                    nombre: ticket.requester?.nombre || "Cliente",
-                    ticketId: ticket.id,
-                    subject: ticket.subject,
-                    bodyOriginal: "",
-                    messageHtml: ticketEmailTemplateService.textToHtml(message || ""),
-                    nombreTecnico: tecnico?.nombre || "Equipo de Soporte Técnico",
-                    emailTecnico: tecnico?.email || "soporte@rids.cl",
-                    cargoTecnico: tecnico?.cargo || "Soporte Técnico",
-                    areaTecnico: tecnico?.area || "Soporte Técnico",
+                    nombre:
+                        ticket.requester?.nombre || "Cliente",
+                    ticketId:
+                        ticket.id,
+                    subject:
+                        ticket.subject,
+                    bodyOriginal:
+                        "",
+                    messageHtml:
+                        ticketEmailTemplateService.textToHtml(message || ""),
+                    nombreTecnico:
+                        tecnico?.nombre || "Equipo de Soporte Técnico",
+                    emailTecnico:
+                        tecnico?.email || "soporte@rids.cl",
+                    cargoTecnico:
+                        tecnico?.cargo || "Soporte Técnico",
+                    areaTecnico:
+                        areaTecnicoNormalizada,
                 },
             });
 
@@ -852,8 +897,28 @@ export async function listTickets(req: Request, res: Response) {
         }
 
         if (!isCliente) {
-            if (priority) whereActual.priority = priority as TicketPriority;
-            if (assigneeId) whereActual.assigneeId = Number(assigneeId);
+            if (priority) {
+                whereActual.priority = priority as TicketPriority;
+            }
+
+            if (assigneeId) {
+                whereActual.assigneeId = Number(assigneeId);
+            }
+
+            if (
+                area &&
+                String(area).trim() &&
+                String(area).trim().toUpperCase() !== "TODAS"
+            ) {
+                whereActual.assignee = {
+                    is: {
+                        area: {
+                            equals: String(area).trim(),
+                            mode: "insensitive",
+                        },
+                    },
+                };
+            }
         }
 
         // ── Búsqueda (disponible para todos) ──────────────────────────────────
@@ -894,65 +959,87 @@ export async function listTickets(req: Request, res: Response) {
             : [{ createdAt: "desc" }];
 
         // ── Ejecutar query ────────────────────────────────────────────────────
-        let tickets: any[] = [];
-        let total = 0;
-
         const includeForList = {
-            empresa: { select: { nombre: true } },
-            assignee: { select: { id_tecnico: true, nombre: true } },
-            requester: { select: { nombre: true, email: true } },
+            empresa: {
+                select: {
+                    nombre: true,
+                },
+            },
+            assignee: {
+                select: {
+                    id_tecnico: true,
+                    nombre: true,
+                },
+            },
+            requester: {
+                select: {
+                    nombre: true,
+                    email: true,
+                },
+            },
             messages: {
-                orderBy: { createdAt: "desc" as const },
-                take: 2,
+                orderBy: {
+                    createdAt: "desc" as const,
+                },
+                take: 1,
                 select: {
                     direction: true,
                     isInternal: true,
                     createdAt: true,
                 },
             },
+
             events: {
                 where: {
                     type: TicketEventType.ASSIGNED,
-                },
-                orderBy: {
-                    createdAt: "desc" as const,
                 },
                 select: {
                     type: true,
                     newValue: true,
                     createdAt: true,
                 },
+                orderBy: {
+                    createdAt: "asc" as const,
+                },
             },
         };
 
-        const result = await Promise.all([
-            prisma.ticket.findMany({
-                where: whereActual,
-                include: includeForList,
-                orderBy,
-                skip,
-                take,
-            }),
-            prisma.ticket.count({ where: whereActual }),
-        ]);
+        const whereCounts: Prisma.TicketWhereInput = {
+            ...whereActual,
+        };
 
-        tickets = result[0];
-        total = result[1];
-
-        // ── Conteos por estado (con mismo where base, sin filtro de status) ───
-        const whereCounts: Prisma.TicketWhereInput = { ...whereActual };
         delete (whereCounts as any).status;
 
-        const statusCounts = await prisma.ticket.groupBy({
-            by: ["status"],
-            where: whereCounts,
-            _count: { status: true },
-        });
+        const [tickets, total, statusCounts, slaConfig] =
+            await Promise.all([
+                prisma.ticket.findMany({
+                    where: whereActual,
+                    include: includeForList,
+                    orderBy,
+                    skip,
+                    take,
+                }),
+
+                prisma.ticket.count({
+                    where: whereActual,
+                }),
+
+                prisma.ticket.groupBy({
+                    by: ["status"],
+                    where: whereCounts,
+                    _count: {
+                        status: true,
+                    },
+                }),
+
+                getSlaConfigFromDB(),
+            ]);
 
         const counts: Record<string, number> = {};
-        statusCounts.forEach(s => { counts[s.status] = s._count.status; });
 
-        const slaConfig = await getSlaConfigFromDB();
+        statusCounts.forEach((item) => {
+            counts[item.status] = item._count.status;
+        });
 
         const formattedTickets = tickets.map((ticket) => {
             const sla = buildTicketSla(ticket, slaConfig);
@@ -998,16 +1085,37 @@ export async function getTicketById(req: Request, res: Response) {
         }
 
         const ticket = await prisma.ticket.findFirst({
-            where: { id: ticketId, deletedAt: null },
+            where: {
+                id: ticketId,
+                deletedAt: null,
+            },
             include: {
                 empresa: true,
                 requester: true,
                 assignee: true,
+
                 messages: {
-                    orderBy: { createdAt: "desc" },
-                    include: { attachments: true },
+                    orderBy: {
+                        createdAt: "desc",
+                    },
+                    include: {
+                        attachments: true,
+                    },
                 },
-                events: { orderBy: { createdAt: "desc" } },
+
+                events: {
+                    where: {
+                        type: TicketEventType.ASSIGNED,
+                    },
+                    select: {
+                        type: true,
+                        newValue: true,
+                        createdAt: true,
+                    },
+                    orderBy: {
+                        createdAt: "asc",
+                    },
+                },
             },
         });
 
@@ -1031,75 +1139,111 @@ export async function getTicketById(req: Request, res: Response) {
         if (!isCliente) {
             const tecnicoActual = agentId
                 ? await prisma.tecnico.findUnique({
-                    where: { id_tecnico: agentId },
-                    select: { id_tecnico: true, status: true },
+                    where: {
+                        id_tecnico: agentId,
+                    },
+                    select: {
+                        id_tecnico: true,
+                        status: true,
+                        rol: true,
+                    },
                 })
                 : null;
 
-            const puedeAutoAsignar = await canAssignTickets(agentId);
+            const rolActual = String(
+                tecnicoActual?.rol ?? ""
+            )
+                .trim()
+                .toUpperCase();
+
+            const puedeAutoAsignar =
+                Boolean(tecnicoActual?.status) &&
+                HELPDESK_ASSIGN_ALLOWED_ROLES.includes(
+                    rolActual as typeof HELPDESK_ASSIGN_ALLOWED_ROLES[number]
+                );
 
             if (!ticket.assigneeId && tecnicoActual?.status && puedeAutoAsignar) {
                 try {
-                    ticketFinal = await prisma.ticket.update({
-                        where: { id: ticket.id },
-                        data: {
-                            assigneeId: tecnicoActual.id_tecnico,
-                            lastActivityAt: new Date(),
+                    await prisma.$transaction(async (tx) => {
+                        await tx.ticket.update({
+                            where: {
+                                id: ticket.id,
+                            },
+                            data: {
+                                assigneeId: tecnicoActual.id_tecnico,
+                                lastActivityAt: new Date(),
+                            },
+                        });
+
+                        await tx.ticketEvent.create({
+                            data: {
+                                ticketId: ticket.id,
+                                type: TicketEventType.ASSIGNED,
+                                oldValue: null,
+                                newValue: String(tecnicoActual.id_tecnico),
+                                actorType: TicketActorType.AGENT,
+                                actorId: tecnicoActual.id_tecnico,
+                            },
+                        });
+                    });
+
+                    const updatedTicket = await prisma.ticket.findUnique({
+                        where: {
+                            id: ticket.id,
                         },
                         include: {
                             empresa: true,
                             requester: true,
                             assignee: true,
+
                             messages: {
-                                orderBy: { createdAt: "desc" },
-                                include: { attachments: true },
+                                orderBy: {
+                                    createdAt: "desc",
+                                },
+                                include: {
+                                    attachments: true,
+                                },
                             },
-                            events: { orderBy: { createdAt: "desc" } },
-                        },
-                    });
 
-                    await prisma.ticketEvent.create({
-                        data: {
-                            ticketId: ticket.id,
-                            type: TicketEventType.ASSIGNED,
-                            oldValue: null,
-                            newValue: String(tecnicoActual.id_tecnico),
-                            actorType: TicketActorType.AGENT,
-                            actorId: tecnicoActual.id_tecnico,
-                        },
-                    });
-
-                    const refreshedTicket = await prisma.ticket.findFirst({
-                        where: { id: ticket.id, deletedAt: null },
-                        include: {
-                            empresa: true,
-                            requester: true,
-                            assignee: true,
-                            messages: {
-                                orderBy: { createdAt: "desc" },
-                                include: { attachments: true },
+                            events: {
+                                where: {
+                                    type: TicketEventType.ASSIGNED,
+                                },
+                                select: {
+                                    type: true,
+                                    newValue: true,
+                                    createdAt: true,
+                                },
+                                orderBy: {
+                                    createdAt: "asc",
+                                },
                             },
-                            events: { orderBy: { createdAt: "desc" } },
                         },
                     });
 
-                    if (refreshedTicket) {
-                        ticketFinal = refreshedTicket;
+                    if (updatedTicket) {
+                        ticketFinal = updatedTicket;
                     }
 
                     bus.emit("ticket.updated", {
                         ticketId: ticket.id,
-                        changes: { assigneeId: tecnicoActual.id_tecnico },
+                        changes: {
+                            assigneeId: tecnicoActual.id_tecnico,
+                        },
                         source: "auto_assign_on_open",
                     });
 
-                    try {
-                        await sendTicketAssignedEmail(ticket.id);
-                    } catch (err) {
-                        console.error("⚠️ Error enviando correo de autoasignación:", err);
-                    }
+                    void sendTicketAssignedEmail(ticket.id).catch((err) => {
+                        console.error(
+                            "⚠️ Error enviando correo de autoasignación:",
+                            err
+                        );
+                    });
                 } catch (error) {
-                    console.error("[helpdesk] auto assign on open error:", error);
+                    console.error(
+                        "[helpdesk] error al auto-asignar ticket:",
+                        error
+                    );
                 }
             }
         }
@@ -1169,6 +1313,8 @@ export async function updateTicket(req: Request, res: Response) {
             }
         }
 
+        const now = new Date();
+
         const updateData: any = {};
 
         const events: any[] = [];
@@ -1179,17 +1325,22 @@ export async function updateTicket(req: Request, res: Response) {
 
             if (status === TicketStatus.RESOLVED) {
                 if (!ticket.resolvedAt) {
-                    updateData.resolvedAt = new Date();
+                    updateData.resolvedAt = now;
                 }
+
+                updateData.lastActivityAt = now;
             }
 
             if (status === TicketStatus.CLOSED) {
                 if (!ticket.closedAt) {
-                    updateData.closedAt = new Date();
+                    updateData.closedAt = now;
                 }
+
                 if (!ticket.resolvedAt) {
-                    updateData.resolvedAt = new Date();
+                    updateData.resolvedAt = now;
                 }
+
+                updateData.lastActivityAt = now;
             }
 
             events.push({
@@ -1266,11 +1417,12 @@ export async function updateTicket(req: Request, res: Response) {
             assigneeId !== null;
 
         if (assigneeChanged) {
-            try {
-                await sendTicketAssignedEmail(ticketId);
-            } catch (err) {
-                console.error("⚠️ Error enviando correo de asignación:", err);
-            }
+            void sendTicketAssignedEmail(ticketId).catch((err) => {
+                console.error(
+                    "⚠️ Error enviando correo de asignación:",
+                    err
+                );
+            });
         }
 
         if (status && status !== ticket.status) {
@@ -1318,7 +1470,7 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 1️⃣ Extraer dominio limpio
+        // Extraer dominio limpio
         const domain = from
             ?.split("@")[1]
             ?.replace(/[>"\s]/g, "")
@@ -1331,7 +1483,7 @@ export async function inboundEmail(req: Request, res: Response) {
             });
         }
 
-        // 2️⃣ Buscar mapping
+        // Buscar mapping
         const mapping = await prisma.fdSourceMap.findFirst({
             where: { domain }
         });
@@ -1354,7 +1506,7 @@ export async function inboundEmail(req: Request, res: Response) {
             console.warn("⚠ Empresa no encontrada para dominio:", domain);
         }
 
-        // 3️⃣ Buscar solicitante EXISTENTE (NO crear)
+        // Buscar solicitante EXISTENTE (NO crear)
         const requester = await prisma.solicitante.findFirst({
             where: {
                 email: from,
@@ -1365,7 +1517,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 4️⃣ Crear ticket (con o sin requester)
+        // Crear ticket (con o sin requester)
         const ticket = await prisma.ticket.create({
             data: {
                 publicId: crypto.randomUUID(),
@@ -1385,7 +1537,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 5️⃣ Mensaje inicial
+        // Mensaje inicial
         await prisma.ticketMessage.create({
             data: {
                 ticketId: ticket.id,
@@ -1396,7 +1548,7 @@ export async function inboundEmail(req: Request, res: Response) {
             },
         });
 
-        // 6️⃣ Evento
+        // Evento
         await prisma.ticketEvent.create({
             data: {
                 ticketId: ticket.id,
@@ -1592,19 +1744,84 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
         }
 
         const ticketsBefore = await prisma.ticket.findMany({
-            where: { id: { in: ticketIds } },
-            select: { id: true, assigneeId: true },
+            where: {
+                id: {
+                    in: ticketIds,
+                },
+            },
+            select: {
+                id: true,
+                assigneeId: true,
+                status: true,
+                resolvedAt: true,
+                closedAt: true,
+            },
         });
 
-        await prisma.ticket.updateMany({
-            where: { id: { in: ticketIds } },
-            data: {
-                ...(status && { status }),
-                ...(status && { lastActivityAt: new Date() }),
-                ...(status === TicketStatus.CLOSED && { closedAt: new Date() }),
-                ...(status === TicketStatus.CLOSED && { resolvedAt: new Date() }),
-                ...(assigneeId !== undefined && { assigneeId }),
-            },
+        const now = new Date();
+
+        await prisma.$transaction(async (tx) => {
+            for (const ticket of ticketsBefore) {
+                const updateData: Prisma.TicketUpdateInput = {};
+
+                if (status) {
+                    updateData.status = status;
+                    updateData.lastActivityAt = now;
+
+                    if (status === TicketStatus.CLOSED) {
+                        updateData.closedAt = ticket.closedAt ?? now;
+                        updateData.resolvedAt = ticket.resolvedAt ?? now;
+                    }
+                }
+
+                const assigneeChanged =
+                    assigneeId !== undefined &&
+                    assigneeId !== ticket.assigneeId;
+
+                if (assigneeChanged) {
+                    updateData.assignee = assigneeId
+                        ? {
+                            connect: {
+                                id_tecnico: assigneeId,
+                            },
+                        }
+                        : {
+                            disconnect: true,
+                        };
+
+                    if (
+                        assigneeId &&
+                        ticket.status === TicketStatus.NEW &&
+                        !status
+                    ) {
+                        updateData.status = TicketStatus.OPEN;
+                    }
+                }
+
+                await tx.ticket.update({
+                    where: {
+                        id: ticket.id,
+                    },
+                    data: updateData,
+                });
+
+                if (assigneeChanged) {
+                    await tx.ticketEvent.create({
+                        data: {
+                            ticketId: ticket.id,
+                            type: TicketEventType.ASSIGNED,
+                            oldValue:
+                                ticket.assigneeId?.toString() ?? null,
+                            newValue:
+                                assigneeId?.toString() ?? null,
+                            actorType: agentId
+                                ? TicketActorType.AGENT
+                                : TicketActorType.SYSTEM,
+                            actorId: agentId,
+                        },
+                    });
+                }
+            }
         });
 
         if (status) {
@@ -1625,16 +1842,26 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
 
         if (assigneeId !== undefined && assigneeId !== null) {
             const changedTicketIds = ticketsBefore
-                .filter(ticket => ticket.assigneeId !== assigneeId)
-                .map(ticket => ticket.id);
+                .filter(
+                    (ticket) =>
+                        ticket.assigneeId !== assigneeId
+                )
+                .map((ticket) => ticket.id);
 
-            for (const ticketId of changedTicketIds) {
-                try {
-                    await sendTicketAssignedEmail(ticketId);
-                } catch (err) {
-                    console.error(`⚠️ Error enviando correo de asignación para ticket #${ticketId}:`, err);
-                }
-            }
+            void Promise.allSettled(
+                changedTicketIds.map((ticketId) =>
+                    sendTicketAssignedEmail(ticketId)
+                )
+            ).then((results) => {
+                results.forEach((result, index) => {
+                    if (result.status !== "rejected") return;
+
+                    console.error(
+                        `⚠️ Error enviando correo de asignación para ticket #${changedTicketIds[index]}:`,
+                        result.reason
+                    );
+                });
+            });
         }
 
         return res.json({ ok: true });
@@ -1662,20 +1889,20 @@ export async function bulkMergeTickets(req: Request, res: Response) {
 
             for (const id of otherTickets) {
 
-                // 1️⃣ Obtener ticket actual
+                // Obtener ticket actual
                 const ticketToMerge = await tx.ticket.findUnique({
                     where: { id },
                 });
 
                 if (!ticketToMerge) continue;
 
-                // 2️⃣ Mover mensajes
+                // Mover mensajes
                 await tx.ticketMessage.updateMany({
                     where: { ticketId: id },
                     data: { ticketId: mainTicketId },
                 });
 
-                // 3️⃣ Cerrar ticket secundario
+                // Cerrar ticket secundario
                 await tx.ticket.update({
                     where: { id },
                     data: {
@@ -1684,7 +1911,7 @@ export async function bulkMergeTickets(req: Request, res: Response) {
                     },
                 });
 
-                // 4️⃣ Crear evento correcto
+                // Crear evento correcto
                 await tx.ticketEvent.create({
                     data: {
                         ticketId: id,

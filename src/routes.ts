@@ -91,6 +91,12 @@ import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
 /* ===================== Ubicaciones Tecnicos ===================== */
 import ubicacionesRouter from "./routes/ubicaciones.routes.js";
 
+/* ===================== Entregas (comprobantes) ===================== */
+import entregasRouter from "./routes/entregas.routes.js";
+
+/* ===================== Mapa: Agendas ===================== */
+import mapaAgendasRouter from "./routes/mapa-agendas.routes.js";
+
 import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.routes.js";
 
 import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-mantencion.routes.js";
@@ -114,6 +120,8 @@ api.use("/agenda", agendaRouter);
 api.use("/manuales-tutoriales", manualesTutorialesRouter);
 api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
 api.use("/ubicaciones", ubicacionesRouter);
+api.use("/mapa", mapaAgendasRouter);
+api.use("/entregas", entregasRouter);
 
 // Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta

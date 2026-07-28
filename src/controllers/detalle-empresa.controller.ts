@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../utils/coordenadas.js";
 
 /* ================== Schemas ================== */
 
@@ -11,10 +12,15 @@ const direccionItemSchema = z.object({
   direccion: z.string(),
 });
 
+// latitud/longitud solo validan tipo aquí (number | null | undefined); el rango y
+// la consistencia entre ambas se validan con clasificarCoordenadas (misma regla
+// que Sucursal, ver src/utils/coordenadas.ts) para no duplicar criterios distintos.
 const detalleEmpresaSchema = z.object({
   rut: z.string(),
   direccion: z.string().optional(), // mantener temporalmente
   direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
+  latitud: z.number().nullable().optional(),
+  longitud: z.number().nullable().optional(),
   telefono: z.string().nullable().optional().or(z.literal("")),
   email: z.string().email().nullable().optional().or(z.literal("")),
   empresa_id: z.number(),
@@ -29,6 +35,10 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
   try {
     const parsed = detalleEmpresaSchema.parse(req.body);
 
+    if (clasificarCoordenadas(parsed.latitud, parsed.longitud) === "INVALIDAS") {
+      return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+    }
+
     const nuevo = await prisma.detalleEmpresa.create({
       data: {
         rut: parsed.rut,
@@ -38,6 +48,8 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
           parsed.direcciones !== undefined
             ? parsed.direcciones
             : Prisma.JsonNull,
+        latitud: parsed.latitud ?? null,
+        longitud: parsed.longitud ?? null,
 
         telefono: parsed.telefono ?? null,
         email: parsed.email ?? null,
@@ -51,6 +63,10 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
 
     return res.status(201).json(nuevo);
   } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+    }
+
     console.error("Error al crear detalle empresa:", err);
     if (err.code === "P2002") return res.status(400).json({ error: "RUT ya existe" });
     if (err.code === "P2003") return res.status(400).json({ error: "Empresa no existe" });
@@ -145,9 +161,15 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
       rut,
       direccion,
       direcciones,
+      latitud,
+      longitud,
       telefono,
       email
     } = parsed;
+
+    if (clasificarCoordenadas(latitud, longitud) === "INVALIDAS") {
+      return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+    }
 
     const data: Prisma.DetalleEmpresaUpdateInput = {};
 
@@ -157,6 +179,9 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
     if (direccion !== undefined) {
       data.direccion = direccion ?? null;
     }
+
+    if (latitud !== undefined) data.latitud = latitud ?? null;
+    if (longitud !== undefined) data.longitud = longitud ?? null;
 
     // 🟢 Direcciones adicionales (JSON limpio)
     if (direcciones !== undefined) {
@@ -191,6 +216,10 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
     return res.status(200).json(actualizado);
 
   } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+    }
+
     console.error("Error al actualizar detalle empresa:", err);
 
     if (err.code === "P2002")

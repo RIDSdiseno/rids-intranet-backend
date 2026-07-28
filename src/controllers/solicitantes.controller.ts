@@ -55,6 +55,15 @@ const buildEstadoSolicitanteWhere = (
   };
 };
 
+const buildEmpresaActivaWhere =
+  (): Prisma.SolicitanteWhereInput => ({
+    empresa: {
+      is: {
+        isActive: true,
+      },
+    },
+  });
+
 const normalizeEmail = (v: unknown): string | null => {
   const s = String(v ?? "").trim().toLowerCase();
   return s.length > 0 ? s : null;
@@ -214,8 +223,8 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     // default true
     const user = (req as any).user;
 
-    // 👇 Si viene explícitamente en query → usarlo
-    // 👇 Si NO viene → default depende del rol
+    // Si viene explícitamente en query → usarlo
+    // Si NO viene → default depende del rol
     const onlyWithAccountRaw =
       req.query.onlyWithAccount !== undefined
         ? parseOnlyWithAccount(req.query.onlyWithAccount)
@@ -236,18 +245,44 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const orderDir = parseOrderDir(req.query.orderDir);
 
     const where: Prisma.SolicitanteWhereInput = {
-      ...buildEstadoSolicitanteWhere(estado),
+      AND: [
+        buildEstadoSolicitanteWhere(estado),
 
-      ...(user?.rol === "CLIENTE"
-        ? { empresaId: Number(user.empresaId) }
-        : empresaId > 0
-          ? { empresaId }
-          : {}),
+        buildEmpresaActivaWhere(),
 
-      ...buildSolicitanteSearchWhere(q, true),
+        user?.rol === "CLIENTE"
+          ? {
+            empresaId: Number(
+              user.empresaId
+            ),
+          }
+          : empresaId > 0
+            ? {
+              empresaId,
+            }
+            : {},
 
-      ...(onlyGMS ? { accountType: { in: ["google", "microsoft"] as any } } : {}),
-      ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+        buildSolicitanteSearchWhere(
+          q,
+          true
+        ),
+
+        onlyGMS
+          ? {
+            accountType: {
+              in: [
+                "google",
+                "microsoft",
+              ] as any,
+            },
+          }
+          : {},
+
+        estado === "activos" &&
+          onlyWithAccount
+          ? buildWhereOnlyWithAccount()
+          : {},
+      ],
     };
 
     const orderBy = buildSolicitanteOrderBy(orderByKey, orderDir);
@@ -292,9 +327,31 @@ export const listSolicitantes = async (req: Request, res: Response) => {
       try {
         baseSolicitantes = await prisma.solicitante.findMany({
           where: {
-            isActive: true,
-            ...(empresaId > 0 ? { empresaId } : {}),
-            ...buildSolicitanteSearchWhere(q, true),
+            AND: [
+              {
+                isActive: true,
+                deletedAt: null,
+              },
+
+              buildEmpresaActivaWhere(),
+
+              user?.rol === "CLIENTE"
+                ? {
+                  empresaId: Number(
+                    user.empresaId
+                  ),
+                }
+                : empresaId > 0
+                  ? {
+                    empresaId,
+                  }
+                  : {},
+
+              buildSolicitanteSearchWhere(
+                q,
+                true
+              ),
+            ],
           },
           select: {
             id_solicitante: true,
@@ -326,7 +383,7 @@ export const listSolicitantes = async (req: Request, res: Response) => {
 
     const [empresas, equipos] = await Promise.all([
       prisma.empresa.findMany({
-        where: { id_empresa: { in: Array.from(empresaIdSet) } },
+        where: { id_empresa: { in: Array.from(empresaIdSet) }, isActive: true },
         select: { id_empresa: true, nombre: true },
       }),
       prisma.equipo.findMany({
@@ -429,7 +486,19 @@ export const listSolicitantesMailer = async (req: Request, res: Response) => {
     const items = await prisma.solicitante.findMany({
       where: {
         isActive: true,
-        ...(empresaId > 0 ? { empresaId } : {}),
+        deletedAt: null,
+
+        empresa: {
+          is: {
+            isActive: true,
+          },
+        },
+
+        ...(empresaId > 0
+          ? {
+            empresaId,
+          }
+          : {}),
       },
       select: {
         id_solicitante: true,
@@ -481,10 +550,30 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
     const orderDir = parseOrderDir(req.query.orderDir);
 
     const where: Prisma.SolicitanteWhereInput = {
-      isActive: true,
-      empresaId,
-      ...buildSolicitanteSearchWhere(q, false),
-      ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+      AND: [
+        {
+          isActive: true,
+          deletedAt: null,
+          empresaId,
+        },
+
+        {
+          empresa: {
+            is: {
+              isActive: true,
+            },
+          },
+        },
+
+        buildSolicitanteSearchWhere(
+          q,
+          false
+        ),
+
+        onlyWithAccount
+          ? buildWhereOnlyWithAccount()
+          : {},
+      ],
     };
 
     const rows = await prisma.solicitante.findMany({
@@ -544,10 +633,36 @@ export const listSolicitantesForSelect = async (req: Request, res: Response) => 
     const effectiveEmpresaId = userEmpresaId ?? (empresaId > 0 ? empresaId : null);
 
     const where: Prisma.SolicitanteWhereInput = {
-      isActive: true,
-      ...(effectiveEmpresaId ? { empresaId: effectiveEmpresaId } : {}),
-      ...buildSolicitanteSearchWhere(q, true),
-      ...(onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+      AND: [
+        {
+          isActive: true,
+          deletedAt: null,
+        },
+
+        {
+          empresa: {
+            is: {
+              isActive: true,
+            },
+          },
+        },
+
+        effectiveEmpresaId
+          ? {
+            empresaId:
+              effectiveEmpresaId,
+          }
+          : {},
+
+        buildSolicitanteSearchWhere(
+          q,
+          true
+        ),
+
+        onlyWithAccount
+          ? buildWhereOnlyWithAccount()
+          : {},
+      ],
     };
 
     const rows = await prisma.solicitante.findMany({
@@ -604,16 +719,70 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
 
     const where: Prisma.SolicitanteWhereInput = {
-      ...buildEstadoSolicitanteWhere(estado),
-      ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
-      ...buildSolicitanteSearchWhere(q, true),
-      ...(estado === "activos" && onlyWithAccount ? buildWhereOnlyWithAccount() : {}),
+      AND: [
+        buildEstadoSolicitanteWhere(
+          estado
+        ),
+
+        {
+          empresa: {
+            is: {
+              isActive: true,
+            },
+          },
+        },
+
+        userEmpresaId
+          ? {
+            empresaId:
+              userEmpresaId,
+          }
+          : empresaId > 0
+            ? {
+              empresaId,
+            }
+            : {},
+
+        buildSolicitanteSearchWhere(
+          q,
+          true
+        ),
+
+        estado === "activos" &&
+          onlyWithAccount
+          ? buildWhereOnlyWithAccount()
+          : {},
+      ],
     };
     const solicitantes = await prisma.solicitante.count({ where });
 
-    const baseEmpresaWhere: Prisma.SolicitanteWhereInput = {
-      ...(userEmpresaId ? { empresaId: userEmpresaId } : empresaId > 0 ? { empresaId } : {}),
-      ...buildSolicitanteSearchWhere(q, true),
+    const baseEmpresaWhere:
+      Prisma.SolicitanteWhereInput = {
+      AND: [
+        {
+          empresa: {
+            is: {
+              isActive: true,
+            },
+          },
+        },
+
+        userEmpresaId
+          ? {
+            empresaId:
+              userEmpresaId,
+          }
+          : empresaId > 0
+            ? {
+              empresaId,
+            }
+            : {},
+
+        buildSolicitanteSearchWhere(
+          q,
+          true
+        ),
+      ],
     };
 
     const inactivos = await prisma.solicitante.count({
@@ -630,18 +799,51 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
     });
     const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
 
-    const equiposWhere: Prisma.EquipoWhereInput =
-      userEmpresaId ?? (empresaId > 0 ? empresaId : null)
+    const equiposWhere:
+      Prisma.EquipoWhereInput =
+      userEmpresaId ??
+        (empresaId > 0
+          ? empresaId
+          : null)
         ? {
           deletedAt: null,
           solicitante: {
             is: {
-              empresaId: userEmpresaId ?? empresaId,
+              empresaId:
+                userEmpresaId ??
+                empresaId,
+              empresa: {
+                is: {
+                  isActive: true,
+                },
+              },
             },
           },
         }
         : {
           deletedAt: null,
+          OR: [
+            {
+              empresa: {
+                is: {
+                  isActive: true,
+                },
+              },
+            },
+            {
+              empresaId: null,
+              solicitante: {
+                is: {
+                  empresa: {
+                    is: {
+                      isActive:
+                        true,
+                    },
+                  },
+                },
+              },
+            },
+          ],
         };
 
     const equipos = await prisma.equipo.count({
@@ -794,10 +996,30 @@ export const createSolicitante = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "El correo no tiene un formato válido" });
     }
 
-    const empresa = await prisma.empresa.findUnique({
-      where: { id_empresa: empresaId },
-      select: { id_empresa: true },
-    });
+    const empresa =
+      await prisma.empresa.findUnique({
+        where: {
+          id_empresa: empresaId,
+        },
+        select: {
+          id_empresa: true,
+          isActive: true,
+        },
+      });
+
+    if (!empresa) {
+      return res.status(404).json({
+        error: "La empresa no existe",
+      });
+    }
+
+    if (!empresa.isActive) {
+      return res.status(409).json({
+        code: "EMPRESA_INACTIVA",
+        error:
+          "La empresa está inactiva y no puede recibir nuevos solicitantes.",
+      });
+    }
 
     if (!empresa) {
       return res.status(404).json({ error: "La empresa no existe" });
@@ -1050,10 +1272,30 @@ export const updateSolicitante = async (req: Request, res: Response) => {
     }
 
     if (typeof empresaId === "number") {
-      const emp = await prisma.empresa.findUnique({
-        where: { id_empresa: empresaId },
-        select: { id_empresa: true },
-      });
+      const emp =
+        await prisma.empresa.findUnique({
+          where: {
+            id_empresa: empresaId,
+          },
+          select: {
+            id_empresa: true,
+            isActive: true,
+          },
+        });
+
+      if (!emp) {
+        return res.status(404).json({
+          error: "La empresa no existe",
+        });
+      }
+
+      if (!emp.isActive) {
+        return res.status(409).json({
+          code: "EMPRESA_INACTIVA",
+          error:
+            "No se puede asignar el solicitante a una empresa inactiva.",
+        });
+      }
       if (!emp) return res.status(404).json({ error: "La empresa no existe" });
     }
 

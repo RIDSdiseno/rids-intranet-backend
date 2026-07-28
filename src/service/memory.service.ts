@@ -1,6 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prismaBase as prisma } from "../lib/prisma.js";
 
 export type MemoryMessage = {
   role: "client" | "bot" | "assistant";
