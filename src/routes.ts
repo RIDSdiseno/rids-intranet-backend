@@ -104,6 +104,9 @@ import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.ro
 
 import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-mantencion.routes.js";
 
+/* ===================== Recordatorios ===================== */
+import recordatoriosRouter from "./routes/recordatorios.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
@@ -125,6 +128,7 @@ api.use("/bitacora-tecnico", bitacoraTecnicoRoutes);
 api.use("/ubicaciones", ubicacionesRouter);
 api.use("/mapa", mapaAgendasRouter);
 api.use("/entregas", entregasRouter);
+api.use("/recordatorios", recordatoriosRouter);
 
 // Maintenance de solicitantes
 // Tu router define: POST /solicitantes/cleanup/no-cuenta

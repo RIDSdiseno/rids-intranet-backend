@@ -528,6 +528,7 @@ model Equipo {
   softwares                   EquipoSoftware[]
   agenteEventos               EquipoAgenteEvento[]
   equipoMantenciones          EquipoMantencion[]
+  recordatorios               Recordatorio[]
 
   @@index([empresaId])
   @@index([productoId])
@@ -753,6 +754,8 @@ model Tecnico {
   oportunidadesVenta         OportunidadVenta[]               @relation("ResponsableOportunidadVenta")
   historialEtapasOportunidad HistorialEtapaOportunidadVenta[]
   seguimientosOportunidad    SeguimientoOportunidadVenta[]
+  recordatoriosRecibidos     Recordatorio[]                   @relation("RecordatorioDestinatario")
+  recordatoriosCreados       Recordatorio[]                   @relation("RecordatorioCreador")
 
   @@index([empresaId])
 }
@@ -790,6 +793,7 @@ model Visita {
   solicitanteRef     Solicitante?      @relation("Solicitante_Visita", fields: [solicitanteId], references: [id_solicitante])
   sucursal           Sucursal?         @relation(fields: [sucursalId], references: [id_sucursal])
   bitacoras          BitacoraTecnico[]
+  recordatorios      Recordatorio[]
 
   @@index([empresaId])
   @@index([tecnicoId])
@@ -963,6 +967,7 @@ model CotizacionGestioo {
   imagen                String?
   tecnicoId             Int?
   ordenGenerada         Boolean                 @default(false)
+  oportunidadVentaId    Int?
   tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
@@ -971,11 +976,8 @@ model CotizacionGestioo {
   equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
   bitacoras             BitacoraTecnico[]
   envios                CotizacionEnviada[]
-
-  // Relación opcional con el funnel comercial de oportunidades de venta.
-  // Nullable: cotizaciones históricas y cotizaciones creadas fuera del funnel no tienen oportunidad asociada.
-  oportunidadVentaId Int?
-  oportunidadVenta   OportunidadVenta? @relation(fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
+  oportunidadVenta      OportunidadVenta?       @relation(fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
+  recordatorios         Recordatorio[]
 
   @@index([entidadId])
   @@index([oportunidadVentaId])
@@ -1103,6 +1105,7 @@ model Ticket {
   messages        TicketMessage[]
   events          TicketEvent[]
   bitacoras       BitacoraTecnico[]
+  recordatorios   Recordatorio[]
 
   @@index([empresaId])
   @@index([status])
@@ -1587,32 +1590,41 @@ model ManualTutorial {
 }
 
 model BitacoraTecnico {
-  id            Int                    @id @default(autoincrement())
-  fecha         DateTime               @default(now())
-  titulo        String?
-  descripcion   String
-  tipoActividad TipoBitacoraTecnico    @default(OTRO)
-  estado        EstadoBitacoraTecnico  @default(REGISTRADA)
-  tecnicoId     Int
-  empresaId     Int?
-  solicitanteId Int?
-  ticketId      Int?
-  trabajoId     Int?
-  visitaId      Int?
-  mantencionId  Int?
-  equipoId      Int?
-  cotizacionId  Int?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  tecnico       Tecnico                @relation(fields: [tecnicoId], references: [id_tecnico])
-  empresa       Empresa?               @relation(fields: [empresaId], references: [id_empresa])
-  solicitante   Solicitante?           @relation(fields: [solicitanteId], references: [id_solicitante])
-  ticket        Ticket?                @relation(fields: [ticketId], references: [id])
-  trabajo       DetalleTrabajoGestioo? @relation(fields: [trabajoId], references: [id])
-  visita        Visita?                @relation(fields: [visitaId], references: [id_visita])
-  mantencion    MantencionRemota?      @relation(fields: [mantencionId], references: [id_mantencion])
-  equipo        Equipo?                @relation(fields: [equipoId], references: [id_equipo])
-  cotizacion    CotizacionGestioo?     @relation(fields: [cotizacionId], references: [id])
+  id                       Int                    @id @default(autoincrement())
+  fecha                    DateTime               @default(now())
+  titulo                   String?
+  descripcion              String
+  tipoActividad            TipoBitacoraTecnico    @default(OTRO)
+  estado                   EstadoBitacoraTecnico  @default(REGISTRADA)
+  tecnicoId                Int
+  empresaId                Int?
+  solicitanteId            Int?
+  ticketId                 Int?
+  trabajoId                Int?
+  visitaId                 Int?
+  mantencionId             Int?
+  equipoId                 Int?
+  cotizacionId             Int?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  /// Fecha y hora en la que debe mostrarse o enviarse el recordatorio.
+  recordatorioAt           DateTime?
+  /// Indica si el técnico ya completó o descartó el recordatorio.
+  recordatorioCompletado   Boolean                @default(false)
+  /// Fecha real en la que el recordatorio fue marcado como completado.
+  recordatorioCompletadoAt DateTime?
+  /// Evita que un proceso automático envíe el mismo aviso varias veces.
+  recordatorioNotificadoAt DateTime?
+  tecnico                  Tecnico                @relation(fields: [tecnicoId], references: [id_tecnico])
+  empresa                  Empresa?               @relation(fields: [empresaId], references: [id_empresa])
+  solicitante              Solicitante?           @relation(fields: [solicitanteId], references: [id_solicitante])
+  ticket                   Ticket?                @relation(fields: [ticketId], references: [id])
+  trabajo                  DetalleTrabajoGestioo? @relation(fields: [trabajoId], references: [id])
+  visita                   Visita?                @relation(fields: [visitaId], references: [id_visita])
+  mantencion               MantencionRemota?      @relation(fields: [mantencionId], references: [id_mantencion])
+  equipo                   Equipo?                @relation(fields: [equipoId], references: [id_equipo])
+  cotizacion               CotizacionGestioo?     @relation(fields: [cotizacionId], references: [id])
+  recordatorios            Recordatorio[]         @relation("BitacoraRecordatorios")
 
   @@index([fecha])
   @@index([tecnicoId])
@@ -1626,6 +1638,69 @@ model BitacoraTecnico {
   @@index([cotizacionId])
   @@index([estado])
   @@index([tipoActividad])
+  @@index([recordatorioAt])
+  @@index([recordatorioCompletado])
+  @@index([recordatorioNotificadoAt])
+  @@index([recordatorioCompletado, recordatorioNotificadoAt, recordatorioAt])
+}
+
+model Recordatorio {
+  id              Int                @id @default(autoincrement())
+  /// Texto principal mostrado en la campana global.
+  titulo          String
+  /// Información adicional del recordatorio.
+  mensaje         String?
+  /// Fecha y hora en la que debe activarse.
+  fechaProgramada DateTime
+  /// Estado actual del recordatorio.
+  estado          EstadoRecordatorio @default(PENDIENTE)
+  /// Módulo desde el cual fue creado.
+  origen          OrigenRecordatorio @default(MANUAL)
+  /// Técnico que recibirá el recordatorio.
+  destinatarioId  Int
+  /// Técnico que creó el recordatorio.
+  creadoPorId     Int?
+  /// Relaciones opcionales con registros del CRM.
+  bitacoraId      Int?
+  ticketId        Int?
+  cotizacionId    Int?
+  visitaId        Int?
+  equipoId        Int?
+  mantencionId    Int?
+  oportunidadId   Int?
+  /// Fecha en la que el usuario visualizó el aviso.
+  leidoAt         DateTime?
+  /// Fecha en la que el sistema envió la notificación.
+  notificadoAt    DateTime?
+  /// Fecha en la que el recordatorio fue completado.
+  completadoAt    DateTime?
+  /// Fecha en la que el recordatorio fue cancelado.
+  canceladoAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  destinatario    Tecnico            @relation("RecordatorioDestinatario", fields: [destinatarioId], references: [id_tecnico], onDelete: Cascade)
+  creadoPor       Tecnico?           @relation("RecordatorioCreador", fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+  bitacora        BitacoraTecnico?   @relation("BitacoraRecordatorios", fields: [bitacoraId], references: [id], onDelete: Cascade)
+  ticket          Ticket?            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  cotizacion      CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  visita          Visita?            @relation(fields: [visitaId], references: [id_visita], onDelete: Cascade)
+  equipo          Equipo?            @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+
+  @@index([destinatarioId])
+  @@index([creadoPorId])
+  @@index([fechaProgramada])
+  @@index([estado])
+  @@index([origen])
+  @@index([leidoAt])
+  @@index([notificadoAt])
+  @@index([bitacoraId])
+  @@index([ticketId])
+  @@index([cotizacionId])
+  @@index([visitaId])
+  @@index([equipoId])
+  @@index([mantencionId])
+  @@index([oportunidadId])
+  @@index([destinatarioId, estado, fechaProgramada])
 }
 
 model ManualTutorialArchivo {
@@ -1721,6 +1796,96 @@ model CotizacionMasivaPlantillaItem {
   @@unique([plantillaId, productoId])
   @@index([plantillaId])
   @@index([productoId])
+}
+
+model OportunidadVenta {
+  id                        Int                              @id @default(autoincrement())
+  codigo                    String                           @unique
+  titulo                    String
+  entidadId                 Int?
+  proyecto                  String?
+  contactoNombre            String?
+  contactoEmail             String?
+  contactoTelefono          String?
+  responsableId             Int
+  etapa                     EtapaOportunidadVenta            @default(NUEVA)
+  prioridad                 PrioridadOportunidadVenta        @default(MEDIA)
+  montoEstimado             Decimal?                         @db.Decimal(14, 2)
+  moneda                    MonedaGestioo                    @default(CLP)
+  probabilidadCierre        Int?
+  proximaAccion             String?
+  fechaProximaAccion        DateTime?
+  fechaUltimoContacto       DateTime?
+  observaciones             String?
+  motivoPerdida             String?
+  fechaCierre               DateTime?
+  montoFinal                Decimal?                         @db.Decimal(14, 2)
+  orden                     Int                              @default(0)
+  activo                    Boolean                          @default(true)
+  desactivadoAt             DateTime?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  comentariosInternos       String?
+  condicionesEspeciales     String?
+  estadoDesarrolloPropuesta EstadoDesarrolloPropuesta?
+  fechaComprometidaEnvio    DateTime?                        @db.Date
+  informacionPendiente      String?
+  riesgoTecnico             RiesgoTecnicoOportunidad?
+  tipoServicio              TipoServicioOportunidad?
+  tipoServicioOtro          String?
+  montoPropuesto            Decimal?                         @db.Decimal(14, 2)
+  fechaEnvioPropuesta       DateTime?                        @db.Date
+  fechaVencimientoPropuesta DateTime?                        @db.Date
+  comentariosCliente        String?
+  objeciones                String?
+  versionPropuesta          String?
+  contrapropuestas          String?
+  ajustesSolicitados        String?
+  motivoPostergacion        String?
+  fechaReactivacion         DateTime?                        @db.Date
+  fechaProbableCierre       DateTime?                        @db.Date
+  entidad                   EntidadGestioo?                  @relation(fields: [entidadId], references: [id])
+  responsable               Tecnico                          @relation("ResponsableOportunidadVenta", fields: [responsableId], references: [id_tecnico])
+  historialEtapas           HistorialEtapaOportunidadVenta[]
+  seguimientos              SeguimientoOportunidadVenta[]
+  cotizaciones              CotizacionGestioo[]
+
+  @@index([etapa])
+  @@index([responsableId])
+  @@index([entidadId])
+  @@index([prioridad])
+  @@index([activo])
+  @@index([etapa, orden])
+}
+
+model HistorialEtapaOportunidadVenta {
+  id            Int                    @id @default(autoincrement())
+  oportunidadId Int
+  etapaAnterior EtapaOportunidadVenta?
+  etapaNueva    EtapaOportunidadVenta
+  actorId       Int?
+  createdAt     DateTime               @default(now())
+  oportunidad   OportunidadVenta       @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+  actor         Tecnico?               @relation(fields: [actorId], references: [id_tecnico])
+
+  @@index([oportunidadId])
+  @@index([createdAt])
+}
+
+model SeguimientoOportunidadVenta {
+  id                 Int              @id @default(autoincrement())
+  oportunidadId      Int
+  autorId            Int
+  comentario         String
+  fechaContacto      DateTime?
+  proximaAccion      String?
+  fechaProximaAccion DateTime?
+  createdAt          DateTime         @default(now())
+  oportunidad        OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+  autor              Tecnico          @relation(fields: [autorId], references: [id_tecnico])
+
+  @@index([oportunidadId])
+  @@index([createdAt])
 }
 
 enum TipoBitacoraTecnico {
@@ -1967,11 +2132,10 @@ enum OrigenVisita {
   AGENDA
 }
 
-/**
- * =========================================================
- * FUNNEL COMERCIAL — OPORTUNIDADES DE VENTA
- * =========================================================
- */
+/// *
+/// * =========================================================
+/// * FUNNEL COMERCIAL — OPORTUNIDADES DE VENTA
+/// * =========================================================
 enum EtapaOportunidadVenta {
   NUEVA
   COTIZACION_PREPARACION
@@ -2010,116 +2174,19 @@ enum RiesgoTecnicoOportunidad {
   ALTO
 }
 
-model OportunidadVenta {
-  id     Int    @id @default(autoincrement())
-  codigo String @unique
-  titulo String
-
-  entidadId Int?
-  entidad   EntidadGestioo? @relation(fields: [entidadId], references: [id])
-
-  proyecto         String?
-  contactoNombre   String?
-  contactoEmail    String?
-  contactoTelefono String?
-
-  responsableId Int
-  responsable   Tecnico @relation("ResponsableOportunidadVenta", fields: [responsableId], references: [id_tecnico])
-
-  etapa     EtapaOportunidadVenta     @default(NUEVA)
-  prioridad PrioridadOportunidadVenta @default(MEDIA)
-
-  montoEstimado       Decimal?      @db.Decimal(14, 2)
-  moneda              MonedaGestioo @default(CLP)
-  probabilidadCierre  Int?
-  fechaProbableCierre DateTime?     @db.Date
-
-  proximaAccion       String?
-  fechaProximaAccion  DateTime?
-  fechaUltimoContacto DateTime?
-
-  observaciones      String?
-  motivoPerdida      String?
-  motivoPostergacion String?
-  fechaReactivacion  DateTime? @db.Date
-  fechaCierre        DateTime?
-  montoFinal         Decimal?  @db.Decimal(14, 2)
-
-  // Desarrollo de la propuesta/cotización (relevante en COTIZACION_PREPARACION).
-  estadoDesarrolloPropuesta EstadoDesarrolloPropuesta?
-  tipoServicio              TipoServicioOportunidad?
-  tipoServicioOtro          String?
-  informacionPendiente      String?
-  riesgoTecnico             RiesgoTecnicoOportunidad?
-  condicionesEspeciales     String?
-  fechaComprometidaEnvio    DateTime?                  @db.Date
-  comentariosInternos       String?
-
-  // Seguimiento post-envío de la cotización (relevante en COTIZACION_ENVIADA).
-  montoPropuesto            Decimal?  @db.Decimal(14, 2)
-  fechaEnvioPropuesta       DateTime? @db.Date
-  fechaVencimientoPropuesta DateTime? @db.Date
-  comentariosCliente        String?
-  objeciones                String?
-
-  // Negociación (relevante en NEGOCIACION). fechaEnvioPropuesta/montoPropuesto/
-  // objeciones se reutilizan de la sección anterior (ya vienen rellenos).
-  versionPropuesta   String?
-  contrapropuestas   String?
-  ajustesSolicitados String?
-
-  orden Int @default(0)
-
-  activo        Boolean   @default(true)
-  desactivadoAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  historialEtapas HistorialEtapaOportunidadVenta[]
-  seguimientos    SeguimientoOportunidadVenta[]
-  cotizaciones    CotizacionGestioo[]
-
-  @@index([etapa])
-  @@index([responsableId])
-  @@index([entidadId])
-  @@index([prioridad])
-  @@index([activo])
-  @@index([etapa, orden])
+/// Módulo desde el cual fue creado el recordatorio.
+enum OrigenRecordatorio {
+  MANUAL
+  BITACORA
+  TICKET
+  COTIZACION
+  VISITA
+  EQUIPO
 }
 
-model HistorialEtapaOportunidadVenta {
-  id            Int              @id @default(autoincrement())
-  oportunidadId Int
-  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
-
-  etapaAnterior EtapaOportunidadVenta?
-  etapaNueva    EtapaOportunidadVenta
-
-  actorId Int?
-  actor   Tecnico? @relation(fields: [actorId], references: [id_tecnico])
-
-  createdAt DateTime @default(now())
-
-  @@index([oportunidadId])
-  @@index([createdAt])
-}
-
-model SeguimientoOportunidadVenta {
-  id            Int              @id @default(autoincrement())
-  oportunidadId Int
-  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
-
-  autorId Int
-  autor   Tecnico @relation(fields: [autorId], references: [id_tecnico])
-
-  comentario         String
-  fechaContacto      DateTime?
-  proximaAccion      String?
-  fechaProximaAccion DateTime?
-
-  createdAt DateTime @default(now())
-
-  @@index([oportunidadId])
-  @@index([createdAt])
+/// Estado funcional del recordatorio.
+enum EstadoRecordatorio {
+  PENDIENTE
+  COMPLETADO
+  CANCELADO
 }

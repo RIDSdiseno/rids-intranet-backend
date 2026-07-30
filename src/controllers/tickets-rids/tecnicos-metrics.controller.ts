@@ -96,15 +96,24 @@ export async function getTicketMetricsByTecnico(req: Request, res: Response) {
                 assigneeId: true,
                 events: {
                     where: {
-                        type: "ASSIGNED",
+                        type: {
+                            in: [
+                                "ASSIGNED",
+                                "STATUS_CHANGED",
+                                "REOPENED",
+                            ],
+                        },
                     },
                     select: {
+                        // Necesario para que buildTicketSla detecte asignación,
+                        // pausas por PENDING y reaperturas si las usas.
                         type: true,
+                        oldValue: true,
                         newValue: true,
                         createdAt: true,
                     },
                     orderBy: {
-                        createdAt: "desc",
+                        createdAt: "asc",
                     },
                 },
             },
@@ -315,16 +324,22 @@ export async function getWorstClosedTicketsByTecnico(req: Request, res: Response
                 events: {
                     where: {
                         type: {
-                            in: ["ASSIGNED", "REOPENED"],
+                            in: [
+                                "ASSIGNED",
+                                "STATUS_CHANGED",
+                                "REOPENED",
+                            ],
                         },
                     },
                     select: {
+                        // Necesario para calcular correctamente SLA con pausas.
                         type: true,
+                        oldValue: true,
                         newValue: true,
                         createdAt: true,
                     },
                     orderBy: {
-                        createdAt: "desc",
+                        createdAt: "asc",
                     },
                 },
             },

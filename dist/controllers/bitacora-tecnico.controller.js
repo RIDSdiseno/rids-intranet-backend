@@ -1,5 +1,6 @@
-import { Prisma, TipoBitacoraTecnico, EstadoBitacoraTecnico, } from "@prisma/client";
-import { prismaBase as prisma } from "../lib/prisma.js";
+import { EstadoBitacoraTecnico, EstadoRecordatorio, OrigenRecordatorio, Prisma, TipoBitacoraTecnico, } from "@prisma/client";
+import { prismaBase as prisma, } from "../lib/prisma.js";
+import { sincronizarRecordatorioBitacora, } from "../service/recordatorios/recordatorios.service.js";
 function parsePositiveInt(value) {
     const n = Number(value);
     return Number.isInteger(n) && n > 0 ? n : undefined;
@@ -18,6 +19,35 @@ function parseFecha(value) {
     }
     const date = new Date(clean);
     return Number.isNaN(date.getTime()) ? undefined : date;
+}
+function parseOptionalDateTime(value) {
+    /*
+     * undefined significa que el frontend no envió el campo.
+     * Es útil al actualizar para conservar el valor actual.
+     */
+    if (value === undefined) {
+        return undefined;
+    }
+    /*
+     * null o string vacío significa eliminar el recordatorio.
+     */
+    if (value === null ||
+        (typeof value === "string" && !value.trim())) {
+        return null;
+    }
+    if (typeof value !== "string") {
+        return undefined;
+    }
+    const date = new Date(value.trim());
+    return Number.isNaN(date.getTime())
+        ? undefined
+        : date;
+}
+function validarRecordatorioFuturo(recordatorioAt) {
+    if (!recordatorioAt) {
+        return true;
+    }
+    return recordatorioAt.getTime() > Date.now();
 }
 function buildDateRange(fecha) {
     if (!fecha)
@@ -49,7 +79,7 @@ function normalizeEstado(value) {
 }
 export async function crearBitacoraTecnico(req, res) {
     try {
-        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, } = req.body;
+        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
         const descripcionNormalizada = normalizeText(descripcion);
         if (!descripcionNormalizada) {
             return res.status(400).json({
@@ -60,6 +90,18 @@ export async function crearBitacoraTecnico(req, res) {
         if (!tecnicoIdFinal) {
             return res.status(400).json({
                 error: "El técnico es obligatorio",
+            });
+        }
+        const recordatorioAtFinal = parseOptionalDateTime(recordatorioAt);
+        if (recordatorioAt !== undefined &&
+            recordatorioAtFinal === undefined) {
+            return res.status(400).json({
+                error: "La fecha del recordatorio no es válida",
+            });
+        }
+        if (!validarRecordatorioFuturo(recordatorioAtFinal)) {
+            return res.status(400).json({
+                error: "El recordatorio debe programarse para una fecha futura",
             });
         }
         const createData = {
@@ -77,6 +119,10 @@ export async function crearBitacoraTecnico(req, res) {
             mantencionId: parsePositiveInt(mantencionId) ?? null,
             equipoId: parsePositiveInt(equipoId) ?? null,
             cotizacionId: parsePositiveInt(cotizacionId) ?? null,
+            recordatorioAt: recordatorioAtFinal ?? null,
+            recordatorioCompletado: false,
+            recordatorioCompletadoAt: null,
+            recordatorioNotificadoAt: null,
         };
         const bitacora = await prisma.bitacoraTecnico.create({
             data: createData,
@@ -154,6 +200,17 @@ export async function crearBitacoraTecnico(req, res) {
                     },
                 },
             },
+        });
+        /*
+ * Mantiene sincronizado el recordatorio específico de la bitácora
+ * con la tabla global utilizada por la campana.
+ */
+        await sincronizarRecordatorioBitacora({
+            bitacoraId: bitacora.id,
+            tecnicoId: tecnicoIdFinal,
+            titulo: bitacora.titulo,
+            descripcion: bitacora.descripcion,
+            recordatorioAt: bitacora.recordatorioAt,
         });
         return res.status(201).json({ data: bitacora });
     }
@@ -435,12 +492,12 @@ export async function obtenerBitacoraTecnicoPorId(req, res) {
 export async function actualizarBitacoraTecnico(req, res) {
     try {
         const id = Number(req.params.id);
-        if (!Number.isInteger(id)) {
+        if (!Number.isInteger(id) || id <= 0) {
             return res.status(400).json({
                 error: "ID inválido",
             });
         }
-        const { fecha, titulo, descripcion, tipoActividad, estado, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, } = req.body;
+        const { fecha, titulo, descripcion, tipoActividad, estado, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
         const descripcionNormalizada = normalizeText(descripcion);
         if (!descripcionNormalizada) {
             return res.status(400).json({
@@ -459,21 +516,61 @@ export async function actualizarBitacoraTecnico(req, res) {
             tipoActividad: normalizeTipoActividad(tipoActividad),
             estado: normalizeEstado(estado),
             tecnicoId: tecnicoIdFinal,
-            empresaId: parsePositiveInt(empresaId) ?? null,
+            empresaId: parsePositiveInt(empresaId) ??
+                null,
             solicitanteId: parsePositiveInt(solicitanteId) ?? null,
-            ticketId: parsePositiveInt(ticketId) ?? null,
-            trabajoId: parsePositiveInt(trabajoId) ?? null,
-            visitaId: parsePositiveInt(visitaId) ?? null,
+            ticketId: parsePositiveInt(ticketId) ??
+                null,
+            trabajoId: parsePositiveInt(trabajoId) ??
+                null,
+            visitaId: parsePositiveInt(visitaId) ??
+                null,
             mantencionId: parsePositiveInt(mantencionId) ?? null,
-            equipoId: parsePositiveInt(equipoId) ?? null,
+            equipoId: parsePositiveInt(equipoId) ??
+                null,
             cotizacionId: parsePositiveInt(cotizacionId) ?? null,
         };
         const fechaParsed = parseFecha(fecha);
         if (fechaParsed) {
-            updateData.fecha = fechaParsed;
+            updateData.fecha =
+                fechaParsed;
+        }
+        /*
+         * Solo modifica el recordatorio si el frontend
+         * incluyó explícitamente recordatorioAt.
+         */
+        if (recordatorioAt !== undefined) {
+            const recordatorioAtActualizado = parseOptionalDateTime(recordatorioAt);
+            if (recordatorioAtActualizado ===
+                undefined) {
+                return res.status(400).json({
+                    error: "La fecha del recordatorio no es válida",
+                });
+            }
+            if (recordatorioAtActualizado !==
+                null &&
+                !validarRecordatorioFuturo(recordatorioAtActualizado)) {
+                return res.status(400).json({
+                    error: "El recordatorio debe programarse para una fecha futura",
+                });
+            }
+            updateData.recordatorioAt =
+                recordatorioAtActualizado;
+            /*
+             * Si se cambia o elimina la fecha,
+             * se reinicia el estado del recordatorio.
+             */
+            updateData.recordatorioCompletado =
+                false;
+            updateData.recordatorioCompletadoAt =
+                null;
+            updateData.recordatorioNotificadoAt =
+                null;
         }
         const bitacora = await prisma.bitacoraTecnico.update({
-            where: { id },
+            where: {
+                id,
+            },
             data: updateData,
             include: {
                 tecnico: true,
@@ -487,7 +584,19 @@ export async function actualizarBitacoraTecnico(req, res) {
                 cotizacion: true,
             },
         });
-        return res.json({ data: bitacora });
+        /*
+* Actualizar también el registro global de recordatorios.
+*/
+        await sincronizarRecordatorioBitacora({
+            bitacoraId: bitacora.id,
+            tecnicoId: bitacora.tecnicoId,
+            titulo: bitacora.titulo,
+            descripcion: bitacora.descripcion,
+            recordatorioAt: bitacora.recordatorioAt,
+        });
+        return res.json({
+            data: bitacora,
+        });
     }
     catch (error) {
         if (error.code === "P2025") {
@@ -767,6 +876,120 @@ export async function obtenerOpcionesRelacionBitacora(req, res) {
         console.error("❌ Error al obtener opciones de relación:", error);
         return res.status(500).json({
             error: "Error al obtener opciones de relación",
+        });
+    }
+}
+export async function actualizarRecordatorioBitacora(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                error: "ID inválido",
+            });
+        }
+        if (typeof req.body.completado !== "boolean") {
+            return res.status(400).json({
+                error: "El campo completado debe ser booleano",
+            });
+        }
+        const completado = req.body.completado;
+        const existente = await prisma.bitacoraTecnico.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                recordatorioAt: true,
+            },
+        });
+        if (!existente) {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        if (!existente.recordatorioAt) {
+            return res.status(400).json({
+                error: "La bitácora no tiene un recordatorio configurado",
+            });
+        }
+        const bitacora = await prisma.bitacoraTecnico.update({
+            where: { id },
+            data: {
+                recordatorioCompletado: completado,
+                recordatorioCompletadoAt: completado
+                    ? new Date()
+                    : null,
+            },
+            include: {
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                        rol: true,
+                    },
+                },
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+            },
+        });
+        const recordatorioGlobal = await prisma.recordatorio.findFirst({
+            where: {
+                bitacoraId: id,
+                origen: OrigenRecordatorio.BITACORA
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+        });
+        if (recordatorioGlobal) {
+            await prisma.recordatorio.update({
+                where: {
+                    id: recordatorioGlobal.id,
+                },
+                data: {
+                    /*
+                     * Mantener sincronizado el estado global
+                     * con el estado almacenado en BitacoraTecnico.
+                     */
+                    estado: completado
+                        ? EstadoRecordatorio.COMPLETADO
+                        : EstadoRecordatorio.PENDIENTE,
+                    completadoAt: completado
+                        ? new Date()
+                        : null,
+                    leidoAt: completado
+                        ? new Date()
+                        : null,
+                    /*
+                     * Al reactivar se permite que vuelva
+                     * a generar una notificación.
+                     */
+                    notificadoAt: completado
+                        ? recordatorioGlobal.notificadoAt
+                        : null,
+                    canceladoAt: null,
+                },
+            });
+        }
+        return res.json({
+            data: bitacora,
+            message: completado
+                ? "Recordatorio completado correctamente"
+                : "Recordatorio reactivado correctamente",
+        });
+    }
+    catch (error) {
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        console.error("❌ Error actualizando recordatorio:", error);
+        return res.status(500).json({
+            error: "Error al actualizar el recordatorio",
         });
     }
 }

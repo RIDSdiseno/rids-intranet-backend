@@ -9,6 +9,8 @@ import crypto from "crypto";
 import { bus } from "../../lib/events.js";
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
 import { uploadTicketAttachmentBuffer } from "../../config/ticket-attachments-storage.js";
+import { sendTicketPendingEmail } from "./tickets-sla/ticket-sla-alert-mailer.js";
+import { sincronizarRecordatorioTicket } from "../../service/recordatorios/recordatorios.service.js";
 import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET, } from "../../lib/supabase/supabase.js";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {
@@ -531,20 +533,23 @@ export async function replyTicketAsAgent(req, res) {
                     });
                 }
             }
+            const now = new Date();
             const updateData = {
-                lastActivityAt: new Date(),
+                lastActivityAt: now,
             };
-            if (ticket.status === TicketStatus.NEW ||
-                ticket.status === TicketStatus.PENDING) {
+            const shouldAutoOpenTicket = ticket.status === TicketStatus.NEW ||
+                ticket.status === TicketStatus.PENDING;
+            if (shouldAutoOpenTicket) {
                 updateData.status = TicketStatus.OPEN;
             }
             if (!ticket.firstResponseAt && !isInternal && agentId && ticket.assigneeId) {
-                updateData.firstResponseAt = new Date();
+                updateData.firstResponseAt = now;
             }
             await tx.ticket.update({
                 where: { id: ticketId },
                 data: updateData,
             });
+            // Registramos el mensaje enviado por el agente.
             await tx.ticketEvent.create({
                 data: {
                     ticketId,
@@ -553,7 +558,51 @@ export async function replyTicketAsAgent(req, res) {
                     actorId: agentId ?? null,
                 },
             });
+            // Si el ticket salió automáticamente de PENDING/NEW a OPEN,
+            // registramos el cambio de estado para que el SLA pueda reanudar correctamente.
+            if (shouldAutoOpenTicket) {
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId,
+                        type: TicketEventType.STATUS_CHANGED,
+                        oldValue: ticket.status,
+                        newValue: TicketStatus.OPEN,
+                        actorType: agentId
+                            ? TicketActorType.AGENT
+                            : TicketActorType.SYSTEM,
+                        actorId: agentId ?? null,
+                    },
+                });
+            }
         });
+        /*
+ * Si el agente responde al cliente, cancelamos cualquier recordatorio
+ * automático asociado al ticket.
+ *
+ * Esto cubre:
+ * - Recordatorio por ticket PENDING.
+ * - Recordatorio por respuesta del solicitante.
+ *
+ * Las notas internas NO cancelan el recordatorio,
+ * porque no son una respuesta real al solicitante.
+ */
+        if (!isInternal) {
+            const tecnicoDestino = ticket.assigneeId ??
+                agentId ??
+                null;
+            if (tecnicoDestino) {
+                try {
+                    await sincronizarRecordatorioTicket({
+                        ticketId,
+                        tecnicoId: tecnicoDestino,
+                        recordatorioAt: null,
+                    });
+                }
+                catch (err) {
+                    console.error("⚠️ Error cancelando recordatorio automático al responder ticket:", err);
+                }
+            }
+        }
         //  Enviar email al cliente (solo si no es nota interna)
         if (!isInternal && toEmails.length > 0) {
             const tecnico = ticket.assignee ?? null;
@@ -776,10 +825,16 @@ export async function listTickets(req, res) {
             },
             events: {
                 where: {
-                    type: TicketEventType.ASSIGNED,
+                    type: {
+                        in: [
+                            TicketEventType.ASSIGNED,
+                            TicketEventType.STATUS_CHANGED,
+                        ],
+                    },
                 },
                 select: {
                     type: true,
+                    oldValue: true,
                     newValue: true,
                     createdAt: true,
                 },
@@ -873,10 +928,16 @@ export async function getTicketById(req, res) {
                 },
                 events: {
                     where: {
-                        type: TicketEventType.ASSIGNED,
+                        type: {
+                            in: [
+                                TicketEventType.ASSIGNED,
+                                TicketEventType.STATUS_CHANGED,
+                            ],
+                        },
                     },
                     select: {
                         type: true,
+                        oldValue: true,
                         newValue: true,
                         createdAt: true,
                     },
@@ -959,11 +1020,21 @@ export async function getTicketById(req, res) {
                             },
                             events: {
                                 where: {
-                                    type: TicketEventType.ASSIGNED,
+                                    type: {
+                                        in: [
+                                            TicketEventType.ASSIGNED,
+                                            TicketEventType.STATUS_CHANGED,
+                                        ],
+                                    },
                                 },
                                 select: {
+                                    // Necesario para calcular inicio de SLA y pausas por estado pendiente
                                     type: true,
+                                    // Necesario porque buildTicketSla espera oldValue en los eventos
+                                    oldValue: true,
+                                    // Necesario para detectar asignaciones y cambios hacia/desde PENDING
                                     newValue: true,
+                                    // Necesario para calcular fechas de inicio y duración de pausas SLA
                                     createdAt: true,
                                 },
                                 orderBy: {
@@ -1119,6 +1190,65 @@ export async function updateTicket(req, res) {
                 await tx.ticketEvent.createMany({ data: events });
             }
         });
+        /*
+         * Si el ticket cambia a PENDING, creamos/actualizamos el recordatorio
+         * antes de responder al frontend.
+         *
+         * Esto permite que la campana se actualice inmediatamente y no solo
+         * cuando el usuario la abre manualmente.
+         */
+        if (status === TicketStatus.PENDING && status !== ticket.status) {
+            void sendTicketPendingEmail(ticketId).catch((err) => {
+                console.error("⚠️ Error enviando correo de ticket pendiente:", err);
+            });
+            const tecnicoDestino = assigneeId !== undefined
+                ? assigneeId
+                : ticket.assigneeId;
+            if (tecnicoDestino) {
+                const recordatorioAt = new Date(Date.now() + 60 * 60 * 1000);
+                try {
+                    await sincronizarRecordatorioTicket({
+                        ticketId,
+                        tecnicoId: tecnicoDestino,
+                        titulo: `Revisar ticket pendiente #${ticketId}`,
+                        descripcion: ticket.subject,
+                        recordatorioAt,
+                    });
+                }
+                catch (err) {
+                    console.error("⚠️ Error creando recordatorio automático de ticket pendiente:", err);
+                }
+            }
+        }
+        /*
+ * Si el ticket cambia a un estado distinto de PENDING,
+ * cancelamos cualquier recordatorio automático asociado.
+ *
+ * Esto cubre:
+ * - PENDING → OPEN
+ * - PENDING → CLOSED
+ * - OPEN → CLOSED después de respuesta del solicitante
+ * - OPEN → RESOLVED después de respuesta del solicitante
+ */
+        if (status &&
+            status !== TicketStatus.PENDING &&
+            status !== ticket.status) {
+            const tecnicoDestino = assigneeId !== undefined
+                ? assigneeId
+                : ticket.assigneeId ?? agentId ?? null;
+            if (tecnicoDestino) {
+                try {
+                    await sincronizarRecordatorioTicket({
+                        ticketId,
+                        tecnicoId: tecnicoDestino,
+                        recordatorioAt: null,
+                    });
+                }
+                catch (err) {
+                    console.error("⚠️ Error cancelando recordatorio automático de ticket:", err);
+                }
+            }
+        }
         const assigneeChanged = assigneeId !== undefined &&
             assigneeId !== ticket.assigneeId &&
             assigneeId !== null;
@@ -1406,7 +1536,11 @@ export async function bulkUpdateTickets(req, res) {
             },
             select: {
                 id: true,
+                // Necesario para crear el recordatorio automático con contexto.
+                subject: true,
+                // Necesario para asignar el recordatorio al técnico correspondiente.
                 assigneeId: true,
+                // Necesario para saber si realmente cambió a PENDING o salió de PENDING.
                 status: true,
                 resolvedAt: true,
                 closedAt: true,
@@ -1448,6 +1582,20 @@ export async function bulkUpdateTickets(req, res) {
                     },
                     data: updateData,
                 });
+                if (status && status !== ticket.status) {
+                    await tx.ticketEvent.create({
+                        data: {
+                            ticketId: ticket.id,
+                            type: TicketEventType.STATUS_CHANGED,
+                            oldValue: ticket.status,
+                            newValue: status,
+                            actorType: agentId
+                                ? TicketActorType.AGENT
+                                : TicketActorType.SYSTEM,
+                            actorId: agentId,
+                        },
+                    });
+                }
                 if (assigneeChanged) {
                     await tx.ticketEvent.create({
                         data: {
@@ -1464,6 +1612,72 @@ export async function bulkUpdateTickets(req, res) {
                 }
             }
         });
+        // Si se marcaron tickets como PENDING de forma masiva,
+        // enviamos un aviso por correo para cada ticket que realmente cambió de estado.
+        if (status === TicketStatus.PENDING) {
+            const pendingTicketIds = ticketsBefore
+                .filter((ticket) => ticket.status !== TicketStatus.PENDING)
+                .map((ticket) => ticket.id);
+            void Promise.allSettled(pendingTicketIds.map(async (ticketId) => {
+                try {
+                    await sendTicketPendingEmail(ticketId);
+                }
+                catch (error) {
+                    /*
+                     * Guardamos el ticketId dentro del error para no depender
+                     * de pendingTicketIds[index], que TypeScript considera
+                     * posiblemente undefined.
+                     */
+                    console.error(`⚠️ Error enviando correo de pendiente para ticket #${ticketId}:`, error);
+                    throw error;
+                }
+            }));
+        }
+        /*
+ * Si se marcaron tickets como PENDING de forma masiva,
+ * creamos un recordatorio automático para cada ticket que realmente cambió.
+ */
+        if (status === TicketStatus.PENDING) {
+            const ticketsPendientesParaRecordatorio = ticketsBefore.filter((ticket) => ticket.status !== TicketStatus.PENDING &&
+                typeof ticket.assigneeId === "number");
+            await Promise.allSettled(ticketsPendientesParaRecordatorio.map(async (ticket) => {
+                const recordatorioAt = new Date(Date.now() + 60 * 60 * 1000);
+                try {
+                    await sincronizarRecordatorioTicket({
+                        ticketId: ticket.id,
+                        tecnicoId: ticket.assigneeId,
+                        titulo: `Revisar ticket pendiente #${ticket.id}`,
+                        descripcion: ticket.subject,
+                        recordatorioAt,
+                    });
+                }
+                catch (error) {
+                    console.error(`⚠️ Error creando recordatorio automático para ticket #${ticket.id}:`, error);
+                    throw error;
+                }
+            }));
+        }
+        /*
+ * Si tickets que estaban en PENDING pasan a otro estado,
+ * cancelamos sus recordatorios automáticos asociados.
+ */
+        if (status && status !== TicketStatus.PENDING) {
+            const ticketsQueSalenDePendiente = ticketsBefore.filter((ticket) => ticket.status === TicketStatus.PENDING &&
+                typeof ticket.assigneeId === "number");
+            await Promise.allSettled(ticketsQueSalenDePendiente.map(async (ticket) => {
+                try {
+                    await sincronizarRecordatorioTicket({
+                        ticketId: ticket.id,
+                        tecnicoId: ticket.assigneeId,
+                        recordatorioAt: null,
+                    });
+                }
+                catch (error) {
+                    console.error(`⚠️ Error cancelando recordatorio automático para ticket #${ticket.id}:`, error);
+                    throw error;
+                }
+            }));
+        }
         if (status) {
             bus.emit("ticket.bulk_status_changed", {
                 ticketIds,

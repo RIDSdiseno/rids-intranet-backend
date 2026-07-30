@@ -10,6 +10,7 @@ import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 import { ticketEmailTemplateService } from "../email/reply-templates/ticket-email-template.service.js";
+import { sincronizarRecordatorioTicket } from "../recordatorios/recordatorios.service.js";
 /* ======================================================
    Servicio Graph Reader
 ====================================================== */
@@ -1000,10 +1001,18 @@ class GraphReaderService {
     async addMessageToTicket(ticketId, data) {
         // Validar que el ticket aún existe y no está cerrado antes de agregar el mensaje
         const ticketBase = await prisma.ticket.findUnique({
-            where: { id: ticketId },
+            where: {
+                id: ticketId,
+            },
             select: {
+                id: true,
+                subject: true,
                 empresaId: true,
                 requesterId: true,
+                // Necesario para saber a qué técnico enviar el recordatorio.
+                assigneeId: true,
+                // Necesario para saber si se debe cancelar/reemplazar un recordatorio previo.
+                status: true,
             },
         });
         // Si el ticket ya tiene requester asignado, lo respetamos. Sino, intentamos asignar por email.
@@ -1096,7 +1105,10 @@ class GraphReaderService {
                     data: {
                         ticketId,
                         type: TicketEventType.STATUS_CHANGED,
-                        actorType: TicketActorType.SYSTEM,
+                        oldValue: ticketActual.status,
+                        newValue: TicketStatus.OPEN,
+                        actorType: TicketActorType.REQUESTER,
+                        actorId: null,
                     },
                 });
             }
@@ -1112,6 +1124,29 @@ class GraphReaderService {
         // si ya estaba procesado, no seguimos
         if (!msg)
             return;
+        /*
+ * Cuando el solicitante responde un ticket existente,
+ * creamos/actualizamos un recordatorio automático para el técnico asignado.
+ *
+ * Se programa para "ahora" para que aparezca inmediatamente
+ * en el badge de la campana.
+ */
+        if (ticketBase?.assigneeId) {
+            const recordatorioAt = new Date(Date.now() - 1000);
+            try {
+                await sincronizarRecordatorioTicket({
+                    ticketId,
+                    tecnicoId: ticketBase.assigneeId,
+                    titulo: `Solicitante respondió ticket #${ticketId}`,
+                    descripcion: data.bodyText?.slice(0, 180)?.trim() ||
+                        `El solicitante ${data.fromEmail} respondió el ticket: ${ticketBase.subject}`,
+                    recordatorioAt,
+                });
+            }
+            catch (error) {
+                console.error(`⚠️ Error creando recordatorio por respuesta del solicitante para ticket #${ticketId}:`, error);
+            }
+        }
         // 2) Adjuntos FUERA de la transacción (lento)
         try {
             await this.saveAttachments(ticketId, msg.id, data);

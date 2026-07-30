@@ -10,5 +10,6 @@ type TicketSlaAlertEmailParams = {
     resolutionRemaining?: number | null;
 };
 export declare function sendTicketSlaAlertEmail(params: TicketSlaAlertEmailParams): Promise<void>;
+export declare function sendTicketPendingEmail(ticketId: number): Promise<void>;
 export {};
 //# sourceMappingURL=ticket-sla-alert-mailer.d.ts.map

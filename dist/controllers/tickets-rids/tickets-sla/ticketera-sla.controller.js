@@ -11,6 +11,61 @@ export function getSlaTargets(priority, slaConfig) {
 function addMinutes(date, minutes) {
     return new Date(date.getTime() + minutes * 60 * 1000);
 }
+function addMilliseconds(date, milliseconds) {
+    return new Date(date.getTime() + milliseconds);
+}
+function clampDate(date, min, max) {
+    if (date < min)
+        return min;
+    if (date > max)
+        return max;
+    return date;
+}
+function getPendingPauseMs(ticket, from, until) {
+    const events = Array.isArray(ticket.events) ? ticket.events : [];
+    const statusEvents = events
+        .filter((event) => event.type === TicketEventType.STATUS_CHANGED &&
+        event.createdAt)
+        .map((event) => ({
+        ...event,
+        createdAtDate: new Date(event.createdAt),
+    }))
+        .filter((event) => !Number.isNaN(event.createdAtDate.getTime()))
+        .sort((a, b) => a.createdAtDate.getTime() - b.createdAtDate.getTime());
+    let pauseMs = 0;
+    let pendingStartedAt = null;
+    for (const event of statusEvents) {
+        if (event.createdAtDate < from) {
+            if (event.newValue === TicketStatus.PENDING) {
+                pendingStartedAt = from;
+            }
+            if (pendingStartedAt &&
+                event.newValue &&
+                event.newValue !== TicketStatus.PENDING) {
+                pendingStartedAt = null;
+            }
+            continue;
+        }
+        if (event.createdAtDate > until) {
+            break;
+        }
+        if (event.newValue === TicketStatus.PENDING) {
+            pendingStartedAt = clampDate(event.createdAtDate, from, until);
+            continue;
+        }
+        if (pendingStartedAt &&
+            event.newValue &&
+            event.newValue !== TicketStatus.PENDING) {
+            const pauseEndAt = clampDate(event.createdAtDate, from, until);
+            pauseMs += Math.max(0, pauseEndAt.getTime() - pendingStartedAt.getTime());
+            pendingStartedAt = null;
+        }
+    }
+    if (pendingStartedAt) {
+        pauseMs += Math.max(0, until.getTime() - pendingStartedAt.getTime());
+    }
+    return pauseMs;
+}
 function diffMinutes(a, b) {
     return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
 }
@@ -82,8 +137,6 @@ export function buildTicketSla(ticket, slaConfig) {
     }
     const firstResponseStartAt = assignedAt;
     const resolutionStartAt = assignedAt;
-    const firstResponseDueAt = addMinutes(firstResponseStartAt, targets.firstResponseMinutes);
-    const resolutionDueAt = addMinutes(resolutionStartAt, targets.resolutionMinutes);
     const firstResponseAt = ticket.firstResponseAt
         ? new Date(ticket.firstResponseAt)
         : null;
@@ -98,18 +151,18 @@ export function buildTicketSla(ticket, slaConfig) {
      * Si el ticket fue cerrado/resuelto sin primera respuesta real,
      * usamos closedAt/resolvedAt como fecha administrativa de término
      * de la medición de primera respuesta.
-     *
-     * Importante:
-     * - Si cerró dentro del plazo de primera respuesta => OK
-     * - Si cerró fuera del plazo de primera respuesta => BREACHED
-     *
-     * Esto evita que un ticket spam cerrado tarde infle artificialmente
-     * el cumplimiento del SLA de primera respuesta.
      */
     const administrativeFirstResponseAt = !firstResponseAt && isTerminated && resolutionEndAt
         ? resolutionEndAt
         : null;
     const firstResponseEndAt = firstResponseAt ?? administrativeFirstResponseAt;
+    const firstResponseMeasureUntil = firstResponseEndAt ?? new Date();
+    const resolutionMeasureUntil = resolutionEndAt ?? new Date();
+    const firstResponsePauseMs = getPendingPauseMs(ticket, firstResponseStartAt, firstResponseMeasureUntil);
+    const resolutionPauseMs = getPendingPauseMs(ticket, resolutionStartAt, resolutionMeasureUntil);
+    const firstResponseDueAt = addMilliseconds(addMinutes(firstResponseStartAt, targets.firstResponseMinutes), firstResponsePauseMs);
+    const resolutionDueAt = addMilliseconds(addMinutes(resolutionStartAt, targets.resolutionMinutes), resolutionPauseMs);
+    const slaPaused = ticket.status === TicketStatus.PENDING;
     let firstResponseStatus = "PENDING";
     if (firstResponseEndAt) {
         firstResponseStatus =
@@ -137,6 +190,7 @@ export function buildTicketSla(ticket, slaConfig) {
         targets,
         startsAt: assignedAt,
         waitingAssignment: false,
+        paused: slaPaused,
         firstResponse: {
             dueAt: firstResponseDueAt,
             at: firstResponseEndAt,
@@ -200,15 +254,21 @@ export async function getTicketSla(req, res) {
                 },
                 events: {
                     where: {
-                        type: TicketEventType.ASSIGNED,
+                        type: {
+                            in: [
+                                TicketEventType.ASSIGNED,
+                                TicketEventType.STATUS_CHANGED,
+                            ],
+                        },
                     },
                     select: {
                         type: true,
+                        oldValue: true,
                         newValue: true,
                         createdAt: true,
                     },
                     orderBy: {
-                        createdAt: "desc",
+                        createdAt: "asc",
                     },
                 },
             },

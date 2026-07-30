@@ -18,6 +18,7 @@ export declare function buildTicketSla(ticket: {
     priority?: TicketPriority | string | null;
     events?: Array<{
         type?: string | null;
+        oldValue?: string | null;
         newValue?: string | null;
         createdAt?: Date | string | null;
     }>;
@@ -45,6 +46,7 @@ export declare function buildTicketSla(ticket: {
         status: "PENDING";
         remainingMinutes: null;
     };
+    paused?: never;
 } | {
     targets: {
         firstResponseMinutes: number;
@@ -52,6 +54,7 @@ export declare function buildTicketSla(ticket: {
     };
     startsAt: Date;
     waitingAssignment: boolean;
+    paused: boolean;
     firstResponse: {
         dueAt: Date;
         at: Date | null;

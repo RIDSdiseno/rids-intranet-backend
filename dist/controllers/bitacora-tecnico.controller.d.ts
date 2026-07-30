@@ -5,4 +5,5 @@ export declare function obtenerBitacoraTecnicoPorId(req: Request, res: Response)
 export declare function actualizarBitacoraTecnico(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function eliminarBitacoraTecnico(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function obtenerOpcionesRelacionBitacora(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function actualizarRecordatorioBitacora(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=bitacora-tecnico.controller.d.ts.map
