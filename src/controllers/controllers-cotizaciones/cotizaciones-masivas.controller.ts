@@ -5,6 +5,15 @@ import { prisma } from "../../lib/prisma.js";
 
 import { generarSKU } from "./cotizaciones.controller.js";
 
+import {
+    calcularTotalesCotizacionBackend,
+    normalizarCantidad,
+    normalizarDescuento,
+    normalizarGanancia,
+    parseDecimalInput,
+    redondearDinero,
+} from "./cotizaciones-numeros.js";
+
 // =====================================================
 //      TYPES CREAR PLANTILLAS COTIZACIONES MASIVAS
 // =====================================================
@@ -65,66 +74,114 @@ const MAX_ITEMS_TOTALES = 100;
 
 const IVA_CHILE = 0.19;
 
-function redondearCLP(valor: number) {
-    // Redondea montos para evitar decimales en CLP.
-    return Math.round(Number(valor || 0));
-}
+function calcularPrecioVentaProductoMasivo(
+    producto: {
+        precio:
+        number | null;
 
-function calcularPrecioVentaProductoMasivo(producto: {
-    precio: number | null;
-    precioTotal: number | null;
-    porcGanancia: number | null;
-}) {
+        precioTotal:
+        number | null;
+
+        porcGanancia:
+        number | null;
+    }
+) {
+    const precioCosto =
+        redondearDinero(
+            parseDecimalInput(
+                producto.precio,
+                0
+            )
+        );
+
+    const precioTotal =
+        producto.precioTotal != null
+            ? redondearDinero(
+                parseDecimalInput(
+                    producto.precioTotal,
+                    0
+                )
+            )
+            : null;
+
+    const porcGanancia =
+        normalizarGanancia(
+            producto.porcGanancia
+        );
+
     /*
-        Criterio usado:
-        1. Si el producto tiene precioTotal, se usa como precio de venta final.
-        2. Si no tiene precioTotal, se calcula usando precio + porcGanancia.
-        3. Si porcGanancia viene null, se toma como 0.
-    */
-
-    const precioCosto = Number(producto.precio ?? 0);
-    const precioTotal = producto.precioTotal != null
-        ? Number(producto.precioTotal)
-        : null;
-
-    const porcGanancia = Number(producto.porcGanancia ?? 0);
-
-    if (precioTotal != null && precioTotal > 0) {
-        return redondearCLP(precioTotal);
+     * Priorizar el precio final guardado.
+     */
+    if (
+        precioTotal !== null &&
+        precioTotal > 0
+    ) {
+        return precioTotal;
     }
 
-    return redondearCLP(precioCosto * (1 + porcGanancia / 100));
+    return redondearDinero(
+        precioCosto *
+        (
+            1 +
+            porcGanancia / 100
+        )
+    );
 }
 
-function calcularItemMasivo(producto: {
-    id: number;
-    nombre: string;
-    descripcion: string | null;
-    precio: number | null;
-    precioTotal: number | null;
-    porcGanancia: number | null;
-    serie: string | null;
-    imagen: string | null;
-}, cantidadInput: number) {
-    /*
-        Genera un item listo para crear en CotizacionItemGestioo.
-        Tu modelo ProductoGestioo no tiene campo tieneIVA, por eso se asume true.
-    */
+function calcularItemMasivo(
+    producto: {
+        id: number;
+        nombre: string;
+        descripcion: string | null;
+        precio: number | null;
+        precioTotal: number | null;
+        porcGanancia: number | null;
+        serie: string | null;
+        imagen: string | null;
+    },
+    cantidadInput: number
+) {
+    const cantidad =
+        normalizarCantidad(
+            cantidadInput
+        );
 
-    const cantidad = Math.max(1, Number(cantidadInput || 1));
+    const precioCosto =
+        redondearDinero(
+            parseDecimalInput(
+                producto.precio,
+                0
+            )
+        );
 
-    const precioCosto = redondearCLP(Number(producto.precio ?? 0));
     const porcGanancia =
-        producto.porcGanancia != null ? Number(producto.porcGanancia) : null;
+        producto.porcGanancia != null
+            ? normalizarGanancia(
+                producto.porcGanancia
+            )
+            : null;
 
-    const precioVenta = calcularPrecioVentaProductoMasivo(producto);
+    const precioVenta =
+        calcularPrecioVentaProductoMasivo(
+            producto
+        );
 
-    const subtotalItem = redondearCLP(precioVenta * cantidad);
+    const subtotalItem =
+        redondearDinero(
+            precioVenta *
+            cantidad
+        );
 
-    // Como ProductoGestioo no tiene tieneIVA, asumimos que todos los productos llevan IVA.
-    const tieneIVA = true;
+    const tieneIVA =
+        true;
 
-    const ivaItem = tieneIVA ? redondearCLP(subtotalItem * IVA_CHILE) : 0;
+    const ivaItem =
+        tieneIVA
+            ? redondearDinero(
+                subtotalItem *
+                IVA_CHILE
+            )
+            : 0;
 
     return {
         producto,
@@ -135,27 +192,55 @@ function calcularItemMasivo(producto: {
         tieneIVA,
         subtotalItem,
         ivaItem,
-        totalItem: subtotalItem + ivaItem,
+
+        totalItem:
+            redondearDinero(
+                subtotalItem +
+                ivaItem
+            ),
     };
 }
-
 function calcularTotalesMasivos(
     items: Array<{
         subtotalItem: number;
         ivaItem: number;
     }>
 ) {
-    // Calcula los totales finales de cada cotización generada masivamente.
-    const subtotal = redondearCLP(
-        items.reduce((acc, item) => acc + item.subtotalItem, 0)
-    );
+    const subtotal =
+        redondearDinero(
+            items.reduce(
+                (
+                    acc,
+                    item
+                ) =>
+                    acc +
+                    item.subtotalItem,
+                0
+            )
+        );
 
-    const iva = redondearCLP(
-        items.reduce((acc, item) => acc + item.ivaItem, 0)
-    );
+    const iva =
+        redondearDinero(
+            items.reduce(
+                (
+                    acc,
+                    item
+                ) =>
+                    acc +
+                    item.ivaItem,
+                0
+            )
+        );
 
-    const descuentos = 0;
-    const total = subtotal + iva - descuentos;
+    const descuentos =
+        0;
+
+    const total =
+        redondearDinero(
+            subtotal +
+            iva -
+            descuentos
+        );
 
     return {
         subtotal,
@@ -499,12 +584,27 @@ export async function crearPlantillaMasiva(req: Request, res: Response) {
                     create: entidades.map((entidad) => ({
                         entidadId: Number(entidad.entidadId),
                         cantidades: {
-                            create: entidad.cantidades
-                                .filter((cantidad) => Number(cantidad.cantidad) > 0)
-                                .map((cantidad) => ({
-                                    productoId: Number(cantidad.productoId),
-                                    cantidad: Number(cantidad.cantidad),
-                                })),
+                            create:
+                                entidad.cantidades
+                                    .filter(
+                                        (cantidad) =>
+                                            Number(
+                                                cantidad.cantidad
+                                            ) > 0
+                                    )
+                                    .map(
+                                        (cantidad) => ({
+                                            productoId:
+                                                Number(
+                                                    cantidad.productoId
+                                                ),
+
+                                            cantidad:
+                                                normalizarCantidad(
+                                                    cantidad.cantidad
+                                                ),
+                                        })
+                                    ),
                         },
                     })),
                 },
@@ -754,18 +854,30 @@ export async function actualizarPlantillaMasiva(req: Request, res: Response) {
         const entidadesValidas = entidades
             .map((entidad) => ({
                 entidadId: Number(entidad.entidadId),
-                cantidades: Array.isArray(entidad.cantidades)
-                    ? entidad.cantidades
-                        .map((cantidad) => ({
-                            productoId: Number(cantidad.productoId),
-                            cantidad: Number(cantidad.cantidad),
-                        }))
-                        .filter(
-                            (cantidad) =>
-                                cantidad.productoId > 0 &&
-                                cantidad.cantidad > 0
-                        )
-                    : [],
+                cantidades:
+                    Array.isArray(
+                        entidad.cantidades
+                    )
+                        ? entidad.cantidades
+                            .map(
+                                (cantidad) => ({
+                                    productoId:
+                                        Number(
+                                            cantidad.productoId
+                                        ),
+
+                                    cantidad:
+                                        normalizarCantidad(
+                                            cantidad.cantidad
+                                        ),
+                                })
+                            )
+                            .filter(
+                                (cantidad) =>
+                                    cantidad.productoId > 0 &&
+                                    cantidad.cantidad > 0
+                            )
+                        : [],
             }))
             .filter(
                 (entidad) =>

@@ -23,6 +23,54 @@ interface SincronizarRecordatorioTicketParams {
     recordatorioAt?: Date | null;
 }
 
+interface SincronizarRecordatorioTicketTodosParams {
+    ticketId: number;
+    titulo?: string | null;
+    descripcion?: string | null;
+    recordatorioAt?: Date | null;
+}
+
+/**
+ * Crea, actualiza o cancela el recordatorio de un ticket
+ * para todos los técnicos activos.
+ *
+ * Esto sirve para avisos globales como:
+ * - nuevo ticket recibido;
+ * - solicitante respondió un ticket.
+ */
+export async function sincronizarRecordatorioTicketParaTodos(
+    params: SincronizarRecordatorioTicketTodosParams
+) {
+    const tecnicos =
+        await obtenerTecnicosActivosParaRecordatorio();
+
+    await Promise.allSettled(
+        tecnicos.map((tecnico) =>
+            sincronizarRecordatorioTicket({
+                ticketId:
+                    params.ticketId,
+
+                tecnicoId:
+                    tecnico.id_tecnico,
+
+                /*
+                 * Con exactOptionalPropertyTypes activo,
+                 * no podemos pasar undefined explícitamente.
+                 * Por eso normalizamos a null.
+                 */
+                titulo:
+                    params.titulo ?? null,
+
+                descripcion:
+                    params.descripcion ?? null,
+
+                recordatorioAt:
+                    params.recordatorioAt ?? null,
+            })
+        )
+    );
+}
+
 /**
  * Crea, actualiza o cancela el recordatorio global
  * relacionado con una bitácora.
@@ -181,8 +229,17 @@ export async function sincronizarRecordatorioTicket(
         await prisma.recordatorio.findFirst({
             where: {
                 ticketId,
+
                 origen:
                     OrigenRecordatorio.TICKET,
+
+                /*
+                 * Importante:
+                 * Un ticket puede tener un recordatorio por técnico.
+                 * Por eso buscamos también por destinatarioId.
+                 */
+                destinatarioId:
+                    tecnicoId,
             },
 
             orderBy: {
@@ -305,6 +362,36 @@ export async function sincronizarRecordatorioTicket(
                 tecnicoId,
 
             ticketId,
+        },
+    });
+}
+
+/**
+ * Obtiene solo usuarios internos que deben recibir
+ * recordatorios globales de tickets.
+ *
+ * Evitamos enviar recordatorios a cuentas CLIENTE,
+ * cuentas de empresa o usuarios externos.
+ */
+async function obtenerTecnicosActivosParaRecordatorio() {
+    return prisma.tecnico.findMany({
+        where: {
+            status:
+                true,
+
+            rol: {
+                in: [
+                    "ADMIN",
+                    "ADMINISTRACION",
+                    "TECNICO",
+                    "VENTAS",
+                ],
+            },
+        },
+
+        select: {
+            id_tecnico:
+                true,
         },
     });
 }

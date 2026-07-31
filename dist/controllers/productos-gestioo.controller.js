@@ -6,13 +6,78 @@ import { prismaBase as prisma } from "../lib/prisma.js";
 /* ======================================
    HELPERS
 ====================================== */
-function calcularPrecioTotal(precioCosto, porcGanancia) {
-    if (precioCosto === null || precioCosto === undefined)
+/**
+ * Convierte un valor recibido por la API a número decimal.
+ *
+ * Admite:
+ * 140
+ * 140.5
+ * "140.5"
+ * "140,5"
+ */
+function parseDecimalInput(value, fallback = null) {
+    if (value === null ||
+        value === undefined ||
+        value === "") {
+        return fallback;
+    }
+    if (typeof value === "number") {
+        return Number.isFinite(value)
+            ? value
+            : fallback;
+    }
+    const normalized = String(value)
+        .trim()
+        .replace(",", ".");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed)
+        ? parsed
+        : fallback;
+}
+/**
+ * Redondea valores monetarios manteniendo
+ * como máximo dos decimales.
+ */
+function redondearDinero(value) {
+    if (!Number.isFinite(value)) {
+        return 0;
+    }
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+/**
+ * Normaliza porcentajes de ganancia.
+ *
+ * No se limita a 100 porque un producto
+ * puede tener una ganancia superior al 100%.
+ */
+function normalizarPorcentajeGanancia(value) {
+    const parsed = parseDecimalInput(value, null);
+    if (parsed === null) {
         return null;
-    if (porcGanancia === null || porcGanancia === undefined)
-        return precioCosto;
-    const ganancia = precioCosto * (porcGanancia / 100);
-    return Math.round(precioCosto + ganancia);
+    }
+    return Math.max(0, redondearDinero(parsed));
+}
+/**
+ * Calcula el precio final conservando
+ * hasta dos decimales.
+ */
+function calcularPrecioTotal(precioCosto, porcGanancia) {
+    if (precioCosto === null) {
+        return null;
+    }
+    if (porcGanancia === null) {
+        return redondearDinero(precioCosto);
+    }
+    return redondearDinero(precioCosto *
+        (1 +
+            porcGanancia / 100));
+}
+/**
+ * Mantiene el stock como entero no negativo.
+ */
+function normalizarStock(value, fallback = 0) {
+    const parsed = parseDecimalInput(value, fallback);
+    return Math.max(0, Math.trunc(parsed ?? fallback));
 }
 function normalizarNombreProducto(value) {
     return value.trim().replace(/\s+/g, " ");
@@ -103,9 +168,21 @@ export async function seedProductos(_req, res) {
 ====================================== */
 export async function createProducto(req, res) {
     try {
-        const { nombre, descripcion, precio, // puede venir viejo (costo)
-        precioCosto, // nuevo campo recomendado
-        categoria, stock, porcGanancia, imagen, serie, conIVA, } = req.body;
+        const { nombre, descripcion, 
+        /*
+         * precio puede ser utilizado por el frontend
+         * antiguo como precio de costo.
+         */
+        precio, 
+        /*
+         * Campo explícito para costo.
+         */
+        precioCosto, 
+        /*
+         * Precio final calculado o editado
+         * manualmente desde el frontend.
+         */
+        precioTotal, categoria, stock, porcGanancia, imagen, serie, conIVA, } = req.body;
         const nombreLimpio = normalizarNombreProducto(String(nombre ?? ""));
         if (!nombreLimpio) {
             return res.status(400).json({
@@ -120,35 +197,68 @@ export async function createProducto(req, res) {
                 producto: productoDuplicado,
             });
         }
-        // COSTO REAL: priorizamos precioCosto, si no viene usamos precio
-        const costoReal = precioCosto !== undefined && precioCosto !== null
-            ? Number(precioCosto)
-            : precio !== undefined && precio !== null
-                ? Number(precio)
-                : null;
-        const porcNumero = porcGanancia !== undefined && porcGanancia !== null
-            ? Number(porcGanancia)
-            : null;
-        const aplicaIVA = conIVA === true || conIVA === "true";
-        const costoBase = costoReal !== null
-            ? (aplicaIVA ? costoReal / 1.19 : costoReal)
-            : null;
-        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
+        /*
+ * Costo ingresado por el usuario.
+ *
+ * Se prioriza precioCosto para mantener
+ * compatibilidad con el nuevo frontend.
+ */
+        const costoReal = parseDecimalInput(precioCosto ??
+            precio, null);
+        if (costoReal === null ||
+            costoReal <= 0) {
+            return res.status(400).json({
+                error: "El precio de costo debe ser mayor a 0.",
+            });
+        }
+        const costoRealRedondeado = redondearDinero(costoReal);
+        const porcNumero = normalizarPorcentajeGanancia(porcGanancia);
+        const aplicaIVA = conIVA === true ||
+            conIVA === "true";
+        /*
+         * Cuando el costo ingresado incluye IVA,
+         * se extrae el valor neto para calcular
+         * la ganancia.
+         */
+        const costoBase = redondearDinero(aplicaIVA
+            ? costoRealRedondeado /
+                1.19
+            : costoRealRedondeado);
+        /*
+         * Se respeta primero el precio final enviado
+         * por el frontend, porque puede haber sido
+         * modificado manualmente por el usuario.
+         *
+         * Solo se recalcula cuando no fue enviado.
+         */
+        const precioTotalRecibido = parseDecimalInput(precioTotal, null);
+        const precioVentaFinal = precioTotalRecibido !== null &&
+            precioTotalRecibido > 0
+            ? redondearDinero(precioTotalRecibido)
+            : calcularPrecioTotal(costoBase, porcNumero);
         // Crear producto
         const nuevo = await prisma.productoGestioo.create({
             data: {
                 nombre: nombreLimpio,
                 descripcion: normalizarDescripcionProducto(descripcion),
-                //Guardamos siempre el COSTO en "precio"
-                precio: costoReal,
+                /*
+                 * En la base de datos, precio representa
+                 * el costo ingresado por el usuario.
+                 */
+                precio: costoRealRedondeado,
                 categoria: categoria || null,
-                stock: stock !== undefined ? Number(stock) : 0,
+                /*
+                 * Stock sigue siendo un número entero.
+                 */
+                stock: normalizarStock(stock, 0),
                 tipo: "producto",
                 estado: "disponible",
                 activo: true,
                 porcGanancia: porcNumero,
-                // Guardamos la venta final en "precioTotal"
-                precioTotal: precioTotal,
+                /*
+                 * Precio de venta con hasta dos decimales.
+                 */
+                precioTotal: precioVentaFinal,
                 imagen: imagen ?? null,
                 serie: serie || null,
             },
@@ -220,9 +330,7 @@ export async function updateProducto(req, res) {
         if (!existe) {
             return res.status(404).json({ error: "Producto no encontrado" });
         }
-        const { nombre, descripcion, precio, // puede venir como antes
-        precioCosto, // nuevo campo desde front
-        categoria, stock, serie, porcGanancia, imagen, publicId, conIVA, } = req.body;
+        const { nombre, descripcion, precio, precioCosto, precioTotal, categoria, stock, serie, porcGanancia, imagen, publicId, conIVA, } = req.body;
         const nombreLimpio = normalizarNombreProducto(String(nombre ?? ""));
         if (!nombreLimpio) {
             return res.status(400).json({
@@ -238,36 +346,54 @@ export async function updateProducto(req, res) {
             });
         }
         // COSTO REAL: priorizamos precioCosto, luego precio, luego lo que ya está en BD
-        const costoReal = precioCosto !== undefined && precioCosto !== null
-            ? Number(precioCosto)
-            : precio !== undefined && precio !== null
-                ? Number(precio)
-                : (existe.precio ?? 0);
-        const porcNumero = porcGanancia !== undefined && porcGanancia !== null
-            ? Number(porcGanancia)
+        const costoReal = parseDecimalInput(precioCosto ??
+            precio ??
+            existe.precio, 0) ?? 0;
+        if (costoReal <= 0) {
+            return res.status(400).json({
+                error: "El precio de costo debe ser mayor a 0.",
+            });
+        }
+        const costoRealRedondeado = redondearDinero(costoReal);
+        const porcNumero = porcGanancia !== undefined &&
+            porcGanancia !== null
+            ? normalizarPorcentajeGanancia(porcGanancia)
             : existe.porcGanancia;
-        const aplicaIVA = conIVA === true || conIVA === "true";
-        const costoBase = aplicaIVA ? costoReal / 1.19 : costoReal;
-        const precioTotal = calcularPrecioTotal(costoBase, porcNumero);
+        const aplicaIVA = conIVA === true ||
+            conIVA === "true";
+        const costoBase = redondearDinero(aplicaIVA
+            ? costoRealRedondeado /
+                1.19
+            : costoRealRedondeado);
+        const precioTotalRecibido = parseDecimalInput(precioTotal, null);
+        /*
+         * Si el frontend envió un precio de venta,
+         * se conserva. Si no lo envió, se recalcula.
+         */
+        const precioVentaFinal = precioTotalRecibido !== null &&
+            precioTotalRecibido > 0
+            ? redondearDinero(precioTotalRecibido)
+            : calcularPrecioTotal(costoBase, porcNumero);
         const data = {
             nombre: nombreLimpio,
             descripcion: descripcion !== undefined
                 ? normalizarDescripcionProducto(descripcion)
                 : normalizarDescripcionProducto(existe.descripcion),
-            // Guardamos costo real en "precio"
-            precio: costoReal,
+            precio: costoRealRedondeado,
             categoria: categoria || null,
-            stock: stock !== undefined && stock !== null
-                ? Number(stock)
+            stock: stock !== undefined &&
+                stock !== null
+                ? normalizarStock(stock, existe.stock ?? 0)
                 : existe.stock,
             serie: serie || existe.serie,
             porcGanancia: porcNumero,
-            // Guardamos venta final en "precioTotal"
-            precioTotal: precioTotal,
-            imagen: imagen === undefined || imagen === ""
-                ? existe.imagen // NO BORRAR si no viene nada
+            precioTotal: precioVentaFinal,
+            imagen: imagen === undefined ||
+                imagen === ""
+                ? existe.imagen
                 : imagen,
-            publicId: publicId === undefined || publicId === ""
+            publicId: publicId === undefined ||
+                publicId === ""
                 ? existe.publicId
                 : publicId,
         };

@@ -850,3 +850,171 @@ export async function cancelarRecordatorio(
         });
     }
 }
+
+/* =====================================================
+   CANCELAR TODOS MIS RECORDATORIOS
+===================================================== */
+
+export async function cancelarTodosMisRecordatorios(
+    req: Request,
+    res: Response
+) {
+    try {
+        /*
+         * Se reutiliza el helper existente para obtener
+         * el técnico correspondiente al usuario autenticado.
+         */
+        const tecnicoId =
+            getTecnicoIdAutenticado(req);
+
+        if (!tecnicoId) {
+            return res.status(401).json({
+                error:
+                    "No fue posible identificar al usuario autenticado.",
+            });
+        }
+
+        /*
+         * Primero se obtienen los recordatorios pendientes
+         * para conocer cuáles están vinculados a bitácoras.
+         */
+        const recordatoriosPendientes =
+            await prisma.recordatorio.findMany({
+                where: {
+                    destinatarioId:
+                        tecnicoId,
+
+                    estado:
+                        EstadoRecordatorio.PENDIENTE,
+                },
+
+                select: {
+                    id: true,
+                    bitacoraId: true,
+                },
+            });
+
+        if (
+            recordatoriosPendientes.length === 0
+        ) {
+            return res.json({
+                message:
+                    "No existen recordatorios pendientes para cancelar.",
+
+                cantidad:
+                    0,
+            });
+        }
+
+        const ahora =
+            new Date();
+
+        /*
+         * Obtener IDs de bitácoras sin duplicados.
+         */
+        const bitacoraIds =
+            Array.from(
+                new Set(
+                    recordatoriosPendientes
+                        .map(
+                            (recordatorio) =>
+                                recordatorio.bitacoraId
+                        )
+                        .filter(
+                            (
+                                id
+                            ): id is number =>
+                                typeof id ===
+                                "number"
+                        )
+                )
+            );
+
+        /*
+         * La transacción garantiza que los recordatorios
+         * globales y las bitácoras queden sincronizados.
+         */
+        await prisma.$transaction(
+            async (tx) => {
+                /*
+                 * Cancelar todos los recordatorios pendientes
+                 * pertenecientes al usuario autenticado.
+                 */
+                await tx.recordatorio.updateMany({
+                    where: {
+                        destinatarioId:
+                            tecnicoId,
+
+                        estado:
+                            EstadoRecordatorio.PENDIENTE,
+                    },
+
+                    data: {
+                        estado:
+                            EstadoRecordatorio.CANCELADO,
+
+                        canceladoAt:
+                            ahora,
+
+                        leidoAt:
+                            ahora,
+
+                        completadoAt:
+                            null,
+
+                        notificadoAt:
+                            null,
+                    },
+                });
+
+                /*
+                 * Las bitácoras aún mantienen campos internos
+                 * de recordatorio. Se limpian para que la interfaz
+                 * no continúe mostrándolos.
+                 */
+                if (bitacoraIds.length > 0) {
+                    await tx.bitacoraTecnico.updateMany({
+                        where: {
+                            id: {
+                                in:
+                                    bitacoraIds,
+                            },
+                        },
+
+                        data: {
+                            recordatorioAt:
+                                null,
+
+                            recordatorioCompletado:
+                                false,
+
+                            recordatorioCompletadoAt:
+                                null,
+
+                            recordatorioNotificadoAt:
+                                null,
+                        },
+                    });
+                }
+            }
+        );
+
+        return res.json({
+            message:
+                "Todos los recordatorios pendientes fueron eliminados correctamente.",
+
+            cantidad:
+                recordatoriosPendientes.length,
+        });
+    } catch (error) {
+        console.error(
+            "Error cancelando todos los recordatorios:",
+            error
+        );
+
+        return res.status(500).json({
+            error:
+                "No fue posible eliminar todos los recordatorios.",
+        });
+    }
+}

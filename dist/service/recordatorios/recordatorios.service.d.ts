@@ -12,6 +12,21 @@ interface SincronizarRecordatorioTicketParams {
     descripcion?: string | null;
     recordatorioAt?: Date | null;
 }
+interface SincronizarRecordatorioTicketTodosParams {
+    ticketId: number;
+    titulo?: string | null;
+    descripcion?: string | null;
+    recordatorioAt?: Date | null;
+}
+/**
+ * Crea, actualiza o cancela el recordatorio de un ticket
+ * para todos los técnicos activos.
+ *
+ * Esto sirve para avisos globales como:
+ * - nuevo ticket recibido;
+ * - solicitante respondió un ticket.
+ */
+export declare function sincronizarRecordatorioTicketParaTodos(params: SincronizarRecordatorioTicketTodosParams): Promise<void>;
 /**
  * Crea, actualiza o cancela el recordatorio global
  * relacionado con una bitácora.

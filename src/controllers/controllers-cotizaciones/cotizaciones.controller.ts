@@ -1,9 +1,19 @@
+// src/controllers/controllers-cotizaciones/cotizaciones.controller.ts
 // Controlador para manejo de cotizaciones, con funciones para obtener cotizaciones paginadas con filtros avanzados, crear, actualizar y eliminar cotizaciones, vincular equipos a items, facturar cotizaciones y gestionar estados de facturas. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
 import type { Request, Response } from "express";
 
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 import { prismaBase as prisma } from "../../lib/prisma.js";
 import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades.service.js";
+
+import {
+    calcularTotalesCotizacionBackend,
+    normalizarCantidad,
+    normalizarDescuento,
+    normalizarGanancia,
+    parseDecimalInput,
+    redondearDinero,
+} from "./cotizaciones-numeros.js";
 
 // UTILIDADES
 export function generarSKU(): string {
@@ -262,16 +272,53 @@ function normalizeCotizacionData(body: any) {
     }
 
     // nuevos campos
-    if (body.subtotal !== undefined) out.subtotal = Number(body.subtotal);
-    if (body.descuentos !== undefined) out.descuentos = Number(body.descuentos);
-    if (body.iva !== undefined) out.iva = Number(body.iva);
-    if (body.total !== undefined) out.total = Number(body.total);
+    if (body.subtotal !== undefined) {
+        out.subtotal = redondearDinero(
+            parseDecimalInput(
+                body.subtotal,
+                0
+            )
+        );
+    }
+
+    if (body.descuentos !== undefined) {
+        out.descuentos = redondearDinero(
+            parseDecimalInput(
+                body.descuentos,
+                0
+            )
+        );
+    }
+
+    if (body.iva !== undefined) {
+        out.iva = redondearDinero(
+            parseDecimalInput(
+                body.iva,
+                0
+            )
+        );
+    }
+
+    if (body.total !== undefined) {
+        out.total = redondearDinero(
+            parseDecimalInput(
+                body.total,
+                0
+            )
+        );
+    }
 
     if (body.moneda) out.moneda = body.moneda;
 
     // <--- CORRECCIÓN FINAL
-    if (body.tasaCambio !== undefined)
-        out.tasaCambio = Number(body.tasaCambio);
+    if (body.tasaCambio !== undefined) {
+        out.tasaCambio = redondearDinero(
+            parseDecimalInput(
+                body.tasaCambio,
+                1
+            )
+        );
+    }
 
     if (body.fecha) out.fecha = new Date(body.fecha);
 
@@ -407,6 +454,28 @@ export async function createCotizacion(req: Request, res: Response) {
 
         const data = normalizeCotizacionData(rest);
 
+        /*
+ * El backend vuelve a calcular todos los totales.
+ * Los valores enviados por el frontend no se
+ * consideran la fuente definitiva.
+ */
+        const totalesCalculados =
+            calcularTotalesCotizacionBackend(
+                items
+            );
+
+        data.subtotal =
+            totalesCalculados.subtotal;
+
+        data.descuentos =
+            totalesCalculados.descuentos;
+
+        data.iva =
+            totalesCalculados.iva;
+
+        data.total =
+            totalesCalculados.total;
+
         const nueva = await prisma.cotizacionGestioo.create({
             data: {
                 ...data,
@@ -416,9 +485,14 @@ export async function createCotizacion(req: Request, res: Response) {
 
                 items: {
                     create: items.map((i: any) => {
-                        const precioCLP = Number(
-                            i.precioOriginalCLP ?? i.precio ?? 0
-                        );
+                        const precioCLP =
+                            redondearDinero(
+                                parseDecimalInput(
+                                    i.precioOriginalCLP ??
+                                    i.precio,
+                                    0
+                                )
+                            );
 
                         return {
                             tipo: i.tipo,
@@ -430,26 +504,50 @@ export async function createCotizacion(req: Request, res: Response) {
                                     ? i.descripcion.trim()
                                     : "", // <-- Cambiar null por string vacío
 
-                            cantidad: Number(i.cantidad ?? 1),
+                            cantidad:
+                                normalizarCantidad(
+                                    i.cantidad
+                                ),
 
-                            // PRECIO REAL (CLP)
-                            precio: precioCLP,
-                            precioOriginalCLP: precioCLP,
+                            precio:
+                                precioCLP,
 
-                            // COSTOS
+                            precioOriginalCLP:
+                                precioCLP,
+
                             precioCosto:
-                                i.precioCosto != null ? Number(i.precioCosto) : null,
+                                i.precioCosto != null
+                                    ? redondearDinero(
+                                        parseDecimalInput(
+                                            i.precioCosto,
+                                            0
+                                        )
+                                    )
+                                    : null,
+
                             porcGanancia:
-                                i.porcGanancia != null ? Number(i.porcGanancia) : null,
+                                i.porcGanancia != null
+                                    ? normalizarGanancia(
+                                        i.porcGanancia
+                                    )
+                                    : null,
 
-                            // DESCUENTOS
-                            tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento
-                                ? Number(i.porcentaje ?? 0)
-                                : 0,
+                            tieneDescuento:
+                                Boolean(
+                                    i.tieneDescuento
+                                ),
 
-                            // IVA
-                            tieneIVA: Boolean(i.tieneIVA),
+                            porcentaje:
+                                i.tieneDescuento
+                                    ? normalizarDescuento(
+                                        i.porcentaje
+                                    )
+                                    : 0,
+
+                            tieneIVA:
+                                Boolean(
+                                    i.tieneIVA
+                                ),
 
                             // OTROS
                             sku:
@@ -515,6 +613,25 @@ export async function updateCotizacion(req: Request, res: Response) {
 
         const data = normalizeCotizacionData(rest);
 
+        if (Array.isArray(items)) {
+            const totalesCalculados =
+                calcularTotalesCotizacionBackend(
+                    items
+                );
+
+            data.subtotal =
+                totalesCalculados.subtotal;
+
+            data.descuentos =
+                totalesCalculados.descuentos;
+
+            data.iva =
+                totalesCalculados.iva;
+
+            data.total =
+                totalesCalculados.total;
+        }
+
         // 1️⃣ Preparar filtro para items: SOLO LOS QUE EXISTEN EN DB (con ID numérico válido)
         await prisma.$transaction(async (tx) => {
             await tx.cotizacionGestioo.update({
@@ -565,18 +682,62 @@ export async function updateCotizacion(req: Request, res: Response) {
                             tipo: i.tipo,
                             nombre: i.nombre?.trim() ?? "",
                             descripcion: i.descripcion?.trim() ?? "",
-                            cantidad: Number(i.cantidad ?? 1),
-                            precio: Number(i.precioOriginalCLP ?? i.precio ?? 0),
-                            precioOriginalCLP: Number(i.precioOriginalCLP ?? i.precio ?? 0),
+                            cantidad:
+                                normalizarCantidad(
+                                    i.cantidad
+                                ),
+
+                            precio:
+                                redondearDinero(
+                                    parseDecimalInput(
+                                        i.precioOriginalCLP ??
+                                        i.precio,
+                                        0
+                                    )
+                                ),
+
+                            precioOriginalCLP:
+                                redondearDinero(
+                                    parseDecimalInput(
+                                        i.precioOriginalCLP ??
+                                        i.precio,
+                                        0
+                                    )
+                                ),
+
                             precioCosto:
-                                i.precioCosto != null ? Number(i.precioCosto) : null,
+                                i.precioCosto != null
+                                    ? redondearDinero(
+                                        parseDecimalInput(
+                                            i.precioCosto,
+                                            0
+                                        )
+                                    )
+                                    : null,
+
                             porcGanancia:
-                                i.porcGanancia != null ? Number(i.porcGanancia) : null,
-                            tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento
-                                ? Number(i.porcentaje ?? 0)
-                                : 0,
-                            tieneIVA: Boolean(i.tieneIVA),
+                                i.porcGanancia != null
+                                    ? normalizarGanancia(
+                                        i.porcGanancia
+                                    )
+                                    : null,
+
+                            tieneDescuento:
+                                Boolean(
+                                    i.tieneDescuento
+                                ),
+
+                            porcentaje:
+                                i.tieneDescuento
+                                    ? normalizarDescuento(
+                                        i.porcentaje
+                                    )
+                                    : 0,
+
+                            tieneIVA:
+                                Boolean(
+                                    i.tieneIVA
+                                ),
                             sku: i.sku?.trim() || generarSKU(),
                             imagen: i.imagen ?? null,
                             equipoId: i.equipoId ? Number(i.equipoId) : null,
@@ -591,27 +752,95 @@ export async function updateCotizacion(req: Request, res: Response) {
                 // CREAR nuevos items (SIN ID numérico válido)
                 if (itemsNuevos.length > 0) {
                     await tx.cotizacionItemGestioo.createMany({
-                        data: itemsNuevos.map((i: any) => ({
-                            cotizacionId: id,
-                            tipo: i.tipo,
-                            nombre: i.nombre?.trim() ?? "",
-                            descripcion: i.descripcion?.trim() ?? "",
-                            cantidad: Number(i.cantidad ?? 1),
-                            precio: Number(i.precioOriginalCLP ?? i.precio ?? 0),
-                            precioOriginalCLP: Number(i.precioOriginalCLP ?? i.precio ?? 0),
-                            precioCosto:
-                                i.precioCosto != null ? Number(i.precioCosto) : null,
-                            porcGanancia:
-                                i.porcGanancia != null ? Number(i.porcGanancia) : null,
-                            tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento
-                                ? Number(i.porcentaje ?? 0)
-                                : 0,
-                            tieneIVA: Boolean(i.tieneIVA),
-                            sku: i.sku?.trim() || generarSKU(),
-                            imagen: i.imagen ?? null,
-                            equipoId: i.equipoId ? Number(i.equipoId) : null,
-                        })),
+                        data: itemsNuevos.map((i: any) => {
+                            const precioCLP =
+                                redondearDinero(
+                                    parseDecimalInput(
+                                        i.precioOriginalCLP ??
+                                        i.precio,
+                                        0
+                                    )
+                                );
+
+                            return {
+                                cotizacionId:
+                                    id,
+
+                                tipo:
+                                    i.tipo,
+
+                                nombre:
+                                    i.nombre?.trim() ?? "",
+
+                                descripcion:
+                                    i.descripcion?.trim() ?? "",
+
+                                /*
+                                 * Prisma mantiene cantidad como Int.
+                                 */
+                                cantidad:
+                                    normalizarCantidad(
+                                        i.cantidad
+                                    ),
+
+                                /*
+                                 * Precio en CLP con hasta dos decimales.
+                                 */
+                                precio:
+                                    precioCLP,
+
+                                precioOriginalCLP:
+                                    precioCLP,
+
+                                precioCosto:
+                                    i.precioCosto != null
+                                        ? redondearDinero(
+                                            parseDecimalInput(
+                                                i.precioCosto,
+                                                0
+                                            )
+                                        )
+                                        : null,
+
+                                porcGanancia:
+                                    i.porcGanancia != null
+                                        ? normalizarGanancia(
+                                            i.porcGanancia
+                                        )
+                                        : null,
+
+                                tieneDescuento:
+                                    Boolean(
+                                        i.tieneDescuento
+                                    ),
+
+                                porcentaje:
+                                    i.tieneDescuento
+                                        ? normalizarDescuento(
+                                            i.porcentaje
+                                        )
+                                        : 0,
+
+                                tieneIVA:
+                                    Boolean(
+                                        i.tieneIVA
+                                    ),
+
+                                sku:
+                                    i.sku?.trim() ||
+                                    generarSKU(),
+
+                                imagen:
+                                    i.imagen ?? null,
+
+                                equipoId:
+                                    i.equipoId
+                                        ? Number(
+                                            i.equipoId
+                                        )
+                                        : null,
+                            };
+                        }),
                     });
                 }
             }

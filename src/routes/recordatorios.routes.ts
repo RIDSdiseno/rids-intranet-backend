@@ -9,6 +9,7 @@ import {
     marcarRecordatorioLeido,
     obtenerMisRecordatorios,
     reactivarRecordatorio,
+    cancelarTodosMisRecordatorios
 } from "../controllers/recordatorios.controller.js";
 
 import { auth } from "../middlewares/auth.js";
@@ -39,6 +40,14 @@ router.patch( "/:id/completar", auth(), completarRecordatorio);
  * Reactiva un recordatorio completado.
  */
 router.patch( "/:id/reactivar", auth(), reactivarRecordatorio);
+
+/*
+ * Cancela todos los recordatorios pendientes
+ * del usuario autenticado.
+ *
+ * Debe declararse antes de rutas dinámicas con /:id.
+ */
+router.patch( "/mios/cancelar-todos",  auth(),cancelarTodosMisRecordatorios);
 
 /*
  * Cancela un recordatorio.

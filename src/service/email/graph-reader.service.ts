@@ -27,7 +27,11 @@ import { Readable } from "stream";
 
 import { ticketEmailTemplateService } from "../email/reply-templates/ticket-email-template.service.js";
 
-import { sincronizarRecordatorioTicket } from "../recordatorios/recordatorios.service.js";
+import {
+    sincronizarRecordatorioTicket,
+    sincronizarRecordatorioTicketParaTodos
+}
+    from "../recordatorios/recordatorios.service.js";
 
 /* ======================================================
    Tipos
@@ -956,7 +960,14 @@ class GraphReaderService {
                         channel: TicketChannel.EMAIL,
                         empresaId: empresa.id_empresa,
                         requesterId: requester?.id_solicitante ?? null,
+
+                        /*
+                         * El ticket queda sin asignar.
+                         * Los recordatorios se crean para todos los técnicos activos,
+                         * pero no se asigna automáticamente a ninguno.
+                         */
                         assigneeId: null,
+
                         fromEmail: cleanFromEmail,
                         inboxEmail: this.supportEmail,
                         lastActivityAt: new Date(),
@@ -1023,6 +1034,38 @@ class GraphReaderService {
                     data: { bodyHtml: normalizedHtml },
                 });
             }
+        }
+
+        /*
+ * Cuando llega un ticket nuevo por correo,
+ * creamos un recordatorio automático para el técnico detectado.
+ *
+ * No autoasignamos el ticket necesariamente; solo avisamos
+ * en la campana para que sea revisado.
+ */
+        const recordatorioAt = new Date(
+            Date.now() - 1000
+        );
+
+        try {
+            await sincronizarRecordatorioTicketParaTodos({
+                ticketId:
+                    ticket.id,
+
+                titulo:
+                    `Nuevo ticket recibido #${ticket.id}`,
+
+                descripcion:
+                    data.bodyText?.slice(0, 180)?.trim() ||
+                    `Se recibió un nuevo ticket: ${ticket.subject}`,
+
+                recordatorioAt,
+            });
+        } catch (error) {
+            console.error(
+                `⚠️ Error creando recordatorios globales por nuevo ticket #${ticket.id}:`,
+                error
+            );
         }
 
         /* =============================
@@ -1430,27 +1473,28 @@ class GraphReaderService {
  * Se programa para "ahora" para que aparezca inmediatamente
  * en el badge de la campana.
  */
-        if (ticketBase?.assigneeId) {
-            const recordatorioAt = new Date(
-                Date.now() - 1000
-            );
+        const recordatorioAt = new Date(
+            Date.now() - 1000
+        );
 
-            try {
-                await sincronizarRecordatorioTicket({
-                    ticketId,
-                    tecnicoId: ticketBase.assigneeId,
-                    titulo: `Solicitante respondió ticket #${ticketId}`,
-                    descripcion:
-                        data.bodyText?.slice(0, 180)?.trim() ||
-                        `El solicitante ${data.fromEmail} respondió el ticket: ${ticketBase.subject}`,
-                    recordatorioAt,
-                });
-            } catch (error) {
-                console.error(
-                    `⚠️ Error creando recordatorio por respuesta del solicitante para ticket #${ticketId}:`,
-                    error
-                );
-            }
+        try {
+            await sincronizarRecordatorioTicketParaTodos({
+                ticketId,
+
+                titulo:
+                    `Solicitante respondió ticket #${ticketId}`,
+
+                descripcion:
+                    data.bodyText?.slice(0, 180)?.trim() ||
+                    `El solicitante ${data.fromEmail} respondió el ticket: ${ticketBase?.subject ?? ""}`,
+
+                recordatorioAt,
+            });
+        } catch (error) {
+            console.error(
+                `⚠️ Error creando recordatorios globales por respuesta del solicitante para ticket #${ticketId}:`,
+                error
+            );
         }
 
         // 2) Adjuntos FUERA de la transacción (lento)
