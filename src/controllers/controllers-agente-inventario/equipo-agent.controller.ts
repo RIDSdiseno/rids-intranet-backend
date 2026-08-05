@@ -92,6 +92,13 @@ type EquipoAgentPayload = {
     oneDriveUsuario?: string | null;
     oneDriveDetalle?: any;
 
+    adicionalesDetectados?: Array<{
+        tipo?: string | null;
+        descripcion?: string | null;
+        cantidad?: number | string | null;
+        serialAdicional?: string | null;
+    }>;
+
     softwares?: Array<{
         nombre?: string | null;
         version?: string | null;
@@ -333,6 +340,69 @@ async function syncSoftwares(
 
     await prisma.equipoSoftware.createMany({
         data: unique,
+        skipDuplicates: true,
+    });
+}
+
+async function syncAdicionalesDetectados(
+    equipoId: number,
+    adicionales: EquipoAgentPayload["adicionalesDetectados"]
+) {
+    if (!Array.isArray(adicionales)) return;
+
+    const tiposPermitidos = new Set(["MONITOR", "IMPRESORA"]);
+
+    const cleaned = adicionales
+        .map((item) => {
+            const tipo = cleanString(item.tipo)?.toUpperCase() ?? null;
+            const descripcion = cleanString(item.descripcion);
+            const serialAdicional = cleanString(item.serialAdicional);
+            const cantidadRaw = numberOrNull(item.cantidad);
+            const cantidad =
+                cantidadRaw && cantidadRaw > 0
+                    ? Math.trunc(cantidadRaw)
+                    : 1;
+
+            if (!tipo || !tiposPermitidos.has(tipo)) {
+                return null;
+            }
+
+            const descripcionFinal = descripcion?.startsWith("[AGENTE]")
+                ? descripcion
+                : `[AGENTE] ${descripcion ?? tipo}`;
+
+            return {
+                equipoId,
+                tipo,
+                descripcion: descripcionFinal,
+                cantidad,
+                serialAdicional,
+            };
+        })
+        .filter((item): item is {
+            equipoId: number;
+            tipo: string;
+            descripcion: string;
+            cantidad: number;
+            serialAdicional: string | null;
+        } => Boolean(item));
+
+    await prisma.equipoAdicional.deleteMany({
+        where: {
+            equipoId,
+            tipo: {
+                in: ["MONITOR", "IMPRESORA"],
+            },
+            descripcion: {
+                startsWith: "[AGENTE]",
+            },
+        },
+    });
+
+    if (cleaned.length === 0) return;
+
+    await prisma.equipoAdicional.createMany({
+        data: cleaned,
         skipDuplicates: true,
     });
 }
@@ -1226,6 +1296,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         await syncSoftwares(equipo.id_equipo, body.softwares);
 
+        await syncAdicionalesDetectados(
+            equipo.id_equipo,
+            body.adicionalesDetectados
+        );
+
         await prisma.equipoAgenteEvento.create({
             data: {
                 equipoId: equipo.id_equipo,
@@ -1307,6 +1382,18 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     oneDriveUsuario,
                     oneDriveDetalle: oneDriveDetalle ?? null,
 
+                    adicionalesDetectados: body.adicionalesDetectados ?? [],
+                    monitoresDetectados: Array.isArray(body.adicionalesDetectados)
+                        ? body.adicionalesDetectados.filter(
+                            (item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR"
+                        ).length
+                        : 0,
+                    impresorasDetectadas: Array.isArray(body.adicionalesDetectados)
+                        ? body.adicionalesDetectados.filter(
+                            (item) => cleanString(item.tipo)?.toUpperCase() === "IMPRESORA"
+                        ).length
+                        : 0,
+
                     requiereRevisionSolicitante,
                     motivoRevisionSolicitante,
 
@@ -1353,6 +1440,20 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             oneDriveOperativo,
             oneDriveVersion,
             oneDriveUsuario,
+
+            adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
+                ? body.adicionalesDetectados.length
+                : 0,
+            monitoresDetectados: Array.isArray(body.adicionalesDetectados)
+                ? body.adicionalesDetectados.filter(
+                    (item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR"
+                ).length
+                : 0,
+            impresorasDetectadas: Array.isArray(body.adicionalesDetectados)
+                ? body.adicionalesDetectados.filter(
+                    (item) => cleanString(item.tipo)?.toUpperCase() === "IMPRESORA"
+                ).length
+                : 0,
 
             lastBootAt: body.lastBootAt ?? null,
             uptimeText,

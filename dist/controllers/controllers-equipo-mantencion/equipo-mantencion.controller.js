@@ -2,7 +2,13 @@ import { prisma } from "../../lib/prisma.js";
 function limpiarTexto(value) {
     if (value === null || value === undefined)
         return null;
-    const text = String(value).trim();
+    const text = String(value)
+        // PostgreSQL no permite caracteres NUL en campos TEXT.
+        .replace(/\u0000/g, "")
+        .replace(/\x00/g, "")
+        // Limpia caracteres de control raros, manteniendo saltos de línea y tabs.
+        .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+        .trim();
     if (!text)
         return null;
     if (text.toUpperCase() === "NO_DETECTADO")
@@ -10,6 +16,23 @@ function limpiarTexto(value) {
     if (text.toUpperCase() === "TO BE FILLED BY O.E.M.")
         return null;
     return text;
+}
+function limpiarTextoLargo(value, maxCaracteres = 30000) {
+    const text = limpiarTexto(value);
+    if (!text)
+        return null;
+    if (text.length <= maxCaracteres)
+        return text;
+    return ("[TEXTO RECORTADO POR TAMAÑO]\n" +
+        `Longitud original: ${text.length} caracteres\n\n` +
+        text.slice(-maxCaracteres));
+}
+function limpiarArrayTexto(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value
+        .map((item) => limpiarTexto(item))
+        .filter((item) => Boolean(item));
 }
 function normalizarMac(value) {
     const text = limpiarTexto(value);
@@ -138,6 +161,12 @@ function validarTokenMantGeneral(req) {
 }
 export async function registrarMantencionEquipo(req, res) {
     try {
+        if (!validarTokenMantGeneral(req)) {
+            return res.status(401).json({
+                ok: false,
+                error: "Token no autorizado.",
+            });
+        }
         const { equipo, mantencion } = req.body;
         if (!equipo || !mantencion) {
             return res.status(400).json({
@@ -218,29 +247,34 @@ export async function registrarMantencionEquipo(req, res) {
             });
         }
         const equipoVinculado = equipoEncontrado;
-        const tareasRealizadas = Array.isArray(mantencion.tareasRealizadas)
-            ? mantencion.tareasRealizadas
-            : [];
-        const tareasConError = Array.isArray(mantencion.tareasConError)
-            ? mantencion.tareasConError
-            : [];
+        const tareasRealizadas = limpiarArrayTexto(mantencion.tareasRealizadas);
+        const tareasConError = limpiarArrayTexto(mantencion.tareasConError);
+        const tipoMantencion = limpiarTexto(mantencion.tipo) ?? "Mantención general";
+        const estadoMantencion = limpiarTexto(mantencion.estado) ?? "COMPLETADA";
+        const duracionTexto = limpiarTexto(mantencion.duracionTexto);
+        const resumen = limpiarTexto(mantencion.resumen);
+        const reporteTexto = limpiarTextoLargo(mantencion.reporteTexto, 30000);
+        const duracionSegundosRaw = Number(mantencion.duracionSegundos);
+        const duracionSegundos = Number.isFinite(duracionSegundosRaw)
+            ? Math.max(0, Math.round(duracionSegundosRaw))
+            : null;
         const registro = await prisma.equipoMantencion.create({
             data: {
                 equipoId: equipoVinculado.id_equipo,
                 empresaId: equipoVinculado.empresaId ?? null,
                 solicitanteId: equipoVinculado.idSolicitante ?? null,
                 tecnicoId: tecnicoResponsable?.id_tecnico ?? null,
-                tipo: String(mantencion.tipo || "Mantención general"),
-                estado: String(mantencion.estado || "COMPLETADA"),
+                tipo: tipoMantencion,
+                estado: estadoMantencion,
                 origen: "MANT_GENERAL_RIDS",
                 fechaInicio,
                 fechaFin,
-                duracionSegundos: mantencion.duracionSegundos ?? null,
-                duracionTexto: mantencion.duracionTexto ?? null,
+                duracionSegundos,
+                duracionTexto,
                 tareasRealizadas,
                 tareasConError,
-                resumen: mantencion.resumen ?? null,
-                reporteTexto: mantencion.reporteTexto ?? null,
+                resumen,
+                reporteTexto,
                 serial,
                 hostname,
                 usuarioActual,
@@ -278,10 +312,20 @@ export async function registrarMantencionEquipo(req, res) {
         });
     }
     catch (error) {
-        console.error("registrarMantencionEquipo error:", error);
+        console.error("❌ registrarMantencionEquipo error:", {
+            message: error?.message,
+            code: error?.code,
+            meta: error?.meta,
+            name: error?.name,
+            clientVersion: error?.clientVersion,
+            stack: error?.stack,
+        });
         return res.status(500).json({
             ok: false,
             error: "Error al registrar mantención.",
+            detail: process.env.NODE_ENV === "production"
+                ? undefined
+                : error?.message,
         });
     }
 }

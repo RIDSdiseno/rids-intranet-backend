@@ -1,6 +1,8 @@
 // src/controllers/tickets-rids/tickets-sla/ticket-sla-alert-mailer.ts
 import { graphReaderService } from "../../../service/email/graph-reader.service.js";
 import { prisma } from "../../../lib/prisma.js";
+import { sincronizarRecordatorioTicketParaTodos, } from "../../../service/recordatorios/recordatorios.service.js";
+import { bus } from "../../../lib/events.js";
 function getAlertTitle(alertType) {
     switch (alertType) {
         case "FIRST_RESPONSE_SOON":
@@ -35,6 +37,57 @@ function escapeHtml(value) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
+async function crearRecordatorioInternoSla(params) {
+    const ticket = await prisma.ticket.findUnique({
+        where: {
+            id: params.ticketId,
+        },
+        select: {
+            id: true,
+            subject: true,
+        },
+    });
+    /*
+     * Si el ticket no existe, no creamos recordatorio interno.
+     *
+     * No validamos assigneeId aquí porque el recordatorio interno
+     * debe ser visible para todos los técnicos internos.
+     */
+    if (!ticket) {
+        console.warn("⏭️ No se crea recordatorio SLA: ticket no encontrado", {
+            ticketId: params.ticketId,
+            alertType: params.alertType,
+        });
+        return;
+    }
+    const title = getAlertTitle(params.alertType);
+    const descripcion = [
+        `Ticket #${params.ticketId}: ${params.subject}`,
+        `Prioridad: ${params.priority}`,
+        `Estado: ${params.status}`,
+        `Alerta: ${title}`,
+        `Tiempo restante 1ra respuesta: ${formatRemaining(params.firstResponseRemaining)}`,
+        `Tiempo restante cierre: ${formatRemaining(params.resolutionRemaining)}`,
+    ].join("\n");
+    /*
+     * Programamos el recordatorio para ahora,
+     * para que aparezca inmediatamente en la campana.
+     */
+    await sincronizarRecordatorioTicketParaTodos({
+        ticketId: params.ticketId,
+        titulo: `[SLA] ${title} #${params.ticketId}`,
+        descripcion,
+        recordatorioAt: new Date(Date.now() - 1000),
+    });
+    /*
+     * Emitimos evento para que la campana global
+     * se actualice inmediatamente y pueda sonar.
+     */
+    bus.emit("ticket.sla_alert", {
+        ticketId: params.ticketId,
+        alertType: params.alertType,
+    });
+}
 export async function sendTicketSlaAlertEmail(params) {
     const title = getAlertTitle(params.alertType);
     const bodyHtml = `
@@ -60,6 +113,16 @@ export async function sendTicketSlaAlertEmail(params) {
             </p>
         </div>
     `;
+    /*
+ * Además del correo, generamos un recordatorio interno
+ * para que la alerta SLA aparezca dentro del sistema.
+ */
+    try {
+        await crearRecordatorioInternoSla(params);
+    }
+    catch (error) {
+        console.error("⚠️ Error creando recordatorio interno SLA:", error);
+    }
     const toEmail = params.to?.trim().toLowerCase();
     // Evita intentar enviar una alerta SLA si no hay correo destino.
     if (!toEmail) {
