@@ -1995,6 +1995,12 @@ export async function updateEquipo(req: Request, res: Response) {
       ...equipoData
     } = data;
 
+    const adicionalesManuales = adicionales?.filter((a) => {
+      const descripcion = String(a.descripcion ?? "").trim();
+
+      return !descripcion.startsWith("[AGENTE]");
+    });
+
     // Validar empresaId si viene
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
@@ -2310,8 +2316,14 @@ export async function updateEquipo(req: Request, res: Response) {
         ...(adicionales !== undefined
           ? {
             adicionales: {
-              deleteMany: {},
-              create: adicionales
+              deleteMany: {
+                NOT: {
+                  descripcion: {
+                    startsWith: "[AGENTE]",
+                  },
+                },
+              },
+              create: (adicionalesManuales ?? [])
                 .filter((a) => !!a?.tipo?.trim())
                 .map((a) => ({
                   tipo: a.tipo.trim(),
