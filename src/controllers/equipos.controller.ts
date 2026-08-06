@@ -1995,12 +1995,6 @@ export async function updateEquipo(req: Request, res: Response) {
       ...equipoData
     } = data;
 
-    const adicionalesManuales = adicionales?.filter((a) => {
-      const descripcion = String(a.descripcion ?? "").trim();
-
-      return !descripcion.startsWith("[AGENTE]");
-    });
-
     // Validar empresaId si viene
     const equipoActual = await prisma.equipo.findUnique({
       where: { id_equipo: id },
@@ -2313,17 +2307,23 @@ export async function updateEquipo(req: Request, res: Response) {
           },
         },
 
+        // Los adicionales se reemplazan por completo con lo que envía el
+        // formulario, incluidos los que trae el agente de inventario (los que
+        // llevan "[AGENTE]" en la descripción). Antes esos quedaban excluidos
+        // tanto del borrado como de la recreación, así que eran de solo lectura:
+        // editar el serial de un monitor o impresora se descartaba en silencio y
+        // el endpoint respondía 200 igual.
+        //
+        // OJO: el agente vuelve a escribir sus propios adicionales cada vez que
+        // el equipo reporta (deleteMany + createMany en equipo-agent.controller),
+        // así que lo que se corrija a mano sobre una fila "[AGENTE]" se pierde en
+        // el próximo reporte de ese equipo. Para que la corrección sea definitiva
+        // hay que marcar el campo como editado a mano y respetarlo en el agente.
         ...(adicionales !== undefined
           ? {
             adicionales: {
-              deleteMany: {
-                NOT: {
-                  descripcion: {
-                    startsWith: "[AGENTE]",
-                  },
-                },
-              },
-              create: (adicionalesManuales ?? [])
+              deleteMany: {},
+              create: (adicionales ?? [])
                 .filter((a) => !!a?.tipo?.trim())
                 .map((a) => ({
                   tipo: a.tipo.trim(),
