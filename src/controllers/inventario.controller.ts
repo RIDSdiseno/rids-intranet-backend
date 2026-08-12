@@ -292,6 +292,11 @@ function formatTipoAdicional(
         MOUSE: "Mouse",
         DOCK: "Dock",
         CARGADOR: "Cargador",
+
+        CAMARA: "Cámara",
+        SWITCH: "Switch",
+        ROUTER: "Router",
+
         OTRO: "Otro",
     };
 

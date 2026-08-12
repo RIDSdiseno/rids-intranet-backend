@@ -44,9 +44,18 @@ export async function analizarInventarioEmpresa(req, res) {
         const equipos = await prisma.equipo.findMany({
             where: {
                 deletedAt: null,
-                solicitante: {
-                    empresaId,
-                },
+                OR: [
+                    {
+                        empresaId,
+                    },
+                    {
+                        solicitante: {
+                            is: {
+                                empresaId,
+                            },
+                        },
+                    },
+                ],
             },
             include: {
                 detalle: true,
@@ -73,31 +82,76 @@ export async function analizarInventarioEmpresa(req, res) {
             teamViewer: e.detalle?.teamViewer ?? null,
             revisado: e.detalle?.revisado ?? null,
         }));
+        /* =========================================================
+   RESUMEN POR ESTADO
+========================================================= */
+        const resumenEstados = equipos.reduce((acc, equipo) => {
+            const estado = String(equipo.estado ??
+                "SIN_ESTADO");
+            acc[estado] =
+                (acc[estado] ?? 0) + 1;
+            return acc;
+        }, {});
         const prompt = `
-Analiza este inventario IT de la empresa "${empresa.nombre}" para el periodo ${String(mes).padStart(2, "0")}/${ano}.
+Analiza este inventario IT de la empresa "${empresa.nombre}"
+para el periodo ${String(mes).padStart(2, "0")}/${ano}.
 
-Devuelve SOLO JSON con esta estructura:
+Devuelve SOLO JSON válido con esta estructura exacta:
 
 {
   "hallazgos": [
-    { "severidad": "ALTA | MEDIA | BAJA", "descripcion": "texto" }
+    {
+      "severidad": "ALTA | MEDIA | BAJA",
+      "descripcion": "Descripción clara del hallazgo",
+      "equipos": [
+        {
+          "id": 123,
+          "serial": "ABC123"
+        }
+      ]
+    }
   ],
-  "riesgos": ["texto"],
-  "recomendaciones": ["texto"],
+  "riesgos": [
+    "texto"
+  ],
+  "recomendaciones": [
+    "texto"
+  ],
   "resumen": "texto corto"
 }
 
-Criterios:
+REGLAS OBLIGATORIAS PARA LOS HALLAZGOS:
+
+- Cada hallazgo debe indicar exactamente qué equipos están afectados.
+- Usa exclusivamente los campos "id" y "serial" disponibles en el inventario entregado.
+- Nunca inventes IDs.
+- Nunca inventes seriales.
+- Si el serial de un equipo es null, vacío o no está disponible, usa null.
+- Si un hallazgo aplica a varios equipos, incluye todos los equipos afectados dentro de "equipos".
+- No escribas solamente "varios equipos" o "algunos equipos": identifica cada uno.
+- No incluyas un equipo dentro de un hallazgo si los datos entregados no permiten justificarlo.
+- Los IDs deben devolverse como números.
+- Mantén los hallazgos agrupados por problema; no generes necesariamente un hallazgo separado para cada equipo.
+
+CRITERIOS DE ANÁLISIS:
+
 - Detecta equipos antiguos.
 - Detecta bajo nivel de RAM.
 - Detecta discos mecánicos o almacenamiento problemático.
 - Detecta sistemas operativos antiguos o no informados.
 - Detecta equipos sin revisión.
 - Detecta falta de TeamViewer o datos de soporte remoto.
+- Considera el estado actual del equipo.
+- No presentes equipos dados de baja como si fueran equipos activos que requieren necesariamente una intervención.
 - Entrega recomendaciones concretas y accionables.
 - Considera que este análisis será comparado mes a mes.
 
-Inventario:
+RESUMEN REAL DE ESTADOS CALCULADO POR EL SISTEMA:
+
+${JSON.stringify(resumenEstados, null, 2)}
+
+INVENTARIO:
+
 ${JSON.stringify(resumenInventario, null, 2)}
 `;
         const completion = await openai.chat.completions.create({
@@ -120,7 +174,93 @@ ${JSON.stringify(resumenInventario, null, 2)}
                 error: "La IA no devolvió contenido",
             });
         }
-        const analisis = JSON.parse(content);
+        const equiposPorId = new Map(equipos.map((equipo) => [
+            equipo.id_equipo,
+            equipo,
+        ]));
+        const rawAnalisis = JSON.parse(content);
+        /* =========================================================
+   NORMALIZAR HALLAZGOS
+========================================================= */
+        const hallazgosNormalizados = Array.isArray(rawAnalisis.hallazgos)
+            ? rawAnalisis.hallazgos.map((hallazgo) => {
+                /* =============================================
+EQUIPOS AFECTADOS DEL HALLAZGO
+============================================= */
+                const equiposRaw = Array.isArray(hallazgo.equipos)
+                    ? hallazgo.equipos
+                    : [];
+                const equiposHallazgoRaw = equiposRaw
+                    .map((equipoIA) => {
+                    const equipoObj = equipoIA;
+                    const id = Number(equipoObj?.id);
+                    /*
+                     * ID inválido:
+                     * se descarta.
+                     */
+                    if (!Number.isInteger(id)) {
+                        return null;
+                    }
+                    /*
+                     * Validar que el equipo
+                     * realmente exista dentro
+                     * del inventario analizado.
+                     */
+                    const equipoReal = equiposPorId.get(id);
+                    if (!equipoReal) {
+                        return null;
+                    }
+                    /*
+                     * El serial siempre se obtiene
+                     * desde la BD.
+                     */
+                    return {
+                        id: equipoReal.id_equipo,
+                        serial: equipoReal.serial ??
+                            null,
+                    };
+                })
+                    .filter((equipo) => equipo !== null);
+                /* =============================================
+                   ELIMINAR EQUIPOS DUPLICADOS
+                ============================================= */
+                const equiposHallazgo = Array.from(new Map(equiposHallazgoRaw.map((equipo) => [
+                    equipo.id,
+                    equipo,
+                ])).values());
+                /* =============================================
+                   NORMALIZAR SEVERIDAD
+                ============================================= */
+                const severidad = hallazgo.severidad ===
+                    "ALTA" ||
+                    hallazgo.severidad ===
+                        "MEDIA" ||
+                    hallazgo.severidad ===
+                        "BAJA"
+                    ? hallazgo.severidad
+                    : "BAJA";
+                /* =============================================
+                   RETORNAR HALLAZGO NORMALIZADO
+                ============================================= */
+                return {
+                    severidad,
+                    descripcion: String(hallazgo.descripcion ??
+                        "").trim(),
+                    equipos: equiposHallazgo,
+                };
+            })
+            : [];
+        const analisis = {
+            resumen: String(rawAnalisis.resumen ??
+                ""),
+            hallazgos: hallazgosNormalizados,
+            riesgos: Array.isArray(rawAnalisis.riesgos)
+                ? rawAnalisis.riesgos
+                : [],
+            recomendaciones: Array.isArray(rawAnalisis.recomendaciones)
+                ? rawAnalisis.recomendaciones
+                : [],
+        };
         const saved = await prisma.analisisInventarioIA.upsert({
             where: {
                 empresaId_mes_ano: {
@@ -131,22 +271,32 @@ ${JSON.stringify(resumenInventario, null, 2)}
             },
             update: {
                 totalEquipos: equipos.length,
-                resumen: analisis.resumen ?? null,
-                hallazgos: analisis.hallazgos ?? [],
-                riesgos: analisis.riesgos ?? [],
-                recomendaciones: analisis.recomendaciones ?? [],
-                generadoPorId: user?.id ?? null,
+                /*
+                 * Snapshot del estado del inventario
+                 * al momento de generar el análisis.
+                 */
+                resumenEstados,
+                resumen: analisis.resumen ||
+                    null,
+                hallazgos: analisis.hallazgos,
+                riesgos: analisis.riesgos,
+                recomendaciones: analisis.recomendaciones,
+                generadoPorId: user?.id ??
+                    null,
             },
             create: {
                 empresaId,
                 mes,
                 ano,
                 totalEquipos: equipos.length,
-                resumen: analisis.resumen ?? null,
-                hallazgos: analisis.hallazgos ?? [],
-                riesgos: analisis.riesgos ?? [],
-                recomendaciones: analisis.recomendaciones ?? [],
-                generadoPorId: user?.id ?? null,
+                resumenEstados,
+                resumen: analisis.resumen ||
+                    null,
+                hallazgos: analisis.hallazgos,
+                riesgos: analisis.riesgos,
+                recomendaciones: analisis.recomendaciones,
+                generadoPorId: user?.id ??
+                    null,
             },
         });
         return res.json({
@@ -156,6 +306,7 @@ ${JSON.stringify(resumenInventario, null, 2)}
             mes,
             ano,
             totalEquipos: equipos.length,
+            resumenEstados,
             analisis,
             registroId: saved.id,
         });

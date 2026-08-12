@@ -547,20 +547,17 @@ model Equipo {
 }
 
 model EquipoAdicional {
-  id              Int     @id @default(autoincrement())
+  id              Int                   @id @default(autoincrement())
+  serialAdicional String?
   equipoId        Int
   tipo            String
   descripcion     String?
-  cantidad        Int     @default(1)
-  serialAdicional String?
-
-  origen OrigenEquipoAdicional @default(MANUAL)
-  estado EstadoEquipoAdicional @default(ASIGNADO)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  cantidad        Int                   @default(1)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  estado          EstadoEquipoAdicional @default(ASIGNADO)
+  origen          OrigenEquipoAdicional @default(MANUAL)
+  equipo          Equipo                @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@index([equipoId])
   @@index([tipo])
@@ -1554,14 +1551,22 @@ model AnalisisInventarioIA {
   empresaId       Int
   mes             Int
   ano             Int
+
   totalEquipos    Int      @default(0)
+
+  /// Snapshot del inventario al momento de generar el análisis.
+  resumenEstados  Json?
+
   resumen         String?
   hallazgos       Json?
   riesgos         Json?
   recomendaciones Json?
+
   generadoPorId   Int?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
   empresa         Empresa  @relation(fields: [empresaId], references: [id_empresa])
   generadoPor     Tecnico? @relation(fields: [generadoPorId], references: [id_tecnico])
 
@@ -1569,7 +1574,6 @@ model AnalisisInventarioIA {
   @@index([empresaId])
   @@index([mes, ano])
 }
-
 model ManualTutorial {
   id             Int                     @id @default(autoincrement())
   titulo         String
@@ -2045,6 +2049,7 @@ enum AreaGestioo {
 enum DestinoEquipoTaller {
   SIN_DEFINIR
   VENTA
+  VENTA_EMPRESA
   RIDS
   CLIENTE
   BAJA
@@ -2200,7 +2205,6 @@ enum EstadoRecordatorio {
   CANCELADO
 }
 
-// Enum adicionales para el módulo de equipos adicionales
 enum OrigenEquipoAdicional {
   MANUAL
   AGENTE

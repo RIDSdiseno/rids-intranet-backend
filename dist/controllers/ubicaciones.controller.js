@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import { canViewMapaTecnicos } from "../policies/canViewMapaTecnicos.js";
+import { obtenerFechaAgendaHoy } from "../service/agenda.service.js";
 function getDireccionDesdeJson(value) {
     if (!value)
         return null;
@@ -48,9 +49,38 @@ export async function listarUltimasUbicacionesTecnicos(req, res) {
         if (filtrosUltimas.length === 0) {
             return res.json([]);
         }
+        // El mapa solo muestra técnicos vigentes. Se resuelven ANTES de traer los
+        // puntos GPS para no arrastrar ubicaciones que igual se van a descartar, y
+        // cubre los dos casos en que un técnico deja de existir para la intranet:
+        //
+        //   · Desactivado (status = false): la fila sigue en Tecnico, pero ya no
+        //     opera. Antes seguía apareciendo con su última ubicación conocida.
+        //   · Eliminado definitivamente (deleteTecnico hace un delete real): la fila
+        //     desaparece, y como UbicacionTecnico no tiene llave foránea de verdad
+        //     (relationMode = "prisma"), sus puntos GPS quedan huérfanos y salían en
+        //     el mapa como "Tecnico #<id>". Al exigir una fila con status true,
+        //     el huérfano queda fuera por no encontrar técnico.
+        const tecnicosVigentes = await prisma.tecnico.findMany({
+            where: {
+                id_tecnico: { in: filtrosUltimas.map((item) => item.tecnicoId) },
+                status: true,
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                rol: true,
+                status: true,
+            },
+        });
+        const tecnicosPorId = new Map(tecnicosVigentes.map((tecnico) => [tecnico.id_tecnico, tecnico]));
+        const filtrosVigentes = filtrosUltimas.filter((item) => tecnicosPorId.has(item.tecnicoId));
+        if (filtrosVigentes.length === 0) {
+            return res.json([]);
+        }
         const ubicaciones = await prisma.ubicacionTecnico.findMany({
             where: {
-                OR: filtrosUltimas,
+                OR: filtrosVigentes,
             },
             orderBy: {
                 createdAt: "desc",
@@ -65,29 +95,23 @@ export async function listarUltimasUbicacionesTecnicos(req, res) {
         }, new Map())
             .values());
         const tecnicoIds = ubicacionesUnicas.map((ubicacion) => ubicacion.tecnicoId);
-        const tecnicosPromise = prisma.tecnico.findMany({
-            where: {
-                id_tecnico: {
-                    in: tecnicoIds,
-                },
-            },
-            select: {
-                id_tecnico: true,
-                nombre: true,
-                email: true,
-                rol: true,
-                status: true,
-            },
-        });
         // La empresa/destino que se muestra en el mapa se resuelve por la agenda del
         // técnico que está EN_RUTA o INICIADA: es decir, desde que presiona "iniciar
         // ruta" hasta que guarda el formulario (momento en que la agenda pasa a
         // COMPLETADA y deja de mostrarse, volviendo a "sin visita asociada").
         // Ya NO se usa el agendaId del punto GPS, porque con el tracking de jornada
         // los puntos llegan con agendaId nulo aunque el técnico tenga visita en curso.
+        //
+        // Se acota al día de hoy porque EN_RUTA/INICIADA son estados transitorios que
+        // solo el cierre del formulario saca de ahí: una visita que quedó colgada sin
+        // completar conserva ese estado para siempre y, sin filtro de fecha, se le
+        // seguía asociando al técnico en el mapa días o semanas después. La jornada
+        // (L-V 08:00-18:30, sáb 08:30-14:00) nunca cruza medianoche, así que limitar
+        // a hoy no corta ninguna visita legítima en curso.
         const agendasActivasPromise = tecnicoIds.length
             ? prisma.agendaVisita.findMany({
                 where: {
+                    fecha: obtenerFechaAgendaHoy(),
                     estado: { in: ["EN_RUTA", "INICIADA"] },
                     tecnicos: { some: { tecnicoId: { in: tecnicoIds } } },
                 },
@@ -123,8 +147,7 @@ export async function listarUltimasUbicacionesTecnicos(req, res) {
                 },
             })
             : Promise.resolve([]);
-        const [tecnicos, agendasActivas] = await Promise.all([tecnicosPromise, agendasActivasPromise]);
-        const tecnicosPorId = new Map(tecnicos.map((tecnico) => [tecnico.id_tecnico, tecnico]));
+        const agendasActivas = await agendasActivasPromise;
         // Si un técnico tiene más de una agenda activa, se prioriza la que ya está
         // INICIADA (visita en sitio) por sobre EN_RUTA (aún en camino) y, dentro de
         // cada grupo, la más reciente según su marca de inicio.

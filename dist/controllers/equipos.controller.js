@@ -50,6 +50,10 @@ const listQuerySchema = z.object({
     empresaId: z.coerce.number().int().optional(),
     empresaName: z.string().trim().optional(),
     solicitanteId: z.coerce.number().int().optional(),
+    solicitanteMultiplesEquipos: z
+        .enum(["TODOS", "MULTIPLES"])
+        .default("TODOS")
+        .optional(),
     mode: z.enum(["full", "selector"]).default("full").optional(),
     estado: z.nativeEnum(EstadoEquipo).optional(),
     sortBy: z
@@ -84,13 +88,6 @@ const listQuerySchema = z.object({
         .optional(),
     sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
-// Nuevo: esquema para reasignar equipos por serial
-const adicionalSchema = z.object({
-    tipo: z.string().trim().min(1),
-    descripcion: z.string().trim().optional().nullable(),
-    cantidad: z.coerce.number().int().positive().default(1),
-    serialAdicional: z.string().trim().optional().nullable(),
-});
 const createEquipoSchema = z.object({
     empresaId: z.coerce.number().int().positive().optional(),
     idSolicitante: z.coerce.number().int().positive().nullable().optional(),
@@ -122,7 +119,6 @@ const createEquipoSchema = z.object({
     passwordEmpresa: z.string().optional(),
     usuarioPersonal: z.string().optional(),
     passwordPersonal: z.string().optional(),
-    adicionales: z.array(adicionalSchema).optional().default([]),
 });
 // Nuevo: acepta 1 equipo o { equipos: [...] }
 const createEquiposRequestSchema = z.union([
@@ -146,7 +142,6 @@ const equipoUpdateSchema = z.object({
     disco: z.string().trim().min(1).optional(),
     propiedad: z.enum(PROPIEDADES_EQUIPO).optional(),
     propietarioExterno: z.string().trim().max(200).optional().nullable(),
-    adicionales: z.array(adicionalSchema).optional(),
     estado: z.nativeEnum(EstadoEquipo).optional(),
     observaciones: z.string().trim().optional().nullable(),
     // NUEVOS
@@ -663,29 +658,49 @@ export async function listEquipos(req, res) {
             Boolean(q.auditTo) ||
             (Boolean(q.auditAction) && q.auditAction !== "ALL");
         if (tieneFiltroAuditoria) {
+            /*
+             * =====================================================
+             * 1. ACTIVIDAD MANUAL — AuditLog
+             * =====================================================
+             */
             const auditWhere = {
                 entity: {
-                    in: ["Equipo", "DetalleEquipo"],
+                    in: [
+                        "Equipo",
+                        "DetalleEquipo",
+                    ],
                 },
                 ...(q.auditTecnicoId
                     ? {
                         actorId: q.auditTecnicoId,
                     }
                     : {}),
-                ...(q.auditAction && q.auditAction !== "ALL"
+                ...(q.auditAction &&
+                    q.auditAction !== "ALL"
                     ? {
                         action: q.auditAction,
                     }
                     : {
                         action: {
-                            in: [AuditAction.CREATE, AuditAction.UPDATE],
+                            in: [
+                                AuditAction.CREATE,
+                                AuditAction.UPDATE,
+                            ],
                         },
                     }),
                 ...(q.auditFrom || q.auditTo
                     ? {
                         createdAt: {
-                            ...(q.auditFrom ? { gte: q.auditFrom } : {}),
-                            ...(q.auditTo ? { lte: q.auditTo } : {}),
+                            ...(q.auditFrom
+                                ? {
+                                    gte: q.auditFrom,
+                                }
+                                : {}),
+                            ...(q.auditTo
+                                ? {
+                                    lte: q.auditTo,
+                                }
+                                : {}),
                         },
                     }
                     : {}),
@@ -697,14 +712,25 @@ export async function listEquipos(req, res) {
                     entityId: true,
                 },
             });
+            /*
+             * IDs registrados directamente como entity = Equipo.
+             */
             const equipoIdsDirectos = logs
-                .filter((l) => l.entity === "Equipo")
-                .map((l) => Number(l.entityId))
-                .filter((n) => Number.isFinite(n));
+                .filter((log) => log.entity ===
+                "Equipo")
+                .map((log) => Number(log.entityId))
+                .filter((id) => Number.isInteger(id) &&
+                id > 0);
+            /*
+             * IDs de DetalleEquipo que deben resolverse
+             * hasta su equipo padre.
+             */
             const detalleIds = logs
-                .filter((l) => l.entity === "DetalleEquipo")
-                .map((l) => Number(l.entityId))
-                .filter((n) => Number.isFinite(n));
+                .filter((log) => log.entity ===
+                "DetalleEquipo")
+                .map((log) => Number(log.entityId))
+                .filter((id) => Number.isInteger(id) &&
+                id > 0);
             let equipoIdsDesdeDetalle = [];
             if (detalleIds.length > 0) {
                 const detalles = await prisma.detalleEquipo.findMany({
@@ -717,11 +743,94 @@ export async function listEquipos(req, res) {
                         idEquipo: true,
                     },
                 });
-                equipoIdsDesdeDetalle = detalles
-                    .map((d) => d.idEquipo)
-                    .filter((n) => Number.isFinite(Number(n)));
+                equipoIdsDesdeDetalle =
+                    detalles
+                        .map((detalle) => detalle.idEquipo)
+                        .filter((id) => Number.isInteger(id) &&
+                        id > 0);
             }
-            auditEquipoIds = Array.from(new Set([...equipoIdsDirectos, ...equipoIdsDesdeDetalle]));
+            /*
+             * =====================================================
+             * 2. ACTIVIDAD AUTOMÁTICA — EquipoAgenteEvento
+             * =====================================================
+             *
+             * El agente no usa AuditLog.actorId.
+             * Guarda el técnico dentro de:
+             *
+             * metadata.tecnicoInstaladorId
+             */
+            let equipoIdsDesdeAgente = [];
+            /*
+             * Solo buscamos eventos asociados a un técnico
+             * cuando se seleccionó auditTecnicoId.
+             */
+            if (q.auditTecnicoId) {
+                const tiposEventoAgente = q.auditAction === "CREATE"
+                    ? [
+                        "INVENTORY_CREATED",
+                    ]
+                    : q.auditAction === "UPDATE"
+                        ? [
+                            "INVENTORY_SYNC",
+                            "REVISION_SOLICITANTE",
+                        ]
+                        : [
+                            "INVENTORY_CREATED",
+                            "INVENTORY_SYNC",
+                            "REVISION_SOLICITANTE",
+                        ];
+                const eventosAgente = await prisma.equipoAgenteEvento.findMany({
+                    where: {
+                        tipo: {
+                            in: tiposEventoAgente,
+                        },
+                        /*
+                         * Filtro JSON de PostgreSQL mediante Prisma.
+                         */
+                        metadata: {
+                            path: [
+                                "tecnicoInstaladorId",
+                            ],
+                            equals: q.auditTecnicoId,
+                        },
+                        ...(q.auditFrom || q.auditTo
+                            ? {
+                                createdAt: {
+                                    ...(q.auditFrom
+                                        ? {
+                                            gte: q.auditFrom,
+                                        }
+                                        : {}),
+                                    ...(q.auditTo
+                                        ? {
+                                            lte: q.auditTo,
+                                        }
+                                        : {}),
+                                },
+                            }
+                            : {}),
+                    },
+                    select: {
+                        equipoId: true,
+                    },
+                });
+                equipoIdsDesdeAgente =
+                    eventosAgente
+                        .map((evento) => evento.equipoId)
+                        .filter((id) => Number.isInteger(id) &&
+                        id > 0);
+            }
+            /*
+             * =====================================================
+             * 3. UNIFICAR RESULTADOS
+             * =====================================================
+             */
+            auditEquipoIds =
+                Array.from(new Set([
+                    ...equipoIdsDirectos,
+                    ...equipoIdsDesdeDetalle,
+                    ...equipoIdsDesdeAgente,
+                ]));
         }
         const searchText = String(q.search ?? "").trim();
         const searchRutClean = normalizeRutSearch(searchText);
@@ -1265,12 +1374,67 @@ export async function listEquipos(req, res) {
             });
         }
         /* =========================
-           Filtro por auditoría
-        ========================= */
-        if (auditEquipoIds) {
+       Filtro por auditoría
+    ========================= */
+        if (auditEquipoIds !== null) {
             andConditions.push({
                 id_equipo: {
                     in: auditEquipoIds.length > 0 ? auditEquipoIds : [-1],
+                },
+            });
+        }
+        /* =========================
+           Filtro: solicitantes con más de un equipo
+           dentro del universo filtrado actual
+        ========================= */
+        let solicitanteMultiplesCountById = new Map();
+        if (q.solicitanteMultiplesEquipos === "MULTIPLES") {
+            const whereBaseMultiples = andConditions.length > 0
+                ? {
+                    AND: [
+                        ...andConditions,
+                        {
+                            idSolicitante: {
+                                not: null,
+                            },
+                        },
+                    ],
+                }
+                : {
+                    idSolicitante: {
+                        not: null,
+                    },
+                };
+            const agrupados = await prisma.equipo.groupBy({
+                by: ["idSolicitante"],
+                where: whereBaseMultiples,
+                _count: {
+                    id_equipo: true,
+                },
+                having: {
+                    id_equipo: {
+                        _count: {
+                            gt: 1,
+                        },
+                    },
+                },
+            });
+            const solicitanteIdsMultiplesEquipos = agrupados
+                .map((item) => item.idSolicitante)
+                .filter((id) => typeof id === "number" &&
+                Number.isInteger(id) &&
+                id > 0);
+            solicitanteMultiplesCountById = new Map(agrupados
+                .filter((item) => typeof item.idSolicitante === "number")
+                .map((item) => [
+                item.idSolicitante,
+                item._count.id_equipo,
+            ]));
+            andConditions.push({
+                idSolicitante: {
+                    in: solicitanteIdsMultiplesEquipos.length > 0
+                        ? solicitanteIdsMultiplesEquipos
+                        : [-1],
                 },
             });
         }
@@ -1283,7 +1447,19 @@ export async function listEquipos(req, res) {
             }
             : {};
         // Si el cliente está filtrando por empresaId, forzamos que solo vea esa empresa (incluso si intenta usar empresaName para evadirlo)
-        const orderBy = mapOrderBy(q.sortBy, q.sortDir);
+        const orderBy = q.solicitanteMultiplesEquipos === "MULTIPLES"
+            ? [
+                {
+                    idSolicitante: "asc",
+                },
+                {
+                    empresaId: "asc",
+                },
+                {
+                    id_equipo: "asc",
+                },
+            ]
+            : mapOrderBy(q.sortBy, q.sortDir);
         const skip = (q.page - 1) * q.pageSize;
         const total = await prisma.equipo.count({ where });
         if (q.mode === "selector") {
@@ -1310,6 +1486,17 @@ export async function listEquipos(req, res) {
                     agenteActivo: true,
                     estadoAgente: true,
                     agenteVersion: true,
+                    /* =========================================
+                       SOLICITANTE DEL EQUIPO
+                    ========================================= */
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                            rut: true,
+                        },
+                    },
                 },
                 orderBy,
                 skip,
@@ -1346,16 +1533,19 @@ export async function listEquipos(req, res) {
             pageSize: q.pageSize,
             total,
             totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
-            items: rows.map(flattenRow),
+            items: rows.map((row) => {
+                const item = flattenRow(row);
+                return {
+                    ...item,
+                    totalEquiposSolicitante: q.solicitanteMultiplesEquipos === "MULTIPLES" &&
+                        row.idSolicitante
+                        ? solicitanteMultiplesCountById.get(row.idSolicitante) ?? null
+                        : null,
+                };
+            }),
         });
     }
     catch (err) {
-        console.error("[listEquipos] error:", {
-            message: err?.message,
-            code: err?.code,
-            meta: err?.meta,
-            stack: err?.stack,
-        });
         if (err instanceof z.ZodError) {
             return res.status(400).json({
                 error: "Parámetros inválidos",
@@ -1548,16 +1738,6 @@ export async function createEquipo(req, res) {
                                 passwordPersonal: data.passwordPersonal ?? null,
                             },
                         },
-                        adicionales: {
-                            create: (data.adicionales ?? [])
-                                .filter((a) => !!a?.tipo?.trim())
-                                .map((a) => ({
-                                tipo: a.tipo.trim(),
-                                descripcion: a.descripcion?.trim() || null,
-                                cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                                serialAdicional: a.serialAdicional?.trim() || null,
-                            })),
-                        },
                     },
                     include: {
                         solicitante: { include: { empresa: true } },
@@ -1686,11 +1866,7 @@ export async function updateEquipo(req, res) {
         if (isNaN(id))
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
-        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, adicionales, anioPc, anioPcOrigen, ...equipoData } = data;
-        const adicionalesManuales = adicionales?.filter((a) => {
-            const descripcion = String(a.descripcion ?? "").trim();
-            return !descripcion.startsWith("[AGENTE]");
-        });
+        const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, anioPc, anioPcOrigen, ...equipoData } = data;
         // Validar empresaId si viene
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
@@ -1942,27 +2118,6 @@ export async function updateEquipo(req, res) {
                         },
                     },
                 },
-                ...(adicionales !== undefined
-                    ? {
-                        adicionales: {
-                            deleteMany: {
-                                NOT: {
-                                    descripcion: {
-                                        startsWith: "[AGENTE]",
-                                    },
-                                },
-                            },
-                            create: (adicionalesManuales ?? [])
-                                .filter((a) => !!a?.tipo?.trim())
-                                .map((a) => ({
-                                tipo: a.tipo.trim(),
-                                descripcion: a.descripcion?.trim() || null,
-                                cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                                serialAdicional: a.serialAdicional?.trim() || null,
-                            })),
-                        },
-                    }
-                    : {}),
             },
             include: {
                 solicitante: { include: { empresa: true } },

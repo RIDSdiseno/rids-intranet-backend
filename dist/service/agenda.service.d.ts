@@ -25,6 +25,13 @@ export declare function normalizarFechaDesdeString(fecha: string): Date;
 /** Formatea un Date UTC midnight como "YYYY-MM-DD" para respuestas de agenda (sin timezone). */
 export declare function formatearFechaAgenda(date: Date): string;
 /**
+ * Día calendario de hoy en Chile como UTC midnight, en el mismo formato en que
+ * AgendaVisita.fecha guarda el día. Se calcula sobre America/Santiago y no sobre
+ * la hora UTC del servidor: pasadas las 21:00 en Chile el día UTC ya avanzó, y
+ * "hoy" terminaría apuntando a mañana.
+ */
+export declare function obtenerFechaAgendaHoy(): Date;
+/**
  * Genera todas las AgendaVisita del mes para:
  *   - Días de semana: cada empresa recibe exactamente 1 técnico,
  *     rotando por índice circular según el día del mes.

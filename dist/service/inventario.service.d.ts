@@ -1,11 +1,28 @@
-export declare function getInventarioByEmpresa(params: {
+import { EstadoEquipo } from "@prisma/client";
+type InventarioParams = {
     empresaId?: number;
     empresaNombre?: string;
+    marca?: string;
+    estado?: EstadoEquipo;
+    propiedad?: "Empresa" | "Personal" | "Externo";
+    propietarioExterno?: string;
+    anioPcDesde?: number;
+    anioPcHasta?: number;
+    anioPcOrigen?: "AUTO" | "MANUAL" | "NO_DETERMINADO";
     createdFrom?: Date;
     createdTo?: Date;
     updatedFrom?: Date;
     updatedTo?: Date;
-}): Promise<({
+    agente?: "INSTALADO" | "NO_INSTALADO" | "ACTIVO" | "SIN_CONEXION";
+    agenteDesde?: Date;
+    agenteHasta?: Date;
+    auditTecnicoId?: number;
+    auditFrom?: Date;
+    auditTo?: Date;
+    auditAction?: "CREATE" | "UPDATE";
+    solicitanteMultiplesEquipos?: "MULTIPLES";
+};
+export declare function getInventarioByEmpresa(params: InventarioParams): Promise<({
     empresa: {
         id_empresa: number;
         nombre: string;
@@ -36,6 +53,15 @@ export declare function getInventarioByEmpresa(params: {
         usuarioPersonal: string | null;
         redEthernet: string | null;
     } | null;
+    adicionales: {
+        origen: import("@prisma/client").$Enums.OrigenEquipoAdicional;
+        id: number;
+        tipo: string;
+        estado: import("@prisma/client").$Enums.EstadoEquipoAdicional;
+        descripcion: string | null;
+        serialAdicional: string | null;
+        cantidad: number;
+    }[];
 } & {
     empresaId: number | null;
     deletedAt: Date | null;
@@ -84,4 +110,5 @@ export declare function getInventarioByEmpresa(params: {
     mantGeneralVersion: string | null;
     propietarioExterno: string | null;
 })[]>;
+export {};
 //# sourceMappingURL=inventario.service.d.ts.map

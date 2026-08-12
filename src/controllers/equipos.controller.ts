@@ -1750,6 +1750,7 @@ export async function listEquipos(req: Request, res: Response) {
     if (q.mode === "selector") {
       const items = await prisma.equipo.findMany({
         where,
+
         select: {
           id_equipo: true,
           serial: true,
@@ -1774,7 +1775,20 @@ export async function listEquipos(req: Request, res: Response) {
           agenteActivo: true,
           estadoAgente: true,
           agenteVersion: true,
+
+          /* =========================================
+             SOLICITANTE DEL EQUIPO
+          ========================================= */
+          solicitante: {
+            select: {
+              id_solicitante: true,
+              nombre: true,
+              email: true,
+              rut: true,
+            },
+          },
         },
+
         orderBy,
         skip,
         take: q.pageSize,
@@ -1784,7 +1798,10 @@ export async function listEquipos(req: Request, res: Response) {
         page: q.page,
         pageSize: q.pageSize,
         total,
-        totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+        totalPages: Math.max(
+          1,
+          Math.ceil(total / q.pageSize)
+        ),
         items,
       });
     }

@@ -102,6 +102,21 @@ function getSemanaISO(fecha) {
 export function formatearFechaAgenda(date) {
     return date.toISOString().slice(0, 10);
 }
+/**
+ * Día calendario de hoy en Chile como UTC midnight, en el mismo formato en que
+ * AgendaVisita.fecha guarda el día. Se calcula sobre America/Santiago y no sobre
+ * la hora UTC del servidor: pasadas las 21:00 en Chile el día UTC ya avanzó, y
+ * "hoy" terminaría apuntando a mañana.
+ */
+export function obtenerFechaAgendaHoy() {
+    const hoyEnChile = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date());
+    return normalizarFechaDesdeString(hoyEnChile);
+}
 function serializarAgendaVisita(visita) {
     return {
         ...visita,

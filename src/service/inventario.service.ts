@@ -405,67 +405,6 @@ export async function getInventarioByEmpresa(
     ];
 
   /* ====================================================
-     Solicitantes con más de un equipo
-  ==================================================== */
-
-  if (
-    solicitanteMultiplesEquipos ===
-    "MULTIPLES"
-  ) {
-    const agrupados =
-      await prisma.equipo.groupBy({
-        by: [
-          "idSolicitante",
-        ],
-
-        where: {
-          idSolicitante: {
-            not: null,
-          },
-
-          deletedAt:
-            null,
-        },
-
-        _count: {
-          id_equipo:
-            true,
-        },
-
-        having: {
-          id_equipo: {
-            _count: {
-              gt: 1,
-            },
-          },
-        },
-      });
-
-    const solicitanteIdsMultiplesEquipos =
-      agrupados
-        .map(
-          (item) =>
-            item.idSolicitante
-        )
-        .filter(
-          (
-            id
-          ): id is number =>
-            typeof id ===
-            "number" &&
-            Number.isInteger(id) &&
-            id > 0
-        );
-
-    AND.push({
-      idSolicitante: {
-        in:
-          solicitanteIdsMultiplesEquipos,
-      },
-    });
-  }
-
-  /* ====================================================
      Empresa por ID
   ==================================================== */
 
@@ -796,6 +735,96 @@ export async function getInventarioByEmpresa(
       id_equipo: {
         in:
           equipoIdsActividad,
+      },
+    });
+  }
+
+  /* ====================================================
+   Solicitantes con más de un equipo
+   DENTRO DEL UNIVERSO FILTRADO ACTUAL
+==================================================== */
+
+  if (
+    solicitanteMultiplesEquipos ===
+    "MULTIPLES"
+  ) {
+    /*
+     * Usamos todos los filtros que ya fueron
+     * agregados a AND.
+     *
+     * Así el cálculo de "más de 1 equipo"
+     * se realiza sobre exactamente el mismo
+     * universo que será exportado.
+     */
+    const whereBaseMultiples:
+      Prisma.EquipoWhereInput =
+    {
+      AND: [
+        ...AND,
+
+        /*
+         * Solo pueden agruparse equipos
+         * que tengan solicitante.
+         */
+        {
+          idSolicitante: {
+            not: null,
+          },
+        },
+      ],
+    };
+
+    const agrupados =
+      await prisma.equipo.groupBy({
+        by: [
+          "idSolicitante",
+        ],
+
+        where:
+          whereBaseMultiples,
+
+        _count: {
+          id_equipo:
+            true,
+        },
+
+        having: {
+          id_equipo: {
+            _count: {
+              gt: 1,
+            },
+          },
+        },
+      });
+
+    const solicitanteIdsMultiplesEquipos =
+      agrupados
+        .map(
+          (
+            item
+          ) =>
+            item.idSolicitante
+        )
+        .filter(
+          (
+            id
+          ): id is number =>
+            typeof id ===
+            "number" &&
+            Number.isInteger(
+              id
+            ) &&
+            id > 0
+        );
+
+    /*
+     * Finalmente limitamos la exportación
+     * únicamente a esos solicitantes.
+     */
+    AND.push({
+      idSolicitante: {
+        in:
+          solicitanteIdsMultiplesEquipos,
       },
     });
   }
