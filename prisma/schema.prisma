@@ -1551,22 +1551,16 @@ model AnalisisInventarioIA {
   empresaId       Int
   mes             Int
   ano             Int
-
   totalEquipos    Int      @default(0)
-
-  /// Snapshot del inventario al momento de generar el análisis.
-  resumenEstados  Json?
-
   resumen         String?
   hallazgos       Json?
   riesgos         Json?
   recomendaciones Json?
-
   generadoPorId   Int?
-
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
+  /// Snapshot del inventario al momento de generar el análisis.
+  resumenEstados  Json?
   empresa         Empresa  @relation(fields: [empresaId], references: [id_empresa])
   generadoPor     Tecnico? @relation(fields: [generadoPorId], references: [id_tecnico])
 
@@ -1574,6 +1568,7 @@ model AnalisisInventarioIA {
   @@index([empresaId])
   @@index([mes, ano])
 }
+
 model ManualTutorial {
   id             Int                     @id @default(autoincrement())
   titulo         String
@@ -2049,10 +2044,10 @@ enum AreaGestioo {
 enum DestinoEquipoTaller {
   SIN_DEFINIR
   VENTA
-  VENTA_EMPRESA
   RIDS
   CLIENTE
   BAJA
+  VENTA_EMPRESA
 }
 
 enum PrioridadGestioo {
