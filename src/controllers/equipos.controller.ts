@@ -113,14 +113,6 @@ const listQuerySchema = z.object({
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 
-// Nuevo: esquema para reasignar equipos por serial
-const adicionalSchema = z.object({
-  tipo: z.string().trim().min(1),
-  descripcion: z.string().trim().optional().nullable(),
-  cantidad: z.coerce.number().int().positive().default(1),
-  serialAdicional: z.string().trim().optional().nullable(),
-});
-
 const createEquipoSchema = z.object({
   empresaId: z.coerce.number().int().positive().optional(),
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
@@ -154,7 +146,6 @@ const createEquipoSchema = z.object({
   usuarioPersonal: z.string().optional(),
   passwordPersonal: z.string().optional(),
 
-  adicionales: z.array(adicionalSchema).optional().default([]),
 });
 
 // Nuevo: acepta 1 equipo o { equipos: [...] }
@@ -180,8 +171,6 @@ const equipoUpdateSchema = z.object({
   disco: z.string().trim().min(1).optional(),
   propiedad: z.enum(PROPIEDADES_EQUIPO).optional(),
   propietarioExterno: z.string().trim().max(200).optional().nullable(),
-
-  adicionales: z.array(adicionalSchema).optional(),
 
   estado: z.nativeEnum(EstadoEquipo).optional(),
   observaciones: z.string().trim().optional().nullable(),
@@ -1807,17 +1796,6 @@ export async function createEquipo(req: Request, res: Response) {
                 passwordPersonal: data.passwordPersonal ?? null,
               },
             },
-
-            adicionales: {
-              create: (data.adicionales ?? [])
-                .filter((a) => !!a?.tipo?.trim())
-                .map((a) => ({
-                  tipo: a.tipo.trim(),
-                  descripcion: a.descripcion?.trim() || null,
-                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                  serialAdicional: a.serialAdicional?.trim() || null,
-                })),
-            },
           },
           include: {
             solicitante: { include: { empresa: true } },
@@ -1987,7 +1965,6 @@ export async function updateEquipo(req: Request, res: Response) {
       passwordEmpresa,
       usuarioPersonal,
       passwordPersonal,
-      adicionales,
 
       anioPc,
       anioPcOrigen,
@@ -2307,33 +2284,6 @@ export async function updateEquipo(req: Request, res: Response) {
           },
         },
 
-        // Los adicionales se reemplazan por completo con lo que envía el
-        // formulario, incluidos los que trae el agente de inventario (los que
-        // llevan "[AGENTE]" en la descripción). Antes esos quedaban excluidos
-        // tanto del borrado como de la recreación, así que eran de solo lectura:
-        // editar el serial de un monitor o impresora se descartaba en silencio y
-        // el endpoint respondía 200 igual.
-        //
-        // OJO: el agente vuelve a escribir sus propios adicionales cada vez que
-        // el equipo reporta (deleteMany + createMany en equipo-agent.controller),
-        // así que lo que se corrija a mano sobre una fila "[AGENTE]" se pierde en
-        // el próximo reporte de ese equipo. Para que la corrección sea definitiva
-        // hay que marcar el campo como editado a mano y respetarlo en el agente.
-        ...(adicionales !== undefined
-          ? {
-            adicionales: {
-              deleteMany: {},
-              create: (adicionales ?? [])
-                .filter((a) => !!a?.tipo?.trim())
-                .map((a) => ({
-                  tipo: a.tipo.trim(),
-                  descripcion: a.descripcion?.trim() || null,
-                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                  serialAdicional: a.serialAdicional?.trim() || null,
-                })),
-            },
-          }
-          : {}),
       },
       include: {
         solicitante: { include: { empresa: true } },
