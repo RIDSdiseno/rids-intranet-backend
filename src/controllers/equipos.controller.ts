@@ -118,14 +118,6 @@ const listQuerySchema = z.object({
   sortDir: z.enum(["asc", "desc"]).default("desc").optional(),
 });
 
-// Nuevo: esquema para reasignar equipos por serial
-const adicionalSchema = z.object({
-  tipo: z.string().trim().min(1),
-  descripcion: z.string().trim().optional().nullable(),
-  cantidad: z.coerce.number().int().positive().default(1),
-  serialAdicional: z.string().trim().optional().nullable(),
-});
-
 const createEquipoSchema = z.object({
   empresaId: z.coerce.number().int().positive().optional(),
   idSolicitante: z.coerce.number().int().positive().nullable().optional(),
@@ -159,7 +151,6 @@ const createEquipoSchema = z.object({
   usuarioPersonal: z.string().optional(),
   passwordPersonal: z.string().optional(),
 
-  adicionales: z.array(adicionalSchema).optional().default([]),
 });
 
 // Nuevo: acepta 1 equipo o { equipos: [...] }
@@ -185,8 +176,6 @@ const equipoUpdateSchema = z.object({
   disco: z.string().trim().min(1).optional(),
   propiedad: z.enum(PROPIEDADES_EQUIPO).optional(),
   propietarioExterno: z.string().trim().max(200).optional().nullable(),
-
-  adicionales: z.array(adicionalSchema).optional(),
 
   estado: z.nativeEnum(EstadoEquipo).optional(),
   observaciones: z.string().trim().optional().nullable(),
@@ -2085,17 +2074,6 @@ export async function createEquipo(req: Request, res: Response) {
                 passwordPersonal: data.passwordPersonal ?? null,
               },
             },
-
-            adicionales: {
-              create: (data.adicionales ?? [])
-                .filter((a) => !!a?.tipo?.trim())
-                .map((a) => ({
-                  tipo: a.tipo.trim(),
-                  descripcion: a.descripcion?.trim() || null,
-                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                  serialAdicional: a.serialAdicional?.trim() || null,
-                })),
-            },
           },
           include: {
             solicitante: { include: { empresa: true } },
@@ -2265,7 +2243,6 @@ export async function updateEquipo(req: Request, res: Response) {
       passwordEmpresa,
       usuarioPersonal,
       passwordPersonal,
-      adicionales,
 
       anioPc,
       anioPcOrigen,
@@ -2585,21 +2562,6 @@ export async function updateEquipo(req: Request, res: Response) {
           },
         },
 
-        ...(adicionales !== undefined
-          ? {
-            adicionales: {
-              deleteMany: {},
-              create: adicionales
-                .filter((a) => !!a?.tipo?.trim())
-                .map((a) => ({
-                  tipo: a.tipo.trim(),
-                  descripcion: a.descripcion?.trim() || null,
-                  cantidad: Number(a.cantidad) > 0 ? Number(a.cantidad) : 1,
-                  serialAdicional: a.serialAdicional?.trim() || null,
-                })),
-            },
-          }
-          : {}),
       },
       include: {
         solicitante: { include: { empresa: true } },

@@ -547,23 +547,26 @@ model Equipo {
 }
 
 model EquipoAdicional {
-  id              Int                   @id @default(autoincrement())
-  serialAdicional String?
+  id              Int     @id @default(autoincrement())
   equipoId        Int
   tipo            String
   descripcion     String?
-  cantidad        Int                   @default(1)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-  estado          EstadoEquipoAdicional @default(ASIGNADO)
-  origen          OrigenEquipoAdicional @default(MANUAL)
-  equipo          Equipo                @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  cantidad        Int     @default(1)
+  serialAdicional String?
+
+  origen OrigenEquipoAdicional @default(MANUAL)
+  estado EstadoEquipoAdicional @default(ASIGNADO)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@index([equipoId])
-  @@index([estado])
-  @@index([origen])
-  @@index([serialAdicional])
   @@index([tipo])
+  @@index([origen])
+  @@index([estado])
+  @@index([serialAdicional])
 }
 
 model DetalleEquipo {
@@ -2197,14 +2200,15 @@ enum EstadoRecordatorio {
   CANCELADO
 }
 
+// Enum adicionales para el módulo de equipos adicionales
+enum OrigenEquipoAdicional {
+  MANUAL
+  AGENTE
+}
+
 enum EstadoEquipoAdicional {
   ASIGNADO
   EN_STOCK
   EN_REPARACION
   DADO_DE_BAJA
-}
-
-enum OrigenEquipoAdicional {
-  MANUAL
-  AGENTE
 }

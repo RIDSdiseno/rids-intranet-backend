@@ -1687,6 +1687,10 @@ export async function updateEquipo(req, res) {
             return res.status(400).json({ error: "ID inválido" });
         const data = equipoUpdateSchema.parse(req.body);
         const { macWifi, redEthernet, so, tipoDd, estadoAlm, office, teamViewer, claveTv, revisado, adminRidsUsuario, adminRidsPassword, usuarioEmpresa, passwordEmpresa, usuarioPersonal, passwordPersonal, adicionales, anioPc, anioPcOrigen, ...equipoData } = data;
+        const adicionalesManuales = adicionales?.filter((a) => {
+            const descripcion = String(a.descripcion ?? "").trim();
+            return !descripcion.startsWith("[AGENTE]");
+        });
         // Validar empresaId si viene
         const equipoActual = await prisma.equipo.findUnique({
             where: { id_equipo: id },
@@ -1941,8 +1945,14 @@ export async function updateEquipo(req, res) {
                 ...(adicionales !== undefined
                     ? {
                         adicionales: {
-                            deleteMany: {},
-                            create: adicionales
+                            deleteMany: {
+                                NOT: {
+                                    descripcion: {
+                                        startsWith: "[AGENTE]",
+                                    },
+                                },
+                            },
+                            create: (adicionalesManuales ?? [])
                                 .filter((a) => !!a?.tipo?.trim())
                                 .map((a) => ({
                                 tipo: a.tipo.trim(),

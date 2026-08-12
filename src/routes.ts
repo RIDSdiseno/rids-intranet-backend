@@ -7,6 +7,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { solicitantesRouter } from "./routes/solicitantes.routes.js";
 import { visitasRouter } from "./routes/visitas.routes.js";
 import { equiposRouter } from "./routes/equipos.routes.js";
+import equipoAdicionalRoutes from "./routes/equipos-adicionales/equipo-adicional.routes.js";
 import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes-routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
@@ -137,6 +138,7 @@ api.use(solicitantesMaintenanceRouter);
 
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
+api.use("/equipos-adicionales",equipoAdicionalRoutes);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
