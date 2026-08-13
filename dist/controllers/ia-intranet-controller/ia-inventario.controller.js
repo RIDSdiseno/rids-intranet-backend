@@ -59,6 +59,17 @@ export async function analizarInventarioEmpresa(req, res) {
             },
             include: {
                 detalle: true,
+                /*
+                 * Se incluye el solicitante para poder enriquecer
+                 * posteriormente los equipos encontrados por la IA.
+                 */
+                solicitante: {
+                    select: {
+                        id_solicitante: true,
+                        nombre: true,
+                        email: true,
+                    },
+                },
             },
             orderBy: {
                 id_equipo: "asc",
@@ -102,11 +113,12 @@ Devuelve SOLO JSON válido con esta estructura exacta:
   "hallazgos": [
     {
       "severidad": "ALTA | MEDIA | BAJA",
-      "descripcion": "Descripción clara del hallazgo",
+      "descripcion": "Descripción general del hallazgo",
       "equipos": [
         {
           "id": 123,
-          "serial": "ABC123"
+          "motivo": "Explicación concreta del problema detectado en este equipo",
+          "mejora": "Acción concreta recomendada para mejorar este equipo"
         }
       ]
     }
@@ -120,30 +132,31 @@ Devuelve SOLO JSON válido con esta estructura exacta:
   "resumen": "texto corto"
 }
 
-REGLAS OBLIGATORIAS PARA LOS HALLAZGOS:
+REGLAS OBLIGATORIAS:
 
-- Cada hallazgo debe indicar exactamente qué equipos están afectados.
-- Usa exclusivamente los campos "id" y "serial" disponibles en el inventario entregado.
+- Cada hallazgo debe identificar exactamente los equipos afectados.
+- Usa exclusivamente IDs existentes en el inventario entregado.
 - Nunca inventes IDs.
-- Nunca inventes seriales.
-- Si el serial de un equipo es null, vacío o no está disponible, usa null.
-- Si un hallazgo aplica a varios equipos, incluye todos los equipos afectados dentro de "equipos".
-- No escribas solamente "varios equipos" o "algunos equipos": identifica cada uno.
-- No incluyas un equipo dentro de un hallazgo si los datos entregados no permiten justificarlo.
-- Los IDs deben devolverse como números.
-- Mantén los hallazgos agrupados por problema; no generes necesariamente un hallazgo separado para cada equipo.
+- Para cada equipo afectado debes explicar:
+  1. por qué fue incluido en el hallazgo mediante "motivo";
+  2. qué mejora concreta se recomienda mediante "mejora".
+- El motivo debe referirse a datos reales del equipo entregado.
+- La mejora debe ser concreta, técnica y accionable.
+- No uses recomendaciones genéricas como "revisar equipo" si puedes indicar una acción específica.
+- No incluyas un equipo si los datos disponibles no justifican el hallazgo.
+- Mantén los hallazgos agrupados por problema.
+- Evita repetir exactamente el mismo texto de motivo para todos los equipos cuando sus condiciones sean distintas.
 
 CRITERIOS DE ANÁLISIS:
 
-- Detecta equipos antiguos.
-- Detecta bajo nivel de RAM.
-- Detecta discos mecánicos o almacenamiento problemático.
-- Detecta sistemas operativos antiguos o no informados.
-- Detecta equipos sin revisión.
-- Detecta falta de TeamViewer o datos de soporte remoto.
-- Considera el estado actual del equipo.
-- No presentes equipos dados de baja como si fueran equipos activos que requieren necesariamente una intervención.
-- Entrega recomendaciones concretas y accionables.
+- Equipos antiguos.
+- Bajo nivel de RAM.
+- Discos mecánicos o almacenamiento problemático.
+- Sistemas operativos antiguos o no informados.
+- Equipos sin revisión.
+- Falta de TeamViewer o soporte remoto.
+- Estado actual del equipo.
+- Equipos dados de baja deben ser tratados como información histórica y no necesariamente como candidatos a mejora.
 - Considera que este análisis será comparado mes a mes.
 
 RESUMEN REAL DE ESTADOS CALCULADO POR EL SISTEMA:
@@ -192,32 +205,61 @@ EQUIPOS AFECTADOS DEL HALLAZGO
                     : [];
                 const equiposHallazgoRaw = equiposRaw
                     .map((equipoIA) => {
-                    const equipoObj = equipoIA;
-                    const id = Number(equipoObj?.id);
                     /*
-                     * ID inválido:
-                     * se descarta.
+                     * Los únicos campos que aceptamos
+                     * desde la IA son:
+                     *
+                     * - id
+                     * - motivo
+                     * - mejora
+                     *
+                     * El resto se recupera desde Prisma.
                      */
-                    if (!Number.isInteger(id)) {
+                    const equipoObj = equipoIA;
+                    const id = Number(equipoObj.id);
+                    /*
+                     * Si la IA devuelve un ID inválido,
+                     * descartamos el registro.
+                     */
+                    if (!Number.isInteger(id) ||
+                        id <= 0) {
                         return null;
                     }
                     /*
-                     * Validar que el equipo
-                     * realmente exista dentro
-                     * del inventario analizado.
+                     * Comprobamos que el equipo exista
+                     * realmente dentro del inventario
+                     * de la empresa analizada.
                      */
                     const equipoReal = equiposPorId.get(id);
                     if (!equipoReal) {
                         return null;
                     }
+                    const motivo = String(equipoObj.motivo ??
+                        "").trim();
+                    const mejora = String(equipoObj.mejora ??
+                        "").trim();
                     /*
-                     * El serial siempre se obtiene
-                     * desde la BD.
+                     * Los datos identificativos siempre
+                     * salen desde la base de datos.
                      */
                     return {
                         id: equipoReal.id_equipo,
                         serial: equipoReal.serial ??
                             null,
+                        marca: equipoReal.marca ??
+                            null,
+                        modelo: equipoReal.modelo ??
+                            null,
+                        solicitante: equipoReal.solicitante
+                            ?.nombre ??
+                            null,
+                        correoSolicitante: equipoReal.solicitante
+                            ?.email ??
+                            null,
+                        motivo: motivo ||
+                            "La IA identificó este equipo dentro del hallazgo, pero no entregó un motivo específico.",
+                        mejora: mejora ||
+                            "Revisar técnicamente el equipo y definir la acción correctiva correspondiente.",
                     };
                 })
                     .filter((equipo) => equipo !== null);
