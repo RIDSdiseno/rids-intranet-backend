@@ -189,10 +189,18 @@ function esImpresoraVirtualAgente(descripcion) {
     if (!text) {
         return false;
     }
+    /*
+ * Impresoras virtuales y componentes de software que
+ * Windows puede presentar como si fueran impresoras.
+ *
+ * Estos elementos no deben formar parte del inventario
+ * físico de adicionales.
+ */
     const patrones = [
         "pdfcreator",
         "pdf creator",
         "pdf architect",
+        "easy pdf creator",
         "nitro pdf",
         "anydesk printer",
         "rustdesk printer",
