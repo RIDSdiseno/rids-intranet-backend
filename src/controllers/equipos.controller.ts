@@ -579,6 +579,48 @@ function buildDetalleEquipoSearchOR(
   ];
 }
 
+/* =========================================================
+   ADICIONALES — COMPATIBILIDAD NUEVO MODELO N:N
+========================================================= */
+
+function flattenAdicionalesRelacion(
+  relaciones: any[] | null | undefined
+) {
+  if (!Array.isArray(relaciones)) {
+    return [];
+  }
+
+  return relaciones
+    .map((relacion) => {
+      const adicional =
+        relacion?.adicional;
+
+      if (!adicional) {
+        return null;
+      }
+
+      return {
+        ...adicional,
+
+        /*
+         * Información de la relación.
+         */
+        relacionId:
+          relacion.id,
+
+        equipoId:
+          relacion.equipoId,
+
+        origenRelacion:
+          relacion.origen,
+
+        observacionRelacion:
+          relacion.observacion ?? null,
+      };
+    })
+    .filter(Boolean);
+}
+
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e: any) {
   const detalle = e.detalle ?? null;
@@ -683,7 +725,13 @@ function flattenRow(e: any) {
     windowsUpdate: detalle?.windowsUpdate ?? null,
     observacionAgente: detalle?.observacionAgente ?? null,
 
-    adicionales: e.adicionales ?? [],
+    adicionales:
+      flattenAdicionalesRelacion(
+        e.adicionalesRelacion
+      ),
+
+    adicionalesRelacion:
+      e.adicionalesRelacion ?? [],
 
     _count: e._count ?? undefined,
 
@@ -1396,33 +1444,166 @@ export async function listEquipos(req: Request, res: Response) {
         // Detalle técnico del equipo
         ...buildDetalleEquipoSearchOR(searchText, INS),
 
-        // Adicionales del equipo
+        /*
+ * Adicional — tipo
+ */
         {
-          adicionales: {
+          adicionalesRelacion: {
             some: {
-              tipo: {
-                contains: searchText,
-                mode: INS,
+              adicional: {
+                is: {
+                  tipo: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
               },
             },
           },
         },
+
+        /*
+         * Adicional — descripción
+         */
         {
-          adicionales: {
+          adicionalesRelacion: {
             some: {
-              descripcion: {
-                contains: searchText,
-                mode: INS,
+              adicional: {
+                is: {
+                  descripcion: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
               },
             },
           },
         },
+
+        /*
+         * Adicional — serial
+         */
         {
-          adicionales: {
+          adicionalesRelacion: {
             some: {
-              serialAdicional: {
-                contains: searchText,
-                mode: INS,
+              adicional: {
+                is: {
+                  serialAdicional: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        /*
+         * Nuevos campos.
+         */
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  nombre: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  marca: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  modelo: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  macAddress: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  ipAddress: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        {
+          adicionalesRelacion: {
+            some: {
+              adicional: {
+                is: {
+                  hostname: {
+                    contains:
+                      searchText,
+                    mode:
+                      INS,
+                  },
+                },
               },
             },
           },
@@ -1753,40 +1934,84 @@ export async function listEquipos(req: Request, res: Response) {
 
         select: {
           id_equipo: true,
+
           serial: true,
+
           marca: true,
           modelo: true,
+
           tipo: true,
           estado: true,
+
           observaciones: true,
+
           anioPc: true,
           anioPcOrigen: true,
 
           propiedad: true,
           propietarioExterno: true,
 
-          mantGeneralInstalado: true,
-          mantGeneralVersion: true,
-          mantGeneralLastSeenAt: true,
+          /* =========================================
+             EMPRESA DIRECTA DEL EQUIPO
+          ========================================= */
 
-          hostname: true,
-          usuarioActual: true,
-          lastSeenAt: true,
-          agenteActivo: true,
-          estadoAgente: true,
-          agenteVersion: true,
+          empresaId: true,
+
+          empresa: {
+            select: {
+              id_empresa: true,
+              nombre: true,
+              isActive: true,
+            },
+          },
 
           /* =========================================
              SOLICITANTE DEL EQUIPO
           ========================================= */
+
+          idSolicitante: true,
+
           solicitante: {
             select: {
               id_solicitante: true,
+
               nombre: true,
               email: true,
               rut: true,
+
+              empresaId: true,
+
+              empresa: {
+                select: {
+                  id_empresa: true,
+                  nombre: true,
+                  isActive: true,
+                },
+              },
             },
           },
+
+          /* =========================================
+             MANT.GENERAL
+          ========================================= */
+
+          mantGeneralInstalado: true,
+          mantGeneralVersion: true,
+          mantGeneralLastSeenAt: true,
+
+          /* =========================================
+             AGENTE
+          ========================================= */
+
+          hostname: true,
+          usuarioActual: true,
+
+          lastSeenAt: true,
+
+          agenteActivo: true,
+          estadoAgente: true,
+
+          agenteVersion: true,
         },
 
         orderBy,
@@ -1810,9 +2035,32 @@ export async function listEquipos(req: Request, res: Response) {
       where,
       include: {
         empresa: true,
-        solicitante: { include: { empresa: true } },
+
+        solicitante: {
+          include: {
+            empresa: true,
+          },
+        },
+
         detalle: true,
-        adicionales: true,
+
+        adicionalesRelacion: {
+          include: {
+            adicional: true,
+          },
+
+          orderBy: [
+            {
+              adicional: {
+                tipo: "asc",
+              },
+            },
+            {
+              id: "asc",
+            },
+          ],
+        },
+
         _count: {
           select: {
             softwares: true,
@@ -2093,13 +2341,30 @@ export async function createEquipo(req: Request, res: Response) {
             },
           },
           include: {
-            solicitante: { include: { empresa: true } },
+            solicitante: {
+              include: {
+                empresa: true,
+              },
+            },
+
             detalle: true,
-            adicionales: true,
+
+            adicionalesRelacion: {
+              include: {
+                adicional: true,
+              },
+            },
           },
         });
 
-        created.push(equipo);
+        created.push({
+          ...equipo,
+
+          adicionales:
+            flattenAdicionalesRelacion(
+              equipo.adicionalesRelacion
+            ),
+        });
 
       } catch (e: any) {
         errors.push({
@@ -2149,7 +2414,15 @@ export async function getEquipoById(req: Request, res: Response) {
         empresa: true,
         solicitante: { include: { empresa: true } },
         detalle: true,
-        adicionales: true,
+        adicionalesRelacion: {
+          include: {
+            adicional: true,
+          },
+
+          orderBy: {
+            id: "asc",
+          },
+        },
 
         softwares: {
           orderBy: {
@@ -2210,6 +2483,11 @@ export async function getEquipoById(req: Request, res: Response) {
 
     return res.status(200).json({
       ...equipo,
+
+      adicionales:
+        flattenAdicionalesRelacion(
+          equipo.adicionalesRelacion
+        ),
 
       creadoPor: createLog?.actor
         ? {
@@ -2581,14 +2859,31 @@ export async function updateEquipo(req: Request, res: Response) {
 
       },
       include: {
-        solicitante: { include: { empresa: true } },
+        solicitante: {
+          include: {
+            empresa: true,
+          },
+        },
+
         detalle: true,
-        adicionales: true,
+
+        adicionalesRelacion: {
+          include: {
+            adicional: true,
+          },
+        },
       },
     });
 
     clearCache();
-    return res.status(200).json(actualizado);
+    return res.status(200).json({
+      ...actualizado,
+
+      adicionales:
+        flattenAdicionalesRelacion(
+          actualizado.adicionalesRelacion
+        ),
+    });
   } catch (err) {
     console.error("updateEquipo error:", err);
 

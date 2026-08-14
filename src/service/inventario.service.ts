@@ -833,96 +833,152 @@ export async function getInventarioByEmpresa(
      Consulta final
   ==================================================== */
 
-  return prisma.equipo.findMany({
-    where: {
-      AND,
-    },
-
-    include: {
-      /*
-       * Empresa directa del equipo.
-       */
-      empresa: {
-        select: {
-          id_empresa: true,
-          nombre: true,
-        },
+  const equipos =
+    await prisma.equipo.findMany({
+      where: {
+        AND,
       },
 
-      /*
-       * Solicitante y su empresa.
-       */
-      solicitante: {
-        select: {
-          nombre: true,
-          email: true,
+      include: {
+        /*
+         * Empresa directa del equipo.
+         */
+        empresa: {
+          select: {
+            id_empresa: true,
+            nombre: true,
+          },
+        },
 
-          empresa: {
-            select: {
-              id_empresa: true,
-              nombre: true,
+        /*
+         * Solicitante y su empresa.
+         */
+        solicitante: {
+          select: {
+            nombre: true,
+            email: true,
+
+            empresa: {
+              select: {
+                id_empresa: true,
+                nombre: true,
+              },
             },
           },
         },
-      },
 
-      /*
-       * Información técnica adicional.
-       */
-      detalle: {
-        select: {
-          id: true,
-          idEquipo: true,
-          macWifi: true,
-          so: true,
-          office: true,
-          teamViewer: true,
-          revisado: true,
-          usuarioEmpresa: true,
-          claveTv: true,
-          estadoAlm: true,
-          redEthernet: true,
-          adminRidsUsuario: true,
-          adminRidsPassword: true,
-          passwordEmpresa: true,
-          passwordPersonal: true,
-          usuarioPersonal: true,
+        /*
+         * Información técnica adicional.
+         */
+        detalle: {
+          select: {
+            id: true,
+            idEquipo: true,
+            macWifi: true,
+            so: true,
+            office: true,
+            teamViewer: true,
+            revisado: true,
+            usuarioEmpresa: true,
+            claveTv: true,
+            estadoAlm: true,
+            redEthernet: true,
+            adminRidsUsuario: true,
+            adminRidsPassword: true,
+            passwordEmpresa: true,
+            passwordPersonal: true,
+            usuarioPersonal: true,
+          },
+        },
+
+        /*
+         * Adicionales asociados al equipo.
+         */
+        adicionalesRelacion: {
+          select: {
+            id: true,
+            equipoId: true,
+            origen: true,
+            observacion: true,
+
+            adicional: {
+              select: {
+                id: true,
+
+                nombre: true,
+
+                tipo: true,
+
+                marca: true,
+                modelo: true,
+
+                descripcion: true,
+
+                cantidad: true,
+
+                serialAdicional: true,
+
+                macAddress: true,
+                ipAddress: true,
+                hostname: true,
+                ubicacion: true,
+
+                origen: true,
+                estado: true,
+              },
+            },
+          },
+
+          orderBy: [
+            {
+              adicional: {
+                tipo: "asc",
+              },
+            },
+            {
+              id: "asc",
+            },
+          ],
         },
       },
 
       /*
-       * Adicionales asociados al equipo.
+       * El orden definitivo del Excel se aplica
+       * después en buildInventarioExcel:
+       *
+       * empresa -> solicitante -> id_equipo
        */
-      adicionales: {
-        select: {
-          id: true,
-          tipo: true,
-          descripcion: true,
-          cantidad: true,
-          serialAdicional: true,
-          origen: true,
-          estado: true,
-        },
-
-        orderBy: [
-          {
-            tipo: "asc",
-          },
-          {
-            id: "asc",
-          },
-        ],
+      orderBy: {
+        id_equipo: "asc",
       },
-    },
+    });
 
-    /*
-     * El orden definitivo del Excel se aplica
-     * después en buildInventarioExcel:
-     *
-     * empresa -> solicitante -> id_equipo
-     */
-    orderBy: {
-      id_equipo: "asc",
-    },
-  });
+  return equipos.map(
+    (equipo) => ({
+      ...equipo,
+
+      /*
+       * Compatibilidad con consumidores actuales
+       * del inventario.
+       */
+      adicionales:
+        equipo.adicionalesRelacion.map(
+          (relacion) => ({
+            ...relacion.adicional,
+
+            relacionId:
+              relacion.id,
+
+            equipoId:
+              relacion.equipoId,
+
+            origenRelacion:
+              relacion.origen,
+
+            observacionRelacion:
+              relacion.observacion,
+          })
+        ),
+    })
+  );
 }

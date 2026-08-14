@@ -152,7 +152,7 @@ function normalizarSerialAdicionalAgente(
         return null;
     }
 
-    return serial.trim();
+    return normalized;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -337,49 +337,6 @@ async function resolveSolicitanteFromAgent(
    SOFTWARE
 ========================= */
 
-function esImpresoraVirtualAgente(
-    descripcion?: string | null
-): boolean {
-    const text = String(
-        descripcion ?? ""
-    )
-        .trim()
-        .toLowerCase();
-
-    if (!text) {
-        return false;
-    }
-
-    /*
- * Impresoras virtuales y componentes de software que
- * Windows puede presentar como si fueran impresoras.
- *
- * Estos elementos no deben formar parte del inventario
- * físico de adicionales.
- */
-    const patrones = [
-        "pdfcreator",
-        "pdf creator",
-        "pdf architect",
-        "easy pdf creator",
-        "nitro pdf",
-
-        "anydesk printer",
-        "rustdesk printer",
-
-        "microsoft print to pdf",
-        "microsoft xps document writer",
-
-        "onenote",
-        "fax",
-    ];
-
-    return patrones.some(
-        (pattern) =>
-            text.includes(pattern)
-    );
-}
-
 async function syncSoftwares(
     equipoId: number,
     softwares: EquipoAgentPayload["softwares"]
@@ -433,252 +390,557 @@ async function syncAdicionalesDetectados(
         return;
     }
 
+    /*
+     * Actualmente el agente solamente
+     * sincroniza monitores.
+     *
+     * Las impresoras históricas existentes
+     * en la base NO se eliminan.
+     */
     const tiposPermitidos =
         new Set([
             "MONITOR",
-            "IMPRESORA",
         ]);
 
-    const cleaned = adicionales
-        .map((item) => {
-            const tipo =
-                cleanString(item.tipo)
-                    ?.toUpperCase() ??
-                null;
+    /* =====================================================
+       LIMPIAR PAYLOAD
+    ===================================================== */
 
-            if (
-                !tipo ||
-                !tiposPermitidos.has(tipo)
-            ) {
-                return null;
-            }
+    const cleaned =
+        adicionales
+            .map(
+                (item) => {
 
-            const descripcionRaw =
-                cleanString(
-                    item.descripcion
-                );
+                    const tipo =
+                        cleanString(
+                            item.tipo
+                        )
+                            ?.toUpperCase() ??
+                        null;
 
-            /*
-             * Compatibilidad con agentes
-             * que todavía manden [AGENTE].
-             */
-            const descripcion =
-                descripcionRaw
-                    ?.replace(
-                        /^\[AGENTE\]\s*/i,
-                        ""
-                    )
-                    .trim() ||
-                tipo;
+                    if (
+                        !tipo ||
+                        !tiposPermitidos.has(
+                            tipo
+                        )
+                    ) {
+                        return null;
+                    }
 
-            /*
-         * No registrar impresoras
-         * virtuales como periféricos.
-         */
+                    const descripcionRaw =
+                        cleanString(
+                            item.descripcion
+                        );
 
-            if (
-                tipo === "IMPRESORA" &&
-                esImpresoraVirtualAgente(
-                    descripcion
-                )
-            ) {
-                return null;
-            }
+                    const descripcion =
+                        descripcionRaw
+                            ?.replace(
+                                /^\[AGENTE\]\s*/i,
+                                ""
+                            )
+                            .trim() ||
+                        tipo;
 
-            const serialAdicional =
-                normalizarSerialAdicionalAgente(
-                    item.serialAdicional
-                );
+                    const serialAdicional =
+                        normalizarSerialAdicionalAgente(
+                            item.serialAdicional
+                        );
 
-            const cantidadRaw =
-                numberOrNull(
-                    item.cantidad
-                );
+                    const cantidadRaw =
+                        numberOrNull(
+                            item.cantidad
+                        );
 
-            const cantidad =
-                cantidadRaw &&
-                    cantidadRaw > 0
-                    ? Math.trunc(
-                        cantidadRaw
-                    )
-                    : 1;
+                    const cantidad =
+                        cantidadRaw &&
+                            cantidadRaw > 0
+                            ? Math.trunc(
+                                cantidadRaw
+                            )
+                            : 1;
 
-            return {
-                equipoId,
-                tipo,
-                descripcion,
-                cantidad,
-                serialAdicional,
-                origen:
-                    "AGENTE" as const,
-                estado:
-                    "ASIGNADO" as const,
-            };
-        })
-        .filter(
-            (
-                item
-            ): item is {
-                equipoId: number;
-                tipo: string;
-                descripcion: string;
-                cantidad: number;
-                serialAdicional:
-                string | null;
-                origen: "AGENTE";
-                estado: "ASIGNADO";
-            } => Boolean(item)
-        );
-
-    /*
-     * Antes de sincronizar consultamos los
-     * elementos intervenidos manualmente.
-     *
-     * Esto evita que, si un técnico corrigió
-     * un monitor detectado por el agente,
-     * aparezca nuevamente duplicado.
-     */
-    const manuales =
-        await prisma.equipoAdicional.findMany({
-            where: {
-                equipoId,
-
-                origen: "MANUAL",
-
-                tipo: {
-                    in: [
-                        "MONITOR",
-                        "IMPRESORA",
-                    ],
-                },
-            },
-
-            select: {
-                tipo: true,
-                descripcion: true,
-                serialAdicional: true,
-            },
-        });
-
-    /*
-     * El agente solamente reemplaza SUS
-     * registros.
-     *
-     * Los creados/editados manualmente
-     * permanecen intactos.
-     */
-    await prisma.equipoAdicional.deleteMany({
-        where: {
-            equipoId,
-            origen: "AGENTE",
-        },
-    });
-
-    const manualSerials =
-        new Set(
-            manuales
-                .map((item) =>
-                    cleanString(
-                        item.serialAdicional
-                    )?.toUpperCase()
-                )
-                .filter(
-                    (
-                        value
-                    ): value is string =>
-                        Boolean(value)
-                )
-        );
-
-    const manualFallbackKeys =
-        new Set(
-            manuales.map((item) =>
-                [
-                    item.tipo
-                        .toUpperCase()
-                        .trim(),
-
-                    cleanString(
-                        item.descripcion
-                    )
-                        ?.toUpperCase()
-                        .trim() ??
-                    "",
-                ].join("|")
+                    return {
+                        tipo,
+                        descripcion,
+                        cantidad,
+                        serialAdicional,
+                    };
+                }
             )
-        );
+            .filter(
+                (
+                    item
+                ): item is {
+                    tipo: string;
+                    descripcion: string;
+                    cantidad: number;
+                    serialAdicional: string | null;
+                } =>
+                    Boolean(
+                        item
+                    )
+            );
+
+    /* =====================================================
+       EVITAR REPETIDOS DEL MISMO PAYLOAD
+    ===================================================== */
 
     const uniqueCleaned =
         Array.from(
             new Map(
-                cleaned.map((item) => {
-                    /*
-                     * Si tenemos serial real,
-                     * lo usamos como identidad.
-                     */
-                    const key =
-                        item.serialAdicional
-                            ? `${item.tipo}|SERIAL|${item.serialAdicional.toUpperCase()}`
-                            : `${item.tipo}|DESC|${item.descripcion.toUpperCase()}`;
+                cleaned.map(
+                    (item) => {
 
-                    return [
-                        key,
-                        item,
-                    ];
-                })
+                        /*
+                         * Con serial:
+                         * identidad física global.
+                         *
+                         * Sin serial:
+                         * identidad local aproximada
+                         * por tipo + descripción.
+                         */
+                        const key =
+                            item.serialAdicional
+                                ? `SERIAL|${item.serialAdicional}`
+                                : `DESC|${item.tipo}|${item.descripcion
+                                    .trim()
+                                    .toUpperCase()}`;
+
+                        return [
+                            key,
+                            item,
+                        ];
+                    }
+                )
             ).values()
         );
 
-    const nuevos =
-        uniqueCleaned.filter((item) => {
-            const serial =
-                item.serialAdicional
-                    ?.toUpperCase()
-                    .trim();
+    /*
+     * IDs de relaciones que corresponden
+     * a la fotografía actual del agente.
+     *
+     * Las usaremos para eliminar solamente
+     * relaciones AGENTE antiguas que ya no
+     * aparecen en esta sincronización.
+     */
+    const relacionesActuales =
+        new Set<number>();
+
+    /* =====================================================
+       SINCRONIZAR DISPOSITIVOS
+    ===================================================== */
+
+    for (
+        const item
+        of uniqueCleaned
+    ) {
+
+        let adicional:
+            | {
+                id: number;
+                origen:
+                "MANUAL" |
+                "AGENTE";
+            }
+            | null =
+            null;
+
+        /* =================================================
+           CASO 1 — TIENE SERIAL
+        ================================================= */
+
+        if (
+            item.serialAdicional
+        ) {
+            adicional =
+                await prisma.adicional.findUnique({
+                    where: {
+                        serialAdicional:
+                            item.serialAdicional,
+                    },
+
+                    select: {
+                        id:
+                            true,
+
+                        origen:
+                            true,
+                    },
+                });
 
             /*
-             * Cuando existe serial,
-             * esta es la identificación
-             * principal.
+             * No existe:
+             * crear dispositivo físico.
              */
-            if (
-                serial &&
-                manualSerials.has(serial)
+            if (!adicional) {
+                adicional =
+                    await prisma.adicional.create({
+                        data: {
+                            tipo:
+                                item.tipo,
+
+                            descripcion:
+                                item.descripcion,
+
+                            cantidad:
+                                item.cantidad,
+
+                            serialAdicional:
+                                item.serialAdicional,
+
+                            origen:
+                                "AGENTE",
+
+                            estado:
+                                "ASIGNADO",
+                        },
+
+                        select: {
+                            id:
+                                true,
+
+                            origen:
+                                true,
+                        },
+                    });
+            }
+
+            /*
+             * Existe y sigue siendo administrado
+             * por el agente:
+             *
+             * podemos actualizar la información
+             * detectada automáticamente.
+             *
+             * Si origen = MANUAL, NO modificamos
+             * los datos corregidos por una persona.
+             */
+            else if (
+                adicional.origen ===
+                "AGENTE"
             ) {
-                return false;
+                await prisma.adicional.update({
+                    where: {
+                        id:
+                            adicional.id,
+                    },
+
+                    data: {
+                        tipo:
+                            item.tipo,
+
+                        descripcion:
+                            item.descripcion,
+
+                        cantidad:
+                            item.cantidad,
+
+                        estado:
+                            "ASIGNADO",
+                    },
+                });
             }
+        }
+
+        /* =================================================
+           CASO 2 — NO TIENE SERIAL
+        ================================================= */
+
+        else {
 
             /*
-             * Fallback para dispositivos
-             * sin serial.
+             * Un dispositivo sin serial NO debe
+             * compartirse globalmente por descripción.
+             *
+             * Buscamos solamente dentro de las
+             * relaciones del equipo actual.
              */
-            if (!serial) {
-                const key = [
-                    item.tipo,
-                    item.descripcion
-                        .toUpperCase()
-                        .trim(),
-                ].join("|");
+            const existenteLocal =
+                await prisma.adicionalEquipo.findFirst({
+                    where: {
+                        equipoId,
 
-                if (
-                    manualFallbackKeys.has(
-                        key
-                    )
-                ) {
-                    return false;
-                }
+                        adicional: {
+                            is: {
+                                tipo:
+                                    item.tipo,
+
+                                descripcion: {
+                                    equals:
+                                        item.descripcion,
+
+                                    mode:
+                                        "insensitive",
+                                },
+                            },
+                        },
+                    },
+
+                    select: {
+                        adicional: {
+                            select: {
+                                id:
+                                    true,
+
+                                origen:
+                                    true,
+                            },
+                        },
+                    },
+                });
+
+            adicional =
+                existenteLocal?.adicional ??
+                null;
+
+            if (!adicional) {
+                adicional =
+                    await prisma.adicional.create({
+                        data: {
+                            tipo:
+                                item.tipo,
+
+                            descripcion:
+                                item.descripcion,
+
+                            cantidad:
+                                item.cantidad,
+
+                            serialAdicional:
+                                null,
+
+                            origen:
+                                "AGENTE",
+
+                            estado:
+                                "ASIGNADO",
+                        },
+
+                        select: {
+                            id:
+                                true,
+
+                            origen:
+                                true,
+                        },
+                    });
+            } else if (
+                adicional.origen ===
+                "AGENTE"
+            ) {
+                await prisma.adicional.update({
+                    where: {
+                        id:
+                            adicional.id,
+                    },
+
+                    data: {
+                        descripcion:
+                            item.descripcion,
+
+                        cantidad:
+                            item.cantidad,
+
+                        estado:
+                            "ASIGNADO",
+                    },
+                });
             }
+        }
 
-            return true;
-        });
+        if (!adicional) {
+            continue;
+        }
 
-    if (nuevos.length === 0) {
-        return;
+        /* =================================================
+           RELACIÓN ADICIONAL ↔ EQUIPO
+        ================================================= */
+
+        const relacionExistente =
+            await prisma.adicionalEquipo.findUnique({
+                where: {
+                    adicionalId_equipoId: {
+                        adicionalId:
+                            adicional.id,
+
+                        equipoId,
+                    },
+                },
+            });
+
+        let relacionId:
+            number;
+
+        if (
+            relacionExistente
+        ) {
+            /*
+             * Si una persona intervino manualmente
+             * esta relación, no cambiamos su origen.
+             */
+            relacionId =
+                relacionExistente.id;
+        } else {
+            const relacion =
+                await prisma.adicionalEquipo.create({
+                    data: {
+                        adicionalId:
+                            adicional.id,
+
+                        equipoId,
+
+                        origen:
+                            "AGENTE",
+                    },
+
+                    select: {
+                        id:
+                            true,
+                    },
+                });
+
+            relacionId =
+                relacion.id;
+        }
+
+        relacionesActuales.add(
+            relacionId
+        );
     }
 
-    await prisma.equipoAdicional.createMany({
-        data: nuevos,
-    });
+    /* =====================================================
+       ELIMINAR RELACIONES AGENTE OBSOLETAS
+    ===================================================== */
+
+    /*
+     * IMPORTANTE:
+     *
+     * Ya NO eliminamos el dispositivo físico.
+     *
+     * Solamente eliminamos relaciones AGENTE del
+     * EQUIPO ACTUAL para monitores que el agente
+     * dejó de detectar.
+     *
+     * Esto permite que un Adicional siga asociado
+     * a otros equipos.
+     */
+    const relacionesAgenteActuales =
+        await prisma.adicionalEquipo.findMany({
+            where: {
+                equipoId,
+
+                origen:
+                    "AGENTE",
+
+                adicional: {
+                    is: {
+                        tipo: {
+                            in:
+                                Array.from(
+                                    tiposPermitidos
+                                ),
+                        },
+                    },
+                },
+            },
+
+            select: {
+                id:
+                    true,
+
+                adicionalId:
+                    true,
+            },
+        });
+
+    const relacionesEliminar =
+        relacionesAgenteActuales.filter(
+            (relacion) =>
+                !relacionesActuales.has(
+                    relacion.id
+                )
+        );
+
+    if (
+        relacionesEliminar.length >
+        0
+    ) {
+        await prisma.adicionalEquipo.deleteMany({
+            where: {
+                id: {
+                    in:
+                        relacionesEliminar.map(
+                            (
+                                relacion
+                            ) =>
+                                relacion.id
+                        ),
+                },
+            },
+        });
+    }
+
+    /* =====================================================
+       LIMPIAR ADICIONALES AGENTE HUÉRFANOS
+    ===================================================== */
+
+    /*
+     * Si un monitor creado por el agente ya no
+     * tiene relación con ningún equipo, se puede
+     * eliminar.
+     *
+     * JAMÁS eliminamos aquí un adicional MANUAL.
+     */
+    const posiblesHuerfanos =
+        Array.from(
+            new Set(
+                relacionesEliminar.map(
+                    (
+                        relacion
+                    ) =>
+                        relacion.adicionalId
+                )
+            )
+        );
+
+    for (
+        const adicionalId
+        of posiblesHuerfanos
+    ) {
+        const adicional =
+            await prisma.adicional.findUnique({
+                where: {
+                    id:
+                        adicionalId,
+                },
+
+                select: {
+                    origen:
+                        true,
+
+                    _count: {
+                        select: {
+                            equipos:
+                                true,
+                        },
+                    },
+                },
+            });
+
+        if (
+            adicional?.origen ===
+            "AGENTE" &&
+            adicional._count.equipos ===
+            0
+        ) {
+            await prisma.adicional.delete({
+                where: {
+                    id:
+                        adicionalId,
+                },
+            });
+        }
+    }
 }
 
 type AgentAuditChange = {
@@ -1656,15 +1918,17 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     oneDriveUsuario,
                     oneDriveDetalle: oneDriveDetalle ?? null,
 
-                    adicionalesDetectados: body.adicionalesDetectados ?? [],
+                    adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
+                        ? body.adicionalesDetectados.filter(
+                            (item) =>
+                                cleanString(item.tipo)?.toUpperCase() === "MONITOR"
+                        )
+                        : [],
+
                     monitoresDetectados: Array.isArray(body.adicionalesDetectados)
                         ? body.adicionalesDetectados.filter(
-                            (item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR"
-                        ).length
-                        : 0,
-                    impresorasDetectadas: Array.isArray(body.adicionalesDetectados)
-                        ? body.adicionalesDetectados.filter(
-                            (item) => cleanString(item.tipo)?.toUpperCase() === "IMPRESORA"
+                            (item) =>
+                                cleanString(item.tipo)?.toUpperCase() === "MONITOR"
                         ).length
                         : 0,
 
@@ -1716,16 +1980,16 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             oneDriveUsuario,
 
             adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
-                ? body.adicionalesDetectados.length
-                : 0,
-            monitoresDetectados: Array.isArray(body.adicionalesDetectados)
                 ? body.adicionalesDetectados.filter(
-                    (item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR"
+                    (item) =>
+                        cleanString(item.tipo)?.toUpperCase() === "MONITOR"
                 ).length
                 : 0,
-            impresorasDetectadas: Array.isArray(body.adicionalesDetectados)
+
+            monitoresDetectados: Array.isArray(body.adicionalesDetectados)
                 ? body.adicionalesDetectados.filter(
-                    (item) => cleanString(item.tipo)?.toUpperCase() === "IMPRESORA"
+                    (item) =>
+                        cleanString(item.tipo)?.toUpperCase() === "MONITOR"
                 ).length
                 : 0,
 
@@ -1991,7 +2255,15 @@ export async function getEquipoAgentById(req: Request, res: Response) {
                     },
                     take: 50,
                 },
-                adicionales: true,
+                adicionalesRelacion: {
+                    include: {
+                        adicional: true,
+                    },
+
+                    orderBy: {
+                        id: "asc",
+                    },
+                },
             },
         });
 
@@ -2003,9 +2275,43 @@ export async function getEquipoAgentById(req: Request, res: Response) {
             return;
         }
 
+        const adicionales =
+            equipo.adicionalesRelacion.map(
+                (
+                    relacion
+                ) => ({
+                    ...relacion.adicional,
+
+                    relacionId:
+                        relacion.id,
+
+                    equipoId:
+                        relacion.equipoId,
+
+                    origenRelacion:
+                        relacion.origen,
+
+                    observacionRelacion:
+                        relacion.observacion,
+                })
+            );
+
         res.json({
             ok: true,
-            equipo,
+
+            equipo: {
+                ...equipo,
+
+                /*
+                 * Compatibilidad temporal con
+                 * componentes que todavía esperan
+                 * equipo.adicionales.
+                 */
+                adicionales,
+
+                adicionalesRelacion:
+                    equipo.adicionalesRelacion,
+            },
         });
     } catch (error) {
         console.error("❌ Error obteniendo equipo con agente:", error);

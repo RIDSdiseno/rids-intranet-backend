@@ -3,12 +3,13 @@
 import { Router } from "express";
 
 import {
-  createEquipoAdicional,
-  deleteEquipoAdicional,
-  getEquipoAdicional,
-  listAdicionalesByEquipo,
-  listEquipoAdicionales,
-  updateEquipoAdicional,
+    listEquipoAdicionales,
+    listAdicionalesByEquipo,
+    getEquipoAdicional,
+    createEquipoAdicional,
+    updateEquipoAdicional,
+    deleteEquipoAdicional,
+    exportEquipoAdicionales,
 } from "../../controllers/equipos-adicionales/equipo-adicional.controller.js";
 
 const router = Router();
@@ -21,6 +22,11 @@ router.get(
 router.get(
   "/equipo/:equipoId",
   listAdicionalesByEquipo
+);
+
+router.get(
+    "/export",
+    exportEquipoAdicionales
 );
 
 router.get(

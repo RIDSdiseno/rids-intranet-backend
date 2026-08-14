@@ -122,20 +122,109 @@ async function getNombreSolicitante(id: number | null | undefined) {
   return sol?.nombre || null;
 }
 
-function formatAdicionalesForAudit(adicionales: any[] | null | undefined) {
-  if (!Array.isArray(adicionales) || adicionales.length === 0) return null;
+function formatAdicionalesForAudit(
+  adicionales: any[] | null | undefined
+) {
+  if (
+    !Array.isArray(adicionales) ||
+    adicionales.length === 0
+  ) {
+    return null;
+  }
 
   return adicionales
     .map((a) => {
-      const tipo = a?.tipo ?? "OTRO";
-      const cantidad = Number(a?.cantidad) > 0 ? Number(a.cantidad) : 1;
-      const descripcion = a?.descripcion?.trim();
+      const tipo =
+        a?.tipo ??
+        "OTRO";
 
-      return descripcion
-        ? `${tipo} (${descripcion}) x${cantidad}`
-        : `${tipo} x${cantidad}`;
+      const cantidad =
+        Number(a?.cantidad) > 0
+          ? Number(a.cantidad)
+          : 1;
+
+      const nombre =
+        String(
+          a?.nombre ?? ""
+        ).trim();
+
+      const descripcion =
+        String(
+          a?.descripcion ?? ""
+        ).trim();
+
+      const marcaModelo =
+        [
+          a?.marca,
+          a?.modelo,
+        ]
+          .map(
+            (value) =>
+              String(
+                value ?? ""
+              ).trim()
+          )
+          .filter(Boolean)
+          .join(" ");
+
+      const serial =
+        String(
+          a?.serialAdicional ??
+          ""
+        ).trim();
+
+      const partes =
+        [
+          tipo,
+
+          nombre ||
+          descripcion ||
+          null,
+
+          marcaModelo ||
+          null,
+
+          serial
+            ? `Serial: ${serial}`
+            : null,
+
+          cantidad > 1
+            ? `x${cantidad}`
+            : null,
+        ]
+          .filter(Boolean);
+
+      return partes.join(
+        " - "
+      );
     })
-    .join(" | ");
+    .join(
+      " | "
+    );
+}
+
+function flattenAdicionalesRelacionForAudit(
+  relaciones:
+    any[] |
+    null |
+    undefined
+) {
+  if (
+    !Array.isArray(
+      relaciones
+    )
+  ) {
+    return [];
+  }
+
+  return relaciones
+    .map(
+      (
+        relacion
+      ) =>
+        relacion?.adicional
+    )
+    .filter(Boolean);
 }
 /* =========================
    EXTENSION GLOBAL AUTOMÁTICA
@@ -300,10 +389,23 @@ export const prisma = prismaBase.$extends({
 
         if (args?.where) {
           if (model === "Equipo") {
-            before = await prismaBase.equipo.findUnique({
-              where: args.where,
-              include: { detalle: true, adicionales: true },
-            });
+            before =
+              await prismaBase.equipo.findUnique({
+                where:
+                  args.where,
+
+                include: {
+                  detalle:
+                    true,
+
+                  adicionalesRelacion: {
+                    include: {
+                      adicional:
+                        true,
+                    },
+                  },
+                },
+              });
           } else if (model === "DetalleEquipo") {
             before = await prismaBase.detalleEquipo.findUnique({
               where: args.where,
@@ -321,17 +423,38 @@ export const prisma = prismaBase.$extends({
         let afterSource: any = r;
 
         if (model === "Equipo") {
-          afterSource = await prismaBase.equipo.findUnique({
-            where: { id_equipo: r.id_equipo },
-            include: { detalle: true, adicionales: true },
-          });
+          afterSource =
+            await prismaBase.equipo.findUnique({
+              where: {
+                id_equipo:
+                  r.id_equipo,
+              },
+
+              include: {
+                detalle:
+                  true,
+
+                adicionalesRelacion: {
+                  include: {
+                    adicional:
+                      true,
+                  },
+                },
+              },
+            });
         }
 
         const after = model === "Equipo"
           ? sanitizeForAudit({
             ...afterSource,
             ...(afterSource?.detalle ?? {}),
-            adicionalesResumen: formatAdicionalesForAudit(afterSource?.adicionales),
+            adicionalesResumen:
+              formatAdicionalesForAudit(
+                flattenAdicionalesRelacionForAudit(
+                  afterSource
+                    ?.adicionalesRelacion
+                )
+              ),
           })
           : sanitizeForAudit(r);
 
@@ -339,7 +462,13 @@ export const prisma = prismaBase.$extends({
           ? sanitizeForAudit({
             ...before,
             ...(before?.detalle ?? {}),
-            adicionalesResumen: formatAdicionalesForAudit(before?.adicionales),
+            adicionalesResumen:
+              formatAdicionalesForAudit(
+                flattenAdicionalesRelacionForAudit(
+                  before
+                    ?.adicionalesRelacion
+                )
+              ),
           })
           : sanitizeForAudit(before);
 

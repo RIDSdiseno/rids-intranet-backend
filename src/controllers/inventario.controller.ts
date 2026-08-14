@@ -383,10 +383,25 @@ function formatAdicionalesExcel(
     adicionales:
         Array<{
             id?: number;
+
+            nombre?: string | null;
+
             tipo?: string | null;
+
+            marca?: string | null;
+            modelo?: string | null;
+
             descripcion?: string | null;
+
             cantidad?: number | null;
+
             serialAdicional?: string | null;
+
+            macAddress?: string | null;
+            ipAddress?: string | null;
+            hostname?: string | null;
+            ubicacion?: string | null;
+
             origen?: string | null;
             estado?: string | null;
         }> | null | undefined
@@ -408,10 +423,48 @@ function formatAdicionalesExcel(
                         adicional.tipo
                     );
 
+                const nombre =
+                    String(
+                        adicional.nombre ??
+                        ""
+                    ).trim();
+
                 const descripcion =
                     limpiarDescripcionAdicionalExcel(
                         adicional.descripcion
                     );
+
+                const marcaModelo =
+                    [
+                        adicional.marca,
+                        adicional.modelo,
+                    ]
+                        .map(
+                            (value) =>
+                                String(
+                                    value ??
+                                    ""
+                                ).trim()
+                        )
+                        .filter(Boolean)
+                        .join(" ");
+
+                const red =
+                    [
+                        adicional.ipAddress
+                            ? `IP: ${adicional.ipAddress}`
+                            : null,
+
+                        adicional.macAddress
+                            ? `MAC: ${adicional.macAddress}`
+                            : null,
+
+                        adicional.hostname
+                            ? `Hostname: ${adicional.hostname}`
+                            : null,
+                    ]
+                        .filter(Boolean)
+                        .join(" | ");
 
                 const cantidad =
                     Number(
@@ -419,7 +472,9 @@ function formatAdicionalesExcel(
                         1
                     );
 
-                const partes: string[] = [];
+                const partes:
+                    string[] =
+                    [];
 
                 if (tipo) {
                     partes.push(
@@ -427,9 +482,47 @@ function formatAdicionalesExcel(
                     );
                 }
 
-                if (descripcion) {
+                if (nombre) {
+                    partes.push(
+                        nombre
+                    );
+                }
+
+                if (marcaModelo) {
+                    partes.push(
+                        marcaModelo
+                    );
+                }
+
+                /*
+                 * Evitamos repetir exactamente
+                 * el nombre como descripción.
+                 */
+                if (
+                    descripcion &&
+                    descripcion
+                        .trim()
+                        .toLowerCase() !==
+                    nombre
+                        .trim()
+                        .toLowerCase()
+                ) {
                     partes.push(
                         descripcion
+                    );
+                }
+
+                if (red) {
+                    partes.push(
+                        red
+                    );
+                }
+
+                if (
+                    adicional.ubicacion
+                ) {
+                    partes.push(
+                        `Ubicación: ${adicional.ubicacion}`
                     );
                 }
 
@@ -1700,6 +1793,59 @@ export async function getInventario(
             tipoEquipo: e.tipo,
             fechaIngreso: formatFechaChile(e.createdAt),
             revisado: formatRevisado(e.detalle?.revisado),
+
+            adicionales:
+                e.adicionales.map(
+                    (adicional) => ({
+                        id:
+                            adicional.id,
+
+                        nombre:
+                            adicional.nombre,
+
+                        tipo:
+                            adicional.tipo,
+
+                        marca:
+                            adicional.marca,
+
+                        modelo:
+                            adicional.modelo,
+
+                        serialAdicional:
+                            adicional.serialAdicional,
+
+                        macAddress:
+                            adicional.macAddress,
+
+                        ipAddress:
+                            adicional.ipAddress,
+
+                        hostname:
+                            adicional.hostname,
+
+                        ubicacion:
+                            adicional.ubicacion,
+
+                        descripcion:
+                            adicional.descripcion,
+
+                        cantidad:
+                            adicional.cantidad,
+
+                        estado:
+                            adicional.estado,
+
+                        origen:
+                            adicional.origen,
+
+                        relacionId:
+                            adicional.relacionId,
+
+                        origenRelacion:
+                            adicional.origenRelacion,
+                    })
+                ),
         }));
 
         return res.json({

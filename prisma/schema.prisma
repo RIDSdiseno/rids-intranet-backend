@@ -524,6 +524,7 @@ model Equipo {
   origenCotizacion            CotizacionGestioo?      @relation("EquipoOrigenCotizacion", fields: [origenCotizacionId], references: [id])
   cotizacionItem              CotizacionItemGestioo?  @relation("ItemEquipoGenerado")
   adicionales                 EquipoAdicional[]
+  adicionalesRelacion         AdicionalEquipo[]
   bitacoras                   BitacoraTecnico[]
   softwares                   EquipoSoftware[]
   agenteEventos               EquipoAgenteEvento[]
@@ -546,9 +547,70 @@ model Equipo {
   @@index([mantGeneralTecnicoId])
 }
 
+model Adicional {
+  id Int @id @default(autoincrement())
+
+  nombre String?
+
+  tipo String
+
+  marca  String?
+  modelo String?
+
+  serialAdicional String? @unique
+
+  macAddress String?
+  ipAddress  String?
+  hostname   String?
+
+  ubicacion String?
+
+  descripcion String?
+
+  cantidad Int @default(1)
+
+  estado EstadoEquipoAdicional @default(ASIGNADO)
+  origen OrigenEquipoAdicional @default(MANUAL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  equipos AdicionalEquipo[]
+
+  @@index([tipo])
+  @@index([marca])
+  @@index([modelo])
+  @@index([macAddress])
+  @@index([ipAddress])
+  @@index([estado])
+  @@index([origen])
+}
+
+model AdicionalEquipo {
+  id Int @id @default(autoincrement())
+
+  adicionalId Int
+  equipoId    Int
+
+  origen OrigenEquipoAdicional @default(MANUAL)
+
+  observacion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adicional Adicional @relation(fields: [adicionalId], references: [id], onDelete: Cascade)
+
+  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+
+  @@unique([adicionalId, equipoId])
+  @@index([adicionalId])
+  @@index([equipoId])
+}
+
 model EquipoAdicional {
   id              Int                   @id @default(autoincrement())
-  serialAdicional String?
+  serialAdicional String?               @unique
   equipoId        Int
   tipo            String
   descripcion     String?
@@ -563,7 +625,6 @@ model EquipoAdicional {
   @@index([tipo])
   @@index([origen])
   @@index([estado])
-  @@index([serialAdicional])
 }
 
 model DetalleEquipo {
