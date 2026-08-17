@@ -22,7 +22,27 @@ type InventarioParams = {
     auditAction?: "CREATE" | "UPDATE";
     solicitanteMultiplesEquipos?: "MULTIPLES";
 };
-export declare function getInventarioByEmpresa(params: InventarioParams): Promise<({
+export declare function getInventarioByEmpresa(params: InventarioParams): Promise<{
+    adicionales: {
+        relacionId: number;
+        equipoId: number;
+        origenRelacion: import("@prisma/client").$Enums.OrigenEquipoAdicional;
+        observacionRelacion: string | null;
+        nombre: string | null;
+        origen: import("@prisma/client").$Enums.OrigenEquipoAdicional;
+        id: number;
+        marca: string | null;
+        modelo: string | null;
+        tipo: string;
+        estado: import("@prisma/client").$Enums.EstadoEquipoAdicional;
+        hostname: string | null;
+        macAddress: string | null;
+        descripcion: string | null;
+        serialAdicional: string | null;
+        ipAddress: string | null;
+        ubicacion: string | null;
+        cantidad: number;
+    }[];
     empresa: {
         id_empresa: number;
         nombre: string;
@@ -53,16 +73,28 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
         usuarioPersonal: string | null;
         redEthernet: string | null;
     } | null;
-    adicionales: {
+    adicionalesRelacion: {
         origen: import("@prisma/client").$Enums.OrigenEquipoAdicional;
         id: number;
-        tipo: string;
-        estado: import("@prisma/client").$Enums.EstadoEquipoAdicional;
-        descripcion: string | null;
-        serialAdicional: string | null;
-        cantidad: number;
+        equipoId: number;
+        adicional: {
+            nombre: string | null;
+            origen: import("@prisma/client").$Enums.OrigenEquipoAdicional;
+            id: number;
+            marca: string | null;
+            modelo: string | null;
+            tipo: string;
+            estado: import("@prisma/client").$Enums.EstadoEquipoAdicional;
+            hostname: string | null;
+            macAddress: string | null;
+            descripcion: string | null;
+            serialAdicional: string | null;
+            ipAddress: string | null;
+            ubicacion: string | null;
+            cantidad: number;
+        };
+        observacion: string | null;
     }[];
-} & {
     empresaId: number | null;
     deletedAt: Date | null;
     createdAt: Date;
@@ -109,6 +141,6 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
     mantGeneralTecnicoId: number | null;
     mantGeneralVersion: string | null;
     propietarioExterno: string | null;
-})[]>;
+}[]>;
 export {};
 //# sourceMappingURL=inventario.service.d.ts.map

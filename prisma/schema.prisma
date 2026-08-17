@@ -548,34 +548,23 @@ model Equipo {
 }
 
 model Adicional {
-  id Int @id @default(autoincrement())
-
-  nombre String?
-
-  tipo String
-
-  marca  String?
-  modelo String?
-
-  serialAdicional String? @unique
-
-  macAddress String?
-  ipAddress  String?
-  hostname   String?
-
-  ubicacion String?
-
-  descripcion String?
-
-  cantidad Int @default(1)
-
-  estado EstadoEquipoAdicional @default(ASIGNADO)
-  origen OrigenEquipoAdicional @default(MANUAL)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  equipos AdicionalEquipo[]
+  id              Int                   @id @default(autoincrement())
+  nombre          String?
+  tipo            String
+  marca           String?
+  modelo          String?
+  serialAdicional String?               @unique
+  macAddress      String?
+  ipAddress       String?
+  hostname        String?
+  ubicacion       String?
+  descripcion     String?
+  cantidad        Int                   @default(1)
+  estado          EstadoEquipoAdicional @default(ASIGNADO)
+  origen          OrigenEquipoAdicional @default(MANUAL)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  equipos         AdicionalEquipo[]
 
   @@index([tipo])
   @@index([marca])
@@ -587,21 +576,15 @@ model Adicional {
 }
 
 model AdicionalEquipo {
-  id Int @id @default(autoincrement())
-
+  id          Int                   @id @default(autoincrement())
   adicionalId Int
   equipoId    Int
-
-  origen OrigenEquipoAdicional @default(MANUAL)
-
+  origen      OrigenEquipoAdicional @default(MANUAL)
   observacion String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  adicional Adicional @relation(fields: [adicionalId], references: [id], onDelete: Cascade)
-
-  equipo Equipo @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  adicional   Adicional             @relation(fields: [adicionalId], references: [id], onDelete: Cascade)
+  equipo      Equipo                @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
 
   @@unique([adicionalId, equipoId])
   @@index([adicionalId])

@@ -41,6 +41,7 @@ export declare function conciliarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    observacion: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -54,7 +55,6 @@ export declare function conciliarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    observacion: string | null;
     responsable: string | null;
     conciliadoAt: Date | null;
 }>;
@@ -69,6 +69,7 @@ export declare function desconciliarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    observacion: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -82,7 +83,6 @@ export declare function desconciliarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    observacion: string | null;
     responsable: string | null;
     conciliadoAt: Date | null;
 }>;
@@ -99,6 +99,7 @@ export declare function observarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    observacion: string | null;
     folio: string;
     montoNeto: number;
     montoTotal: number;
@@ -112,7 +113,6 @@ export declare function observarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    observacion: string | null;
     responsable: string | null;
     conciliadoAt: Date | null;
 }>;

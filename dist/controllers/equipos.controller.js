@@ -497,6 +497,32 @@ function buildDetalleEquipoSearchOR(searchText, INS) {
         },
     ];
 }
+/* =========================================================
+   ADICIONALES — COMPATIBILIDAD NUEVO MODELO N:N
+========================================================= */
+function flattenAdicionalesRelacion(relaciones) {
+    if (!Array.isArray(relaciones)) {
+        return [];
+    }
+    return relaciones
+        .map((relacion) => {
+        const adicional = relacion?.adicional;
+        if (!adicional) {
+            return null;
+        }
+        return {
+            ...adicional,
+            /*
+             * Información de la relación.
+             */
+            relacionId: relacion.id,
+            equipoId: relacion.equipoId,
+            origenRelacion: relacion.origen,
+            observacionRelacion: relacion.observacion ?? null,
+        };
+    })
+        .filter(Boolean);
+}
 // Convierte valores a bigint de forma segura (para el seed de fdSourceMap)
 function flattenRow(e) {
     const detalle = e.detalle ?? null;
@@ -582,7 +608,8 @@ function flattenRow(e) {
         bitlockerEstado: detalle?.bitlockerEstado ?? null,
         windowsUpdate: detalle?.windowsUpdate ?? null,
         observacionAgente: detalle?.observacionAgente ?? null,
-        adicionales: e.adicionales ?? [],
+        adicionales: flattenAdicionalesRelacion(e.adicionalesRelacion),
+        adicionalesRelacion: e.adicionalesRelacion ?? [],
         _count: e._count ?? undefined,
         estado: e.estado,
     };
@@ -1157,33 +1184,140 @@ export async function listEquipos(req, res) {
                 },
                 // Detalle técnico del equipo
                 ...buildDetalleEquipoSearchOR(searchText, INS),
-                // Adicionales del equipo
+                /*
+         * Adicional — tipo
+         */
                 {
-                    adicionales: {
+                    adicionalesRelacion: {
                         some: {
-                            tipo: {
-                                contains: searchText,
-                                mode: INS,
+                            adicional: {
+                                is: {
+                                    tipo: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                /*
+                 * Adicional — descripción
+                 */
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    descripcion: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                /*
+                 * Adicional — serial
+                 */
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    serialAdicional: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                /*
+                 * Nuevos campos.
+                 */
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    nombre: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
                             },
                         },
                     },
                 },
                 {
-                    adicionales: {
+                    adicionalesRelacion: {
                         some: {
-                            descripcion: {
-                                contains: searchText,
-                                mode: INS,
+                            adicional: {
+                                is: {
+                                    marca: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
                             },
                         },
                     },
                 },
                 {
-                    adicionales: {
+                    adicionalesRelacion: {
                         some: {
-                            serialAdicional: {
-                                contains: searchText,
-                                mode: INS,
+                            adicional: {
+                                is: {
+                                    modelo: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    macAddress: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    ipAddress: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    adicionalesRelacion: {
+                        some: {
+                            adicional: {
+                                is: {
+                                    hostname: {
+                                        contains: searchText,
+                                        mode: INS,
+                                    },
+                                },
                             },
                         },
                     },
@@ -1477,26 +1611,52 @@ export async function listEquipos(req, res) {
                     anioPcOrigen: true,
                     propiedad: true,
                     propietarioExterno: true,
-                    mantGeneralInstalado: true,
-                    mantGeneralVersion: true,
-                    mantGeneralLastSeenAt: true,
-                    hostname: true,
-                    usuarioActual: true,
-                    lastSeenAt: true,
-                    agenteActivo: true,
-                    estadoAgente: true,
-                    agenteVersion: true,
+                    /* =========================================
+                       EMPRESA DIRECTA DEL EQUIPO
+                    ========================================= */
+                    empresaId: true,
+                    empresa: {
+                        select: {
+                            id_empresa: true,
+                            nombre: true,
+                            isActive: true,
+                        },
+                    },
                     /* =========================================
                        SOLICITANTE DEL EQUIPO
                     ========================================= */
+                    idSolicitante: true,
                     solicitante: {
                         select: {
                             id_solicitante: true,
                             nombre: true,
                             email: true,
                             rut: true,
+                            empresaId: true,
+                            empresa: {
+                                select: {
+                                    id_empresa: true,
+                                    nombre: true,
+                                    isActive: true,
+                                },
+                            },
                         },
                     },
+                    /* =========================================
+                       MANT.GENERAL
+                    ========================================= */
+                    mantGeneralInstalado: true,
+                    mantGeneralVersion: true,
+                    mantGeneralLastSeenAt: true,
+                    /* =========================================
+                       AGENTE
+                    ========================================= */
+                    hostname: true,
+                    usuarioActual: true,
+                    lastSeenAt: true,
+                    agenteActivo: true,
+                    estadoAgente: true,
+                    agenteVersion: true,
                 },
                 orderBy,
                 skip,
@@ -1514,9 +1674,27 @@ export async function listEquipos(req, res) {
             where,
             include: {
                 empresa: true,
-                solicitante: { include: { empresa: true } },
+                solicitante: {
+                    include: {
+                        empresa: true,
+                    },
+                },
                 detalle: true,
-                adicionales: true,
+                adicionalesRelacion: {
+                    include: {
+                        adicional: true,
+                    },
+                    orderBy: [
+                        {
+                            adicional: {
+                                tipo: "asc",
+                            },
+                        },
+                        {
+                            id: "asc",
+                        },
+                    ],
+                },
                 _count: {
                     select: {
                         softwares: true,
@@ -1740,12 +1918,23 @@ export async function createEquipo(req, res) {
                         },
                     },
                     include: {
-                        solicitante: { include: { empresa: true } },
+                        solicitante: {
+                            include: {
+                                empresa: true,
+                            },
+                        },
                         detalle: true,
-                        adicionales: true,
+                        adicionalesRelacion: {
+                            include: {
+                                adicional: true,
+                            },
+                        },
                     },
                 });
-                created.push(equipo);
+                created.push({
+                    ...equipo,
+                    adicionales: flattenAdicionalesRelacion(equipo.adicionalesRelacion),
+                });
             }
             catch (e) {
                 errors.push({
@@ -1789,7 +1978,14 @@ export async function getEquipoById(req, res) {
                 empresa: true,
                 solicitante: { include: { empresa: true } },
                 detalle: true,
-                adicionales: true,
+                adicionalesRelacion: {
+                    include: {
+                        adicional: true,
+                    },
+                    orderBy: {
+                        id: "asc",
+                    },
+                },
                 softwares: {
                     orderBy: {
                         nombre: "asc",
@@ -1838,6 +2034,7 @@ export async function getEquipoById(req, res) {
         });
         return res.status(200).json({
             ...equipo,
+            adicionales: flattenAdicionalesRelacion(equipo.adicionalesRelacion),
             creadoPor: createLog?.actor
                 ? {
                     id_tecnico: createLog.actor.id_tecnico,
@@ -2120,13 +2317,24 @@ export async function updateEquipo(req, res) {
                 },
             },
             include: {
-                solicitante: { include: { empresa: true } },
+                solicitante: {
+                    include: {
+                        empresa: true,
+                    },
+                },
                 detalle: true,
-                adicionales: true,
+                adicionalesRelacion: {
+                    include: {
+                        adicional: true,
+                    },
+                },
             },
         });
         clearCache();
-        return res.status(200).json(actualizado);
+        return res.status(200).json({
+            ...actualizado,
+            adicionales: flattenAdicionalesRelacion(actualizado.adicionalesRelacion),
+        });
     }
     catch (err) {
         console.error("updateEquipo error:", err);

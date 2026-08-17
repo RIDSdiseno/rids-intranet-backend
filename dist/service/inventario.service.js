@@ -522,7 +522,7 @@ export async function getInventarioByEmpresa(params) {
     /* ====================================================
        Consulta final
     ==================================================== */
-    return prisma.equipo.findMany({
+    const equipos = await prisma.equipo.findMany({
         where: {
             AND,
         },
@@ -577,19 +577,36 @@ export async function getInventarioByEmpresa(params) {
             /*
              * Adicionales asociados al equipo.
              */
-            adicionales: {
+            adicionalesRelacion: {
                 select: {
                     id: true,
-                    tipo: true,
-                    descripcion: true,
-                    cantidad: true,
-                    serialAdicional: true,
+                    equipoId: true,
                     origen: true,
-                    estado: true,
+                    observacion: true,
+                    adicional: {
+                        select: {
+                            id: true,
+                            nombre: true,
+                            tipo: true,
+                            marca: true,
+                            modelo: true,
+                            descripcion: true,
+                            cantidad: true,
+                            serialAdicional: true,
+                            macAddress: true,
+                            ipAddress: true,
+                            hostname: true,
+                            ubicacion: true,
+                            origen: true,
+                            estado: true,
+                        },
+                    },
                 },
                 orderBy: [
                     {
-                        tipo: "asc",
+                        adicional: {
+                            tipo: "asc",
+                        },
                     },
                     {
                         id: "asc",
@@ -607,5 +624,19 @@ export async function getInventarioByEmpresa(params) {
             id_equipo: "asc",
         },
     });
+    return equipos.map((equipo) => ({
+        ...equipo,
+        /*
+         * Compatibilidad con consumidores actuales
+         * del inventario.
+         */
+        adicionales: equipo.adicionalesRelacion.map((relacion) => ({
+            ...relacion.adicional,
+            relacionId: relacion.id,
+            equipoId: relacion.equipoId,
+            origenRelacion: relacion.origen,
+            observacionRelacion: relacion.observacion,
+        })),
+    }));
 }
 //# sourceMappingURL=inventario.service.js.map
