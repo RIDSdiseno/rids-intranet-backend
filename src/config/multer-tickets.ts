@@ -8,17 +8,33 @@ export const MAX_TICKET_ATTACHMENT_SIZE_BYTES =
 export const MAX_TICKET_ATTACHMENTS = 10;
 
 const allowedTypes = [
+    // Imágenes
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/gif",
+
+    // PDF
     "application/pdf",
+
+    // Word
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+    // Excel
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-excel.sheet.macroEnabled.12",
+
+    // Texto
     "text/plain",
+
+    // ZIP
+    "application/zip",
+    "application/x-zip-compressed",
+
+    // MP4
+    "video/mp4",
 ];
 
 export const uploadTicketAttachments = multer({

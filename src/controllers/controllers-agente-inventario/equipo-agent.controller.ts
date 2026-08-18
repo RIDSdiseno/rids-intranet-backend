@@ -412,6 +412,38 @@ async function syncAdicionalesDetectados(
             "MONITOR",
         ]);
 
+    const tiposRecibidos =
+        adicionales
+            .map(
+                (item) =>
+                    cleanString(
+                        item.tipo
+                    )
+                        ?.toUpperCase() ??
+                    null
+            )
+            .filter(
+                (
+                    tipo
+                ): tipo is string =>
+                    Boolean(tipo)
+            );
+
+    const payloadTraeMonitor =
+        tiposRecibidos.some(
+            (tipo) =>
+                tipo ===
+                "MONITOR"
+        );
+
+    const payloadTraeTiposNoPermitidos =
+        tiposRecibidos.some(
+            (tipo) =>
+                !tiposPermitidos.has(
+                    tipo
+                )
+        );
+
     const tiposIgnorados =
         adicionales
             .map(
@@ -1028,6 +1060,26 @@ async function syncAdicionalesDetectados(
             relacion.id
         );
 
+    }
+
+    /*
+ * Compatibilidad con versiones antiguas del agente.
+ *
+ * Si el agente envió adicionales, pero ninguno es un
+ * MONITOR y sí existen tipos antiguos/no permitidos
+ * como IMPRESORA, no interpretamos el payload como
+ * "el equipo ya no tiene monitores".
+ *
+ * En ese escenario simplemente ignoramos esos
+ * adicionales antiguos y conservamos las relaciones
+ * de monitores existentes.
+ */
+    if (
+        adicionales.length > 0 &&
+        !payloadTraeMonitor &&
+        payloadTraeTiposNoPermitidos
+    ) {
+        return;
     }
 
     /* =====================================================

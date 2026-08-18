@@ -65,6 +65,35 @@ type GraphHeader = {
     value: string;
 };
 
+type GraphOutgoingAttachment = {
+    name: string;
+    contentType: string;
+    contentBytes: string;
+};
+
+/* ======================================================
+   Configuración adjuntos Graph
+====================================================== */
+
+/*
+ * Archivos menores a este tamaño pueden ir
+ * directamente como fileAttachment.
+ *
+ * Desde este tamaño utilizamos upload session.
+ */
+const GRAPH_SMALL_ATTACHMENT_LIMIT_BYTES =
+    3 * 1024 * 1024;
+
+/*
+ * Chunk para upload session.
+ *
+ * Utilizamos múltiplos de 320 KiB.
+ *
+ * 320 KiB × 10 = 3.125 MiB aprox.
+ */
+const GRAPH_UPLOAD_CHUNK_SIZE =
+    320 * 1024 * 10;
+
 /* ======================================================
    Servicio Graph Reader
 ====================================================== */
@@ -1666,17 +1695,281 @@ class GraphReaderService {
         }
     }
 
+    private getGraphAttachmentSize(
+        contentBytes: string
+    ): number {
+        return Buffer.byteLength(
+            contentBytes,
+            "base64"
+        );
+    }
+
+    private async uploadLargeAttachmentToDraft(
+        client: Client,
+        draftId: string,
+        att: GraphOutgoingAttachment
+    ): Promise<void> {
+        const buffer =
+            Buffer.from(
+                att.contentBytes,
+                "base64"
+            );
+
+        const totalBytes =
+            buffer.length;
+
+        const sessionReq =
+            await client
+                .api(
+                    `/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`
+                )
+                .post({
+                    AttachmentItem: {
+                        attachmentType:
+                            "file",
+
+                        name:
+                            att.name,
+
+                        size:
+                            totalBytes,
+                    },
+                });
+
+        const uploadUrl =
+            sessionReq?.uploadUrl;
+
+        if (!uploadUrl) {
+            throw new Error(
+                `Microsoft Graph no devolvió uploadUrl para "${att.name}".`
+            );
+        }
+
+        let offset =
+            0;
+
+        while (
+            offset <
+            totalBytes
+        ) {
+            const chunkEnd =
+                Math.min(
+                    offset +
+                    GRAPH_UPLOAD_CHUNK_SIZE,
+                    totalBytes
+                );
+
+            const chunk =
+                buffer.subarray(
+                    offset,
+                    chunkEnd
+                );
+
+            const start =
+                offset;
+
+            const end =
+                chunkEnd -
+                1;
+
+            const response =
+                await fetch(
+                    uploadUrl,
+                    {
+                        method:
+                            "PUT",
+
+                        headers: {
+                            /*
+                             * Outlook espera bytes crudos
+                             * durante la upload session.
+                             */
+                            "Content-Type":
+                                "application/octet-stream",
+
+                            "Content-Length":
+                                String(
+                                    chunk.length
+                                ),
+
+                            "Content-Range":
+                                `bytes ${start}-${end}/${totalBytes}`,
+                        },
+
+                        body:
+                            chunk,
+                    }
+                );
+
+            const responseBody =
+                await response
+                    .json()
+                    .catch(
+                        () =>
+                            null
+                    );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Error subiendo "${att.name}" a Graph. HTTP ${response.status} ${response.statusText}. ${JSON.stringify(responseBody)}`
+                );
+            }
+
+            /*
+             * Si Graph devuelve nextExpectedRanges,
+             * significa que la upload session sigue abierta
+             * y aún faltan bytes por enviar.
+             *
+             * Algunos endpoints/tenants pueden responder 200
+             * en lugar de 202 durante este proceso.
+             */
+            const nextExpectedRanges =
+                Array.isArray(
+                    responseBody?.nextExpectedRanges
+                )
+                    ? responseBody.nextExpectedRanges
+                    : [];
+
+            if (
+                nextExpectedRanges.length >
+                0
+            ) {
+                const nextRange =
+                    String(
+                        nextExpectedRanges[0]
+                    );
+
+                const nextOffset =
+                    Number(
+                        nextRange
+                            .split(
+                                "-"
+                            )[0]
+                    );
+
+                offset =
+                    Number.isFinite(
+                        nextOffset
+                    )
+                        ? nextOffset
+                        : chunkEnd;
+
+                continue;
+            }
+
+            /*
+             * Si ya no hay nextExpectedRanges,
+             * Graph considera terminada la carga.
+             */
+            if (
+                response.status ===
+                200 ||
+                response.status ===
+                201
+            ) {
+
+                return;
+            }
+
+            throw new Error(
+                `Graph devolvió una respuesta inesperada al subir "${att.name}". HTTP ${response.status}. ${JSON.stringify(responseBody)}`
+            );
+        }
+
+        throw new Error(
+            `La upload session terminó sin confirmar el adjunto "${att.name}".`
+        );
+    }
+
+    private async verifyDraftAttachments(
+        client: Client,
+        draftId: string,
+        expectedAttachments: GraphOutgoingAttachment[]
+    ): Promise<void> {
+        if (
+            expectedAttachments.length ===
+            0
+        ) {
+            return;
+        }
+
+        const response =
+            await client
+                .api(
+                    `/users/${this.supportEmail}/messages/${draftId}/attachments`
+                )
+                .select(
+                    "id,name,contentType,size,isInline"
+                )
+                .top(
+                    100
+                )
+                .get();
+
+        const actualAttachments =
+            response?.value ??
+            [];
+
+        const missingAttachments =
+            expectedAttachments.filter(
+                (
+                    expected
+                ) => {
+                    const expectedSize =
+                        this.getGraphAttachmentSize(
+                            expected.contentBytes
+                        );
+
+                    return !actualAttachments.some(
+                        (
+                            actual: any
+                        ) =>
+                            String(
+                                actual.name ??
+                                ""
+                            ) ===
+                            expected.name &&
+                            Number(
+                                actual.size ??
+                                0
+                            ) >
+                            0 &&
+                            Number(
+                                actual.size ??
+                                0
+                            ) >=
+                            expectedSize
+                    );
+                }
+            );
+
+        if (
+            missingAttachments.length >
+            0
+        ) {
+            throw new Error(
+                `Graph no agregó correctamente al draft los siguientes adjuntos: ${missingAttachments
+                    .map(
+                        (
+                            attachment
+                        ) =>
+                            attachment.name
+                    )
+                    .join(
+                        ", "
+                    )}`
+            );
+        }
+
+    }
+
     // Método para enviar email de respuesta (usado en respuestas desde el frontend, etc.)
     async sendReplyEmail(params: {
         to: string | string[];
         cc?: string[];
         subject: string;
         bodyHtml: string;
-        attachments?: Array<{
-            name: string;
-            contentType: string;
-            contentBytes: string;
-        }>;
+        attachments?: GraphOutgoingAttachment[];
     }) {
         const client = await this.getClient();
 
@@ -1686,12 +1979,27 @@ class GraphReaderService {
         const ccRecipients = (params.cc ?? []).filter(Boolean);
 
         console.log("📤 Enviando email vía Graph a:", toRecipients);
-        // If attachments are small enough, send directly via sendMail.
-        const attachments = params.attachments ?? [];
-        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
-        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
+        const attachments =
+            params.attachments ??
+            [];
 
-        const hasLarge = attachments.some(a => approxBytes(a.contentBytes) > LARGE_THRESHOLD);
+        const LARGE_THRESHOLD =
+            Number(
+                process.env
+                    .GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES ??
+                GRAPH_SMALL_ATTACHMENT_LIMIT_BYTES
+            );
+
+        const hasLarge =
+            attachments.some(
+                (
+                    attachment
+                ) =>
+                    this.getGraphAttachmentSize(
+                        attachment.contentBytes
+                    ) >=
+                    LARGE_THRESHOLD
+            );
 
         if (!hasLarge) {
             await client
@@ -1739,76 +2047,52 @@ class GraphReaderService {
 
         if (!draftId) throw new Error('No se pudo crear borrador para adjuntos grandes');
 
-        // helper: convert base64 string to Buffer
-        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
-
-        // helper: upload large attachment using upload session
-        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
-            const totalBytes = approxBytes(att.contentBytes);
-
-            const sessionReq = await client
-                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
-                .post({
-                    AttachmentItem: {
-                        attachmentType: 'file',
-                        name: att.name,
-                        size: totalBytes,
-                        contentType: att.contentType || 'application/octet-stream'
-                    }
-                });
-
-            const uploadUrl = sessionReq.uploadUrl;
-            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
-
-            const buffer = base64ToBuffer(att.contentBytes);
-            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
-            let offset = 0;
-
-            while (offset < buffer.length) {
-                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
-                const chunk = buffer.slice(offset, chunkEnd);
-                const start = offset;
-                const end = chunkEnd - 1;
-
-                const res = await fetch(uploadUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Length': String(chunk.length),
-                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
-                    },
-                    body: chunk,
-                });
-
-                if (!res.ok) {
-                    const text = await res.text().catch(() => '');
-                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
-                }
-
-                // If finished, Graph may return 201/200 with uploadedAttachment info
-                if (res.status === 201 || res.status === 200) {
-                    // uploaded
-                    break;
-                }
-
-                offset = chunkEnd;
-            }
-        };
 
         // 2) attach small files via attachments endpoint, large via upload session
-        for (const att of attachments) {
-            const size = approxBytes(att.contentBytes);
-            if (size <= LARGE_THRESHOLD) {
+        for (
+            const att
+            of attachments
+        ) {
+            const size =
+                this.getGraphAttachmentSize(
+                    att.contentBytes
+                );
+
+            if (
+                size <
+                LARGE_THRESHOLD
+            ) {
                 await client
-                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
+                    .api(
+                        `/users/${this.supportEmail}/messages/${draftId}/attachments`
+                    )
                     .post({
-                        "@odata.type": "#microsoft.graph.fileAttachment",
-                        name: att.name,
-                        contentType: att.contentType,
-                        contentBytes: att.contentBytes,
+                        "@odata.type":
+                            "#microsoft.graph.fileAttachment",
+
+                        name:
+                            att.name,
+
+                        contentType:
+                            att.contentType ||
+                            "application/octet-stream",
+
+                        contentBytes:
+                            att.contentBytes,
+
+                        isInline:
+                            false,
                     });
-            } else {
-                await uploadLargeAttachmentToDraft(att);
+
+                continue;
             }
+
+            await this
+                .uploadLargeAttachmentToDraft(
+                    client,
+                    draftId,
+                    att
+                );
         }
 
         // 3) send draft
@@ -1821,141 +2105,196 @@ class GraphReaderService {
         to?: string[];
         cc?: string[];
         bodyHtml: string;
-        attachments?: Array<{
-            name: string;
-            contentType: string;
-            contentBytes: string;
-        }>;
+        attachments?: GraphOutgoingAttachment[];
     }): Promise<{
         graphMessageId: string | null;
         internetMessageId: string | null;
     }> {
-        const client = await this.getClient();
+        const client =
+            await this.getClient();
 
-        console.log("📤 Creando reply real sobre Graph message:", params.originalGraphMessageId);
+        /* ======================================================
+           1. CREAR DRAFT DE RESPUESTA
+        ====================================================== */
 
-        const draft = await client
-            .api(`/users/${this.supportEmail}/messages/${params.originalGraphMessageId}/createReply`)
-            .post({});
+        const draft =
+            await client
+                .api(
+                    `/users/${this.supportEmail}/messages/${params.originalGraphMessageId}/createReply`
+                )
+                .post(
+                    {}
+                );
 
-        const draftId = draft?.id ?? null;
+        const draftId =
+            draft?.id ??
+            null;
 
         if (!draftId) {
-            return {
-                graphMessageId: null,
-                internetMessageId: null,
-            };
+            throw new Error(
+                "Microsoft Graph no devolvió ID para el draft de respuesta."
+            );
         }
 
+        /* ======================================================
+           2. ACTUALIZAR BODY / TO / CC
+        ====================================================== */
+
         await client
-            .api(`/users/${this.supportEmail}/messages/${draftId}`)
+            .api(
+                `/users/${this.supportEmail}/messages/${draftId}`
+            )
             .patch({
                 body: {
-                    contentType: "HTML",
-                    content: params.bodyHtml,
+                    contentType:
+                        "HTML",
+
+                    content:
+                        params.bodyHtml,
                 },
+
                 ...(params.to?.length
                     ? {
-                        toRecipients: params.to.map(address => ({
-                            emailAddress: { address }
-                        })),
+                        toRecipients:
+                            params.to.map(
+                                (
+                                    address
+                                ) => ({
+                                    emailAddress: {
+                                        address,
+                                    },
+                                })
+                            ),
                     }
                     : {}),
+
                 ...(params.cc?.length
                     ? {
-                        ccRecipients: params.cc.map(address => ({
-                            emailAddress: { address }
-                        })),
+                        ccRecipients:
+                            params.cc.map(
+                                (
+                                    address
+                                ) => ({
+                                    emailAddress: {
+                                        address,
+                                    },
+                                })
+                            ),
                     }
                     : {}),
             });
 
-        // Attach files: if any are large, use upload session
-        const attachments = params.attachments ?? [];
-        const approxBytes = (b64: string) => Math.ceil((b64.length * 3) / 4);
-        const LARGE_THRESHOLD = Number(process.env.GRAPH_ATTACHMENT_UPLOAD_THRESHOLD_BYTES || (3 * 1024 * 1024));
+        /* ======================================================
+           3. ADJUNTOS
+        ====================================================== */
 
-        const base64ToBuffer = (b64: string) => Buffer.from(b64, 'base64');
+        const attachments =
+            params.attachments ??
+            [];
 
-        const uploadLargeAttachmentToDraft = async (att: { name: string; contentType: string; contentBytes: string; }) => {
-            const totalBytes = approxBytes(att.contentBytes);
+        for (
+            const att
+            of attachments
+        ) {
+            const size =
+                this.getGraphAttachmentSize(
+                    att.contentBytes
+                );
 
-            const sessionReq = await client
-                .api(`/users/${this.supportEmail}/messages/${draftId}/attachments/createUploadSession`)
-                .post({
-                    AttachmentItem: {
-                        attachmentType: 'file',
-                        name: att.name,
-                        size: totalBytes,
-                        contentType: att.contentType || 'application/octet-stream'
-                    }
-                });
+            /*
+             * Menor a 3 MB:
+             * attachment tradicional.
+             */
+            if (
+                size <
+                GRAPH_SMALL_ATTACHMENT_LIMIT_BYTES
+            ) {
+                const created =
+                    await client
+                        .api(
+                            `/users/${this.supportEmail}/messages/${draftId}/attachments`
+                        )
+                        .post({
+                            "@odata.type":
+                                "#microsoft.graph.fileAttachment",
 
-            const uploadUrl = sessionReq.uploadUrl;
-            if (!uploadUrl) throw new Error('No uploadUrl from createUploadSession');
+                            name:
+                                att.name,
 
-            const buffer = base64ToBuffer(att.contentBytes);
-            const chunkSize = 4 * 1024 * 1024; // 4MB chunks
-            let offset = 0;
+                            contentType:
+                                att.contentType ||
+                                "application/octet-stream",
 
-            while (offset < buffer.length) {
-                const chunkEnd = Math.min(offset + chunkSize, buffer.length);
-                const chunk = buffer.slice(offset, chunkEnd);
-                const start = offset;
-                const end = chunkEnd - 1;
+                            contentBytes:
+                                att.contentBytes,
 
-                const res = await fetch(uploadUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Length': String(chunk.length),
-                        'Content-Range': `bytes ${start}-${end}/${buffer.length}`
-                    },
-                    body: chunk,
-                });
+                            isInline:
+                                false,
+                        });
 
-                if (!res.ok) {
-                    const text = await res.text().catch(() => '');
-                    throw new Error(`Upload chunk failed: ${res.status} ${res.statusText} ${text}`);
-                }
-
-                if (res.status === 201 || res.status === 200) {
-                    break;
-                }
-
-                offset = chunkEnd;
+                continue;
             }
-        };
 
-        for (const att of attachments) {
-            const size = approxBytes(att.contentBytes);
-            if (size <= LARGE_THRESHOLD) {
-                await client
-                    .api(`/users/${this.supportEmail}/messages/${draftId}/attachments`)
-                    .post({
-                        "@odata.type": "#microsoft.graph.fileAttachment",
-                        name: att.name,
-                        contentType: att.contentType,
-                        contentBytes: att.contentBytes,
-                    });
-            } else {
-                await uploadLargeAttachmentToDraft(att);
-            }
+            /*
+             * 3 MB o más:
+             * upload session.
+             */
+            await this
+                .uploadLargeAttachmentToDraft(
+                    client,
+                    draftId,
+                    att
+                );
         }
 
-        const draftWithIds = await client
-            .api(`/users/${this.supportEmail}/messages/${draftId}`)
-            .select("id,internetMessageId")
-            .get();
+        /* ======================================================
+           4. VERIFICAR ADJUNTOS ANTES DE ENVIAR
+        ====================================================== */
+
+        await this.verifyDraftAttachments(
+            client,
+            draftId,
+            attachments
+        );
+
+        /* ======================================================
+           5. OBTENER INTERNET MESSAGE ID
+        ====================================================== */
+
+        const draftWithIds =
+            await client
+                .api(
+                    `/users/${this.supportEmail}/messages/${draftId}`
+                )
+                .select(
+                    "id,internetMessageId"
+                )
+                .get();
+
+        /* ======================================================
+           6. ENVIAR DRAFT
+        ====================================================== */
 
         await client
-            .api(`/users/${this.supportEmail}/messages/${draftId}/send`)
-            .post({});
+            .api(
+                `/users/${this.supportEmail}/messages/${draftId}/send`
+            )
+            .post(
+                {}
+            );
 
-        console.log("✅ Reply real enviado sobre el mensaje original");
+        console.log(
+            "✅ Reply real enviado sobre el mensaje original con adjuntos verificados."
+        );
 
         return {
-            graphMessageId: draftWithIds?.id ?? draftId,
-            internetMessageId: draftWithIds?.internetMessageId ?? null,
+            graphMessageId:
+                draftWithIds?.id ??
+                draftId,
+
+            internetMessageId:
+                draftWithIds?.internetMessageId ??
+                null,
         };
     }
 

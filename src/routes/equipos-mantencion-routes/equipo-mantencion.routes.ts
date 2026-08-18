@@ -6,10 +6,12 @@ import {
     listarTecnicosParaMantencion,
     registrarInstalacionMantGeneral,
     registrarMantencionEquipo,
+    exportarMantencionesGenerales
 } from "../../controllers/controllers-equipo-mantencion/equipo-mantencion.controller.js";
 
 const router = Router();
 
+router.get("/export", exportarMantencionesGenerales);
 router.post("/mantencion", registrarMantencionEquipo);
 router.post("/instalacion", registrarInstalacionMantGeneral);
 router.get("/tecnicos/select", listarTecnicosParaMantencion);

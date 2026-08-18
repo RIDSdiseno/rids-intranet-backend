@@ -2,6 +2,12 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 
+import {
+    Prisma,
+} from "@prisma/client";
+
+import XLSX from "xlsx-js-style";
+
 function limpiarTexto(value: unknown): string | null {
     if (value === null || value === undefined) return null;
 
@@ -635,5 +641,832 @@ export async function registrarInstalacionMantGeneral(req: Request, res: Respons
             ok: false,
             error: "Error al registrar instalación de Mant.General.",
         });
+    }
+}
+
+/* =====================================================
+   EXPORTAR MANTENCIONES GENERALES A EXCEL
+===================================================== */
+
+export async function exportarMantencionesGenerales(
+    req: Request,
+    res: Response
+) {
+    try {
+        const user =
+            (req as any).user;
+
+        /* =====================================================
+           FILTROS
+        ===================================================== */
+
+        const search =
+            typeof req.query.search === "string"
+                ? req.query.search.trim()
+                : "";
+
+        let empresaId:
+            number | undefined;
+
+        /*
+         * CLIENTE:
+         * siempre restringido a su propia empresa.
+         */
+        if (
+            String(user?.rol ?? "")
+                .toUpperCase()
+                .trim() === "CLIENTE"
+        ) {
+            const empresaIdUsuario =
+                Number(
+                    user?.empresaId
+                );
+
+            if (
+                Number.isInteger(
+                    empresaIdUsuario
+                ) &&
+                empresaIdUsuario > 0
+            ) {
+                empresaId =
+                    empresaIdUsuario;
+            }
+        } else if (
+            req.query.empresaId
+        ) {
+            const parsed =
+                Number(
+                    req.query.empresaId
+                );
+
+            if (
+                Number.isInteger(
+                    parsed
+                ) &&
+                parsed > 0
+            ) {
+                empresaId =
+                    parsed;
+            }
+        }
+
+        const mantencionDesde =
+            typeof req.query.mantencionDesde ===
+                "string" &&
+            req.query.mantencionDesde
+                ? new Date(
+                    `${req.query.mantencionDesde}T00:00:00`
+                )
+                : undefined;
+
+        const mantencionHasta =
+            typeof req.query.mantencionHasta ===
+                "string" &&
+            req.query.mantencionHasta
+                ? new Date(
+                    `${req.query.mantencionHasta}T23:59:59.999`
+                )
+                : undefined;
+
+        const mantGeneral =
+            typeof req.query.mantGeneral ===
+                "string"
+                ? req.query.mantGeneral
+                    .toUpperCase()
+                    .trim()
+                : "TODOS";
+
+        const mantGeneralDesde =
+            typeof req.query.mantGeneralDesde ===
+                "string" &&
+            req.query.mantGeneralDesde
+                ? new Date(
+                    `${req.query.mantGeneralDesde}T00:00:00`
+                )
+                : undefined;
+
+        const mantGeneralHasta =
+            typeof req.query.mantGeneralHasta ===
+                "string" &&
+            req.query.mantGeneralHasta
+                ? new Date(
+                    `${req.query.mantGeneralHasta}T23:59:59.999`
+                )
+                : undefined;
+
+        /* =====================================================
+           WHERE
+        ===================================================== */
+
+        const andConditions:
+            Prisma.EquipoWhereInput[] =
+            [];
+
+        /*
+         * Solo equipos no eliminados.
+         */
+        andConditions.push({
+            deletedAt:
+                null,
+        });
+
+        /*
+         * Empresa.
+         */
+        if (
+            empresaId
+        ) {
+            andConditions.push({
+                empresaId,
+            });
+        }
+
+        /*
+         * Búsqueda general.
+         */
+        if (
+            search
+        ) {
+            andConditions.push({
+                OR: [
+                    {
+                        serial: {
+                            contains:
+                                search,
+
+                            mode:
+                                "insensitive",
+                        },
+                    },
+
+                    {
+                        marca: {
+                            contains:
+                                search,
+
+                            mode:
+                                "insensitive",
+                        },
+                    },
+
+                    {
+                        modelo: {
+                            contains:
+                                search,
+
+                            mode:
+                                "insensitive",
+                        },
+                    },
+
+                    {
+                        hostname: {
+                            contains:
+                                search,
+
+                            mode:
+                                "insensitive",
+                        },
+                    },
+
+                    {
+                        empresa: {
+                            nombre: {
+                                contains:
+                                    search,
+
+                                mode:
+                                    "insensitive",
+                            },
+                        },
+                    },
+
+                    {
+                        solicitante: {
+                            nombre: {
+                                contains:
+                                    search,
+
+                                mode:
+                                    "insensitive",
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+
+        /*
+         * Estado Mant.General.
+         *
+         * En tu schema este campo es Boolean,
+         * no Boolean?, por lo tanto no se consulta null.
+         */
+        if (
+            mantGeneral ===
+            "INSTALADO"
+        ) {
+            andConditions.push({
+                mantGeneralInstalado:
+                    true,
+            });
+        }
+
+        if (
+            mantGeneral ===
+            "NO_INSTALADO"
+        ) {
+            andConditions.push({
+                mantGeneralInstalado:
+                    false,
+            });
+        }
+
+        /*
+         * Última apertura de Mant.General.
+         */
+        if (
+            mantGeneralDesde ||
+            mantGeneralHasta
+        ) {
+            const filtroFecha:
+                Prisma.DateTimeNullableFilter =
+                {};
+
+            if (
+                mantGeneralDesde
+            ) {
+                filtroFecha.gte =
+                    mantGeneralDesde;
+            }
+
+            if (
+                mantGeneralHasta
+            ) {
+                filtroFecha.lte =
+                    mantGeneralHasta;
+            }
+
+            andConditions.push({
+                mantGeneralLastSeenAt:
+                    filtroFecha,
+            });
+        }
+
+        /*
+         * Equipos con alguna mantención
+         * dentro del rango seleccionado.
+         *
+         * IMPORTANTE:
+         * la relación real se llama
+         * equipoMantenciones.
+         */
+        if (
+            mantencionDesde ||
+            mantencionHasta
+        ) {
+            const filtroFechaMantencion:
+                Prisma.DateTimeFilter =
+                {};
+
+            if (
+                mantencionDesde
+            ) {
+                filtroFechaMantencion.gte =
+                    mantencionDesde;
+            }
+
+            if (
+                mantencionHasta
+            ) {
+                filtroFechaMantencion.lte =
+                    mantencionHasta;
+            }
+
+            andConditions.push({
+                equipoMantenciones: {
+                    some: {
+                        fechaInicio:
+                            filtroFechaMantencion,
+                    },
+                },
+            });
+        }
+
+        const where:
+            Prisma.EquipoWhereInput = {
+            AND:
+                andConditions,
+        };
+
+        /* =====================================================
+           CONSULTA
+        ===================================================== */
+
+        const equipos =
+            await prisma.equipo.findMany({
+                where,
+
+                orderBy: [
+                    {
+                        empresa: {
+                            nombre:
+                                "asc",
+                        },
+                    },
+
+                    {
+                        solicitante: {
+                            nombre:
+                                "asc",
+                        },
+                    },
+
+                    {
+                        id_equipo:
+                            "asc",
+                    },
+                ],
+
+                select: {
+                    id_equipo:
+                        true,
+
+                    serial:
+                        true,
+
+                    marca:
+                        true,
+
+                    modelo:
+                        true,
+
+                    hostname:
+                        true,
+
+                    estado:
+                        true,
+
+                    mantGeneralInstalado:
+                        true,
+
+                    mantGeneralVersion:
+                        true,
+
+                    mantGeneralInstalledAt:
+                        true,
+
+                    mantGeneralLastSeenAt:
+                        true,
+
+                    empresa: {
+                        select: {
+                            nombre:
+                                true,
+                        },
+                    },
+
+                    solicitante: {
+                        select: {
+                            nombre:
+                                true,
+
+                            email:
+                                true,
+
+                            rut:
+                                true,
+                        },
+                    },
+
+                    /*
+                     * Nombre real de la relación
+                     * definido en schema.prisma.
+                     */
+                    equipoMantenciones: {
+                        where:
+                            mantencionDesde ||
+                            mantencionHasta
+                                ? {
+                                    fechaInicio: {
+                                        ...(mantencionDesde
+                                            ? {
+                                                gte:
+                                                    mantencionDesde,
+                                            }
+                                            : {}),
+
+                                        ...(mantencionHasta
+                                            ? {
+                                                lte:
+                                                    mantencionHasta,
+                                            }
+                                            : {}),
+                                    },
+                                }
+                                : {},
+
+                        orderBy: {
+                            fechaInicio:
+                                "desc",
+                        },
+
+                        select: {
+                            id:
+                                true,
+
+                            tipo:
+                                true,
+
+                            estado:
+                                true,
+
+                            origen:
+                                true,
+
+                            fechaInicio:
+                                true,
+
+                            fechaFin:
+                                true,
+
+                            duracionSegundos:
+                                true,
+
+                            duracionTexto:
+                                true,
+
+                            tareasRealizadas:
+                                true,
+
+                            tareasConError:
+                                true,
+
+                            resumen:
+                                true,
+
+                            serial:
+                                true,
+
+                            hostname:
+                                true,
+
+                            agenteVersion:
+                                true,
+
+                            tecnico: {
+                                select: {
+                                    id_tecnico:
+                                        true,
+
+                                    nombre:
+                                        true,
+
+                                    email:
+                                        true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+        if (
+            equipos.length ===
+            0
+        ) {
+            return res
+                .status(404)
+                .json({
+                    error:
+                        "No existen equipos o mantenciones para los filtros seleccionados.",
+                });
+        }
+
+        /* =====================================================
+           FILAS EXCEL
+        ===================================================== */
+
+        const rows =
+            equipos.map(
+                (
+                    equipo
+                ) => {
+                    const ultimaMantencion =
+                        equipo
+                            .equipoMantenciones[0] ??
+                        null;
+
+                    return {
+                        "ID Equipo":
+                            equipo.id_equipo,
+
+                        Empresa:
+                            equipo.empresa
+                                ?.nombre ??
+                            "",
+
+                        Solicitante:
+                            equipo.solicitante
+                                ?.nombre ??
+                            "",
+
+                        Correo:
+                            equipo.solicitante
+                                ?.email ??
+                            "",
+
+                        RUT:
+                            equipo.solicitante
+                                ?.rut ??
+                            "",
+
+                        Serial:
+                            equipo.serial ??
+                            "",
+
+                        Marca:
+                            equipo.marca ??
+                            "",
+
+                        Modelo:
+                            equipo.modelo ??
+                            "",
+
+                        Hostname:
+                            equipo.hostname ??
+                            "",
+
+                        "Estado equipo":
+                            equipo.estado,
+
+                        "Mant.General":
+                            equipo.mantGeneralInstalado
+                                ? "Instalado"
+                                : "No instalado",
+
+                        "Versión Mant.General":
+                            equipo.mantGeneralVersion ??
+                            "",
+
+                        "Instalado Mant.General":
+                            equipo.mantGeneralInstalledAt
+                                ? equipo.mantGeneralInstalledAt.toLocaleString(
+                                    "es-CL",
+                                    {
+                                        timeZone:
+                                            "America/Santiago",
+                                    }
+                                )
+                                : "",
+
+                        "Última apertura Mant.General":
+                            equipo.mantGeneralLastSeenAt
+                                ? equipo.mantGeneralLastSeenAt.toLocaleString(
+                                    "es-CL",
+                                    {
+                                        timeZone:
+                                            "America/Santiago",
+                                    }
+                                )
+                                : "",
+
+                        "Última mantención":
+                            ultimaMantencion
+                                ?.fechaInicio
+                                ? ultimaMantencion.fechaInicio.toLocaleString(
+                                    "es-CL",
+                                    {
+                                        timeZone:
+                                            "America/Santiago",
+                                    }
+                                )
+                                : "",
+
+                        "Tipo mantención":
+                            ultimaMantencion
+                                ?.tipo ??
+                            "",
+
+                        "Estado mantención":
+                            ultimaMantencion
+                                ?.estado ??
+                            "",
+
+                        "Duración":
+                            ultimaMantencion
+                                ?.duracionTexto ??
+                            "",
+
+                        Técnico:
+                            ultimaMantencion
+                                ?.tecnico
+                                ?.nombre ??
+                            "",
+
+                        "Total mantenciones":
+                            equipo
+                                .equipoMantenciones
+                                .length,
+                    };
+                }
+            );
+
+        /* =====================================================
+           GENERAR EXCEL
+        ===================================================== */
+
+        const wb =
+            XLSX.utils.book_new();
+
+        const ws =
+            XLSX.utils.json_to_sheet(
+                rows
+            );
+
+        /*
+         * Anchos de columnas.
+         */
+        ws["!cols"] = [
+            { wch: 10 },
+            { wch: 26 },
+            { wch: 26 },
+            { wch: 30 },
+            { wch: 16 },
+            { wch: 22 },
+            { wch: 18 },
+            { wch: 22 },
+            { wch: 22 },
+            { wch: 18 },
+            { wch: 18 },
+            { wch: 22 },
+            { wch: 26 },
+            { wch: 30 },
+            { wch: 24 },
+            { wch: 22 },
+            { wch: 22 },
+            { wch: 18 },
+            { wch: 24 },
+            { wch: 18 },
+        ];
+
+        if (
+            ws["!ref"]
+        ) {
+            ws["!autofilter"] = {
+                ref:
+                    ws["!ref"],
+            };
+        }
+
+        /*
+         * Estilo del encabezado.
+         */
+        const range =
+            XLSX.utils.decode_range(
+                ws["!ref"] ??
+                "A1:A1"
+            );
+
+        for (
+            let col =
+                range.s.c;
+            col <=
+            range.e.c;
+            col++
+        ) {
+            const address =
+                XLSX.utils.encode_cell({
+                    r:
+                        0,
+
+                    c:
+                        col,
+                });
+
+            if (
+                ws[address]
+            ) {
+                ws[address].s = {
+                    font: {
+                        bold:
+                            true,
+
+                        color: {
+                            rgb:
+                                "FFFFFF",
+                        },
+                    },
+
+                    fill: {
+                        fgColor: {
+                            rgb:
+                                "0891B2",
+                        },
+                    },
+
+                    alignment: {
+                        vertical:
+                            "center",
+
+                        horizontal:
+                            "center",
+                    },
+                };
+            }
+        }
+
+        ws["!freeze"] = {
+            xSplit:
+                0,
+
+            ySplit:
+                1,
+        };
+
+        XLSX.utils.book_append_sheet(
+            wb,
+            ws,
+            "Mantenciones"
+        );
+
+        const buffer =
+            XLSX.write(
+                wb,
+                {
+                    type:
+                        "buffer",
+
+                    bookType:
+                        "xlsx",
+                }
+            );
+
+        /* =====================================================
+           NOMBRE ARCHIVO
+        ===================================================== */
+
+        const fecha =
+            new Date()
+                .toISOString()
+                .slice(
+                    0,
+                    10
+                );
+
+        const empresaNombre =
+            empresaId
+                ? equipos[0]
+                    ?.empresa
+                    ?.nombre
+                    ?.trim()
+                    .replace(
+                        /[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g,
+                        "_"
+                    ) ??
+                String(
+                    empresaId
+                )
+                : "TODAS";
+
+        const fileName =
+            `Mantenciones_Generales_${empresaNombre}_${fecha}.xlsx`;
+
+        /* =====================================================
+           RESPONSE
+        ===================================================== */
+
+        res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${encodeURIComponent(
+                fileName
+            )}"`
+        );
+
+        return res.send(
+            buffer
+        );
+    } catch (
+        error
+    ) {
+        console.error(
+            "exportarMantencionesGenerales error:",
+            error
+        );
+
+        return res
+            .status(500)
+            .json({
+                ok:
+                    false,
+
+                error:
+                    "Error exportando mantenciones generales.",
+            });
     }
 }

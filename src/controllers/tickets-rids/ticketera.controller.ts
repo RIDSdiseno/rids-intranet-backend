@@ -277,6 +277,8 @@ export async function createTicket(req: Request, res: Response) {
         //  la creación del ticket (como enviar notificaciones, actualizar dashboards, etc). 
         // Finalmente, si el ticket tiene un correo de origen válido, intentamos enviar 
         // un auto-reply al cliente con un template personalizado.
+        let createdInitialMessageId: number | null = null;
+
         const ticket = await prisma.$transaction(async (tx) => {
             const ticket = await tx.ticket.create({
                 data: {
@@ -344,33 +346,8 @@ export async function createTicket(req: Request, res: Response) {
                     },
                 });
 
-                if (files?.length) {
-                    for (const file of files) {
-                        if (!file.buffer) {
-                            throw new Error(`Adjunto sin buffer: ${file.originalname}`);
-                        }
-
-                        const uploaded = await uploadTicketAttachmentBuffer({
-                            ticketId: ticket.id,
-                            messageId: createdMessage.id,
-                            buffer: file.buffer,
-                            filename: file.originalname,
-                            mimeType: file.mimetype || "application/octet-stream",
-                        });
-
-                        await tx.ticketAttachment.create({
-                            data: {
-                                messageId: createdMessage.id,
-                                filename: uploaded.filename,
-                                mimeType: uploaded.mimeType,
-                                url: uploaded.url,
-                                bytes: uploaded.bytes,
-                                isInline: false,
-                                contentId: null,
-                            },
-                        });
-                    }
-                }
+                createdInitialMessageId =
+                    createdMessage.id;
 
                 await tx.ticketEvent.create({
                     data: {
@@ -389,6 +366,73 @@ export async function createTicket(req: Request, res: Response) {
                 timeout: 15000,
             }
         );
+
+        /* =========================================================
+   GUARDAR ADJUNTOS FUERA DE LA TRANSACCIÓN
+========================================================= */
+        if (
+            files?.length &&
+            createdInitialMessageId
+        ) {
+            for (
+                const file
+                of files
+            ) {
+                if (
+                    !file.buffer
+                ) {
+                    throw new Error(
+                        `Adjunto sin buffer: ${file.originalname}`
+                    );
+                }
+
+                const uploaded =
+                    await uploadTicketAttachmentBuffer({
+                        ticketId:
+                            ticket.id,
+
+                        messageId:
+                            createdInitialMessageId,
+
+                        buffer:
+                            file.buffer,
+
+                        filename:
+                            file.originalname,
+
+                        mimeType:
+                            file.mimetype ||
+                            "application/octet-stream",
+                    });
+
+                await prisma
+                    .ticketAttachment
+                    .create({
+                        data: {
+                            messageId:
+                                createdInitialMessageId,
+
+                            filename:
+                                uploaded.filename,
+
+                            mimeType:
+                                uploaded.mimeType,
+
+                            url:
+                                uploaded.url,
+
+                            bytes:
+                                uploaded.bytes,
+
+                            isInline:
+                                false,
+
+                            contentId:
+                                null,
+                        },
+                    });
+            }
+        }
 
         // Emitimos evento de ticket creado para que otros sistemas puedan reaccionar (notificaciones, dashboards, etc)
         bus.emit("ticket.created", {
@@ -626,115 +670,226 @@ export async function replyTicketAsAgent(req: Request, res: Response) {
         // Actualizamos la base de datos dentro de una transacción para asegurar que la creación 
         // del mensaje, la actualización del ticket y la creación del evento se realicen de 
         // forma atómica. Luego, si el mensaje no es interno, intentamos enviar un correo al cliente con un template personalizado usando el graphReaderService.
-        let createdMessageId: number | null = null;
-        let replyToSourceMessageId: string | null = null;
+        let createdMessageId: number | null =
+            null;
 
-        await prisma.$transaction(async (tx) => {
-            const fromEmail = process.env.EMAIL_USER ?? null;
+        let replyToSourceMessageId:
+            string | null =
+            null;
 
-            const lastInboundMessage = [...ticket.messages]
-                .reverse()
-                .find(
-                    (m) =>
-                        m.direction === MessageDirection.INBOUND &&
-                        m.sourceMessageId
-                );
+        await prisma.$transaction(
+            async (tx) => {
+                const fromEmail =
+                    process.env.EMAIL_USER ??
+                    null;
 
-            replyToSourceMessageId = lastInboundMessage?.sourceMessageId ?? null;
+                const lastInboundMessage =
+                    [...ticket.messages]
+                        .reverse()
+                        .find(
+                            (m) =>
+                                m.direction ===
+                                MessageDirection.INBOUND &&
+                                m.sourceMessageId
+                        );
 
-            const createdMessage = await tx.ticketMessage.create({
-                data: {
-                    ticketId,
-                    direction: MessageDirection.OUTBOUND,
-                    bodyText: message,
-                    isInternal: Boolean(isInternal),
-                    fromEmail,
-                    toEmail: toEmails.join(","),
-                    cc: ccEmails.length ? ccEmails.join(",") : null,
-                    sourceInReplyTo: replyToSourceMessageId,
-                },
-            });
+                replyToSourceMessageId =
+                    lastInboundMessage
+                        ?.sourceMessageId ??
+                    null;
 
-            createdMessageId = createdMessage.id;
+                const createdMessage =
+                    await tx.ticketMessage.create({
+                        data: {
+                            ticketId,
 
-            if (files?.length) {
-                for (const file of files) {
-                    if (!file.buffer) {
-                        throw new Error(`Adjunto sin buffer: ${file.originalname}`);
-                    }
+                            direction:
+                                MessageDirection.OUTBOUND,
 
-                    const uploaded = await uploadTicketAttachmentBuffer({
-                        ticketId,
-                        messageId: createdMessage.id,
-                        buffer: file.buffer,
-                        filename: file.originalname,
-                        mimeType: file.mimetype || "application/octet-stream",
+                            bodyText:
+                                message,
+
+                            isInternal:
+                                Boolean(
+                                    isInternal
+                                ),
+
+                            fromEmail,
+
+                            toEmail:
+                                toEmails.join(
+                                    ","
+                                ),
+
+                            cc:
+                                ccEmails.length
+                                    ? ccEmails.join(
+                                        ","
+                                    )
+                                    : null,
+
+                            sourceInReplyTo:
+                                replyToSourceMessageId,
+                        },
                     });
 
-                    await tx.ticketAttachment.create({
+                createdMessageId =
+                    createdMessage.id;
+
+                const now =
+                    new Date();
+
+                const updateData:
+                    any = {
+                    lastActivityAt:
+                        now,
+                };
+
+                const shouldAutoOpenTicket =
+                    ticket.status ===
+                    TicketStatus.NEW ||
+                    ticket.status ===
+                    TicketStatus.PENDING;
+
+                if (
+                    shouldAutoOpenTicket
+                ) {
+                    updateData.status =
+                        TicketStatus.OPEN;
+                }
+
+                if (
+                    !ticket.firstResponseAt &&
+                    !isInternal &&
+                    agentId &&
+                    ticket.assigneeId
+                ) {
+                    updateData.firstResponseAt =
+                        now;
+                }
+
+                await tx.ticket.update({
+                    where: {
+                        id:
+                            ticketId,
+                    },
+
+                    data:
+                        updateData,
+                });
+
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId,
+
+                        type:
+                            TicketEventType.MESSAGE_SENT,
+
+                        actorType:
+                            TicketActorType.AGENT,
+
+                        actorId:
+                            agentId ??
+                            null,
+                    },
+                });
+
+                if (
+                    shouldAutoOpenTicket
+                ) {
+                    await tx.ticketEvent.create({
                         data: {
-                            messageId: createdMessage.id,
-                            filename: uploaded.filename,
-                            mimeType: uploaded.mimeType,
-                            url: uploaded.url,
-                            bytes: uploaded.bytes,
-                            isInline: false,
-                            contentId: null,
+                            ticketId,
+
+                            type:
+                                TicketEventType.STATUS_CHANGED,
+
+                            oldValue:
+                                ticket.status,
+
+                            newValue:
+                                TicketStatus.OPEN,
+
+                            actorType:
+                                agentId
+                                    ? TicketActorType.AGENT
+                                    : TicketActorType.SYSTEM,
+
+                            actorId:
+                                agentId ??
+                                null,
                         },
                     });
                 }
             }
+        );
 
-            const now = new Date();
+        /* =========================================================
+   GUARDAR ADJUNTOS FUERA DE LA TRANSACCIÓN
+========================================================= */
 
-            const updateData: any = {
-                lastActivityAt: now,
-            };
+        if (
+            files?.length &&
+            createdMessageId
+        ) {
+            for (
+                const file
+                of files
+            ) {
+                if (
+                    !file.buffer
+                ) {
+                    throw new Error(
+                        `Adjunto sin buffer: ${file.originalname}`
+                    );
+                }
 
-            const shouldAutoOpenTicket =
-                ticket.status === TicketStatus.NEW ||
-                ticket.status === TicketStatus.PENDING;
-
-            if (shouldAutoOpenTicket) {
-                updateData.status = TicketStatus.OPEN;
-            }
-
-            if (!ticket.firstResponseAt && !isInternal && agentId && ticket.assigneeId) {
-                updateData.firstResponseAt = now;
-            }
-
-            await tx.ticket.update({
-                where: { id: ticketId },
-                data: updateData,
-            });
-
-            // Registramos el mensaje enviado por el agente.
-            await tx.ticketEvent.create({
-                data: {
-                    ticketId,
-                    type: TicketEventType.MESSAGE_SENT,
-                    actorType: TicketActorType.AGENT,
-                    actorId: agentId ?? null,
-                },
-            });
-
-            // Si el ticket salió automáticamente de PENDING/NEW a OPEN,
-            // registramos el cambio de estado para que el SLA pueda reanudar correctamente.
-            if (shouldAutoOpenTicket) {
-                await tx.ticketEvent.create({
-                    data: {
+                const uploaded =
+                    await uploadTicketAttachmentBuffer({
                         ticketId,
-                        type: TicketEventType.STATUS_CHANGED,
-                        oldValue: ticket.status,
-                        newValue: TicketStatus.OPEN,
-                        actorType: agentId
-                            ? TicketActorType.AGENT
-                            : TicketActorType.SYSTEM,
-                        actorId: agentId ?? null,
-                    },
-                });
+
+                        messageId:
+                            createdMessageId,
+
+                        buffer:
+                            file.buffer,
+
+                        filename:
+                            file.originalname,
+
+                        mimeType:
+                            file.mimetype ||
+                            "application/octet-stream",
+                    });
+
+                await prisma
+                    .ticketAttachment
+                    .create({
+                        data: {
+                            messageId:
+                                createdMessageId,
+
+                            filename:
+                                uploaded.filename,
+
+                            mimeType:
+                                uploaded.mimeType,
+
+                            url:
+                                uploaded.url,
+
+                            bytes:
+                                uploaded.bytes,
+
+                            isInline:
+                                false,
+
+                            contentId:
+                                null,
+                        },
+                    });
             }
-        });
+        }
 
         /*
  * Si el agente responde al cliente, cancelamos cualquier recordatorio
