@@ -94,9 +94,19 @@ type EquipoAgentPayload = {
 
     adicionalesDetectados?: Array<{
         tipo?: string | null;
+
+        nombre?: string | null;
+        marca?: string | null;
+        modelo?: string | null;
+
         descripcion?: string | null;
         cantidad?: number | string | null;
         serialAdicional?: string | null;
+
+        macAddress?: string | null;
+        ipAddress?: string | null;
+        hostname?: string | null;
+        ubicacion?: string | null;
     }>;
 
     softwares?: Array<{
@@ -402,6 +412,42 @@ async function syncAdicionalesDetectados(
             "MONITOR",
         ]);
 
+    const tiposIgnorados =
+        adicionales
+            .map(
+                (item) =>
+                    cleanString(
+                        item.tipo
+                    )
+                        ?.toUpperCase() ??
+                    null
+            )
+            .filter(
+                (
+                    tipo
+                ): tipo is string =>
+                    Boolean(
+                        tipo &&
+                        !tiposPermitidos.has(
+                            tipo
+                        )
+                    )
+            );
+
+    if (
+        tiposIgnorados.length >
+        0
+    ) {
+        console.warn(
+            `⚠️ Agente equipo ${equipoId} envió adicionales no permitidos:`,
+            Array.from(
+                new Set(
+                    tiposIgnorados
+                )
+            )
+        );
+    }
+
     /* =====================================================
        LIMPIAR PAYLOAD
     ===================================================== */
@@ -459,11 +505,58 @@ async function syncAdicionalesDetectados(
                             )
                             : 1;
 
+                    const nombre =
+                        cleanString(
+                            item.nombre
+                        );
+
+                    const marca =
+                        cleanString(
+                            item.marca
+                        );
+
+                    const modelo =
+                        cleanString(
+                            item.modelo
+                        );
+
+                    const macAddress =
+                        cleanString(
+                            item.macAddress
+                        );
+
+                    const ipAddress =
+                        cleanString(
+                            item.ipAddress
+                        );
+
+                    const hostname =
+                        cleanString(
+                            item.hostname
+                        );
+
+                    const ubicacion =
+                        cleanString(
+                            item.ubicacion
+                        );
+
                     return {
                         tipo,
+
+                        nombre,
+                        marca,
+                        modelo,
+
                         descripcion,
+
                         cantidad,
+
                         serialAdicional,
+
+                        macAddress,
+                        ipAddress,
+                        hostname,
+                        ubicacion,
                     };
                 }
             )
@@ -472,9 +565,21 @@ async function syncAdicionalesDetectados(
                     item
                 ): item is {
                     tipo: string;
+
+                    nombre: string | null;
+                    marca: string | null;
+                    modelo: string | null;
+
                     descripcion: string;
+
                     cantidad: number;
+
                     serialAdicional: string | null;
+
+                    macAddress: string | null;
+                    ipAddress: string | null;
+                    hostname: string | null;
+                    ubicacion: string | null;
                 } =>
                     Boolean(
                         item
@@ -573,36 +678,105 @@ async function syncAdicionalesDetectados(
              * crear dispositivo físico.
              */
             if (!adicional) {
-                adicional =
-                    await prisma.adicional.create({
-                        data: {
-                            tipo:
-                                item.tipo,
+                try {
+                    adicional =
+                        await prisma.adicional.create({
+                            data: {
+                                tipo:
+                                    item.tipo,
 
-                            descripcion:
-                                item.descripcion,
+                                nombre:
+                                    item.nombre,
 
-                            cantidad:
-                                item.cantidad,
+                                marca:
+                                    item.marca,
 
-                            serialAdicional:
-                                item.serialAdicional,
+                                modelo:
+                                    item.modelo,
 
-                            origen:
-                                "AGENTE",
+                                descripcion:
+                                    item.descripcion,
 
-                            estado:
-                                "ASIGNADO",
-                        },
+                                cantidad:
+                                    item.cantidad,
 
-                        select: {
-                            id:
-                                true,
+                                serialAdicional:
+                                    item.serialAdicional,
 
-                            origen:
-                                true,
-                        },
-                    });
+                                macAddress:
+                                    item.macAddress,
+
+                                ipAddress:
+                                    item.ipAddress,
+
+                                hostname:
+                                    item.hostname,
+
+                                ubicacion:
+                                    item.ubicacion,
+
+                                origen:
+                                    "AGENTE",
+
+                                estado:
+                                    "ASIGNADO",
+                            },
+
+                            select: {
+                                id:
+                                    true,
+
+                                origen:
+                                    true,
+                            },
+                        });
+
+                } catch (error: any) {
+
+                    /*
+                     * Puede ocurrir que otro agente
+                     * cree el mismo monitor justo
+                     * entre nuestro findUnique()
+                     * y el create().
+                     */
+                    if (
+                        error?.code ===
+                        "P2002"
+                    ) {
+                        adicional =
+                            await prisma.adicional.findUnique({
+                                where: {
+                                    serialAdicional:
+                                        item.serialAdicional,
+                                },
+
+                                select: {
+                                    id:
+                                        true,
+
+                                    origen:
+                                        true,
+                                },
+                            });
+
+                        /*
+                         * Si realmente era una colisión
+                         * por serial, el registro debería
+                         * existir ahora.
+                         *
+                         * Si no existe, entonces el P2002
+                         * probablemente corresponde a otra
+                         * restricción UNIQUE y no debemos
+                         * ocultar el error.
+                         */
+                        if (!adicional) {
+                            throw error;
+                        }
+
+                    } else {
+                        throw error;
+                    }
+                }
             }
 
             /*
@@ -629,11 +803,32 @@ async function syncAdicionalesDetectados(
                         tipo:
                             item.tipo,
 
+                        nombre:
+                            item.nombre,
+
+                        marca:
+                            item.marca,
+
+                        modelo:
+                            item.modelo,
+
                         descripcion:
                             item.descripcion,
 
                         cantidad:
                             item.cantidad,
+
+                        macAddress:
+                            item.macAddress,
+
+                        ipAddress:
+                            item.ipAddress,
+
+                        hostname:
+                            item.hostname,
+
+                        ubicacion:
+                            item.ubicacion,
 
                         estado:
                             "ASIGNADO",
@@ -700,6 +895,15 @@ async function syncAdicionalesDetectados(
                             tipo:
                                 item.tipo,
 
+                            nombre:
+                                item.nombre,
+
+                            marca:
+                                item.marca,
+
+                            modelo:
+                                item.modelo,
+
                             descripcion:
                                 item.descripcion,
 
@@ -709,19 +913,23 @@ async function syncAdicionalesDetectados(
                             serialAdicional:
                                 null,
 
+                            macAddress:
+                                item.macAddress,
+
+                            ipAddress:
+                                item.ipAddress,
+
+                            hostname:
+                                item.hostname,
+
+                            ubicacion:
+                                item.ubicacion,
+
                             origen:
                                 "AGENTE",
 
                             estado:
                                 "ASIGNADO",
-                        },
-
-                        select: {
-                            id:
-                                true,
-
-                            origen:
-                                true,
                         },
                     });
             } else if (
@@ -735,11 +943,35 @@ async function syncAdicionalesDetectados(
                     },
 
                     data: {
+                        tipo:
+                            item.tipo,
+
+                        nombre:
+                            item.nombre,
+
+                        marca:
+                            item.marca,
+
+                        modelo:
+                            item.modelo,
+
                         descripcion:
                             item.descripcion,
 
                         cantidad:
                             item.cantidad,
+
+                        macAddress:
+                            item.macAddress,
+
+                        ipAddress:
+                            item.ipAddress,
+
+                        hostname:
+                            item.hostname,
+
+                        ubicacion:
+                            item.ubicacion,
 
                         estado:
                             "ASIGNADO",
@@ -753,11 +985,11 @@ async function syncAdicionalesDetectados(
         }
 
         /* =================================================
-           RELACIÓN ADICIONAL ↔ EQUIPO
-        ================================================= */
+    RELACIÓN ADICIONAL ↔ EQUIPO
+ ================================================= */
 
-        const relacionExistente =
-            await prisma.adicionalEquipo.findUnique({
+        const relacion =
+            await prisma.adicionalEquipo.upsert({
                 where: {
                     adicionalId_equipoId: {
                         adicionalId:
@@ -766,46 +998,36 @@ async function syncAdicionalesDetectados(
                         equipoId,
                     },
                 },
+
+                /*
+                 * Si la relación ya existe,
+                 * no modificamos nada.
+                 *
+                 * Así se conserva, por ejemplo,
+                 * origen = MANUAL.
+                 */
+                update: {},
+
+                create: {
+                    adicionalId:
+                        adicional.id,
+
+                    equipoId,
+
+                    origen:
+                        "AGENTE",
+                },
+
+                select: {
+                    id:
+                        true,
+                },
             });
 
-        let relacionId:
-            number;
-
-        if (
-            relacionExistente
-        ) {
-            /*
-             * Si una persona intervino manualmente
-             * esta relación, no cambiamos su origen.
-             */
-            relacionId =
-                relacionExistente.id;
-        } else {
-            const relacion =
-                await prisma.adicionalEquipo.create({
-                    data: {
-                        adicionalId:
-                            adicional.id,
-
-                        equipoId,
-
-                        origen:
-                            "AGENTE",
-                    },
-
-                    select: {
-                        id:
-                            true,
-                    },
-                });
-
-            relacionId =
-                relacion.id;
-        }
-
         relacionesActuales.add(
-            relacionId
+            relacion.id
         );
+
     }
 
     /* =====================================================

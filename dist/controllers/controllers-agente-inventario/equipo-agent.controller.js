@@ -222,6 +222,16 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
     const tiposPermitidos = new Set([
         "MONITOR",
     ]);
+    const tiposIgnorados = adicionales
+        .map((item) => cleanString(item.tipo)
+        ?.toUpperCase() ??
+        null)
+        .filter((tipo) => Boolean(tipo &&
+        !tiposPermitidos.has(tipo)));
+    if (tiposIgnorados.length >
+        0) {
+        console.warn(`⚠️ Agente equipo ${equipoId} envió adicionales no permitidos:`, Array.from(new Set(tiposIgnorados)));
+    }
     /* =====================================================
        LIMPIAR PAYLOAD
     ===================================================== */
@@ -245,11 +255,25 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
             cantidadRaw > 0
             ? Math.trunc(cantidadRaw)
             : 1;
+        const nombre = cleanString(item.nombre);
+        const marca = cleanString(item.marca);
+        const modelo = cleanString(item.modelo);
+        const macAddress = cleanString(item.macAddress);
+        const ipAddress = cleanString(item.ipAddress);
+        const hostname = cleanString(item.hostname);
+        const ubicacion = cleanString(item.ubicacion);
         return {
             tipo,
+            nombre,
+            marca,
+            modelo,
             descripcion,
             cantidad,
             serialAdicional,
+            macAddress,
+            ipAddress,
+            hostname,
+            ubicacion,
         };
     })
         .filter((item) => Boolean(item));
@@ -308,21 +332,67 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
              * crear dispositivo físico.
              */
             if (!adicional) {
-                adicional =
-                    await prisma.adicional.create({
-                        data: {
-                            tipo: item.tipo,
-                            descripcion: item.descripcion,
-                            cantidad: item.cantidad,
-                            serialAdicional: item.serialAdicional,
-                            origen: "AGENTE",
-                            estado: "ASIGNADO",
-                        },
-                        select: {
-                            id: true,
-                            origen: true,
-                        },
-                    });
+                try {
+                    adicional =
+                        await prisma.adicional.create({
+                            data: {
+                                tipo: item.tipo,
+                                nombre: item.nombre,
+                                marca: item.marca,
+                                modelo: item.modelo,
+                                descripcion: item.descripcion,
+                                cantidad: item.cantidad,
+                                serialAdicional: item.serialAdicional,
+                                macAddress: item.macAddress,
+                                ipAddress: item.ipAddress,
+                                hostname: item.hostname,
+                                ubicacion: item.ubicacion,
+                                origen: "AGENTE",
+                                estado: "ASIGNADO",
+                            },
+                            select: {
+                                id: true,
+                                origen: true,
+                            },
+                        });
+                }
+                catch (error) {
+                    /*
+                     * Puede ocurrir que otro agente
+                     * cree el mismo monitor justo
+                     * entre nuestro findUnique()
+                     * y el create().
+                     */
+                    if (error?.code ===
+                        "P2002") {
+                        adicional =
+                            await prisma.adicional.findUnique({
+                                where: {
+                                    serialAdicional: item.serialAdicional,
+                                },
+                                select: {
+                                    id: true,
+                                    origen: true,
+                                },
+                            });
+                        /*
+                         * Si realmente era una colisión
+                         * por serial, el registro debería
+                         * existir ahora.
+                         *
+                         * Si no existe, entonces el P2002
+                         * probablemente corresponde a otra
+                         * restricción UNIQUE y no debemos
+                         * ocultar el error.
+                         */
+                        if (!adicional) {
+                            throw error;
+                        }
+                    }
+                    else {
+                        throw error;
+                    }
+                }
             }
             /*
              * Existe y sigue siendo administrado
@@ -342,8 +412,15 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
                     },
                     data: {
                         tipo: item.tipo,
+                        nombre: item.nombre,
+                        marca: item.marca,
+                        modelo: item.modelo,
                         descripcion: item.descripcion,
                         cantidad: item.cantidad,
+                        macAddress: item.macAddress,
+                        ipAddress: item.ipAddress,
+                        hostname: item.hostname,
+                        ubicacion: item.ubicacion,
                         estado: "ASIGNADO",
                     },
                 });
@@ -390,15 +467,18 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
                     await prisma.adicional.create({
                         data: {
                             tipo: item.tipo,
+                            nombre: item.nombre,
+                            marca: item.marca,
+                            modelo: item.modelo,
                             descripcion: item.descripcion,
                             cantidad: item.cantidad,
                             serialAdicional: null,
+                            macAddress: item.macAddress,
+                            ipAddress: item.ipAddress,
+                            hostname: item.hostname,
+                            ubicacion: item.ubicacion,
                             origen: "AGENTE",
                             estado: "ASIGNADO",
-                        },
-                        select: {
-                            id: true,
-                            origen: true,
                         },
                     });
             }
@@ -409,8 +489,16 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
                         id: adicional.id,
                     },
                     data: {
+                        tipo: item.tipo,
+                        nombre: item.nombre,
+                        marca: item.marca,
+                        modelo: item.modelo,
                         descripcion: item.descripcion,
                         cantidad: item.cantidad,
+                        macAddress: item.macAddress,
+                        ipAddress: item.ipAddress,
+                        hostname: item.hostname,
+                        ubicacion: item.ubicacion,
                         estado: "ASIGNADO",
                     },
                 });
@@ -420,40 +508,33 @@ async function syncAdicionalesDetectados(equipoId, adicionales) {
             continue;
         }
         /* =================================================
-           RELACIÓN ADICIONAL ↔ EQUIPO
-        ================================================= */
-        const relacionExistente = await prisma.adicionalEquipo.findUnique({
+    RELACIÓN ADICIONAL ↔ EQUIPO
+ ================================================= */
+        const relacion = await prisma.adicionalEquipo.upsert({
             where: {
                 adicionalId_equipoId: {
                     adicionalId: adicional.id,
                     equipoId,
                 },
             },
-        });
-        let relacionId;
-        if (relacionExistente) {
             /*
-             * Si una persona intervino manualmente
-             * esta relación, no cambiamos su origen.
+             * Si la relación ya existe,
+             * no modificamos nada.
+             *
+             * Así se conserva, por ejemplo,
+             * origen = MANUAL.
              */
-            relacionId =
-                relacionExistente.id;
-        }
-        else {
-            const relacion = await prisma.adicionalEquipo.create({
-                data: {
-                    adicionalId: adicional.id,
-                    equipoId,
-                    origen: "AGENTE",
-                },
-                select: {
-                    id: true,
-                },
-            });
-            relacionId =
-                relacion.id;
-        }
-        relacionesActuales.add(relacionId);
+            update: {},
+            create: {
+                adicionalId: adicional.id,
+                equipoId,
+                origen: "AGENTE",
+            },
+            select: {
+                id: true,
+            },
+        });
+        relacionesActuales.add(relacion.id);
     }
     /* =====================================================
        ELIMINAR RELACIONES AGENTE OBSOLETAS
