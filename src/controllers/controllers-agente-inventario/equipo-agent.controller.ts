@@ -1324,7 +1324,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             })
             : null;
 
-        const serial = cleanString(body.serial);
+        const serial = cleanString(body.serial)?.toUpperCase() ?? null;
         const hostname = cleanString(body.hostname);
 
         const solicitanteEmail =
@@ -1389,21 +1389,42 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         let equipo: any = null;
 
         if (serial) {
-            equipo = await prisma.equipo.findUnique({
-                where: { serial },
-                include: {
-                    solicitante: {
-                        select: {
-                            id_solicitante: true,
-                            nombre: true,
-                            email: true,
-                            empresaId: true,
-                            deletedAt: true,
-                            isActive: true,
+            equipo =
+                await prisma.equipo.findFirst({
+                    where: {
+                        serial: {
+                            equals:
+                                serial,
+
+                            mode:
+                                "insensitive",
                         },
                     },
-                },
-            });
+
+                    include: {
+                        solicitante: {
+                            select: {
+                                id_solicitante:
+                                    true,
+
+                                nombre:
+                                    true,
+
+                                email:
+                                    true,
+
+                                empresaId:
+                                    true,
+
+                                deletedAt:
+                                    true,
+
+                                isActive:
+                                    true,
+                            },
+                        },
+                    },
+                });
         }
 
         if (!equipo && hostname && empresaDetectada?.id_empresa) {
@@ -1598,33 +1619,138 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             equipoUpdateData.idSolicitante = null;
         }
 
-        const fueCreadoPorAgente = !equipo;
-        const equipoAntesUpdate = equipo;
+        let fueCreadoPorAgente = false;
+        let equipoAntesUpdate = equipo;
 
         if (equipo) {
-            equipo = await prisma.equipo.update({
-                where: {
-                    id_equipo: equipo.id_equipo,
-                },
-                data: equipoUpdateData,
-            });
+            equipo =
+                await prisma.equipo.update({
+                    where: {
+                        id_equipo:
+                            equipo.id_equipo,
+                    },
+
+                    data:
+                        equipoUpdateData,
+                });
+
         } else {
+
             const serialForCreate =
                 serial ??
-                (hostname
-                    ? `AGENT-${hostname}-${empresaIdFinal ?? "SIN-EMPRESA"}`
-                    : `AGENT-${Date.now()}`);
+                (
+                    hostname
+                        ? `AGENT-${hostname}-${empresaIdFinal ?? "SIN-EMPRESA"}`
+                        : `AGENT-${Date.now()}`
+                );
 
-            equipo = await prisma.equipo.create({
-                data: {
-                    ...equipoUpdateData,
-                    serial: serialForCreate,
-                    marca,
-                    modelo,
-                    tipo: "GENERICO",
-                    propiedad: "Empresa",
-                },
-            });
+            try {
+                equipo =
+                    await prisma.equipo.create({
+                        data: {
+                            ...equipoUpdateData,
+
+                            serial:
+                                serialForCreate,
+
+                            marca,
+                            modelo,
+
+                            tipo:
+                                "GENERICO",
+
+                            propiedad:
+                                "Empresa",
+                        },
+                    });
+
+                /*
+                 * Solamente es CREATE si realmente
+                 * prisma.equipo.create() tuvo éxito.
+                 */
+                fueCreadoPorAgente =
+                    true;
+
+            } catch (error: any) {
+
+                /*
+                 * Protección ante concurrencia o
+                 * colisión por índice UNIQUE upper(serial).
+                 */
+                if (
+                    error?.code ===
+                    "P2002"
+                ) {
+                    const equipoExistente =
+                        await prisma.equipo.findFirst({
+                            where: {
+                                serial: {
+                                    equals:
+                                        serialForCreate,
+
+                                    mode:
+                                        "insensitive",
+                                },
+                            },
+
+                            include: {
+                                solicitante: {
+                                    select: {
+                                        id_solicitante:
+                                            true,
+
+                                        nombre:
+                                            true,
+
+                                        email:
+                                            true,
+
+                                        empresaId:
+                                            true,
+
+                                        deletedAt:
+                                            true,
+
+                                        isActive:
+                                            true,
+                                    },
+                                },
+                            },
+                        });
+
+                    if (!equipoExistente) {
+                        throw error;
+                    }
+
+                    /*
+                     * Guardamos el estado anterior
+                     * para auditoría.
+                     */
+                    equipoAntesUpdate =
+                        equipoExistente;
+
+                    equipo =
+                        await prisma.equipo.update({
+                            where: {
+                                id_equipo:
+                                    equipoExistente.id_equipo,
+                            },
+
+                            data:
+                                equipoUpdateData,
+                        });
+
+                    /*
+                     * Era un equipo ya existente,
+                     * por lo tanto NO fue creado.
+                     */
+                    fueCreadoPorAgente =
+                        false;
+
+                } else {
+                    throw error;
+                }
+            }
         }
 
         const soTexto = buildSoText(osName, osVersion, osBuild);

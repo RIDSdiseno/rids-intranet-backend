@@ -26,6 +26,38 @@ function buildMonthFilter(monthN, yearN) {
     }
     return undefined;
 }
+function parseValidDate(raw) {
+    if (typeof raw !== "string") {
+        return null;
+    }
+    const value = raw.trim();
+    if (!value) {
+        return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+    return date;
+}
+function buildDateRangeFilter(fromRaw, toRaw) {
+    const from = parseValidDate(fromRaw);
+    const to = parseValidDate(toRaw);
+    if (!from &&
+        !to) {
+        return undefined;
+    }
+    const filter = {};
+    if (from) {
+        filter.gte =
+            from;
+    }
+    if (to) {
+        filter.lte =
+            to;
+    }
+    return filter;
+}
 function getUser(req) {
     const u = req.user;
     return u ?? {};
@@ -244,38 +276,125 @@ const UpdateMantencionSchema = z
 /* ------------------------------------ */
 /* WHERE                                 */
 /* ------------------------------------ */
+/* ------------------------------------ */
+/* WHERE                                 */
+/* ------------------------------------ */
 function buildWhereFromQuery(req) {
     const user = getUser(req);
     const tecnicoIdN = parsePositiveInt(req.query.tecnicoId);
     const empresaIdQ = req.query.empresaId;
-    const q = String(req.query.q ?? "").trim();
+    const q = String(req.query.q ??
+        "").trim();
     const status = parseStatus(req.query.status);
+    /* ====================================
+       FILTRO DE FECHAS NUEVO
+       ==================================== */
+    const fromDateRaw = req.query.fromDate;
+    const toDateRaw = req.query.toDate;
+    const rangeFilter = buildDateRangeFilter(fromDateRaw, toDateRaw);
+    /* ====================================
+       COMPATIBILIDAD ANTIGUA
+       month / year
+       ==================================== */
     const monthN = Number(req.query.month);
     const yearN = Number(req.query.year);
-    const dateFilter = buildMonthFilter(monthN, yearN);
+    const monthFilter = buildMonthFilter(monthN, yearN);
+    /*
+     * Prioridad:
+     *
+     * 1. fromDate / toDate
+     * 2. month / year
+     *
+     * Así el nuevo frontend utiliza rango,
+     * pero las llamadas antiguas siguen
+     * funcionando.
+     */
+    const dateFilter = rangeFilter ??
+        monthFilter;
     const INS = "insensitive";
     const empresaIdFilter = isCliente(user)
         ? parsePositiveInt(user.empresaId)
         : empresaIdQ
             ? parsePositiveInt(empresaIdQ)
             : null;
-    const where = {
-        ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
-        ...(tecnicoIdN ? { tecnicoId: tecnicoIdN } : {}),
-        ...(status ? { status } : {}),
-        ...(dateFilter ? { inicio: dateFilter } : {}),
-        ...(q
-            ? {
-                OR: [
-                    { solicitante: { contains: q, mode: INS } },
-                    { otrosDetalle: { contains: q, mode: INS } },
-                    { empresa: { is: { nombre: { contains: q, mode: INS } } } },
-                    { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
-                    { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-                ],
-            }
-            : {}),
-    };
+    const where = {};
+    /* ====================================
+       EMPRESA
+       ==================================== */
+    if (empresaIdFilter) {
+        where.empresaId =
+            empresaIdFilter;
+    }
+    /* ====================================
+       TÉCNICO
+       ==================================== */
+    if (tecnicoIdN) {
+        where.tecnicoId =
+            tecnicoIdN;
+    }
+    /* ====================================
+       ESTADO
+       ==================================== */
+    if (status) {
+        where.status =
+            status;
+    }
+    /* ====================================
+       FECHA DE INICIO
+       ==================================== */
+    if (dateFilter) {
+        where.inicio =
+            dateFilter;
+    }
+    /* ====================================
+       BÚSQUEDA
+       ==================================== */
+    if (q) {
+        where.OR = [
+            {
+                solicitante: {
+                    contains: q,
+                    mode: INS,
+                },
+            },
+            {
+                otrosDetalle: {
+                    contains: q,
+                    mode: INS,
+                },
+            },
+            {
+                empresa: {
+                    is: {
+                        nombre: {
+                            contains: q,
+                            mode: INS,
+                        },
+                    },
+                },
+            },
+            {
+                tecnico: {
+                    is: {
+                        nombre: {
+                            contains: q,
+                            mode: INS,
+                        },
+                    },
+                },
+            },
+            {
+                solicitanteRef: {
+                    is: {
+                        nombre: {
+                            contains: q,
+                            mode: INS,
+                        },
+                    },
+                },
+            },
+        ];
+    }
     return where;
 }
 /* ------------------------------------ */

@@ -45,6 +45,74 @@ function buildMonthFilter(monthN: number, yearN: number): Prisma.DateTimeFilter 
   return undefined;
 }
 
+function parseValidDate(
+  raw: unknown
+): Date | null {
+  if (
+    typeof raw !== "string"
+  ) {
+    return null;
+  }
+
+  const value =
+    raw.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function buildDateRangeFilter(
+  fromRaw: unknown,
+  toRaw: unknown
+): Prisma.DateTimeFilter | undefined {
+  const from =
+    parseValidDate(
+      fromRaw
+    );
+
+  const to =
+    parseValidDate(
+      toRaw
+    );
+
+  if (
+    !from &&
+    !to
+  ) {
+    return undefined;
+  }
+
+  const filter:
+    Prisma.DateTimeFilter =
+    {};
+
+  if (from) {
+    filter.gte =
+      from;
+  }
+
+  if (to) {
+    filter.lte =
+      to;
+  }
+
+  return filter;
+}
+
 function getUser(req: Request): AuthedUser {
   const u = (req as any).user as AuthedUser | undefined;
   return u ?? {};
@@ -297,44 +365,222 @@ const UpdateMantencionSchema = z
 /* WHERE                                 */
 /* ------------------------------------ */
 
-function buildWhereFromQuery(req: Request): Prisma.MantencionRemotaWhereInput {
-  const user = getUser(req);
+/* ------------------------------------ */
+/* WHERE                                 */
+/* ------------------------------------ */
 
-  const tecnicoIdN = parsePositiveInt(req.query.tecnicoId);
-  const empresaIdQ = req.query.empresaId as string | undefined;
+function buildWhereFromQuery(
+  req: Request
+): Prisma.MantencionRemotaWhereInput {
+  const user =
+    getUser(req);
 
-  const q = String(req.query.q ?? "").trim();
-  const status = parseStatus(req.query.status);
+  const tecnicoIdN =
+    parsePositiveInt(
+      req.query.tecnicoId
+    );
 
-  const monthN = Number(req.query.month);
-  const yearN = Number(req.query.year);
-  const dateFilter = buildMonthFilter(monthN, yearN);
+  const empresaIdQ =
+    req.query.empresaId as
+    | string
+    | undefined;
 
-  const INS: Prisma.QueryMode = "insensitive";
+  const q =
+    String(
+      req.query.q ??
+      ""
+    ).trim();
 
-  const empresaIdFilter = isCliente(user)
-    ? parsePositiveInt(user.empresaId)
-    : empresaIdQ
-      ? parsePositiveInt(empresaIdQ)
-      : null;
+  const status =
+    parseStatus(
+      req.query.status
+    );
 
-  const where: Prisma.MantencionRemotaWhereInput = {
-    ...(empresaIdFilter ? { empresaId: empresaIdFilter } : {}),
-    ...(tecnicoIdN ? { tecnicoId: tecnicoIdN } : {}),
-    ...(status ? { status } : {}),
-    ...(dateFilter ? { inicio: dateFilter } : {}),
-    ...(q
-      ? {
-        OR: [
-          { solicitante: { contains: q, mode: INS } },
-          { otrosDetalle: { contains: q, mode: INS } },
-          { empresa: { is: { nombre: { contains: q, mode: INS } } } },
-          { tecnico: { is: { nombre: { contains: q, mode: INS } } } },
-          { solicitanteRef: { is: { nombre: { contains: q, mode: INS } } } },
-        ],
-      }
-      : {}),
-  };
+  /* ====================================
+     FILTRO DE FECHAS NUEVO
+     ==================================== */
+
+  const fromDateRaw =
+    req.query.fromDate;
+
+  const toDateRaw =
+    req.query.toDate;
+
+  const rangeFilter =
+    buildDateRangeFilter(
+      fromDateRaw,
+      toDateRaw
+    );
+
+  /* ====================================
+     COMPATIBILIDAD ANTIGUA
+     month / year
+     ==================================== */
+
+  const monthN =
+    Number(
+      req.query.month
+    );
+
+  const yearN =
+    Number(
+      req.query.year
+    );
+
+  const monthFilter =
+    buildMonthFilter(
+      monthN,
+      yearN
+    );
+
+  /*
+   * Prioridad:
+   *
+   * 1. fromDate / toDate
+   * 2. month / year
+   *
+   * Así el nuevo frontend utiliza rango,
+   * pero las llamadas antiguas siguen
+   * funcionando.
+   */
+  const dateFilter =
+    rangeFilter ??
+    monthFilter;
+
+  const INS:
+    Prisma.QueryMode =
+    "insensitive";
+
+  const empresaIdFilter =
+    isCliente(user)
+      ? parsePositiveInt(
+        user.empresaId
+      )
+      : empresaIdQ
+        ? parsePositiveInt(
+          empresaIdQ
+        )
+        : null;
+
+  const where:
+    Prisma.MantencionRemotaWhereInput =
+    {};
+
+  /* ====================================
+     EMPRESA
+     ==================================== */
+
+  if (
+    empresaIdFilter
+  ) {
+    where.empresaId =
+      empresaIdFilter;
+  }
+
+  /* ====================================
+     TÉCNICO
+     ==================================== */
+
+  if (
+    tecnicoIdN
+  ) {
+    where.tecnicoId =
+      tecnicoIdN;
+  }
+
+  /* ====================================
+     ESTADO
+     ==================================== */
+
+  if (
+    status
+  ) {
+    where.status =
+      status;
+  }
+
+  /* ====================================
+     FECHA DE INICIO
+     ==================================== */
+
+  if (
+    dateFilter
+  ) {
+    where.inicio =
+      dateFilter;
+  }
+
+  /* ====================================
+     BÚSQUEDA
+     ==================================== */
+
+  if (
+    q
+  ) {
+    where.OR = [
+      {
+        solicitante: {
+          contains:
+            q,
+
+          mode:
+            INS,
+        },
+      },
+
+      {
+        otrosDetalle: {
+          contains:
+            q,
+
+          mode:
+            INS,
+        },
+      },
+
+      {
+        empresa: {
+          is: {
+            nombre: {
+              contains:
+                q,
+
+              mode:
+                INS,
+            },
+          },
+        },
+      },
+
+      {
+        tecnico: {
+          is: {
+            nombre: {
+              contains:
+                q,
+
+              mode:
+                INS,
+            },
+          },
+        },
+      },
+
+      {
+        solicitanteRef: {
+          is: {
+            nombre: {
+              contains:
+                q,
+
+              mode:
+                INS,
+            },
+          },
+        },
+      },
+    ];
+  }
 
   return where;
 }

@@ -1,6 +1,7 @@
 // src/controllers/recordatorios.controller.ts
 import { EstadoRecordatorio, OrigenRecordatorio, Prisma, } from "@prisma/client";
 import { prismaBase as prisma } from "../lib/prisma.js";
+const DIAS_EXPIRACION_RECORDATORIO = 3;
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -69,6 +70,97 @@ function optionalId(value) {
  */
 function contarRelacionesValidas(values) {
     return values.filter((value) => optionalId(value) !== null).length;
+}
+/* =====================================================
+   EXPIRAR RECORDATORIOS PENDIENTES ANTIGUOS
+===================================================== */
+async function expirarRecordatoriosPendientes(tecnicoId) {
+    const ahora = new Date();
+    /*
+     * Todo recordatorio cuya fecha programada
+     * haya ocurrido hace más de 3 días se considera
+     * expirado si todavía sigue PENDIENTE.
+     */
+    const fechaLimite = new Date(ahora.getTime() -
+        DIAS_EXPIRACION_RECORDATORIO *
+            24 *
+            60 *
+            60 *
+            1000);
+    /*
+     * Primero obtenemos los recordatorios porque
+     * necesitamos conocer las bitácoras asociadas
+     * para mantenerlas sincronizadas.
+     */
+    const recordatoriosExpirados = await prisma.recordatorio.findMany({
+        where: {
+            destinatarioId: tecnicoId,
+            estado: EstadoRecordatorio.PENDIENTE,
+            fechaProgramada: {
+                lt: fechaLimite,
+            },
+        },
+        select: {
+            id: true,
+            bitacoraId: true,
+        },
+    });
+    if (recordatoriosExpirados.length ===
+        0) {
+        return 0;
+    }
+    const recordatorioIds = recordatoriosExpirados.map((recordatorio) => recordatorio.id);
+    const bitacoraIds = Array.from(new Set(recordatoriosExpirados
+        .map((recordatorio) => recordatorio.bitacoraId)
+        .filter((id) => typeof id ===
+        "number")));
+    await prisma.$transaction(async (tx) => {
+        /*
+         * No borramos físicamente:
+         * lo dejamos como CANCELADO.
+         */
+        await tx.recordatorio.updateMany({
+            where: {
+                id: {
+                    in: recordatorioIds,
+                },
+                destinatarioId: tecnicoId,
+                estado: EstadoRecordatorio.PENDIENTE,
+                fechaProgramada: {
+                    lt: fechaLimite,
+                },
+            },
+            data: {
+                estado: EstadoRecordatorio.CANCELADO,
+                canceladoAt: ahora,
+                leidoAt: ahora,
+                completadoAt: null,
+                notificadoAt: null,
+            },
+        });
+        /*
+         * Si alguno proviene de Bitácora,
+         * limpiamos también los campos antiguos
+         * para no dejar datos inconsistentes.
+         */
+        if (bitacoraIds.length >
+            0) {
+            await tx.bitacoraTecnico.updateMany({
+                where: {
+                    id: {
+                        in: bitacoraIds,
+                    },
+                },
+                data: {
+                    recordatorioAt: null,
+                    recordatorioCompletado: false,
+                    recordatorioCompletadoAt: null,
+                    recordatorioNotificadoAt: null,
+                },
+            });
+        }
+    });
+    return recordatoriosExpirados.length;
 }
 /* =====================================================
    CREAR RECORDATORIO
@@ -171,6 +263,12 @@ export async function obtenerMisRecordatorios(req, res) {
                 error: "No fue posible identificar al usuario autenticado.",
             });
         }
+        /*
+ * Antes de devolver la campana,
+ * expirar automáticamente recordatorios
+ * pendientes que lleven más de 3 días vencidos.
+ */
+        await expirarRecordatoriosPendientes(tecnicoId);
         const incluirCompletados = String(req.query.incluirCompletados ??
             "") === "true";
         const ahora = new Date();

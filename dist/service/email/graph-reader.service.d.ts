@@ -1,5 +1,10 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import 'isomorphic-fetch';
+type GraphOutgoingAttachment = {
+    name: string;
+    contentType: string;
+    contentBytes: string;
+};
 declare class GraphReaderService {
     private client;
     private supportEmail;
@@ -26,27 +31,22 @@ declare class GraphReaderService {
     private normalizeEmail;
     private isBasicValidEmail;
     technicianHasValidOutlookMailbox(email?: string | null): Promise<boolean>;
+    private getGraphAttachmentSize;
+    private uploadLargeAttachmentToDraft;
+    private verifyDraftAttachments;
     sendReplyEmail(params: {
         to: string | string[];
         cc?: string[];
         subject: string;
         bodyHtml: string;
-        attachments?: Array<{
-            name: string;
-            contentType: string;
-            contentBytes: string;
-        }>;
+        attachments?: GraphOutgoingAttachment[];
     }): Promise<void>;
     replyToGraphMessage(params: {
         originalGraphMessageId: string;
         to?: string[];
         cc?: string[];
         bodyHtml: string;
-        attachments?: Array<{
-            name: string;
-            contentType: string;
-            contentBytes: string;
-        }>;
+        attachments?: GraphOutgoingAttachment[];
     }): Promise<{
         graphMessageId: string | null;
         internetMessageId: string | null;
