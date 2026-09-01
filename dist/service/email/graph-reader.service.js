@@ -569,6 +569,7 @@ class GraphReaderService {
         const existingTicket = await this.findExistingTicket(emailData);
         const allowedInternalCreators = [
             "carenas@rids.cl",
+            "diseno@rids.cl"
         ].map(e => e.trim().toLowerCase());
         if (isInternal &&
             !existingTicket &&
