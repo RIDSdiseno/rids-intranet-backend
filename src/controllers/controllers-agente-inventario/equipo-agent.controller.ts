@@ -127,6 +127,68 @@ function cleanString(value: unknown): string | null {
     return text.length > 0 ? text : null;
 }
 
+function normalizeEmailFromUnknown(
+    value: unknown
+): string | null {
+    const raw =
+        cleanString(value);
+
+    if (!raw) {
+        return null;
+    }
+
+    const normalized =
+        raw
+            .trim()
+            .toLowerCase();
+
+    /*
+     * Primero comprobamos si el valor completo
+     * ya es un email válido.
+     */
+    const exactEmailRegex =
+        /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+    if (
+        exactEmailRegex.test(
+            normalized
+        )
+    ) {
+        return normalized;
+    }
+
+    /*
+     * Si viene incrustado dentro de una ruta
+     * o texto del Registry, intentamos extraerlo.
+     *
+     * Ejemplo:
+     *
+     * microsoft.powershell.core\registry::...
+     * \ana.riquelme@jpl.cl\0a0d...
+     *
+     * =>
+     *
+     * ana.riquelme@jpl.cl
+     */
+    const embeddedEmailRegex =
+        /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/i;
+
+    const match =
+        normalized.match(
+            embeddedEmailRegex
+        );
+
+    if (!match?.[0]) {
+        return null;
+    }
+
+    return (
+        match[0]
+            .trim()
+            .toLowerCase()
+    );
+}
+
 function normalizarSerialAdicionalAgente(
     value: unknown
 ): string | null {
@@ -237,58 +299,138 @@ function buildSoText(
     return parts.length > 0 ? parts.join(" - ") : null;
 }
 
-function getEmailDomain(email?: string | null): string | null {
-    const clean = cleanString(email)?.toLowerCase();
+function getEmailDomain(
+    email?: string | null
+): string | null {
+    const normalizedEmail =
+        normalizeEmailFromUnknown(
+            email
+        );
 
-    if (!clean || !clean.includes("@")) return null;
+    if (!normalizedEmail) {
+        return null;
+    }
 
-    return clean.split("@")[1]?.trim() || null;
+    const domain =
+        normalizedEmail
+            .split("@")[1]
+            ?.trim()
+            .toLowerCase();
+
+    return (
+        domain ||
+        null
+    );
 }
 
 /* =========================
    RESOLUCIÓN AUTOMÁTICA
 ========================= */
 
-async function resolveEmpresaFromAgent(body: EquipoAgentPayload) {
-    const empresaId = numberOrNull(body.empresaId);
+async function resolveEmpresaFromAgent(
+    body: EquipoAgentPayload
+) {
+    const empresaId =
+        numberOrNull(
+            body.empresaId
+        );
 
+    /*
+     * 1. Buscar por ID,
+     * pero SOLO si la empresa está activa.
+     */
     if (empresaId) {
-        const empresa = await prisma.empresa.findUnique({
-            where: { id_empresa: empresaId },
-        });
+        const empresa =
+            await prisma.empresa.findFirst({
+                where: {
+                    id_empresa:
+                        empresaId,
 
-        if (empresa) return empresa;
+                    isActive:
+                        true,
+
+                    deactivatedAt:
+                        null,
+                },
+            });
+
+        if (empresa) {
+            return empresa;
+        }
     }
 
-    const dominioBody = cleanString(body.dominioEmpresa)?.toLowerCase();
-    const dominioEmail = getEmailDomain(body.solicitanteEmail);
-    const dominio = dominioBody || dominioEmail;
+    const dominioBody =
+        cleanString(
+            body.dominioEmpresa
+        )?.toLowerCase();
 
+    const dominioEmail =
+        getEmailDomain(
+            body.solicitanteEmail
+        );
+
+    const dominio =
+        dominioBody ||
+        dominioEmail;
+
+    /*
+     * 2. Buscar por dominio,
+     * solo entre empresas activas.
+     */
     if (dominio) {
-        const empresa = await prisma.empresa.findFirst({
-            where: {
-                dominios: {
-                    has: dominio,
-                },
-            },
-        });
+        const empresa =
+            await prisma.empresa.findFirst({
+                where: {
+                    isActive:
+                        true,
 
-        if (empresa) return empresa;
+                    deactivatedAt:
+                        null,
+
+                    dominios: {
+                        has:
+                            dominio,
+                    },
+                },
+            });
+
+        if (empresa) {
+            return empresa;
+        }
     }
 
-    const empresaNombre = cleanString(body.empresaNombre);
+    const empresaNombre =
+        cleanString(
+            body.empresaNombre
+        );
 
+    /*
+     * 3. Buscar por nombre,
+     * solo entre empresas activas.
+     */
     if (empresaNombre) {
-        const empresa = await prisma.empresa.findFirst({
-            where: {
-                nombre: {
-                    contains: empresaNombre,
-                    mode: "insensitive",
-                },
-            },
-        });
+        const empresa =
+            await prisma.empresa.findFirst({
+                where: {
+                    isActive:
+                        true,
 
-        if (empresa) return empresa;
+                    deactivatedAt:
+                        null,
+
+                    nombre: {
+                        contains:
+                            empresaNombre,
+
+                        mode:
+                            "insensitive",
+                    },
+                },
+            });
+
+        if (empresa) {
+            return empresa;
+        }
     }
 
     return null;
@@ -298,47 +440,206 @@ async function resolveSolicitanteFromAgent(
     body: EquipoAgentPayload,
     empresaId?: number | null
 ) {
-    const solicitanteId = numberOrNull(body.solicitanteId);
+    const email =
+        normalizeEmailFromUnknown(
+            body.solicitanteEmail
+        );
 
-    if (solicitanteId) {
-        const solicitante = await prisma.solicitante.findFirst({
-            where: {
-                id_solicitante: solicitanteId,
-                deletedAt: null,
-            },
-        });
+    const correoSeleccionadoPorTecnico =
+        boolFromUnknown(
+            body.correoSeleccionadoPorTecnico
+        );
 
-        if (solicitante) return solicitante;
+    /*
+     * =====================================================
+     * PRIORIDAD 1:
+     * Correo seleccionado explícitamente por el técnico.
+     * =====================================================
+     *
+     * Si el técnico seleccionó un correo,
+     * ese correo debe tener prioridad sobre
+     * cualquier solicitanteId antiguo.
+     */
+    if (
+        correoSeleccionadoPorTecnico &&
+        email
+    ) {
+        const solicitantePorEmail =
+            await prisma.solicitante.findFirst({
+                where: {
+                    email: {
+                        equals:
+                            email,
+
+                        mode:
+                            "insensitive",
+                    },
+
+                    isActive:
+                        true,
+
+                    deletedAt:
+                        null,
+
+                    deactivatedAt:
+                        null,
+
+                    empresa: {
+                        is: {
+                            isActive:
+                                true,
+
+                            deactivatedAt:
+                                null,
+                        },
+                    },
+                },
+            });
+
+        if (
+            solicitantePorEmail
+        ) {
+            return solicitantePorEmail;
+        }
     }
 
-    const email = cleanString(body.solicitanteEmail)?.toLowerCase();
+    /*
+     * =====================================================
+     * PRIORIDAD 2:
+     * ID recibido por agentes antiguos.
+     * =====================================================
+     */
+    const solicitanteId =
+        numberOrNull(
+            body.solicitanteId
+        );
 
-    if (!email) return null;
+    if (
+        solicitanteId
+    ) {
+        const solicitante =
+            await prisma.solicitante.findFirst({
+                where: {
+                    id_solicitante:
+                        solicitanteId,
 
+                    isActive:
+                        true,
+
+                    deletedAt:
+                        null,
+
+                    deactivatedAt:
+                        null,
+
+                    empresa: {
+                        is: {
+                            isActive:
+                                true,
+
+                            deactivatedAt:
+                                null,
+                        },
+                    },
+                },
+            });
+
+        if (
+            solicitante
+        ) {
+            return solicitante;
+        }
+    }
+
+    if (!email) {
+        return null;
+    }
+
+    /*
+     * =====================================================
+     * PRIORIDAD 3:
+     * Email dentro de la empresa detectada.
+     * =====================================================
+     */
     if (empresaId) {
-        const solicitanteEmpresa = await prisma.solicitante.findFirst({
+        const solicitanteEmpresa =
+            await prisma.solicitante.findFirst({
+                where: {
+                    email: {
+                        equals:
+                            email,
+
+                        mode:
+                            "insensitive",
+                    },
+
+                    empresaId,
+
+                    isActive:
+                        true,
+
+                    deletedAt:
+                        null,
+
+                    deactivatedAt:
+                        null,
+
+                    empresa: {
+                        is: {
+                            isActive:
+                                true,
+
+                            deactivatedAt:
+                                null,
+                        },
+                    },
+                },
+            });
+
+        if (
+            solicitanteEmpresa
+        ) {
+            return solicitanteEmpresa;
+        }
+    }
+
+    /*
+     * =====================================================
+     * PRIORIDAD 4:
+     * Búsqueda global por email.
+     * =====================================================
+     */
+    const solicitanteGlobal =
+        await prisma.solicitante.findFirst({
             where: {
                 email: {
-                    equals: email,
-                    mode: "insensitive",
+                    equals:
+                        email,
+
+                    mode:
+                        "insensitive",
                 },
-                empresaId,
-                deletedAt: null,
+
+                isActive:
+                    true,
+
+                deletedAt:
+                    null,
+
+                deactivatedAt:
+                    null,
+
+                empresa: {
+                    is: {
+                        isActive:
+                            true,
+
+                        deactivatedAt:
+                            null,
+                    },
+                },
             },
         });
-
-        if (solicitanteEmpresa) return solicitanteEmpresa;
-    }
-
-    const solicitanteGlobal = await prisma.solicitante.findFirst({
-        where: {
-            email: {
-                equals: email,
-                mode: "insensitive",
-            },
-            deletedAt: null,
-        },
-    });
 
     return solicitanteGlobal;
 }
@@ -1328,7 +1629,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const hostname = cleanString(body.hostname);
 
         const solicitanteEmail =
-            cleanString(body.solicitanteEmail)?.toLowerCase() ?? null;
+            normalizeEmailFromUnknown(
+                body.solicitanteEmail
+            );
 
         const solicitanteEmailFuente =
             cleanString(body.solicitanteEmailFuente) ?? null;
@@ -1339,15 +1642,45 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             body.correoSeleccionadoPorTecnico
         );
 
-        const emailsDetectados = Array.isArray(body.emailsDetectados)
-            ? body.emailsDetectados
-                .map((item) => ({
-                    email: cleanString(item.email)?.toLowerCase() ?? null,
-                    source: cleanString(item.source) ?? null,
-                    dominio: getEmailDomain(item.email),
-                }))
-                .filter((item) => Boolean(item.email))
-            : [];
+        const emailsDetectados =
+            Array.isArray(
+                body.emailsDetectados
+            )
+                ? body.emailsDetectados
+                    .map(
+                        (
+                            item
+                        ) => {
+                            const email =
+                                normalizeEmailFromUnknown(
+                                    item.email
+                                );
+
+                            return {
+                                email,
+
+                                source:
+                                    cleanString(
+                                        item.source
+                                    ) ??
+                                    null,
+
+                                dominio:
+                                    getEmailDomain(
+                                        email
+                                    ),
+                            };
+                        }
+                    )
+                    .filter(
+                        (
+                            item
+                        ) =>
+                            Boolean(
+                                item.email
+                            )
+                    )
+                : [];
 
         const dominioEmpresa =
             cleanString(body.dominioEmpresa)?.toLowerCase() ??
@@ -1374,6 +1707,27 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             },
             empresaDetectada?.id_empresa ?? null
         );
+
+        const empresaSolicitanteDetectado =
+            solicitanteDetectado?.empresaId
+                ? await prisma.empresa.findFirst({
+                    where: {
+                        id_empresa:
+                            solicitanteDetectado.empresaId,
+
+                        isActive:
+                            true,
+
+                        deactivatedAt:
+                            null,
+                    },
+
+                    select: {
+                        id_empresa:
+                            true,
+                    },
+                })
+                : null;
 
         const marca = cleanString(body.marca) ?? "Sin marca";
         const modelo = cleanString(body.modelo) ?? "Sin modelo";
@@ -1419,6 +1773,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                                 deletedAt:
                                     true,
 
+                                deactivatedAt:
+                                    true,
+
                                 isActive:
                                     true,
                             },
@@ -1443,6 +1800,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                             empresaId: true,
                             deletedAt: true,
                             isActive: true,
+                            deactivatedAt: true,
                         },
                     },
                 },
@@ -1469,13 +1827,24 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteEmailFuente === "UPN" ||
             solicitanteEmailFuente === "MacInstallerConfig";
 
-        const solicitanteDetectadoBaseValido = Boolean(
-            solicitanteDetectadoId &&
-            solicitanteDetectado &&
-            solicitanteDetectado.deletedAt === null &&
-            solicitanteDetectado.isActive !== false &&
-            fuenteConfiableParaAsignar
-        );
+        const solicitanteDetectadoBaseValido =
+            Boolean(
+                solicitanteDetectadoId &&
+                solicitanteDetectado &&
+
+                solicitanteDetectado.deletedAt ===
+                null &&
+
+                solicitanteDetectado.deactivatedAt ===
+                null &&
+
+                solicitanteDetectado.isActive ===
+                true &&
+
+                empresaSolicitanteDetectado &&
+
+                fuenteConfiableParaAsignar
+            );
 
         const empresaIdActual =
             equipo?.empresaId ??
@@ -1483,7 +1852,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             null;
 
         const empresaIdDetectada =
-            solicitanteDetectado?.empresaId ??
+            empresaSolicitanteDetectado?.id_empresa ??
             empresaDetectada?.id_empresa ??
             null;
 
@@ -1492,22 +1861,51 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 ? empresaIdDetectada ?? null
                 : empresaIdActual ?? empresaIdDetectada ?? null;
 
-        const solicitanteActualValido = Boolean(
-            solicitanteActualId &&
-            solicitanteActual &&
-            solicitanteActual.deletedAt === null &&
-            solicitanteActual.isActive !== false &&
-            (!empresaIdFinal || solicitanteActual.empresaId === empresaIdFinal)
-        );
+        const solicitanteActualValido =
+            Boolean(
+                solicitanteActualId &&
+                solicitanteActual &&
 
-        const solicitanteDetectadoValido = Boolean(
-            solicitanteDetectadoId &&
-            solicitanteDetectado &&
-            solicitanteDetectado.deletedAt === null &&
-            solicitanteDetectado.isActive !== false &&
-            (!empresaIdFinal || solicitanteDetectado.empresaId === empresaIdFinal) &&
-            fuenteConfiableParaAsignar
-        );
+                solicitanteActual.deletedAt ===
+                null &&
+
+                solicitanteActual.deactivatedAt ===
+                null &&
+
+                solicitanteActual.isActive ===
+                true &&
+
+                (
+                    !empresaIdFinal ||
+                    solicitanteActual.empresaId ===
+                    empresaIdFinal
+                )
+            );
+
+        const solicitanteDetectadoValido =
+            Boolean(
+                solicitanteDetectadoId &&
+                solicitanteDetectado &&
+
+                solicitanteDetectado.deletedAt ===
+                null &&
+
+                solicitanteDetectado.deactivatedAt ===
+                null &&
+
+                solicitanteDetectado.isActive ===
+                true &&
+
+                empresaSolicitanteDetectado &&
+
+                (
+                    !empresaIdFinal ||
+                    solicitanteDetectado.empresaId ===
+                    empresaIdFinal
+                ) &&
+
+                fuenteConfiableParaAsignar
+            );
 
         let idSolicitanteFinal: number | null = null;
         let requiereRevisionSolicitante = false;
@@ -1709,6 +2107,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                                             true,
 
                                         deletedAt:
+                                            true,
+
+                                        deactivatedAt:
                                             true,
 
                                         isActive:
@@ -2552,6 +2953,7 @@ export async function listEquiposAgent(req: Request, res: Response) {
                         id_solicitante: true,
                         nombre: true,
                         email: true,
+                        deactivatedAt: true,
                     },
                 },
                 detalle: true,
@@ -2641,6 +3043,7 @@ export async function getEquipoAgentById(req: Request, res: Response) {
                         nombre: true,
                         email: true,
                         telefono: true,
+                        deactivatedAt: true,
                     },
                 },
                 detalle: true,
