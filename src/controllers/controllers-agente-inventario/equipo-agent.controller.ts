@@ -1683,8 +1683,9 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 : [];
 
         const dominioEmpresa =
+            getEmailDomain(solicitanteEmail) ??
             cleanString(body.dominioEmpresa)?.toLowerCase() ??
-            getEmailDomain(solicitanteEmail);
+            null;
 
         if (!serial && !hostname) {
             res.status(400).json({
