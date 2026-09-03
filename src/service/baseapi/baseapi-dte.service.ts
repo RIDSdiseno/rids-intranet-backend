@@ -150,6 +150,7 @@ function parseDteXmlForDb(xmlRaw: string) {
             estado: "",
             tipoVenta: getTextFromXml(idDoc, "FmaPago"),
             fechaEmision: parseXmlDate(getTextFromXml(idDoc, "FchEmis")),
+            fechaVencimiento: parseXmlDate(getTextFromXml(idDoc, "FchVenc")),
             rutEmisor: getTextFromXml(emisor, "RUTEmisor"),
             razonSocialEmisor: getTextFromXml(emisor, "RznSoc"),
             giroEmisor: getTextFromXml(emisor, "GiroEmis"),
@@ -193,6 +194,7 @@ function mapFacturaCacheToBaseApiLikeResponse(factura: any) {
                 tipo_dte_nombre: factura.tipoDTEString,
                 folio: factura.folio,
                 fecha: factura.fechaEmision,
+                fecha_vencimiento: factura.fechaVencimiento,
                 rut_receptor: factura.rutReceptor,
                 razon_social_receptor: factura.razonSocialReceptor,
                 monto_total: factura.montoTotal,
@@ -243,24 +245,131 @@ export async function consultarDtePorFolioBaseApi(
         });
 
         if (cached?.xmlRaw && cached.tieneDetalle) {
-            console.log("✅ FacturaDTE cache HIT:", {
-                empresa,
-                empresaRut,
-                tipoDTE: tipoDTEInt,
-                folio: folioInt,
-                items: cached.items.length,
-            });
+            let facturaCache =
+                cached;
+
+            /*
+             * Compatibilidad con DTE guardados antes de incorporar
+             * fechaVencimiento al modelo.
+             *
+             * Si existe el XML en cache pero fechaVencimiento todavía
+             * está en null, intentamos obtener FchVenc directamente
+             * desde el XML ya almacenado.
+             *
+             * De esta forma NO es necesario volver a consultar BaseAPI.
+             */
+            if (
+                !cached.fechaVencimiento
+            ) {
+                try {
+                    const parsedCache =
+                        parseDteXmlForDb(
+                            cached.xmlRaw
+                        );
+
+                    const fechaVencimiento =
+                        parsedCache.factura
+                            .fechaVencimiento;
+
+                    if (
+                        fechaVencimiento
+                    ) {
+                        console.log(
+                            "🗓️ FacturaDTE: fecha de vencimiento recuperada desde XML cacheado",
+                            {
+                                empresa,
+                                empresaRut,
+                                tipoDTE:
+                                    tipoDTEInt,
+                                folio:
+                                    folioInt,
+                                fechaVencimiento,
+                            }
+                        );
+
+                        facturaCache =
+                            await prisma.facturaDTE.update({
+                                where: {
+                                    id:
+                                        cached.id,
+                                },
+
+                                data: {
+                                    fechaVencimiento,
+                                },
+
+                                include: {
+                                    items:
+                                        true,
+                                },
+                            });
+                    } else {
+                        console.log(
+                            "ℹ️ FacturaDTE cacheada sin FchVenc en XML",
+                            {
+                                empresa,
+                                empresaRut,
+                                tipoDTE:
+                                    tipoDTEInt,
+                                folio:
+                                    folioInt,
+                            }
+                        );
+                    }
+                } catch (
+                error
+                ) {
+                    console.warn(
+                        "⚠️ No se pudo recuperar FchVenc desde XML cacheado",
+                        {
+                            empresa,
+                            empresaRut,
+                            tipoDTE:
+                                tipoDTEInt,
+                            folio:
+                                folioInt,
+
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(
+                                        error
+                                    ),
+                        }
+                    );
+                }
+            }
+
+            console.log(
+                "✅ FacturaDTE cache HIT:",
+                {
+                    empresa,
+                    empresaRut,
+                    tipoDTE:
+                        tipoDTEInt,
+                    folio:
+                        folioInt,
+                    items:
+                        facturaCache.items.length,
+                    fechaVencimiento:
+                        facturaCache.fechaVencimiento,
+                }
+            );
 
             return {
                 cached: true,
-                data: mapFacturaCacheToBaseApiLikeResponse(cached),
+
+                data:
+                    mapFacturaCacheToBaseApiLikeResponse(
+                        facturaCache
+                    ),
             };
         }
     }
 
     const endpoint = `/api/v1/sii/dte/consulta/${periodo}/folio/${folioInt}`;
     const startedAt = Date.now();
-    
+
     // Si no hay cache o se forzó refresh, consultamos a BaseAPI, parseamos el XML, y guardamos en la db para futuros cacheos.
     try {
         console.log("📡 BaseAPI DTE cache MISS, consultando API:", {
@@ -294,7 +403,7 @@ export async function consultarDtePorFolioBaseApi(
 
         const tipoDTEFinal = parsed.factura.tipoDTE || tipoDTEInt;
         const folioFinal = parsed.factura.folio || folioInt;
-        
+
         // Guardamos o actualizamos la factura en la base de datos usando una transacción, y luego la retornamos.
         const factura = await prisma.$transaction(async (tx) => {
             const upserted = await tx.facturaDTE.upsert({
@@ -317,6 +426,7 @@ export async function consultarDtePorFolioBaseApi(
                     estado: documentoBaseApi?.estado ?? parsed.factura.estado ?? "",
                     tipoVenta: parsed.factura.tipoVenta ?? "",
                     fechaEmision: parsed.factura.fechaEmision,
+                    fechaVencimiento: parsed.factura.fechaVencimiento,
                     rutEmisor: parsed.factura.rutEmisor,
                     razonSocialEmisor: parsed.factura.razonSocialEmisor,
                     giroEmisor: parsed.factura.giroEmisor,
@@ -345,6 +455,7 @@ export async function consultarDtePorFolioBaseApi(
                     estado: documentoBaseApi?.estado ?? parsed.factura.estado ?? "",
                     tipoVenta: parsed.factura.tipoVenta ?? "",
                     fechaEmision: parsed.factura.fechaEmision,
+                    fechaVencimiento: parsed.factura.fechaVencimiento,
                     rutEmisor: parsed.factura.rutEmisor,
                     razonSocialEmisor: parsed.factura.razonSocialEmisor,
                     giroEmisor: parsed.factura.giroEmisor,

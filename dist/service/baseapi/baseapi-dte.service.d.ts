@@ -16,6 +16,7 @@ export declare function consultarDtePorFolioBaseApi(params: ConsultarDtePorFolio
                 tipo_dte_nombre: any;
                 folio: any;
                 fecha: any;
+                fecha_vencimiento: any;
                 rut_receptor: any;
                 razon_social_receptor: any;
                 monto_total: any;

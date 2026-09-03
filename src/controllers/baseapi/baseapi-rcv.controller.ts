@@ -6,12 +6,10 @@ import {
 } from "../../service/baseapi/baseapi-rcv.service.js";
 
 import { prisma } from "../../lib/prisma.js";
-import { getOverride as getVencimientoOverride } from "./rcv-vencimientos.store.js";
 
-type EstadoPagoRcv =
-    | "CONFIRMADA"
-    | "PENDIENTE"
-    | "VENCIDA";
+import {
+    anotarDocumentosCobranza,
+} from "../../service/baseapi/cobranza/cobranza-estado.service.js";
 
 // Función para parsear la empresa desde la query, validando que sea "econnet" o "rids", y lanzando un error descriptivo si no es así.
 function parseEmpresa(value: unknown): "econnet" | "rids" {
@@ -364,112 +362,21 @@ export async function getVentasRcvBaseApi(req: Request, res: Response) {
         let data = mergeRcvResponses(resultados, "ventas");
 
         // Anotar estadoPago en cada documento: CONFIRMADA | VENCIDA | PENDIENTE
-        const now = new Date();
-
-        async function parseFechaVencimiento(d: any): Promise<Date | null> {
-            const candidates = [
-                d?.FchVenc,
-                d?.FchVencimiento,
-                d?.fechaVencimiento,
-                d?.vencimiento,
-                d?.fecha_vencimiento,
-                d?.Vencimiento,
-            ];
-
-            for (const c of candidates) {
-                if (!c) continue;
-                const raw = String(c).trim();
-                const dt = new Date(raw);
-                if (!Number.isNaN(dt.getTime())) return dt;
-                if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
-                    const [day, month, year] = raw.slice(0, 10).split('/');
-                    const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-                    if (!Number.isNaN(parsed.getTime())) return parsed;
-                }
-            }
-
-            return null;
-        }
-
-        async function annotateDocs(docs: any[]) {
-            return Promise.all(docs.map(async (doc) => {
-                try {
-                    const tipoDoc = String(doc?.["Tipo Doc"] ?? doc?.tipoDoc ?? doc?.tipoDTE ?? "").trim();
-                    const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
-                    const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
-
-                    let estadoPago: EstadoPagoRcv | null = null;
-
-                    if (empresaKey && tipoDoc && folio) {
-                        const conciliacion = await prisma.rcvConciliacion.findFirst({
-                            where: {
-                                empresaKey: empresaKey as any,
-                                tipoDoc: tipoDoc,
-                                folio: folio,
-                            },
-                            orderBy: { conciliadoAt: 'desc' }
-                        });
-
-                        if (conciliacion && conciliacion.estadoConciliacion === 'CONCILIADA') {
-                            estadoPago = 'CONFIRMADA';
-                        }
-                    }
-
-                    if (!estadoPago) {
-                        // revisar si hay un override manual de vencimiento
-                        let override: string | null = null;
-
-                        // 1) intentar con la empresaKey del documento
-                        if (empresaKey) {
-                            override = await getVencimientoOverride(empresaKey, tipoDoc, folio);
-                        }
-
-                        // 2) si no se encontró, intentar con cualquiera de las empresas consultadas
-                        if (!override && Array.isArray(empresas) && empresas.length > 0) {
-                            for (const e of empresas) {
-                                try {
-                                    override = await getVencimientoOverride(String(e), tipoDoc, folio);
-                                    if (override) break;
-                                } catch { /* ignore */ }
-                            }
-                        }
-
-                        if (override) {
-                            const dt = new Date(String(override));
-                            if (!Number.isNaN(dt.getTime())) {
-                                estadoPago = now > dt ? 'VENCIDA' : 'PENDIENTE';
-                                // inyectar el vencimiento override en el documento para que la UI lo vea
-                                try {
-                                    const isoDate = dt.toISOString().slice(0,10);
-                                    for (const k of ["FchVenc", "FchVencimiento", "fechaVencimiento", "vencimiento", "fecha_vencimiento", "Vencimiento"]) {
-                                        try { (doc as any)[k] = isoDate; } catch {}
-                                    }
-                                } catch {}
-                            }
-                        }
-
-                        if (!estadoPago) {
-                            const fechaVenc = await parseFechaVencimiento(doc);
-                            if (fechaVenc) {
-                                estadoPago = now > fechaVenc ? 'VENCIDA' : 'PENDIENTE';
-                            } else {
-                                estadoPago = 'PENDIENTE';
-                            }
-                        }
-                    }
-
-                    return { ...doc, estadoPago };
-                } catch (e) {
-                    return { ...doc, estadoPago: 'PENDIENTE' };
-                }
-            }));
-        }
+        const documentosAnotados =
+            await anotarDocumentosCobranza(
+                data.data?.datos ?? [],
+                "ventas"
+            );
 
         data = {
             ...data,
+
             data: {
-                ...(data.data || {}),
-                datos: await annotateDocs(data.data?.datos ?? []),
+                ...(data.data ||
+                    {}),
+
+                datos:
+                    documentosAnotados,
             },
         };
 
@@ -536,107 +443,20 @@ export async function getComprasRcvBaseApi(req: Request, res: Response) {
         let data = mergeRcvResponses(resultados, "compras");
 
         // Anotar estadoPago en cada documento: CONFIRMADA | VENCIDA | PENDIENTE
-        const now = new Date();
-
-        async function parseFechaVencimientoCompras(d: any): Promise<Date | null> {
-            const candidates = [
-                d?.FchVenc,
-                d?.FchVencimiento,
-                d?.fechaVencimiento,
-                d?.vencimiento,
-                d?.fecha_vencimiento,
-                d?.Vencimiento,
-            ];
-
-            for (const c of candidates) {
-                if (!c) continue;
-                const raw = String(c).trim();
-                const dt = new Date(raw);
-                if (!Number.isNaN(dt.getTime())) return dt;
-                if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
-                    const [day, month, year] = raw.slice(0, 10).split('/');
-                    const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-                    if (!Number.isNaN(parsed.getTime())) return parsed;
-                }
-            }
-
-            return null;
-        }
-
-        async function annotateDocsCompras(docs: any[]) {
-            return Promise.all(docs.map(async (doc) => {
-                try {
-                    const tipoDoc = String(doc?.["Tipo Doc"] ?? doc?.tipoDoc ?? doc?.tipoDTE ?? "").trim();
-                    const folio = String(doc?.["Folio"] ?? doc?.folio ?? doc?.Nro ?? doc?.numero ?? "").trim();
-                    const empresaKey = String(doc?.empresaOrigen ?? doc?.empresa ?? doc?.empresaKey ?? "").toLowerCase() || undefined;
-
-                    let estadoPago: EstadoPagoRcv | null = null;
-
-                    if (empresaKey && tipoDoc && folio) {
-                        const conciliacion = await prisma.rcvConciliacion.findFirst({
-                            where: {
-                                empresaKey: empresaKey as any,
-                                tipoDoc: tipoDoc,
-                                folio: folio,
-                            },
-                            orderBy: { conciliadoAt: 'desc' }
-                        });
-
-                        if (conciliacion && conciliacion.estadoConciliacion === 'CONCILIADA') {
-                            estadoPago = 'CONFIRMADA';
-                        }
-                    }
-
-                    if (!estadoPago) {
-                        // intentar overrides manuales también para compras
-                        let override: string | null = null;
-                        if (empresaKey) {
-                            override = await getVencimientoOverride(empresaKey, tipoDoc, folio).catch(() => null);
-                        }
-                        if (!override && Array.isArray(empresas) && empresas.length > 0) {
-                            for (const e of empresas) {
-                                try {
-                                    override = await getVencimientoOverride(String(e), tipoDoc, folio);
-                                    if (override) break;
-                                } catch { /* ignore */ }
-                            }
-                        }
-
-                        if (override) {
-                            const dt = new Date(String(override));
-                            if (!Number.isNaN(dt.getTime())) {
-                                estadoPago = now > dt ? 'VENCIDA' : 'PENDIENTE';
-                                try {
-                                    const isoDate = dt.toISOString().slice(0,10);
-                                    for (const k of ["FchVenc", "FchVencimiento", "fechaVencimiento", "vencimiento", "fecha_vencimiento", "Vencimiento"]) {
-                                        try { (doc as any)[k] = isoDate; } catch {}
-                                    }
-                                } catch {}
-                            }
-                        }
-
-                        if (!estadoPago) {
-                            const fechaVenc = await parseFechaVencimientoCompras(doc);
-                            if (fechaVenc) {
-                                estadoPago = now > fechaVenc ? 'VENCIDA' : 'PENDIENTE';
-                            } else {
-                                estadoPago = 'PENDIENTE';
-                            }
-                        }
-                    }
-
-                    return { ...doc, estadoPago };
-                } catch (e) {
-                    return { ...doc, estadoPago: 'PENDIENTE' };
-                }
-            }));
-        }
+        const documentosAnotados =
+            await anotarDocumentosCobranza(
+                data.data?.datos ?? [],
+                "compras"
+            );
 
         data = {
             ...data,
+
             data: {
                 ...(data.data || {}),
-                datos: await annotateDocsCompras(data.data?.datos ?? []),
+
+                datos:
+                    documentosAnotados,
             },
         };
 

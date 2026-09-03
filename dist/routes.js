@@ -34,6 +34,7 @@ import tecnicosRouter from "./routes/tecnicos.routes.js";
 import { fdRouter } from "./routes/fd.js";
 import { fdWebhookRouter } from "./routes/fd.webhook.js";
 import ticketsApiRouter from "./routes/tickets.routes.js";
+import { syncAccess, } from "./middlewares/internal-api-key.js";
 /* ===================== Google Sync ===================== */
 import syncGoogleRouter from "./routes/syncGoogle.routes.js";
 /* ===================== Microsoft Sync ===================== */
@@ -63,6 +64,7 @@ import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
 /* ===================== BaseAPI RCV ===================== */
 import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
 import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
+import baseApiCobranzaAutomaticoRoutes from "./routes/baseapi-routes/baseapi-cobranza-automatico.routes.js";
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 /* ===================== Bitacora Tecnico ===================== */
@@ -132,9 +134,9 @@ api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
 api.use("/oportunidades", oportunidadesRouter);
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)
-api.use(syncGoogleRouter);
+api.use(syncAccess, syncGoogleRouter);
 // Microsoft Graph sync
-api.use(msSyncRouter);
+api.use(syncAccess, msSyncRouter);
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
 /* ===================== Debug ===================== */
@@ -158,6 +160,7 @@ api.use("/clientes-ext", clientesExtRouter);
 /* ===================== BaseAPI RCV ===================== */
 api.use("/baseapi/rcv", baseApiRcvRoutes);
 api.use("/baseapi/dte", baseApiDteRoutes);
+api.use("/baseapi/cobranza/automatizacion", baseApiCobranzaAutomaticoRoutes);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

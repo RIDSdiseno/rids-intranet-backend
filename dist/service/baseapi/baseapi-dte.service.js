@@ -106,6 +106,7 @@ function parseDteXmlForDb(xmlRaw) {
             estado: "",
             tipoVenta: getTextFromXml(idDoc, "FmaPago"),
             fechaEmision: parseXmlDate(getTextFromXml(idDoc, "FchEmis")),
+            fechaVencimiento: parseXmlDate(getTextFromXml(idDoc, "FchVenc")),
             rutEmisor: getTextFromXml(emisor, "RUTEmisor"),
             razonSocialEmisor: getTextFromXml(emisor, "RznSoc"),
             giroEmisor: getTextFromXml(emisor, "GiroEmis"),
@@ -148,6 +149,7 @@ function mapFacturaCacheToBaseApiLikeResponse(factura) {
                 tipo_dte_nombre: factura.tipoDTEString,
                 folio: factura.folio,
                 fecha: factura.fechaEmision,
+                fecha_vencimiento: factura.fechaVencimiento,
                 rut_receptor: factura.rutReceptor,
                 razon_social_receptor: factura.razonSocialReceptor,
                 monto_total: factura.montoTotal,
@@ -184,16 +186,75 @@ export async function consultarDtePorFolioBaseApi(params) {
             },
         });
         if (cached?.xmlRaw && cached.tieneDetalle) {
+            let facturaCache = cached;
+            /*
+             * Compatibilidad con DTE guardados antes de incorporar
+             * fechaVencimiento al modelo.
+             *
+             * Si existe el XML en cache pero fechaVencimiento todavía
+             * está en null, intentamos obtener FchVenc directamente
+             * desde el XML ya almacenado.
+             *
+             * De esta forma NO es necesario volver a consultar BaseAPI.
+             */
+            if (!cached.fechaVencimiento) {
+                try {
+                    const parsedCache = parseDteXmlForDb(cached.xmlRaw);
+                    const fechaVencimiento = parsedCache.factura
+                        .fechaVencimiento;
+                    if (fechaVencimiento) {
+                        console.log("🗓️ FacturaDTE: fecha de vencimiento recuperada desde XML cacheado", {
+                            empresa,
+                            empresaRut,
+                            tipoDTE: tipoDTEInt,
+                            folio: folioInt,
+                            fechaVencimiento,
+                        });
+                        facturaCache =
+                            await prisma.facturaDTE.update({
+                                where: {
+                                    id: cached.id,
+                                },
+                                data: {
+                                    fechaVencimiento,
+                                },
+                                include: {
+                                    items: true,
+                                },
+                            });
+                    }
+                    else {
+                        console.log("ℹ️ FacturaDTE cacheada sin FchVenc en XML", {
+                            empresa,
+                            empresaRut,
+                            tipoDTE: tipoDTEInt,
+                            folio: folioInt,
+                        });
+                    }
+                }
+                catch (error) {
+                    console.warn("⚠️ No se pudo recuperar FchVenc desde XML cacheado", {
+                        empresa,
+                        empresaRut,
+                        tipoDTE: tipoDTEInt,
+                        folio: folioInt,
+                        error: error instanceof Error
+                            ? error.message
+                            : String(error),
+                    });
+                }
+            }
             console.log("✅ FacturaDTE cache HIT:", {
                 empresa,
                 empresaRut,
                 tipoDTE: tipoDTEInt,
                 folio: folioInt,
-                items: cached.items.length,
+                items: facturaCache.items.length,
+                fechaVencimiento: facturaCache.fechaVencimiento,
             });
             return {
                 cached: true,
-                data: mapFacturaCacheToBaseApiLikeResponse(cached),
+                data: mapFacturaCacheToBaseApiLikeResponse(facturaCache),
             };
         }
     }
@@ -247,6 +308,7 @@ export async function consultarDtePorFolioBaseApi(params) {
                     estado: documentoBaseApi?.estado ?? parsed.factura.estado ?? "",
                     tipoVenta: parsed.factura.tipoVenta ?? "",
                     fechaEmision: parsed.factura.fechaEmision,
+                    fechaVencimiento: parsed.factura.fechaVencimiento,
                     rutEmisor: parsed.factura.rutEmisor,
                     razonSocialEmisor: parsed.factura.razonSocialEmisor,
                     giroEmisor: parsed.factura.giroEmisor,
@@ -274,6 +336,7 @@ export async function consultarDtePorFolioBaseApi(params) {
                     estado: documentoBaseApi?.estado ?? parsed.factura.estado ?? "",
                     tipoVenta: parsed.factura.tipoVenta ?? "",
                     fechaEmision: parsed.factura.fechaEmision,
+                    fechaVencimiento: parsed.factura.fechaVencimiento,
                     rutEmisor: parsed.factura.rutEmisor,
                     razonSocialEmisor: parsed.factura.razonSocialEmisor,
                     giroEmisor: parsed.factura.giroEmisor,

@@ -17,6 +17,7 @@ model Empresa {
   dominios              String[]               @default([])
   deactivatedAt         DateTime?
   isActive              Boolean                @default(true)
+  recibeCobranza        Boolean                @default(false)
   solicitantes          Solicitante[]
   visitas               Visita[]               @relation("Empresa_Visita")
   tickets               FreshdeskTicket[]
@@ -44,6 +45,7 @@ model Empresa {
 
   @@index([isActive])
   @@index([deactivatedAt])
+  @@index([recibeCobranza])
 }
 
 model EmpresaAliasOutlook {
@@ -1414,6 +1416,7 @@ model FacturaDTE {
   estado              String?
   tipoVenta           String?
   fechaEmision        DateTime?
+  fechaVencimiento    DateTime?
   fechaRecepcion      DateTime?
   fechaAcuseRecibo    DateTime?
   rutEmisor           String?
@@ -1553,6 +1556,77 @@ model RcvVencimiento {
   @@index([tipoDoc])
   @@index([folio])
   @@index([fechaVencimiento])
+}
+
+/**
+ * =========================================================
+ * COBRANZA AUTOMÁTICA RCV
+ * =========================================================
+ */
+
+model RcvCobranzaConfig {
+  id Int @id @default(autoincrement())
+
+  empresaKey String @unique
+
+  activo            Boolean @default(false)
+  consultaSiiActiva Boolean @default(true)
+  envioAutomatico   Boolean @default(false)
+
+  diasPorVencer Int[] @default([-7, -3])
+  diasVencidos  Int[] @default([0, 3, 7, 15, 30])
+
+  horaConsultaSii String @default("07:30")
+  horaCobranza    String @default("08:00")
+
+  adjuntarPdf Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([activo])
+}
+
+model RcvRecordatorioEnvio {
+  id Int @id @default(autoincrement())
+
+  empresaKey String
+  tipoRcv    String @default("ventas")
+
+  tipoDoc String
+  folio   String
+
+  rutContraparte String
+  razonSocial    String?
+
+  tipoRecordatorio String
+
+  emailDestino  String
+  nombreDestino String?
+
+  asunto String?
+
+  estado     String  @default("PENDIENTE")
+  automatico Boolean @default(true)
+
+  fechaVencimiento DateTime?
+  diasDiferencia   Int?
+
+  montoTotal Int @default(0)
+
+  enviadoAt DateTime?
+  error     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([empresaKey, tipoRcv, tipoDoc, folio, rutContraparte, tipoRecordatorio])
+  @@index([empresaKey])
+  @@index([rutContraparte])
+  @@index([folio])
+  @@index([estado])
+  @@index([enviadoAt])
+  @@index([createdAt])
 }
 
 model SiiApiRequestLog {
