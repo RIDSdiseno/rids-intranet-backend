@@ -6,6 +6,8 @@ import {
 
 import {
     simularCobranzaAutomatica,
+    prepararCobranzaAutomatica,
+    enviarCobranzaPendiente
 } from "../../controllers/baseapi/baseapi-cobranza-automatico.controller.js";
 
 import {
@@ -24,6 +26,24 @@ router.post(
     auth(),
     onlyRole("ADMINISTRACION"),
     simularCobranzaAutomatica
+);
+
+router.post(
+    "/preparar",
+    auth(),
+    onlyRole(
+        "ADMINISTRACION"
+    ),
+    prepararCobranzaAutomatica
+);
+
+router.post(
+    "/enviar-pendientes",
+    auth(),
+    onlyRole(
+        "ADMINISTRACION"
+    ),
+    enviarCobranzaPendiente
 );
 
 export default router;

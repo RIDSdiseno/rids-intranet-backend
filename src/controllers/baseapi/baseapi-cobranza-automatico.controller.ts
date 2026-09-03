@@ -7,6 +7,14 @@ import {
     procesarCobranzaAutomatica,
 } from "../../service/baseapi/cobranza/cobranza-automatico.service.js";
 
+import {
+    type EmpresaKey,
+} from "../../service/baseapi/cobranza/cobranza-estado.service.js";
+
+import {
+    procesarEnviosCobranza,
+} from "../../service/baseapi/cobranza/cobranza-envio.service.js";
+
 export async function simularCobranzaAutomatica(
     req: Request,
     res: Response
@@ -82,5 +90,157 @@ export async function simularCobranzaAutomatica(
             error: message,
             message,
         });
+    }
+}
+
+export async function prepararCobranzaAutomatica(
+    req: Request,
+    res: Response
+) {
+    try {
+        const mesesAnalizar =
+            Number(
+                req.body
+                    ?.mesesAnalizar ??
+                3
+            );
+
+        const empresaRaw =
+            String(
+                req.body
+                    ?.empresa ??
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+        const empresas:
+            EmpresaKey[] =
+            empresaRaw
+                ? [
+                    empresaRaw as
+                    EmpresaKey,
+                ]
+                : [
+                    "econnet",
+                    "rids",
+                ];
+
+        const resultado =
+            await procesarCobranzaAutomatica({
+                mesesAnalizar,
+
+                empresas,
+
+                registrarPendientes:
+                    true,
+            });
+
+        return res.json({
+            ok:
+                true,
+
+            ...resultado,
+        });
+    } catch (
+    error
+    ) {
+        console.error(
+            "❌ Error preparando cobranza automática:",
+            error
+        );
+
+        return res
+            .status(
+                500
+            )
+            .json({
+                ok:
+                    false,
+
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : String(
+                            error
+                        ),
+            });
+    }
+}
+
+export async function enviarCobranzaPendiente(
+    req: Request,
+    res: Response
+) {
+    try {
+        const empresaRaw =
+            String(
+                req.body
+                    ?.empresa ??
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+        const limite =
+            Number(
+                req.body
+                    ?.limite ??
+                20
+            );
+
+        const resultado =
+            await procesarEnviosCobranza({
+                ...(empresaRaw
+                    ? {
+                        empresa:
+                            empresaRaw as
+                            EmpresaKey,
+                    }
+                    : {}),
+
+                limite,
+            });
+
+        return res.json({
+            ok:
+                true,
+
+            modo:
+                process.env
+                    .COBRANZA_TEST_EMAIL
+                    ? "PRUEBA"
+                    : "REAL",
+
+            testEmail:
+                process.env
+                    .COBRANZA_TEST_EMAIL ??
+                null,
+
+            ...resultado,
+        });
+    } catch (
+    error
+    ) {
+        console.error(
+            "❌ Error enviando cobranza pendiente:",
+            error
+        );
+
+        return res
+            .status(
+                500
+            )
+            .json({
+                ok:
+                    false,
+
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : String(
+                            error
+                        ),
+            });
     }
 }

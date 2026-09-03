@@ -102,7 +102,7 @@ function toDecimal(value: any): Prisma.Decimal | null {
 }
 
 // Función para consultar un DTE por folio usando BaseAPI, parsear el XML, y guardar/cachear los datos en la base de datos.
-function parseDteXmlForDb(xmlRaw: string) {
+export function parseDteXmlForDb(xmlRaw: string) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlRaw, "text/xml");
 
@@ -172,7 +172,7 @@ function parseDteXmlForDb(xmlRaw: string) {
 // Extrae el bloque <TED>...</TED> completo (DD + FRMT) tal cual aparece en el XML firmado.
 // Este es el contenido que debe codificarse en el PDF417 del Timbre Electrónico SII —
 // no basta con el FRMT (la firma) por sí solo.
-function extractTedXml(xmlRaw: string): string | null {
+export function extractTedXml(xmlRaw: string): string | null {
     if (!xmlRaw) return null;
 
     try {
@@ -185,24 +185,110 @@ function extractTedXml(xmlRaw: string): string | null {
 }
 
 // Función para mapear los datos de la factura obtenida (ya sea desde cache o desde BaseAPI)
-function mapFacturaCacheToBaseApiLikeResponse(factura: any) {
+function mapFacturaCacheToBaseApiLikeResponse(
+    factura: any
+) {
     return {
-        success: true,
+        success:
+            true,
+
         data: {
             documento: {
-                tipo_dte: factura.tipoDTE,
-                tipo_dte_nombre: factura.tipoDTEString,
-                folio: factura.folio,
-                fecha: factura.fechaEmision,
-                fecha_vencimiento: factura.fechaVencimiento,
-                rut_receptor: factura.rutReceptor,
-                razon_social_receptor: factura.razonSocialReceptor,
-                monto_total: factura.montoTotal,
-                estado: factura.estado,
-                xml_base64: encodeBase64Utf8(factura.xmlRaw),
-                // Bloque <TED> completo (DD + FRMT), usado para generar el PDF417 del Timbre Electrónico SII
-                ted_xml: factura.xmlRaw ? extractTedXml(factura.xmlRaw) : null,
-                items: factura.items ?? [],
+                tipo_dte:
+                    factura.tipoDTE,
+
+                tipo_dte_nombre:
+                    factura.tipoDTEString,
+
+                folio:
+                    factura.folio,
+
+                fecha:
+                    factura.fechaEmision,
+
+                fecha_vencimiento:
+                    factura.fechaVencimiento,
+
+                estado:
+                    factura.estado,
+
+                tipo_venta:
+                    factura.tipoVenta,
+
+                /* =========================
+                   EMISOR
+                ========================= */
+
+                rut_emisor:
+                    factura.rutEmisor,
+
+                razon_social_emisor:
+                    factura.razonSocialEmisor,
+
+                giro_emisor:
+                    factura.giroEmisor,
+
+                /* =========================
+                   RECEPTOR
+                ========================= */
+
+                rut_receptor:
+                    factura.rutReceptor,
+
+                razon_social_receptor:
+                    factura.razonSocialReceptor,
+
+                giro_receptor:
+                    factura.giroReceptor,
+
+                direccion_receptor:
+                    factura.direccionReceptor,
+
+                comuna_receptor:
+                    factura.comunaReceptor,
+
+                ciudad_receptor:
+                    factura.ciudadReceptor,
+
+                /* =========================
+                   TOTALES
+                ========================= */
+
+                monto_exento:
+                    factura.montoExento,
+
+                monto_neto:
+                    factura.montoNeto,
+
+                monto_iva:
+                    factura.montoIVA,
+
+                monto_total:
+                    factura.montoTotal,
+
+                /* =========================
+                   XML / TIMBRE
+                ========================= */
+
+                xml_base64:
+                    encodeBase64Utf8(
+                        factura.xmlRaw
+                    ),
+
+                ted_xml:
+                    factura.xmlRaw
+                        ? extractTedXml(
+                            factura.xmlRaw
+                        )
+                        : null,
+
+                /* =========================
+                   DETALLE
+                ========================= */
+
+                items:
+                    factura.items ??
+                    [],
             },
         },
     };

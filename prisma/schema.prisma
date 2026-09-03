@@ -98,6 +98,7 @@ model DetalleEmpresa {
   direccion   String?
   telefono    String?
   email       String?
+  diasCredito Int?
   empresa_id  Int     @unique
   direcciones Json?
   latitud     Float?
@@ -108,16 +109,17 @@ model DetalleEmpresa {
 }
 
 model ContactoEmpresa {
-  id         Int       @id @default(autoincrement())
-  empresaId  Int
-  nombre     String
-  cargo      String
-  email      String?
-  telefono   String?
-  principal  Boolean   @default(false)
-  sucursalId Int?
-  empresa    Empresa   @relation(fields: [empresaId], references: [id_empresa])
-  sucursal   Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
+  id             Int       @id @default(autoincrement())
+  empresaId      Int
+  nombre         String
+  cargo          String
+  email          String?
+  telefono       String?
+  principal      Boolean   @default(false)
+  sucursalId     Int?
+  recibeCobranza Boolean   @default(false)
+  empresa        Empresa   @relation(fields: [empresaId], references: [id_empresa])
+  sucursal       Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
 
   @@index([empresaId])
   @@index([sucursalId])
@@ -1416,7 +1418,6 @@ model FacturaDTE {
   estado              String?
   tipoVenta           String?
   fechaEmision        DateTime?
-  fechaVencimiento    DateTime?
   fechaRecepcion      DateTime?
   fechaAcuseRecibo    DateTime?
   rutEmisor           String?
@@ -1440,6 +1441,7 @@ model FacturaDTE {
   sincronizadoAt      DateTime?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  fechaVencimiento    DateTime?
   items               FacturaDTEItem[]
 
   @@unique([empresaRut, tipoDTE, folio])
@@ -1558,31 +1560,19 @@ model RcvVencimiento {
   @@index([fechaVencimiento])
 }
 
-/**
- * =========================================================
- * COBRANZA AUTOMÁTICA RCV
- * =========================================================
- */
-
 model RcvCobranzaConfig {
-  id Int @id @default(autoincrement())
-
-  empresaKey String @unique
-
-  activo            Boolean @default(false)
-  consultaSiiActiva Boolean @default(true)
-  envioAutomatico   Boolean @default(false)
-
-  diasPorVencer Int[] @default([-7, -3])
-  diasVencidos  Int[] @default([0, 3, 7, 15, 30])
-
-  horaConsultaSii String @default("07:30")
-  horaCobranza    String @default("08:00")
-
-  adjuntarPdf Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  empresaKey        String   @unique
+  activo            Boolean  @default(false)
+  consultaSiiActiva Boolean  @default(true)
+  envioAutomatico   Boolean  @default(false)
+  diasPorVencer     Int[]    @default([-7, -3])
+  diasVencidos      Int[]    @default([0, 3, 7, 15, 30])
+  horaConsultaSii   String   @default("07:30")
+  horaCobranza      String   @default("08:00")
+  adjuntarPdf       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([activo])
 }
@@ -1593,13 +1583,14 @@ model RcvRecordatorioEnvio {
   empresaKey String
   tipoRcv    String @default("ventas")
 
-  tipoDoc String
-  folio   String
-
+  tipoDoc        String
+  folio          String
   rutContraparte String
   razonSocial    String?
 
   tipoRecordatorio String
+
+  cicloVencimiento String
 
   emailDestino  String
   nombreDestino String?
@@ -1611,8 +1602,11 @@ model RcvRecordatorioEnvio {
 
   fechaVencimiento DateTime?
   diasDiferencia   Int?
+  montoTotal       Int       @default(0)
 
-  montoTotal Int @default(0)
+  intentos        Int       @default(0)
+  ultimoIntentoAt DateTime?
+  procesandoAt    DateTime?
 
   enviadoAt DateTime?
   error     String?
@@ -1620,7 +1614,7 @@ model RcvRecordatorioEnvio {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([empresaKey, tipoRcv, tipoDoc, folio, rutContraparte, tipoRecordatorio])
+  @@unique([empresaKey, tipoRcv, tipoDoc, folio, rutContraparte, cicloVencimiento, tipoRecordatorio, emailDestino])
   @@index([empresaKey])
   @@index([rutContraparte])
   @@index([folio])
