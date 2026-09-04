@@ -1,6 +1,6 @@
 // Rutas para manejo de análisis de inventario mediante IA, con endpoint para análisis por empresa, delegando la lógica al controlador correspondiente. Todas las rutas están protegidas por autenticación.
 import { Router } from "express";
-import { analizarInventarioEmpresa, getAnalisisInventarioEmpresa } from "../../controllers/ia-intranet-controller/ia-inventario.controller.js";
+import { analizarInventarioEmpresa, getAnalisisInventarioEmpresa } from "../../controllers/controllers-ia-intranet/ia-inventario.controller.js";
 
 const iaInventarioRouter = Router();
 

@@ -15,6 +15,10 @@ import {
     type EmpresaKey,
 } from "./cobranza-estado.service.js";
 
+import {
+    obtenerAplicacionesNotasCredito,
+} from "./cobranza-notas-credito.service.js";
+
 /* =========================================================
    TYPES
 ========================================================= */
@@ -54,6 +58,30 @@ export type CandidatoRecordatorioCobranza = {
     razonSocial: string | null;
 
     montoTotal: number;
+
+    montoOriginal:
+    number;
+
+    montoNotasCredito:
+    number;
+
+    montoPendiente:
+    number;
+
+    notasCreditoAplicadas:
+    {
+        folio:
+        string;
+
+        montoTotal:
+        number;
+
+        codigoRef:
+        string | null;
+
+        razonRef:
+        string | null;
+    }[];
 
     fechaVencimiento: string;
     diasDiferencia: number;
@@ -3325,6 +3353,31 @@ async function procesarEmpresaCobranza(
     );
 
     /*
+ * 3.3 Resolver efectos documentales:
+ *
+ * - Notas de Crédito aplicadas
+ * - Notas de Crédito anuladas por ND
+ * - Notas de Débito que solamente revierten una NC
+ */
+    const resultadoNotasCredito =
+        await obtenerAplicacionesNotasCredito({
+            empresa,
+
+            documentos,
+
+            consultaSiiActiva:
+                config
+                    .consultaSiiActiva,
+        });
+
+    const notasCreditoPorFactura =
+        resultadoNotasCredito
+            .aplicaciones;
+
+    const notasDebitoSoloReversa =
+        resultadoNotasCredito
+            .notasDebitoSoloReversa;
+    /*
      * 4. Cargar recordatorios existentes
      */
 
@@ -3385,6 +3438,99 @@ async function procesarEmpresaCobranza(
             );
 
         /*
+* Primero validar identificación mínima.
+*/
+        if (
+            !tipoDoc ||
+            !folio ||
+            !rutContraparte
+        ) {
+            sinIdentificacion++;
+
+            continue;
+        }
+
+        /*
+ * Una Nota de Débito que únicamente anula/revierte
+ * una Nota de Crédito no representa una deuda nueva.
+ *
+ * Ejemplo real:
+ *
+ * ND 56-4
+ * → anula NC 61-124
+ *
+ * Por lo tanto:
+ *
+ * - NC 124 deja de afectar la factura 1245
+ * - ND 4 no se cobra por separado
+ */
+        if (
+            tipoDoc ===
+            "56" &&
+            notasDebitoSoloReversa.has(
+                [
+                    folio,
+                    normalizeRut(
+                        rutContraparte
+                    ),
+                ].join("|")
+            )
+        ) {
+            console.log(
+                "[COBRANZA AUTO] ⏭ Nota de Débito de reversa de NC no se cobra independientemente",
+                {
+                    empresa,
+
+                    tipoDoc,
+
+                    folio,
+
+                    rutContraparte,
+                }
+            );
+
+            continue;
+        }
+
+        const montoOriginal =
+            getMontoTotal(
+                documento
+            );
+
+        const notaCreditoKey =
+            [
+                tipoDoc,
+
+                folio,
+
+                rutContraparte,
+            ].join("|");
+
+        const aplicacionNotaCredito =
+            notasCreditoPorFactura.get(
+                notaCreditoKey
+            );
+
+        const montoNotasCredito =
+            aplicacionNotaCredito
+                ?.montoNotasCredito ??
+            0;
+
+        const anulaCompletamente =
+            aplicacionNotaCredito
+                ?.anulaCompletamente ??
+            false;
+
+        const montoPendiente =
+            anulaCompletamente
+                ? 0
+                : Math.max(
+                    0,
+                    montoOriginal -
+                    montoNotasCredito
+                );
+
+        /*
  * Por ahora solamente procesamos documentos
  * directamente cobrables.
  *
@@ -3400,11 +3546,37 @@ async function procesarEmpresaCobranza(
         }
 
         if (
-            !tipoDoc ||
-            !folio ||
-            !rutContraparte
+            anulaCompletamente ||
+            (
+                montoOriginal >
+                0 &&
+                montoPendiente <=
+                0
+            )
         ) {
-            sinIdentificacion++;
+            console.log(
+                "[COBRANZA AUTO] 🧾 Documento sin saldo por Nota de Crédito",
+                {
+                    empresa,
+
+                    tipoDoc,
+
+                    folio,
+
+                    rutContraparte,
+
+                    montoOriginal,
+
+                    montoNotasCredito,
+
+                    anulaCompletamente,
+
+                    notasCredito:
+                        aplicacionNotaCredito
+                            ?.notasCredito ??
+                        [],
+                }
+            );
 
             continue;
         }
@@ -3525,9 +3697,18 @@ async function procesarEmpresaCobranza(
                 ),
 
             montoTotal:
-                getMontoTotal(
-                    documento
-                ),
+                montoPendiente,
+
+            montoOriginal,
+
+            montoNotasCredito,
+
+            montoPendiente,
+
+            notasCreditoAplicadas:
+                aplicacionNotaCredito
+                    ?.notasCredito ??
+                [],
 
             fechaVencimiento:
                 estado.fechaVencimientoIso,

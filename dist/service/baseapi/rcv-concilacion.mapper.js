@@ -35,6 +35,12 @@ export function getRutContraparteRcv(doc, tipoRcv) {
         doc.rutProveedor ??
         "");
 }
+export function normalizarRutRcv(value) {
+    return String(value ?? "")
+        .replace(/[^0-9kK]/g, "")
+        .toUpperCase()
+        .trim();
+}
 export function getMontoIvaRcv(doc) {
     return toNumberRcv(doc["Monto IVA"] ??
         doc["Monto Iva"] ??
@@ -47,7 +53,7 @@ export function mapRcvToConciliacionInput(params) {
     const { doc, empresaKey, tipoRcv } = params;
     const tipoDoc = String(doc["Tipo Doc"] ?? doc.tipoDoc ?? doc.tipoDTE ?? "");
     const folio = String(doc["Folio"] ?? doc.folio ?? "");
-    const rutContraparte = String(getRutContraparteRcv(doc, tipoRcv));
+    const rutContraparte = normalizarRutRcv(getRutContraparteRcv(doc, tipoRcv));
     const razonSocial = String(doc["Razon Social"] ??
         doc["Razón Social"] ??
         doc.razonSocial ??

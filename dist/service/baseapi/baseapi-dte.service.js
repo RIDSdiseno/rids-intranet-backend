@@ -68,7 +68,7 @@ function toDecimal(value) {
     return new Prisma.Decimal(num);
 }
 // Función para consultar un DTE por folio usando BaseAPI, parsear el XML, y guardar/cachear los datos en la base de datos.
-function parseDteXmlForDb(xmlRaw) {
+export function parseDteXmlForDb(xmlRaw) {
     const parser = new DOMParser();
     const xml = parser.parseFromString(xmlRaw, "text/xml");
     const documento = findFirstXmlElement(xml, "Documento");
@@ -81,6 +81,8 @@ function parseDteXmlForDb(xmlRaw) {
     const receptor = encabezado ? findFirstXmlElement(encabezado, "Receptor") : null;
     const totales = encabezado ? findFirstXmlElement(encabezado, "Totales") : null;
     const detalleNodes = Array.from(documento.getElementsByTagName("*")).filter((el) => el.localName === "Detalle");
+    const referenciaNodes = Array.from(documento.getElementsByTagName("*")).filter((el) => el.localName ===
+        "Referencia");
     const tipoDTE = toInt(getTextFromXml(idDoc, "TipoDTE")) || 33;
     const folio = toInt(getTextFromXml(idDoc, "Folio"));
     const items = detalleNodes.map((detalle, index) => {
@@ -98,6 +100,20 @@ function parseDteXmlForDb(xmlRaw) {
             montoItem: toInt(getTextFromXml(detalle, "MontoItem")),
         };
     });
+    const referencias = referenciaNodes.map((referencia, index) => ({
+        nroLinRef: toInt(getTextFromXml(referencia, "NroLinRef")) ||
+            index + 1,
+        tipoDocRef: getTextFromXml(referencia, "TpoDocRef") ||
+            null,
+        folioRef: getTextFromXml(referencia, "FolioRef") ||
+            null,
+        fechaRef: getTextFromXml(referencia, "FchRef") ||
+            null,
+        codigoRef: getTextFromXml(referencia, "CodRef") ||
+            null,
+        razonRef: getTextFromXml(referencia, "RazonRef") ||
+            null,
+    }));
     return {
         factura: {
             tipoDTE,
@@ -122,12 +138,13 @@ function parseDteXmlForDb(xmlRaw) {
             montoTotal: toInt(getTextFromXml(totales, "MntTotal")),
         },
         items,
+        referencias,
     };
 }
 // Extrae el bloque <TED>...</TED> completo (DD + FRMT) tal cual aparece en el XML firmado.
 // Este es el contenido que debe codificarse en el PDF417 del Timbre Electrónico SII —
 // no basta con el FRMT (la firma) por sí solo.
-function extractTedXml(xmlRaw) {
+export function extractTedXml(xmlRaw) {
     if (!xmlRaw)
         return null;
     try {
@@ -150,14 +167,42 @@ function mapFacturaCacheToBaseApiLikeResponse(factura) {
                 folio: factura.folio,
                 fecha: factura.fechaEmision,
                 fecha_vencimiento: factura.fechaVencimiento,
+                estado: factura.estado,
+                tipo_venta: factura.tipoVenta,
+                /* =========================
+                   EMISOR
+                ========================= */
+                rut_emisor: factura.rutEmisor,
+                razon_social_emisor: factura.razonSocialEmisor,
+                giro_emisor: factura.giroEmisor,
+                /* =========================
+                   RECEPTOR
+                ========================= */
                 rut_receptor: factura.rutReceptor,
                 razon_social_receptor: factura.razonSocialReceptor,
+                giro_receptor: factura.giroReceptor,
+                direccion_receptor: factura.direccionReceptor,
+                comuna_receptor: factura.comunaReceptor,
+                ciudad_receptor: factura.ciudadReceptor,
+                /* =========================
+                   TOTALES
+                ========================= */
+                monto_exento: factura.montoExento,
+                monto_neto: factura.montoNeto,
+                monto_iva: factura.montoIVA,
                 monto_total: factura.montoTotal,
-                estado: factura.estado,
+                /* =========================
+                   XML / TIMBRE
+                ========================= */
                 xml_base64: encodeBase64Utf8(factura.xmlRaw),
-                // Bloque <TED> completo (DD + FRMT), usado para generar el PDF417 del Timbre Electrónico SII
-                ted_xml: factura.xmlRaw ? extractTedXml(factura.xmlRaw) : null,
-                items: factura.items ?? [],
+                ted_xml: factura.xmlRaw
+                    ? extractTedXml(factura.xmlRaw)
+                    : null,
+                /* =========================
+                   DETALLE
+                ========================= */
+                items: factura.items ??
+                    [],
             },
         },
     };

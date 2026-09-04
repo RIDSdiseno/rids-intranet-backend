@@ -4,7 +4,7 @@ import {
     listAuditByEmpresa,
     createAuditLog,
     listEmpresasAuditLogs,
-} from "../../controllers/historial-cambios-controller/audit.controller.js";
+} from "../../controllers/controllers-historial-cambios/audit.controller.js";
 import { auth } from "../../middlewares/auth.js";
 
 export const auditRouter = Router();

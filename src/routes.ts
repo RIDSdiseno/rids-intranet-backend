@@ -43,7 +43,7 @@ import { fdRouter } from "./routes/fd.js";
 import { fdWebhookRouter } from "./routes/fd.webhook.js";
 import ticketsApiRouter from "./routes/tickets.routes.js";
 
-import { syncAccess,} from "./middlewares/internal-api-key.js";
+import { syncAccess, } from "./middlewares/internal-api-key.js";
 
 /* ===================== Google Sync ===================== */
 import syncGoogleRouter from "./routes/syncGoogle.routes.js";
@@ -89,6 +89,10 @@ import baseApiRcvRoutes from "./routes/baseapi-routes/baseapi-rcv.routes.js";
 import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
 
 import baseApiCobranzaAutomaticoRoutes from "./routes/baseapi-routes/baseapi-cobranza-automatico.routes.js";
+
+import baseApiFacturaEnvioAutomaticoRoutes from "./routes/baseapi-routes/baseapi-factura-envio-automatico.routes.js";
+
+import receptoresFacturacionRoutes  from "./routes/baseapi-routes/facturas/factura-receptores.routes.js";
 
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
@@ -142,7 +146,7 @@ api.use(solicitantesMaintenanceRouter);
 
 api.use("/visitas", visitasRouter);
 api.use("/equipos", equiposRouter);
-api.use("/equipos-adicionales",equipoAdicionalRoutes);
+api.use("/equipos-adicionales", equipoAdicionalRoutes);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
@@ -219,6 +223,9 @@ api.use("/clientes-ext", clientesExtRouter);
 api.use("/baseapi/rcv", baseApiRcvRoutes);
 api.use("/baseapi/dte", baseApiDteRoutes);
 api.use("/baseapi/cobranza/automatizacion", baseApiCobranzaAutomaticoRoutes);
+
+api.use("/baseapi/facturas/automatizacion", baseApiFacturaEnvioAutomaticoRoutes);
+api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
 
 /* ===================== Export ===================== */
 export default api;

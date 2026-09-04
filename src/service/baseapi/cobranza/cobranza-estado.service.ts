@@ -182,6 +182,35 @@ function parseFecha(
     return date;
 }
 
+function normalizarRut(
+    value: unknown
+): string {
+    return String(
+        value ?? ""
+    )
+        .replace(/\./g, "")
+        .replace(/-/g, "")
+        .replace(/\s/g, "")
+        .toUpperCase()
+        .trim();
+}
+
+function getRutContraparteDocumento(
+    doc: any
+): string {
+    return normalizarRut(
+        doc?.["Rut cliente"] ??
+        doc?.["RUT Cliente"] ??
+        doc?.["Rut Receptor"] ??
+        doc?.["RUT Receptor"] ??
+        doc?.rutCliente ??
+        doc?.rutReceptor ??
+        doc?.rut ??
+        doc?.RUT ??
+        ""
+    );
+}
+
 function obtenerFechaVencimientoDocumento(
     doc: any
 ): Date | null {
@@ -282,6 +311,11 @@ export async function obtenerEstadoDocumentoCobranza(
             ""
         ).trim();
 
+    const rutContraparte =
+        getRutContraparteDocumento(
+            doc
+        );
+
     const empresaRaw =
         String(
             doc?.empresaOrigen ??
@@ -371,9 +405,18 @@ export async function obtenerEstadoDocumentoCobranza(
         await prisma.rcvConciliacion.findFirst({
             where: {
                 empresaKey,
+
                 tipoRcv,
+
                 tipoDoc,
+
                 folio,
+
+                ...(rutContraparte
+                    ? {
+                        rutContraparte,
+                    }
+                    : {}),
             },
 
             orderBy: {
@@ -577,21 +620,58 @@ type DocumentoCobranzaBatch = {
     estado: EstadoDocumentoCobranza;
 };
 
-function getDocumentoKey(
+function getConciliacionKey(
+    empresaKey: string,
+    tipoDoc: string,
+    folio: string,
+    rutContraparte: string
+) {
+    return [
+        String(
+            empresaKey ??
+            ""
+        )
+            .trim()
+            .toLowerCase(),
+
+        String(
+            tipoDoc ??
+            ""
+        ).trim(),
+
+        String(
+            folio ??
+            ""
+        ).trim(),
+
+        normalizarRut(
+            rutContraparte
+        ),
+    ].join("|");
+}
+
+function getVencimientoKey(
     empresaKey: string,
     tipoDoc: string,
     folio: string
 ) {
     return [
-        String(empresaKey ?? "")
+        String(
+            empresaKey ??
+            ""
+        )
             .trim()
             .toLowerCase(),
 
-        String(tipoDoc ?? "")
-            .trim(),
+        String(
+            tipoDoc ??
+            ""
+        ).trim(),
 
-        String(folio ?? "")
-            .trim(),
+        String(
+            folio ??
+            ""
+        ).trim(),
     ].join("|");
 }
 
@@ -693,6 +773,24 @@ export async function obtenerEstadosDocumentosCobranza(
             )
         );
 
+    const rutsContraparte =
+        Array.from(
+            new Set(
+                documentos
+                    .map(
+                        (
+                            doc
+                        ) =>
+                            getRutContraparteDocumento(
+                                doc
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            )
+        );
+
     const whereBase = {
         ...(empresasEncontradas.length > 0
             ? {
@@ -719,23 +817,68 @@ export async function obtenerEstadosDocumentosCobranza(
             : {}),
     };
 
+    const whereDocumentos = {
+        ...(empresasEncontradas.length > 0
+            ? {
+                empresaKey: {
+                    in:
+                        empresasEncontradas,
+                },
+            }
+            : {}),
+
+        ...(folios.length > 0
+            ? {
+                folio: {
+                    in:
+                        folios,
+                },
+            }
+            : {}),
+
+        ...(tiposDoc.length > 0
+            ? {
+                tipoDoc: {
+                    in:
+                        tiposDoc,
+                },
+            }
+            : {}),
+    };
+
+    const whereConciliaciones = {
+        ...whereDocumentos,
+
+        ...(rutsContraparte.length > 0
+            ? {
+                rutContraparte: {
+                    in:
+                        rutsContraparte,
+                },
+            }
+            : {}),
+    };
+
     const [
         conciliaciones,
         vencimientos,
     ] = await Promise.all([
         prisma.rcvConciliacion.findMany({
             where: {
-                ...whereBase,
+                ...whereConciliaciones,
+
                 tipoRcv,
             },
 
             orderBy: {
-                conciliadoAt: "desc",
+                conciliadoAt:
+                    "desc",
             },
         }),
 
         prisma.rcvVencimiento.findMany({
-            where: whereBase,
+            where:
+                whereDocumentos,
         }),
     ]);
 
@@ -758,10 +901,11 @@ export async function obtenerEstadosDocumentosCobranza(
         of conciliaciones
     ) {
         const key =
-            getDocumentoKey(
+            getConciliacionKey(
                 conciliacion.empresaKey,
                 conciliacion.tipoDoc,
-                conciliacion.folio
+                conciliacion.folio,
+                conciliacion.rutContraparte
             );
 
         if (
@@ -787,7 +931,7 @@ export async function obtenerEstadosDocumentosCobranza(
         of vencimientos
     ) {
         const key =
-            getDocumentoKey(
+            getVencimientoKey(
                 vencimiento.empresaKey,
                 vencimiento.tipoDoc,
                 vencimiento.folio
@@ -825,6 +969,11 @@ export async function obtenerEstadosDocumentosCobranza(
 
         const folio =
             getFolioDocumento(
+                documento
+            );
+
+        const rutContraparte =
+            getRutContraparteDocumento(
                 documento
             );
 
@@ -911,8 +1060,16 @@ export async function obtenerEstadosDocumentosCobranza(
             continue;
         }
 
-        const key =
-            getDocumentoKey(
+        const conciliacionKey =
+            getConciliacionKey(
+                empresaKey,
+                tipoDoc,
+                folio,
+                rutContraparte
+            );
+
+        const vencimientoKey =
+            getVencimientoKey(
                 empresaKey,
                 tipoDoc,
                 folio
@@ -924,7 +1081,7 @@ export async function obtenerEstadosDocumentosCobranza(
 
         const conciliacion =
             conciliacionMap.get(
-                key
+                conciliacionKey
             );
 
         if (
@@ -965,7 +1122,7 @@ export async function obtenerEstadosDocumentosCobranza(
 
         const vencimientoOverride =
             vencimientoMap.get(
-                key
+                vencimientoKey
             );
 
         if (

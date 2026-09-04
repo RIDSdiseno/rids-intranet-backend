@@ -1,6 +1,7 @@
 export declare function toNumberRcv(value: any): number;
 export declare function normalizarFechaRcv(value: any): Date | null;
 export declare function getRutContraparteRcv(doc: any, tipoRcv: "ventas" | "compras"): any;
+export declare function normalizarRutRcv(value: unknown): string;
 export declare function getMontoIvaRcv(doc: any): number;
 export declare function mapRcvToConciliacionInput(params: {
     doc: any;

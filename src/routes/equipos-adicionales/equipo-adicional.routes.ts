@@ -10,7 +10,7 @@ import {
     updateEquipoAdicional,
     deleteEquipoAdicional,
     exportEquipoAdicionales,
-} from "../../controllers/equipos-adicionales/equipo-adicional.controller.js";
+} from "../../controllers/controllers-equipos-adicionales/equipo-adicional.controller.js";
 
 const router = Router();
 

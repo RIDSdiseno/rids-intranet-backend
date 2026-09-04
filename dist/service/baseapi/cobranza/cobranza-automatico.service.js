@@ -3,6 +3,7 @@ import { prisma } from "../../../lib/prisma.js";
 import { consultarVentasRcvBaseApi, } from "../baseapi-rcv.service.js";
 import { consultarDtePorFolioBaseApi, } from "../baseapi-dte.service.js";
 import { obtenerEstadosDocumentosCobranza, } from "./cobranza-estado.service.js";
+import { obtenerAplicacionesNotasCredito, } from "./cobranza-notas-credito.service.js";
 /* =========================================================
    LOGS / TIMING
 ========================================================= */
@@ -155,6 +156,105 @@ function getPeriodoDocumento(doc) {
     return String(doc?.periodoCobranzaOrigen ??
         "").trim();
 }
+function getFechaDocumentoRaw(doc) {
+    return (doc?.["Fecha Docto"] ??
+        doc?.["Fecha Documento"] ??
+        doc?.fechaDocto ??
+        doc?.fechaDocumento ??
+        doc?.fechaEmision ??
+        null);
+}
+/*
+ * Convierte una fecha a YYYY-MM-DD sin depender
+ * de la zona horaria del servidor.
+ *
+ * Soporta especialmente:
+ * DD/MM/YYYY
+ * YYYY-MM-DD
+ */
+function parseFechaDocumentoIso(value) {
+    if (!value) {
+        return null;
+    }
+    const raw = String(value).trim();
+    if (!raw) {
+        return null;
+    }
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+    if (iso) {
+        const ano = Number(iso[1]);
+        const mes = Number(iso[2]);
+        const dia = Number(iso[3]);
+        if (!ano ||
+            !mes ||
+            !dia) {
+            return null;
+        }
+        return [
+            String(ano).padStart(4, "0"),
+            String(mes).padStart(2, "0"),
+            String(dia).padStart(2, "0"),
+        ].join("-");
+    }
+    const chilena = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(raw);
+    if (chilena) {
+        const dia = Number(chilena[1]);
+        const mes = Number(chilena[2]);
+        const ano = Number(chilena[3]);
+        const fecha = new Date(Date.UTC(ano, mes - 1, dia));
+        if (fecha.getUTCFullYear() !==
+            ano ||
+            fecha.getUTCMonth() !==
+                mes - 1 ||
+            fecha.getUTCDate() !==
+                dia) {
+            return null;
+        }
+        return `${String(ano).padStart(4, "0")}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+    }
+    return null;
+}
+function isoDateOnlyToUtcDate(fechaIso) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fechaIso);
+    if (!match) {
+        return null;
+    }
+    const ano = Number(match[1]);
+    const mes = Number(match[2]);
+    const dia = Number(match[3]);
+    const fecha = new Date(Date.UTC(ano, mes - 1, dia));
+    if (fecha.getUTCFullYear() !==
+        ano ||
+        fecha.getUTCMonth() !==
+            mes - 1 ||
+        fecha.getUTCDate() !==
+            dia) {
+        return null;
+    }
+    return fecha;
+}
+function sumarDiasFechaIso(fechaIso, dias) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fechaIso);
+    if (!match) {
+        return null;
+    }
+    const ano = Number(match[1]);
+    const mes = Number(match[2]);
+    const dia = Number(match[3]);
+    if (!Number.isFinite(dias)) {
+        return null;
+    }
+    const fecha = new Date(Date.UTC(ano, mes - 1, dia));
+    fecha.setUTCDate(fecha.getUTCDate() +
+        dias);
+    return [
+        fecha
+            .getUTCFullYear(),
+        String(fecha.getUTCMonth() +
+            1).padStart(2, "0"),
+        String(fecha.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+}
 /*
  * Normaliza una fecha proveniente de Prisma/BaseAPI
  * al formato YYYY-MM-DD que ya entiende
@@ -168,10 +268,9 @@ function fechaToIsoDateOnly(value) {
         if (Number.isNaN(value.getTime())) {
             return null;
         }
-        const ano = value.getFullYear();
-        const mes = String(value.getMonth() +
-            1).padStart(2, "0");
-        const dia = String(value.getDate()).padStart(2, "0");
+        const ano = value.getUTCFullYear();
+        const mes = String(value.getUTCMonth() + 1).padStart(2, "0");
+        const dia = String(value.getUTCDate()).padStart(2, "0");
         return `${ano}-${mes}-${dia}`;
     }
     const raw = String(value).trim();
@@ -224,12 +323,88 @@ function getPeriodosAnteriores(cantidadMeses, referencia = new Date()) {
    REGLAS
 ========================================================= */
 function getTipoRecordatorio(diasDiferencia, diasPorVencer, diasVencidos) {
+    /*
+     * =====================================================
+     * CATCH-UP DE RECORDATORIOS
+     * =====================================================
+     *
+     * En lugar de exigir que diasDiferencia coincida
+     * exactamente con uno de los días configurados,
+     * buscamos la etapa MÁS RECIENTE que ya debería
+     * haberse ejecutado.
+     *
+     * Ejemplo:
+     *
+     * diasPorVencer = [-7, -3]
+     *
+     * diasDiferencia = -5
+     * → corresponde etapa -7
+     *
+     * diasDiferencia = -2
+     * → corresponde etapa -3
+     *
+     *
+     * diasVencidos = [0, 3, 7, 15, 30]
+     *
+     * diasDiferencia = 4
+     * → corresponde etapa +3
+     *
+     * diasDiferencia = 10
+     * → corresponde etapa +7
+     *
+     * Esto permite recuperar automáticamente
+     * recordatorios que no fueron preparados
+     * exactamente el día configurado.
+     */
+    if (!Number.isFinite(diasDiferencia)) {
+        return null;
+    }
+    /*
+     * =====================================================
+     * 1. FACTURA AÚN NO VENCIDA
+     * =====================================================
+     */
     if (diasDiferencia <
         0) {
-        if (!diasPorVencer.includes(diasDiferencia)) {
+        /*
+         * Nos quedamos únicamente con etapas negativas
+         * válidas y eliminamos posibles duplicados.
+         */
+        const etapasPorVencer = [
+            ...new Set(diasPorVencer.filter((dias) => Number.isFinite(dias) &&
+                dias <
+                    0)),
+        ];
+        /*
+         * Una etapa ya es aplicable cuando:
+         *
+         * etapa <= diasDiferencia
+         *
+         * Ejemplo:
+         *
+         * hoy = -5
+         *
+         * -7 <= -5  → sí
+         * -3 <= -5  → no
+         *
+         * Por lo tanto corresponde -7.
+         */
+        const etapasAplicables = etapasPorVencer.filter((etapa) => etapa <=
+            diasDiferencia);
+        if (etapasAplicables.length ===
+            0) {
             return null;
         }
-        const dias = Math.abs(diasDiferencia);
+        /*
+         * Elegimos la etapa más cercana al día actual.
+         *
+         * [-7, -3]
+         *
+         * si ambas son aplicables:
+         * Math.max(...) = -3
+         */
+        const etapa = Math.max(...etapasAplicables);
+        const dias = Math.abs(etapa);
         if (dias ===
             7) {
             return "POR_VENCER_7_DIAS";
@@ -240,6 +415,11 @@ function getTipoRecordatorio(diasDiferencia, diasPorVencer, diasVencidos) {
         }
         return `POR_VENCER_${dias}_DIAS`;
     }
+    /*
+ * =====================================================
+ * 2. FACTURA VENCE EXACTAMENTE HOY
+ * =====================================================
+ */
     if (diasDiferencia ===
         0) {
         if (!diasVencidos.includes(0)) {
@@ -247,26 +427,62 @@ function getTipoRecordatorio(diasDiferencia, diasPorVencer, diasVencidos) {
         }
         return "VENCE_HOY";
     }
-    if (!diasVencidos.includes(diasDiferencia)) {
+    /*
+     * =====================================================
+     * 3. FACTURA YA VENCIDA
+     * =====================================================
+     *
+     * IMPORTANTE:
+     *
+     * El día 0 ("VENCE_HOY") no participa del catch-up
+     * una vez que la factura ya está vencida.
+     *
+     * Ejemplo:
+     *
+     * diasVencidos = [0, 3, 7, 15, 30]
+     *
+     * +1 → ninguna etapa
+     * +2 → ninguna etapa
+     * +3 → VENCIDA_3_DIAS
+     * +4 → VENCIDA_3_DIAS (catch-up)
+     * +8 → VENCIDA_7_DIAS (catch-up)
+     */
+    const etapasVencidas = [
+        ...new Set(diasVencidos.filter((dias) => Number.isFinite(dias) &&
+            dias >
+                0)),
+    ];
+    /*
+     * Seleccionamos únicamente las etapas vencidas
+     * que ya deberían haberse ejecutado.
+     */
+    const etapasAplicables = etapasVencidas.filter((etapa) => etapa <=
+        diasDiferencia);
+    if (etapasAplicables.length ===
+        0) {
         return null;
     }
-    if (diasDiferencia ===
+    /*
+     * Nos quedamos con la etapa más reciente.
+     */
+    const etapa = Math.max(...etapasAplicables);
+    if (etapa ===
         3) {
         return "VENCIDA_3_DIAS";
     }
-    if (diasDiferencia ===
+    if (etapa ===
         7) {
         return "VENCIDA_7_DIAS";
     }
-    if (diasDiferencia ===
+    if (etapa ===
         15) {
         return "VENCIDA_15_DIAS";
     }
-    if (diasDiferencia ===
+    if (etapa ===
         30) {
         return "VENCIDA_30_DIAS";
     }
-    return `VENCIDA_${diasDiferencia}_DIAS`;
+    return `VENCIDA_${etapa}_DIAS`;
 }
 /* =========================================================
    CARGAR DOCUMENTOS
@@ -350,17 +566,13 @@ async function cargarDocumentosEmpresa(empresa, mesesAnalizar) {
     return documentos;
 }
 /* =========================================================
-   COMPLETAR VENCIMIENTOS DESDE DTE
+   COMPLETAR VENCIMIENTOS
 ========================================================= */
-async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consultaSiiActiva) {
+async function completarVencimientosCobranza(empresa, evaluadosIniciales, consultaSiiActiva) {
     const inicio = Date.now();
     /*
-     * Primero seleccionamos solamente documentos que:
-     *
-     * - No están conciliados.
-     * - No tienen fecha de vencimiento.
-     * - Son documentos cobrables.
-     * - Tienen tipo, folio y período.
+     * Solo documentos que todavía no tienen vencimiento,
+     * no están conciliados y son cobrables.
      */
     const pendientes = evaluadosIniciales.filter(({ documento, estado, }) => {
         if (estado.estadoPago ===
@@ -378,12 +590,10 @@ async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consul
         }
         const tipoDoc = getTipoDoc(documento);
         const folio = getFolio(documento);
-        const periodo = getPeriodoDocumento(documento);
         return Boolean(tipoDoc &&
-            folio &&
-            periodo);
+            folio);
     });
-    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} documentos que requieren vencimiento DTE`, {
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} documentos que requieren resolver vencimiento`, {
         total: pendientes.length,
         consultaSiiActiva,
     });
@@ -392,14 +602,237 @@ async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consul
         return;
     }
     /*
-     * Procesamos pocos DTE simultáneamente para no
-     * saturar BaseAPI/SII.
+     * =====================================================
+     * 1. Cargar FacturaDTE cacheadas EN BATCH
+     * =====================================================
      */
+    const tiposDte = [
+        ...new Set(pendientes
+            .map(({ documento, }) => Number(getTipoDoc(documento)))
+            .filter(Number.isFinite)),
+    ];
+    const folios = [
+        ...new Set(pendientes
+            .map(({ documento, }) => Number(getFolio(documento)))
+            .filter(Number.isFinite)),
+    ];
+    const facturasCache = tiposDte.length >
+        0 &&
+        folios.length >
+            0
+        ? await prisma.facturaDTE.findMany({
+            where: {
+                empresaAlias: empresa,
+                tipoDTE: {
+                    in: tiposDte,
+                },
+                folio: {
+                    in: folios,
+                },
+            },
+            select: {
+                tipoDTE: true,
+                folio: true,
+                fechaVencimiento: true,
+            },
+        })
+        : [];
+    const facturaCacheMap = new Map();
+    for (const factura of facturasCache) {
+        facturaCacheMap.set(`${factura.tipoDTE}|${factura.folio}`, {
+            existe: true,
+            fechaVencimiento: factura.fechaVencimiento,
+        });
+    }
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} FacturaDTE cacheadas`, {
+        total: facturasCache.length,
+        conVencimiento: facturasCache.filter((item) => Boolean(item.fechaVencimiento)).length,
+    });
+    /*
+     * =====================================================
+     * 2. Cargar días de crédito de clientes EN BATCH
+     * =====================================================
+     *
+     * Se cargan solamente registros que tengan diasCredito.
+     *
+     * Luego normalizamos el RUT en memoria para que:
+     *
+     * 77.581.503-5
+     * 77581503-5
+     * 775815035
+     *
+     * sean considerados el mismo RUT.
+     */
+    const detallesEmpresa = await prisma.detalleEmpresa.findMany({
+        where: {
+            diasCredito: {
+                not: null,
+            },
+        },
+        select: {
+            rut: true,
+            diasCredito: true,
+        },
+    });
+    const diasCreditoPorRut = new Map();
+    for (const detalle of detallesEmpresa) {
+        if (detalle.diasCredito ===
+            null) {
+            continue;
+        }
+        diasCreditoPorRut.set(normalizeRut(detalle.rut), detalle.diasCredito);
+    }
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} clientes con días de crédito configurados`, {
+        total: diasCreditoPorRut.size,
+    });
+    /*
+     * Documentos que aún no podemos resolver
+     * después de revisar cache + días de crédito.
+     */
+    const pendientesConsultaDte = [];
+    /*
+     * =====================================================
+     * 3. Resolver:
+     *
+     *    FacturaDTE cache
+     *             ↓
+     *    diasCredito
+     *             ↓
+     *    pendiente consulta externa
+     * =====================================================
+     */
+    let resueltosDesdeDteCache = 0;
+    let resueltosDesdeDiasCredito = 0;
+    let dteCacheadoSinVencimiento = 0;
+    for (const item of pendientes) {
+        const { documento, } = item;
+        const tipoDoc = getTipoDoc(documento);
+        const folio = getFolio(documento);
+        const tipoDTE = Number(tipoDoc);
+        const folioInt = Number(folio);
+        /*
+         * -----------------------------------------------
+         * A. FacturaDTE cacheada con FchVenc
+         * -----------------------------------------------
+         */
+        const facturaDteCache = facturaCacheMap.get(`${tipoDTE}|${folioInt}`);
+        if (facturaDteCache
+            ?.fechaVencimiento) {
+            const fecha = fechaToIsoDateOnly(facturaDteCache
+                .fechaVencimiento);
+            if (fecha) {
+                documento.fechaVencimiento =
+                    fecha;
+                documento.origenVencimientoCobranza =
+                    "DTE_CACHE";
+                resueltosDesdeDteCache++;
+                console.log(`[COBRANZA AUTO] 🗓️ ${empresa.toUpperCase()} ${tipoDoc}-${folio} vencimiento desde FacturaDTE`, {
+                    fechaVencimiento: fecha,
+                });
+                continue;
+            }
+        }
+        /*
+         * -----------------------------------------------
+         * B. Días de crédito del cliente
+         * -----------------------------------------------
+         */
+        const rut = getRutDocumento(documento);
+        const diasCredito = diasCreditoPorRut.get(rut);
+        if (diasCredito !==
+            undefined &&
+            diasCredito !==
+                null &&
+            diasCredito >=
+                0) {
+            const fechaDocumento = parseFechaDocumentoIso(getFechaDocumentoRaw(documento));
+            if (fechaDocumento) {
+                const fechaVencimiento = sumarDiasFechaIso(fechaDocumento, diasCredito);
+                if (fechaVencimiento) {
+                    documento.fechaVencimiento =
+                        fechaVencimiento;
+                    documento.origenVencimientoCobranza =
+                        "DIAS_CREDITO";
+                    documento.diasCreditoCobranza =
+                        diasCredito;
+                    resueltosDesdeDiasCredito++;
+                    console.log(`[COBRANZA AUTO] 📅 ${empresa.toUpperCase()} ${tipoDoc}-${folio} vencimiento calculado por días de crédito`, {
+                        rut,
+                        fechaDocumento,
+                        diasCredito,
+                        fechaVencimiento,
+                    });
+                    continue;
+                }
+            }
+            else {
+                console.warn(`[COBRANZA AUTO] ⚠ ${empresa.toUpperCase()} ${tipoDoc}-${folio} tiene días de crédito pero Fecha Docto inválida`, {
+                    rut,
+                    diasCredito,
+                    fechaDocumentoRaw: getFechaDocumentoRaw(documento),
+                });
+            }
+        }
+        /*
+ * Si el DTE ya está cacheado y sabemos que no
+ * contiene FchVenc, no tiene sentido volver a
+ * pasar por consultarDtePorFolioBaseApi().
+ */
+        if (facturaDteCache?.existe) {
+            dteCacheadoSinVencimiento++;
+            console.log(`[COBRANZA AUTO] ⏭ ${empresa.toUpperCase()} ${tipoDoc}-${folio} DTE ya cacheado sin FchVenc y cliente sin días de crédito`);
+            continue;
+        }
+        /*
+         * No pudimos resolverlo con información local.
+         */
+        pendientesConsultaDte.push(item);
+    }
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} resolución local de vencimientos`, {
+        totalInicial: pendientes.length,
+        desdeDteCache: resueltosDesdeDteCache,
+        desdeDiasCredito: resueltosDesdeDiasCredito,
+        dteCacheadoSinVencimiento,
+        pendientesConsultaDte: pendientesConsultaDte.length,
+        totalConVencimientoResuelto: resueltosDesdeDteCache +
+            resueltosDesdeDiasCredito,
+    });
+    /*
+     * =====================================================
+     * 4. Si consulta SII está desactivada, terminamos.
+     * =====================================================
+     */
+    if (!consultaSiiActiva ||
+        pendientesConsultaDte.length ===
+            0) {
+        if (!consultaSiiActiva &&
+            pendientesConsultaDte.length >
+                0) {
+            console.log(`[COBRANZA AUTO] ⏭ ${empresa.toUpperCase()} ${pendientesConsultaDte.length} documentos quedaron sin vencimiento y consulta SII está desactivada`);
+        }
+        logTiempo(`Completar vencimientos ${empresa.toUpperCase()}`, inicio);
+        return;
+    }
+    /*
+     * =====================================================
+     * 5. Último fallback:
+     *    consultar DTE BaseAPI.
+     *
+     * Solamente para documentos que:
+     *
+     * - no tenían override manual
+     * - no tenían FchVenc cacheado
+     * - no tenían diasCredito configurado/utilizable
+     * =====================================================
+     */
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} documentos que requieren consulta DTE externa`, {
+        total: pendientesConsultaDte.length,
+    });
     const CONCURRENCIA_DTE = 3;
     for (let i = 0; i <
-        pendientes.length; i +=
+        pendientesConsultaDte.length; i +=
         CONCURRENCIA_DTE) {
-        const grupo = pendientes.slice(i, i +
+        const grupo = pendientesConsultaDte.slice(i, i +
             CONCURRENCIA_DTE);
         await Promise.all(grupo.map(async ({ documento, }) => {
             const tipoDoc = getTipoDoc(documento);
@@ -408,50 +841,12 @@ async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consul
             const tipoDTE = Number(tipoDoc);
             const folioInt = Number(folio);
             if (!Number.isFinite(tipoDTE) ||
-                !Number.isFinite(folioInt)) {
+                !Number.isFinite(folioInt) ||
+                !periodo) {
                 return;
             }
             const inicioDte = Date.now();
-            /*
-             * Primero buscamos directamente en FacturaDTE.
-             *
-             * Esto permite usar registros previamente
-             * cacheados incluso si consultaSiiActiva=false.
-             */
             try {
-                const facturaCache = await prisma.facturaDTE.findFirst({
-                    where: {
-                        empresaAlias: empresa,
-                        tipoDTE,
-                        folio: folioInt,
-                    },
-                    select: {
-                        fechaVencimiento: true,
-                    },
-                });
-                if (facturaCache
-                    ?.fechaVencimiento) {
-                    const fecha = fechaToIsoDateOnly(facturaCache
-                        .fechaVencimiento);
-                    if (fecha) {
-                        documento.fechaVencimiento =
-                            fecha;
-                        console.log(`[COBRANZA AUTO] 🗓️ ${empresa.toUpperCase()} ${tipoDoc}-${folio} vencimiento desde FacturaDTE`, {
-                            fechaVencimiento: fecha,
-                            duracionMs: Date.now() -
-                                inicioDte,
-                        });
-                        return;
-                    }
-                }
-                /*
-                 * Si la consulta SII automática está
-                 * desactivada, no hacemos llamadas externas.
-                 */
-                if (!consultaSiiActiva) {
-                    console.log(`[COBRANZA AUTO] ⏭ ${empresa.toUpperCase()} ${tipoDoc}-${folio} sin vencimiento cacheado y consulta SII desactivada`);
-                    return;
-                }
                 console.log(`[COBRANZA AUTO] 📡 ${empresa.toUpperCase()} buscando vencimiento DTE ${tipoDoc}-${folio}`, {
                     periodo,
                 });
@@ -464,13 +859,11 @@ async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consul
                 });
                 const fecha = getFechaVencimientoDesdeRespuestaDte(resultadoDte);
                 if (fecha) {
-                    /*
-                     * Agregamos un alias reconocido por
-                     * cobranza-estado.service.ts.
-                     */
                     documento.fechaVencimiento =
                         fecha;
-                    console.log(`[COBRANZA AUTO] ✅ ${empresa.toUpperCase()} ${tipoDoc}-${folio} vencimiento obtenido`, {
+                    documento.origenVencimientoCobranza =
+                        "DTE";
+                    console.log(`[COBRANZA AUTO] ✅ ${empresa.toUpperCase()} ${tipoDoc}-${folio} vencimiento obtenido desde DTE`, {
                         fechaVencimiento: fecha,
                         cached: resultadoDte
                             ?.cached,
@@ -499,7 +892,474 @@ async function completarVencimientosDesdeDte(empresa, evaluadosIniciales, consul
             }
         }));
     }
-    logTiempo(`Completar vencimientos DTE ${empresa.toUpperCase()}`, inicio);
+    logTiempo(`Completar vencimientos ${empresa.toUpperCase()}`, inicio);
+}
+/* =========================================================
+   RESOLVER DESTINATARIOS DE COBRANZA
+========================================================= */
+async function resolverDestinatariosCobranza(candidatos) {
+    if (candidatos.length ===
+        0) {
+        return;
+    }
+    const inicio = Date.now();
+    /*
+     * Consultamos desde Empresa y no desde DetalleEmpresa.
+     *
+     * Esto evita que un DetalleEmpresa huérfano
+     * provoque:
+     *
+     * "Field empresa is required to return data,
+     * got null instead"
+     *
+     * especialmente porque usamos:
+     *
+     * relationMode = "prisma"
+     */
+    const empresasClientes = await prisma.empresa.findMany({
+        where: {
+            detalleEmpresa: {
+                isNot: null,
+            },
+        },
+        select: {
+            id_empresa: true,
+            nombre: true,
+            isActive: true,
+            recibeCobranza: true,
+            detalleEmpresa: {
+                select: {
+                    rut: true,
+                },
+            },
+            contactoEmpresas: {
+                where: {
+                    recibeCobranza: true,
+                },
+                select: {
+                    id: true,
+                    nombre: true,
+                    cargo: true,
+                    email: true,
+                    principal: true,
+                },
+            },
+        },
+    });
+    /*
+     * Indexar empresas por RUT normalizado.
+     */
+    const empresasPorRut = new Map();
+    for (const empresaCliente of empresasClientes) {
+        const rut = normalizeRut(empresaCliente
+            .detalleEmpresa
+            ?.rut);
+        if (!rut) {
+            continue;
+        }
+        empresasPorRut.set(rut, empresaCliente);
+    }
+    console.log("[COBRANZA AUTO] Empresas CRM disponibles para cobranza", {
+        total: empresasPorRut.size,
+    });
+    let conDestinatario = 0;
+    let sinDestinatario = 0;
+    for (const candidato of candidatos) {
+        const rut = normalizeRut(candidato
+            .rutContraparte);
+        const empresaCliente = empresasPorRut.get(rut);
+        /*
+         * -----------------------------------------------
+         * A. No existe empresa CRM para ese RUT
+         * -----------------------------------------------
+         */
+        if (!empresaCliente) {
+            candidato.empresaClienteId =
+                null;
+            candidato.empresaClienteNombre =
+                null;
+            candidato.destinatarios =
+                [];
+            candidato.tieneDestinatarioCobranza =
+                false;
+            sinDestinatario++;
+            console.warn("[COBRANZA AUTO] ⚠ Candidato sin empresa CRM asociada", {
+                rut,
+                razonSocial: candidato
+                    .razonSocial,
+                tipoDoc: candidato
+                    .tipoDoc,
+                folio: candidato
+                    .folio,
+            });
+            continue;
+        }
+        candidato.empresaClienteId =
+            empresaCliente
+                .id_empresa;
+        candidato.empresaClienteNombre =
+            empresaCliente
+                .nombre;
+        /*
+         * -----------------------------------------------
+         * B. Empresa desactivada
+         * -----------------------------------------------
+         */
+        if (!empresaCliente
+            .isActive) {
+            candidato.destinatarios =
+                [];
+            candidato.tieneDestinatarioCobranza =
+                false;
+            sinDestinatario++;
+            console.warn("[COBRANZA AUTO] ⏭ Empresa cliente inactiva, no se usará para cobranza", {
+                empresaId: empresaCliente
+                    .id_empresa,
+                empresa: empresaCliente
+                    .nombre,
+                rut,
+                folio: candidato
+                    .folio,
+            });
+            continue;
+        }
+        /*
+         * -----------------------------------------------
+         * C. Cobranza deshabilitada para la empresa
+         * -----------------------------------------------
+         */
+        if (!empresaCliente
+            .recibeCobranza) {
+            candidato.destinatarios =
+                [];
+            candidato.tieneDestinatarioCobranza =
+                false;
+            sinDestinatario++;
+            console.warn("[COBRANZA AUTO] ⏭ Empresa con cobranza deshabilitada", {
+                empresaId: empresaCliente
+                    .id_empresa,
+                empresa: empresaCliente
+                    .nombre,
+                rut,
+                folio: candidato
+                    .folio,
+            });
+            continue;
+        }
+        /*
+         * -----------------------------------------------
+         * D. Preparar contactos de cobranza
+         * -----------------------------------------------
+         *
+         * La consulta Prisma ya dejó solamente:
+         *
+         * recibeCobranza = true
+         */
+        const emailsUsados = new Set();
+        const destinatarios = [];
+        for (const contacto of empresaCliente
+            .contactoEmpresas) {
+            const email = String(contacto.email ??
+                "")
+                .trim()
+                .toLowerCase();
+            /*
+             * Contacto sin email.
+             */
+            if (!email) {
+                continue;
+            }
+            /*
+             * Evitar destinatarios repetidos.
+             */
+            if (emailsUsados.has(email)) {
+                continue;
+            }
+            emailsUsados.add(email);
+            destinatarios.push({
+                contactoId: contacto.id,
+                nombre: contacto.nombre,
+                email,
+                cargo: contacto.cargo ??
+                    null,
+                principal: contacto.principal,
+            });
+        }
+        /*
+         * Contacto principal primero.
+         */
+        destinatarios.sort((a, b) => Number(b.principal) -
+            Number(a.principal));
+        candidato.destinatarios =
+            destinatarios;
+        candidato.tieneDestinatarioCobranza =
+            destinatarios.length >
+                0;
+        /*
+         * -----------------------------------------------
+         * E. Resultado
+         * -----------------------------------------------
+         */
+        if (candidato
+            .tieneDestinatarioCobranza) {
+            conDestinatario++;
+            console.log("[COBRANZA AUTO] 📧 Destinatarios resueltos", {
+                empresaId: candidato
+                    .empresaClienteId,
+                empresa: candidato
+                    .empresaClienteNombre,
+                rut,
+                tipoDoc: candidato
+                    .tipoDoc,
+                folio: candidato
+                    .folio,
+                destinatarios: destinatarios.map((destinatario) => ({
+                    contactoId: destinatario
+                        .contactoId,
+                    nombre: destinatario
+                        .nombre,
+                    email: destinatario
+                        .email,
+                    principal: destinatario
+                        .principal,
+                })),
+            });
+        }
+        else {
+            sinDestinatario++;
+            console.warn("[COBRANZA AUTO] ⚠ Empresa habilitada para cobranza pero sin contactos destinatarios válidos", {
+                empresaId: candidato
+                    .empresaClienteId,
+                empresa: candidato
+                    .empresaClienteNombre,
+                rut,
+                tipoDoc: candidato
+                    .tipoDoc,
+                folio: candidato
+                    .folio,
+            });
+        }
+    }
+    console.log("[COBRANZA AUTO] Resolución destinatarios finalizada", {
+        candidatos: candidatos.length,
+        conDestinatario,
+        sinDestinatario,
+    });
+    logTiempo("Resolución destinatarios cobranza", inicio);
+}
+async function cargarEstadoRecordatorios(empresa, candidatos) {
+    const registros = await prisma.rcvRecordatorioEnvio.findMany({
+        where: {
+            empresaKey: empresa,
+            tipoRcv: "ventas",
+        },
+        select: {
+            empresaKey: true,
+            tipoRcv: true,
+            tipoDoc: true,
+            folio: true,
+            rutContraparte: true,
+            cicloVencimiento: true,
+            tipoRecordatorio: true,
+            emailDestino: true,
+            estado: true,
+            enviadoAt: true,
+        },
+    });
+    const registrosMap = new Map(registros.map((registro) => [
+        getEnvioKey(registro),
+        registro,
+    ]));
+    for (const candidato of candidatos) {
+        let pendientes = 0;
+        let enviados = 0;
+        let errores = 0;
+        for (const destinatario of candidato
+            .destinatarios) {
+            const key = getEnvioKey({
+                empresaKey: candidato
+                    .empresaKey,
+                tipoRcv: candidato
+                    .tipoRcv,
+                tipoDoc: candidato
+                    .tipoDoc,
+                folio: candidato
+                    .folio,
+                rutContraparte: candidato
+                    .rutContraparte,
+                cicloVencimiento: candidato
+                    .fechaVencimiento,
+                tipoRecordatorio: candidato
+                    .tipoRecordatorio,
+                emailDestino: destinatario
+                    .email,
+            });
+            const registro = registrosMap.get(key);
+            if (!registro) {
+                continue;
+            }
+            if (registro.estado ===
+                "ENVIADO" ||
+                registro.enviadoAt) {
+                enviados++;
+                continue;
+            }
+            if (registro.estado ===
+                "ERROR") {
+                errores++;
+                continue;
+            }
+            pendientes++;
+        }
+        candidato.recordatoriosPendientes =
+            pendientes;
+        candidato.recordatoriosEnviados =
+            enviados;
+        candidato.recordatoriosError =
+            errores;
+        /*
+         * Una factura se considera totalmente enviada
+         * solamente si TODOS sus destinatarios válidos
+         * tienen el recordatorio enviado.
+         */
+        candidato.yaEnviado =
+            candidato
+                .destinatarios
+                .length >
+                0 &&
+                enviados ===
+                    candidato
+                        .destinatarios
+                        .length;
+    }
+}
+/* =========================================================
+   REGISTRAR RECORDATORIOS PENDIENTES
+========================================================= */
+async function registrarRecordatoriosPendientes(empresa, candidatos) {
+    const inicio = Date.now();
+    /*
+     * Solamente candidatos que tienen al menos
+     * un destinatario válido.
+     */
+    const candidatosEnviables = candidatos.filter((candidato) => candidato
+        .tieneDestinatarioCobranza &&
+        candidato
+            .destinatarios
+            .length >
+            0);
+    if (candidatosEnviables.length ===
+        0) {
+        console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} no hay recordatorios pendientes para registrar`);
+        return {
+            creados: 0,
+            existentes: 0,
+        };
+    }
+    /*
+     * Construimos una fila por destinatario.
+     */
+    const registros = candidatosEnviables.flatMap((candidato) => {
+        const fechaVencimiento = isoDateOnlyToUtcDate(candidato
+            .fechaVencimiento);
+        return candidato
+            .destinatarios
+            .map((destinatario) => ({
+            empresaKey: candidato
+                .empresaKey,
+            tipoRcv: candidato
+                .tipoRcv,
+            tipoDoc: candidato
+                .tipoDoc,
+            folio: candidato
+                .folio,
+            rutContraparte: candidato
+                .rutContraparte,
+            razonSocial: candidato
+                .razonSocial,
+            tipoRecordatorio: candidato
+                .tipoRecordatorio,
+            cicloVencimiento: candidato
+                .fechaVencimiento,
+            emailDestino: destinatario
+                .email,
+            nombreDestino: destinatario
+                .nombre,
+            /*
+             * Todavía no estamos generando
+             * el asunto definitivo.
+             */
+            asunto: null,
+            estado: "PENDIENTE",
+            automatico: true,
+            fechaVencimiento,
+            diasDiferencia: candidato
+                .diasDiferencia,
+            montoTotal: Math.round(candidato
+                .montoTotal),
+            intentos: 0,
+            ultimoIntentoAt: null,
+            procesandoAt: null,
+            enviadoAt: null,
+            error: null,
+        }));
+    });
+    /*
+     * Consultamos cuáles ya existen.
+     *
+     * No usamos todavía createMany a ciegas para
+     * poder entregar métricas claras.
+     */
+    const existentesDb = await prisma.rcvRecordatorioEnvio.findMany({
+        where: {
+            empresaKey: empresa,
+            tipoRcv: "ventas",
+        },
+        select: {
+            empresaKey: true,
+            tipoRcv: true,
+            tipoDoc: true,
+            folio: true,
+            rutContraparte: true,
+            cicloVencimiento: true,
+            tipoRecordatorio: true,
+            emailDestino: true,
+        },
+    });
+    const existentesMap = new Set(existentesDb.map((item) => getEnvioKey(item)));
+    const nuevos = registros.filter((registro) => {
+        const key = getEnvioKey(registro);
+        return !existentesMap.has(key);
+    });
+    if (nuevos.length >
+        0) {
+        await prisma.rcvRecordatorioEnvio.createMany({
+            data: nuevos,
+            /*
+             * Protección adicional en PostgreSQL
+             * frente a carreras / ejecuciones repetidas.
+             */
+            skipDuplicates: true,
+        });
+    }
+    console.log(`[COBRANZA AUTO] 📝 ${empresa.toUpperCase()} recordatorios preparados`, {
+        candidatosEnviables: candidatosEnviables.length,
+        registrosEsperados: registros.length,
+        nuevos: nuevos.length,
+        existentes: registros.length -
+            nuevos.length,
+        /*
+         * IMPORTANTE:
+         * en esta etapa no se envía correo.
+         */
+        emailsEnviados: 0,
+    });
+    logTiempo(`Registrar recordatorios ${empresa.toUpperCase()}`, inicio);
+    return {
+        creados: nuevos.length,
+        existentes: registros.length -
+            nuevos.length,
+    };
 }
 /* =========================================================
    CLAVE PARA CONTROL DE DUPLICADOS
@@ -511,7 +1371,9 @@ function getEnvioKey(params) {
         params.tipoDoc,
         params.folio,
         params.rutContraparte,
+        params.cicloVencimiento,
         params.tipoRecordatorio,
+        params.emailDestino,
     ]
         .map((value) => String(value ??
         "")
@@ -522,7 +1384,7 @@ function getEnvioKey(params) {
 /* =========================================================
    PROCESAR EMPRESA
 ========================================================= */
-async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
+async function procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendientes = false) {
     const inicioEmpresa = Date.now();
     console.log(`[COBRANZA AUTO] ▶ Iniciando empresa ${empresa.toUpperCase()}`);
     console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} meses a analizar: ${mesesAnalizar}`);
@@ -552,6 +1414,8 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
             yaEnviados: 0,
             pendientesEnvio: 0,
             detalle: [],
+            candidatosConDestinatario: 0,
+            candidatosSinDestinatario: 0,
             error: "No existe configuración RcvCobranzaConfig para esta empresa",
         };
     }
@@ -580,6 +1444,8 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
             candidatos: 0,
             yaEnviados: 0,
             pendientesEnvio: 0,
+            candidatosConDestinatario: 0,
+            candidatosSinDestinatario: 0,
             detalle: [],
         };
     }
@@ -610,7 +1476,7 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
     /*
      * 3.1 Completar las fechas faltantes desde FacturaDTE/DTE.
      */
-    await completarVencimientosDesdeDte(empresa, evaluados, config.consultaSiiActiva);
+    await completarVencimientosCobranza(empresa, evaluados, config.consultaSiiActiva);
     /*
      * 3.2 Reevaluar porque algunos documentos ahora
      * contienen fechaVencimiento obtenida desde DTE.
@@ -623,35 +1489,31 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         total: evaluados.length,
     });
     /*
+ * 3.3 Resolver efectos documentales:
+ *
+ * - Notas de Crédito aplicadas
+ * - Notas de Crédito anuladas por ND
+ * - Notas de Débito que solamente revierten una NC
+ */
+    const resultadoNotasCredito = await obtenerAplicacionesNotasCredito({
+        empresa,
+        documentos,
+        consultaSiiActiva: config
+            .consultaSiiActiva,
+    });
+    const notasCreditoPorFactura = resultadoNotasCredito
+        .aplicaciones;
+    const notasDebitoSoloReversa = resultadoNotasCredito
+        .notasDebitoSoloReversa;
+    /*
      * 4. Cargar recordatorios existentes
      */
-    const inicioEnvios = Date.now();
-    const enviosExistentes = await prisma.rcvRecordatorioEnvio.findMany({
-        where: {
-            empresaKey: empresa,
-            tipoRcv: "ventas",
-        },
-        select: {
-            empresaKey: true,
-            tipoRcv: true,
-            tipoDoc: true,
-            folio: true,
-            rutContraparte: true,
-            tipoRecordatorio: true,
-        },
-    });
-    logTiempo(`Carga recordatorios existentes ${empresa.toUpperCase()}`, inicioEnvios);
-    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} recordatorios existentes`, {
-        total: enviosExistentes.length,
-    });
-    const enviosMap = new Set(enviosExistentes.map((item) => getEnvioKey(item)));
     /*
      * 5. Estadísticas
      */
     let confirmadosOmitidos = 0;
     let sinFechaVencimiento = 0;
     let sinIdentificacion = 0;
-    let yaEnviados = 0;
     const candidatos = [];
     /*
      * 6. Evaluar reglas
@@ -667,6 +1529,60 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         const folio = getFolio(documento);
         const rutContraparte = getRutDocumento(documento);
         /*
+* Primero validar identificación mínima.
+*/
+        if (!tipoDoc ||
+            !folio ||
+            !rutContraparte) {
+            sinIdentificacion++;
+            continue;
+        }
+        /*
+ * Una Nota de Débito que únicamente anula/revierte
+ * una Nota de Crédito no representa una deuda nueva.
+ *
+ * Ejemplo real:
+ *
+ * ND 56-4
+ * → anula NC 61-124
+ *
+ * Por lo tanto:
+ *
+ * - NC 124 deja de afectar la factura 1245
+ * - ND 4 no se cobra por separado
+ */
+        if (tipoDoc ===
+            "56" &&
+            notasDebitoSoloReversa.has([
+                folio,
+                normalizeRut(rutContraparte),
+            ].join("|"))) {
+            console.log("[COBRANZA AUTO] ⏭ Nota de Débito de reversa de NC no se cobra independientemente", {
+                empresa,
+                tipoDoc,
+                folio,
+                rutContraparte,
+            });
+            continue;
+        }
+        const montoOriginal = getMontoTotal(documento);
+        const notaCreditoKey = [
+            tipoDoc,
+            folio,
+            rutContraparte,
+        ].join("|");
+        const aplicacionNotaCredito = notasCreditoPorFactura.get(notaCreditoKey);
+        const montoNotasCredito = aplicacionNotaCredito
+            ?.montoNotasCredito ??
+            0;
+        const anulaCompletamente = aplicacionNotaCredito
+            ?.anulaCompletamente ??
+            false;
+        const montoPendiente = anulaCompletamente
+            ? 0
+            : Math.max(0, montoOriginal -
+                montoNotasCredito);
+        /*
  * Por ahora solamente procesamos documentos
  * directamente cobrables.
  *
@@ -676,10 +1592,23 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         if (!esDocumentoCobrable(documento)) {
             continue;
         }
-        if (!tipoDoc ||
-            !folio ||
-            !rutContraparte) {
-            sinIdentificacion++;
+        if (anulaCompletamente ||
+            (montoOriginal >
+                0 &&
+                montoPendiente <=
+                    0)) {
+            console.log("[COBRANZA AUTO] 🧾 Documento sin saldo por Nota de Crédito", {
+                empresa,
+                tipoDoc,
+                folio,
+                rutContraparte,
+                montoOriginal,
+                montoNotasCredito,
+                anulaCompletamente,
+                notasCredito: aplicacionNotaCredito
+                    ?.notasCredito ??
+                    [],
+            });
             continue;
         }
         if (!estado.fechaVencimiento ||
@@ -703,38 +1632,91 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         if (!tipoRecordatorio) {
             continue;
         }
-        const key = getEnvioKey({
-            empresaKey: empresa,
-            tipoRcv: "ventas",
+        console.log("[COBRANZA AUTO] 🎯 Etapa de cobranza resuelta", {
+            empresa,
             tipoDoc,
             folio,
-            rutContraparte,
+            diasDiferencia: estado
+                .diasDiferencia,
             tipoRecordatorio,
+            catchUp: !(config
+                .diasPorVencer
+                .includes(estado
+                .diasDiferencia) ||
+                config
+                    .diasVencidos
+                    .includes(estado
+                    .diasDiferencia)),
         });
-        const yaEnviado = enviosMap.has(key);
-        if (yaEnviado) {
-            yaEnviados++;
-        }
         candidatos.push({
             empresaKey: empresa,
+            empresaClienteId: null,
+            empresaClienteNombre: null,
+            destinatarios: [],
+            tieneDestinatarioCobranza: false,
             tipoRcv: "ventas",
             tipoDoc,
             folio,
             rutContraparte,
             razonSocial: getRazonSocialDocumento(documento),
-            montoTotal: getMontoTotal(documento),
+            montoTotal: montoPendiente,
+            montoOriginal,
+            montoNotasCredito,
+            montoPendiente,
+            notasCreditoAplicadas: aplicacionNotaCredito
+                ?.notasCredito ??
+                [],
             fechaVencimiento: estado.fechaVencimientoIso,
             diasDiferencia: estado.diasDiferencia,
+            origenVencimiento: String(documento
+                ?.origenVencimientoCobranza ??
+                estado.origenVencimiento ??
+                "DESCONOCIDO"),
+            diasCredito: typeof documento
+                ?.diasCreditoCobranza ===
+                "number"
+                ? documento
+                    .diasCreditoCobranza
+                : null,
             estadoPago: estado.estadoPago,
             tipoRecordatorio,
-            yaEnviado,
+            yaEnviado: false,
+            recordatoriosPendientes: 0,
+            recordatoriosEnviados: 0,
+            recordatoriosError: 0,
             periodoOrigen: String(documento
                 ?.periodoCobranzaOrigen ??
                 ""),
         });
     }
     logTiempo(`Evaluación reglas ${empresa.toUpperCase()}`, inicioReglas);
-    const pendientesEnvio = candidatos.filter((item) => !item.yaEnviado).length;
+    /*
+ * 7. Resolver destinatarios.
+ *
+ * Todavía estamos en SIMULACIÓN:
+ * este bloque NO envía emails.
+ */
+    await resolverDestinatariosCobranza(candidatos);
+    const candidatosConDestinatario = candidatos.filter((candidato) => candidato
+        .tieneDestinatarioCobranza).length;
+    /*
+ * Registrar en DB solamente cuando
+ * explícitamente lo solicitamos.
+ *
+ * /simular seguirá siendo 100% lectura.
+ */
+    if (registrarPendientes) {
+        await registrarRecordatoriosPendientes(empresa, candidatos);
+    }
+    await cargarEstadoRecordatorios(empresa, candidatos);
+    const yaEnviados = candidatos.filter((candidato) => candidato
+        .yaEnviado).length;
+    const candidatosSinDestinatario = candidatos.length -
+        candidatosConDestinatario;
+    const pendientesEnvio = candidatos.filter((candidato) => candidato
+        .tieneDestinatarioCobranza &&
+        !candidato
+            .yaEnviado).length;
     console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} resumen`, {
         documentosAnalizados: documentos.length,
         confirmadosOmitidos,
@@ -743,6 +1725,8 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         candidatos: candidatos.length,
         yaEnviados,
         pendientesEnvio,
+        candidatosConDestinatario,
+        candidatosSinDestinatario,
     });
     logTiempo(`Empresa ${empresa.toUpperCase()}`, inicioEmpresa);
     return {
@@ -758,6 +1742,8 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
         yaEnviados,
         pendientesEnvio,
         detalle: candidatos,
+        candidatosConDestinatario,
+        candidatosSinDestinatario,
     };
 }
 /* =========================================================
@@ -765,6 +1751,9 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar) {
 ========================================================= */
 export async function procesarCobranzaAutomatica(options) {
     const inicioProceso = Date.now();
+    const registrarPendientes = options
+        ?.registrarPendientes ??
+        false;
     const mesesAnalizar = Math.max(1, Math.min(Number(options?.mesesAnalizar ??
         12), 24));
     const empresas = options?.empresas ??
@@ -786,7 +1775,7 @@ export async function procesarCobranzaAutomatica(options) {
         try {
             console.log("[COBRANZA AUTO] ----------------------------------------");
             console.log(`[COBRANZA AUTO] Analizando ${empresa.toUpperCase()}`);
-            const resultado = await procesarEmpresaCobranza(empresa, mesesAnalizar);
+            const resultado = await procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendientes);
             resultados.push(resultado);
             console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} finalizado`, {
                 documentos: resultado.documentosAnalizados,
@@ -812,6 +1801,8 @@ export async function procesarCobranzaAutomatica(options) {
                 sinFechaVencimiento: 0,
                 sinIdentificacion: 0,
                 candidatos: 0,
+                candidatosConDestinatario: 0,
+                candidatosSinDestinatario: 0,
                 yaEnviados: 0,
                 pendientesEnvio: 0,
                 detalle: [],

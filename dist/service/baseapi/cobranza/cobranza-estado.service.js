@@ -74,6 +74,25 @@ function parseFecha(value) {
     }
     return date;
 }
+function normalizarRut(value) {
+    return String(value ?? "")
+        .replace(/\./g, "")
+        .replace(/-/g, "")
+        .replace(/\s/g, "")
+        .toUpperCase()
+        .trim();
+}
+function getRutContraparteDocumento(doc) {
+    return normalizarRut(doc?.["Rut cliente"] ??
+        doc?.["RUT Cliente"] ??
+        doc?.["Rut Receptor"] ??
+        doc?.["RUT Receptor"] ??
+        doc?.rutCliente ??
+        doc?.rutReceptor ??
+        doc?.rut ??
+        doc?.RUT ??
+        "");
+}
 function obtenerFechaVencimientoDocumento(doc) {
     const candidates = [
         doc?.FchVenc,
@@ -124,6 +143,7 @@ export async function obtenerEstadoDocumentoCobranza(doc, tipoRcv, empresaFallba
         doc?.Nro ??
         doc?.numero ??
         "").trim();
+    const rutContraparte = getRutContraparteDocumento(doc);
     const empresaRaw = String(doc?.empresaOrigen ??
         doc?.empresa ??
         doc?.empresaKey ??
@@ -174,6 +194,11 @@ export async function obtenerEstadoDocumentoCobranza(doc, tipoRcv, empresaFallba
             tipoRcv,
             tipoDoc,
             folio,
+            ...(rutContraparte
+                ? {
+                    rutContraparte,
+                }
+                : {}),
         },
         orderBy: {
             conciliadoAt: "desc",
@@ -268,15 +293,29 @@ export async function anotarDocumentoCobranza(doc, tipoRcv, empresaFallback) {
     }
     return result;
 }
-function getDocumentoKey(empresaKey, tipoDoc, folio) {
+function getConciliacionKey(empresaKey, tipoDoc, folio, rutContraparte) {
     return [
-        String(empresaKey ?? "")
+        String(empresaKey ??
+            "")
             .trim()
             .toLowerCase(),
-        String(tipoDoc ?? "")
-            .trim(),
-        String(folio ?? "")
-            .trim(),
+        String(tipoDoc ??
+            "").trim(),
+        String(folio ??
+            "").trim(),
+        normalizarRut(rutContraparte),
+    ].join("|");
+}
+function getVencimientoKey(empresaKey, tipoDoc, folio) {
+    return [
+        String(empresaKey ??
+            "")
+            .trim()
+            .toLowerCase(),
+        String(tipoDoc ??
+            "").trim(),
+        String(folio ??
+            "").trim(),
     ].join("|");
 }
 function getEmpresaDocumento(doc, empresaFallback) {
@@ -319,6 +358,9 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
     const tiposDoc = Array.from(new Set(documentos
         .map((doc) => getTipoDocDocumento(doc))
         .filter(Boolean)));
+    const rutsContraparte = Array.from(new Set(documentos
+        .map((doc) => getRutContraparteDocumento(doc))
+        .filter(Boolean)));
     const whereBase = {
         ...(empresasEncontradas.length > 0
             ? {
@@ -342,10 +384,43 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
             }
             : {}),
     };
+    const whereDocumentos = {
+        ...(empresasEncontradas.length > 0
+            ? {
+                empresaKey: {
+                    in: empresasEncontradas,
+                },
+            }
+            : {}),
+        ...(folios.length > 0
+            ? {
+                folio: {
+                    in: folios,
+                },
+            }
+            : {}),
+        ...(tiposDoc.length > 0
+            ? {
+                tipoDoc: {
+                    in: tiposDoc,
+                },
+            }
+            : {}),
+    };
+    const whereConciliaciones = {
+        ...whereDocumentos,
+        ...(rutsContraparte.length > 0
+            ? {
+                rutContraparte: {
+                    in: rutsContraparte,
+                },
+            }
+            : {}),
+    };
     const [conciliaciones, vencimientos,] = await Promise.all([
         prisma.rcvConciliacion.findMany({
             where: {
-                ...whereBase,
+                ...whereConciliaciones,
                 tipoRcv,
             },
             orderBy: {
@@ -353,7 +428,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
             },
         }),
         prisma.rcvVencimiento.findMany({
-            where: whereBase,
+            where: whereDocumentos,
         }),
     ]);
     /*
@@ -365,14 +440,14 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
      */
     const conciliacionMap = new Map();
     for (const conciliacion of conciliaciones) {
-        const key = getDocumentoKey(conciliacion.empresaKey, conciliacion.tipoDoc, conciliacion.folio);
+        const key = getConciliacionKey(conciliacion.empresaKey, conciliacion.tipoDoc, conciliacion.folio, conciliacion.rutContraparte);
         if (!conciliacionMap.has(key)) {
             conciliacionMap.set(key, conciliacion);
         }
     }
     const vencimientoMap = new Map();
     for (const vencimiento of vencimientos) {
-        const key = getDocumentoKey(vencimiento.empresaKey, vencimiento.tipoDoc, vencimiento.folio);
+        const key = getVencimientoKey(vencimiento.empresaKey, vencimiento.tipoDoc, vencimiento.folio);
         vencimientoMap.set(key, vencimiento);
     }
     const hoy = normalizarFechaDia(new Date());
@@ -381,6 +456,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         const empresaKey = getEmpresaDocumento(documento, empresaFallback);
         const tipoDoc = getTipoDocDocumento(documento);
         const folio = getFolioDocumento(documento);
+        const rutContraparte = getRutContraparteDocumento(documento);
         /*
          * Si el documento no tiene identificadores suficientes,
          * hacemos fallback solamente a su fecha.
@@ -421,11 +497,12 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
             });
             continue;
         }
-        const key = getDocumentoKey(empresaKey, tipoDoc, folio);
+        const conciliacionKey = getConciliacionKey(empresaKey, tipoDoc, folio, rutContraparte);
+        const vencimientoKey = getVencimientoKey(empresaKey, tipoDoc, folio);
         /*
          * 1. CONCILIACIÓN
          */
-        const conciliacion = conciliacionMap.get(key);
+        const conciliacion = conciliacionMap.get(conciliacionKey);
         if (conciliacion
             ?.estadoConciliacion ===
             "CONCILIADA") {
@@ -445,7 +522,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         /*
          * 2. OVERRIDE MANUAL
          */
-        const vencimientoOverride = vencimientoMap.get(key);
+        const vencimientoOverride = vencimientoMap.get(vencimientoKey);
         if (vencimientoOverride
             ?.fechaVencimiento) {
             const fecha = new Date(vencimientoOverride.fechaVencimiento);

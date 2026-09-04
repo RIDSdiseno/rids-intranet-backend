@@ -7,7 +7,7 @@ import {
     convertDocxToPdf,
     previewDocxToPdf,
     enviarInformeResumenCorreo
-} from "../../controllers/reportes-controller/reportes-upload.controller.js";
+} from "../../controllers/controllers-reportes/reportes-upload.controller.js";
 
 import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
 

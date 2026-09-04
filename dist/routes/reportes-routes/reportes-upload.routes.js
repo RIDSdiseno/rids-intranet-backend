@@ -1,6 +1,6 @@
 // src/routes/reportes-routes/reportes-upload.routes.ts
 import { Router } from "express";
-import { uploadReporteDocx, listHistorialReportes, uploadReporteSupabase, convertDocxToPdf, previewDocxToPdf, enviarInformeResumenCorreo } from "../../controllers/reportes-controller/reportes-upload.controller.js";
+import { uploadReporteDocx, listHistorialReportes, uploadReporteSupabase, convertDocxToPdf, previewDocxToPdf, enviarInformeResumenCorreo } from "../../controllers/controllers-reportes/reportes-upload.controller.js";
 import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
 const router = Router();
 router.post("/upload-docx", auth(), uploadReporteDocx);

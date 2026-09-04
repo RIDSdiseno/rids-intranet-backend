@@ -1,3 +1,4 @@
+// src/service/baseapi/baseapi-rcv.service.ts
 import { prisma } from "../../lib/prisma.js";
 import { baseApiClient, normalizeBaseApiError } from "./baseapi.client.js";
 import { getEmpresaBaseApiConfig, } from "./baseapi.empresas.js";

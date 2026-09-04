@@ -122,6 +122,17 @@ export function parseDteXmlForDb(xmlRaw: string) {
         documento.getElementsByTagName("*")
     ) as any[]).filter((el) => el.localName === "Detalle");
 
+    const referenciaNodes =
+        (
+            Array.from(
+                documento.getElementsByTagName("*")
+            ) as any[]
+        ).filter(
+            (el) =>
+                el.localName ===
+                "Referencia"
+        );
+
     const tipoDTE = toInt(getTextFromXml(idDoc, "TipoDTE")) || 33;
     const folio = toInt(getTextFromXml(idDoc, "Folio"));
 
@@ -141,6 +152,58 @@ export function parseDteXmlForDb(xmlRaw: string) {
             montoItem: toInt(getTextFromXml(detalle, "MontoItem")),
         };
     });
+
+    const referencias =
+        referenciaNodes.map(
+            (
+                referencia,
+                index
+            ) => ({
+                nroLinRef:
+                    toInt(
+                        getTextFromXml(
+                            referencia,
+                            "NroLinRef"
+                        )
+                    ) ||
+                    index + 1,
+
+                tipoDocRef:
+                    getTextFromXml(
+                        referencia,
+                        "TpoDocRef"
+                    ) ||
+                    null,
+
+                folioRef:
+                    getTextFromXml(
+                        referencia,
+                        "FolioRef"
+                    ) ||
+                    null,
+
+                fechaRef:
+                    getTextFromXml(
+                        referencia,
+                        "FchRef"
+                    ) ||
+                    null,
+
+                codigoRef:
+                    getTextFromXml(
+                        referencia,
+                        "CodRef"
+                    ) ||
+                    null,
+
+                razonRef:
+                    getTextFromXml(
+                        referencia,
+                        "RazonRef"
+                    ) ||
+                    null,
+            })
+        );
 
     return {
         factura: {
@@ -165,7 +228,10 @@ export function parseDteXmlForDb(xmlRaw: string) {
             montoIVA: toInt(getTextFromXml(totales, "IVA")),
             montoTotal: toInt(getTextFromXml(totales, "MntTotal")),
         },
+
         items,
+
+        referencias,
     };
 }
 

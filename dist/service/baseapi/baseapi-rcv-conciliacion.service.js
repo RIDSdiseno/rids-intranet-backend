@@ -1,7 +1,7 @@
 // src/service/baseapi/baseapi-rcv-conciliacion.service.ts
 import { prisma } from "../../lib/prisma.js";
 import { consultarComprasRcvBaseApi, consultarVentasRcvBaseApi, } from "./baseapi-rcv.service.js";
-import { mapRcvToConciliacionInput } from "./rcv-concilacion.mapper.js";
+import { mapRcvToConciliacionInput, normalizarRutRcv, } from "./rcv-concilacion.mapper.js";
 import { enviarCorreoConciliacionRcv } from "./baseapi-rcv-conciliacion-mail.service.js";
 export async function listarConciliacionRcv(params) {
     const { empresa, mes, ano, tipo, forceRefresh = false } = params;
@@ -23,11 +23,23 @@ export async function listarConciliacionRcv(params) {
         },
     });
     const mapConciliacion = new Map(conciliaciones.map((c) => [
-        `${c.empresaKey}-${c.tipoRcv}-${c.tipoDoc}-${c.rutContraparte}-${c.folio}`,
+        [
+            c.empresaKey,
+            c.tipoRcv,
+            c.tipoDoc,
+            normalizarRutRcv(c.rutContraparte),
+            c.folio,
+        ].join("|"),
         c,
     ]));
     const data = normalizados.map((doc) => {
-        const key = `${doc.empresaKey}-${doc.tipoRcv}-${doc.tipoDoc}-${doc.rutContraparte}-${doc.folio}`;
+        const key = [
+            doc.empresaKey,
+            doc.tipoRcv,
+            doc.tipoDoc,
+            normalizarRutRcv(doc.rutContraparte),
+            doc.folio,
+        ].join("|");
         const conciliacion = mapConciliacion.get(key);
         return {
             ...doc,
@@ -53,6 +65,7 @@ export async function listarConciliacionRcv(params) {
 }
 export async function conciliarDocumentoRcv(params) {
     const { empresa, tipoRcv, tipoDoc, folio, rutContraparte, razonSocial, fechaDocto, montoNeto = 0, montoIva = 0, montoTotal = 0, estadoRcv, origenRcv, formaPago, observacion, conciliadoAt, responsable, enviarCorreo = false, correoDestino, } = params;
+    const rutContraparteDb = normalizarRutRcv(rutContraparte);
     const razonSocialDb = razonSocial ?? null;
     const fechaDoctoDb = fechaDocto ?? null;
     const estadoRcvDb = estadoRcv ?? null;
@@ -67,7 +80,7 @@ export async function conciliarDocumentoRcv(params) {
                 empresaKey: empresa,
                 tipoRcv,
                 tipoDoc,
-                rutContraparte,
+                rutContraparte: rutContraparteDb,
                 folio,
             },
         },
@@ -76,7 +89,7 @@ export async function conciliarDocumentoRcv(params) {
             tipoRcv,
             tipoDoc,
             folio,
-            rutContraparte,
+            rutContraparte: rutContraparteDb,
             razonSocial: razonSocialDb,
             fechaDocto: fechaDoctoDb,
             montoNeto,
@@ -124,13 +137,14 @@ export async function conciliarDocumentoRcv(params) {
 }
 export async function desconciliarDocumentoRcv(params) {
     const { empresa, tipoRcv, tipoDoc, folio, rutContraparte } = params;
+    const rutContraparteDb = normalizarRutRcv(rutContraparte);
     return prisma.rcvConciliacion.upsert({
         where: {
             empresaKey_tipoRcv_tipoDoc_rutContraparte_folio: {
                 empresaKey: empresa,
                 tipoRcv,
                 tipoDoc,
-                rutContraparte,
+                rutContraparte: rutContraparteDb,
                 folio,
             },
         },
@@ -139,7 +153,7 @@ export async function desconciliarDocumentoRcv(params) {
             tipoRcv,
             tipoDoc,
             folio,
-            rutContraparte,
+            rutContraparte: rutContraparteDb,
             estadoConciliacion: "NO_CONCILIADA",
             conciliadoAt: null,
         },
@@ -154,6 +168,7 @@ export async function desconciliarDocumentoRcv(params) {
 }
 export async function observarDocumentoRcv(params) {
     const { empresa, tipoRcv, tipoDoc, folio, rutContraparte, observacion, responsable, } = params;
+    const rutContraparteDb = normalizarRutRcv(rutContraparte);
     const responsableDb = responsable ?? null;
     return prisma.rcvConciliacion.upsert({
         where: {
@@ -161,7 +176,7 @@ export async function observarDocumentoRcv(params) {
                 empresaKey: empresa,
                 tipoRcv,
                 tipoDoc,
-                rutContraparte,
+                rutContraparte: rutContraparteDb,
                 folio,
             },
         },
@@ -170,7 +185,7 @@ export async function observarDocumentoRcv(params) {
             tipoRcv,
             tipoDoc,
             folio,
-            rutContraparte,
+            rutContraparte: rutContraparteDb,
             estadoConciliacion: "OBSERVADA",
             observacion,
             responsable: responsableDb,
@@ -182,13 +197,10 @@ export async function observarDocumentoRcv(params) {
         },
     });
 }
-function normalizarRut(value) {
-    return String(value ?? "").replace(/[^0-9kK]/g, "").toLowerCase();
-}
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 export async function getPuntualidadCliente(params) {
     const { empresa, rutContraparte } = params;
-    const rutNormalizado = normalizarRut(rutContraparte);
+    const rutNormalizado = normalizarRutRcv(rutContraparte);
     const vacio = {
         estado: "SIN_HISTORIAL",
         score: null,
@@ -203,7 +215,9 @@ export async function getPuntualidadCliente(params) {
     const conciliaciones = await prisma.rcvConciliacion.findMany({
         where: { empresaKey: empresa, tipoRcv: "ventas", estadoConciliacion: "CONCILIADA" },
     });
-    const delCliente = conciliaciones.filter((c) => normalizarRut(c.rutContraparte) === rutNormalizado && c.conciliadoAt);
+    const delCliente = conciliaciones.filter((c) => normalizarRutRcv(c.rutContraparte) ===
+        rutNormalizado &&
+        c.conciliadoAt);
     if (delCliente.length === 0)
         return vacio;
     const overrides = await prisma.rcvVencimiento.findMany({

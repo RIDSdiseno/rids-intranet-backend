@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listAuditLogs, listAuditByEmpresa, createAuditLog, listEmpresasAuditLogs, } from "../../controllers/historial-cambios-controller/audit.controller.js";
+import { listAuditLogs, listAuditByEmpresa, createAuditLog, listEmpresasAuditLogs, } from "../../controllers/controllers-historial-cambios/audit.controller.js";
 import { auth } from "../../middlewares/auth.js";
 export const auditRouter = Router();
 // Historial general de auditoría
