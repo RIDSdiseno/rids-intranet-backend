@@ -43,7 +43,6 @@ model Empresa {
   bitacoras             BitacoraTecnico[]
   equipoMantencions     EquipoMantencion[]
   aliasesOutlook        EmpresaAliasOutlook[]
-
   receptoresFacturacion ReceptorFacturacion[]
 
   @@index([isActive])
@@ -1585,35 +1584,17 @@ model RcvCobranzaConfig {
 }
 
 model ReceptorFacturacion {
-  id Int @id @default(autoincrement())
-
-  // Siempre normalizado:
-  // 77.553.050-2 -> 775530502
-  rut String @unique
-
-  razonSocial String?
-
-  activo Boolean @default(true)
-
-  // Solo true cuando el usuario autorizó
-  // expresamente el envío de facturas.
-  recibeFacturas Boolean @default(false)
-
-  // Si corresponde a una Empresa del CRM.
-  // Puede ser null para clientes externos.
-  empresaId Int?
-
-  empresa Empresa? @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-
-  contactos ReceptorFacturacionContacto[]
-
-  // CRM = creado/migrado desde Empresa
-  // RCV = descubierto automáticamente
-  // MANUAL = creado desde administración
-  origen String @default("RCV")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             Int                           @id @default(autoincrement())
+  rut            String                        @unique
+  razonSocial    String?
+  activo         Boolean                       @default(true)
+  recibeFacturas Boolean                       @default(false)
+  empresaId      Int?
+  origen         String                        @default("RCV")
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  empresa        Empresa?                      @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  contactos      ReceptorFacturacionContacto[]
 
   @@index([empresaId])
   @@index([activo])
@@ -1622,26 +1603,17 @@ model ReceptorFacturacion {
 }
 
 model ReceptorFacturacionContacto {
-  id Int @id @default(autoincrement())
-
-  receptorId Int
-
-  receptor ReceptorFacturacion @relation(fields: [receptorId], references: [id], onDelete: Cascade)
-
-  nombre String?
-
-  email String
-
-  activo Boolean @default(true)
-
-  recibeFacturas Boolean @default(true)
-
-  principal Boolean @default(false)
-
-  origen String @default("MANUAL")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             Int                 @id @default(autoincrement())
+  receptorId     Int
+  nombre         String?
+  email          String
+  activo         Boolean             @default(true)
+  recibeFacturas Boolean             @default(true)
+  principal      Boolean             @default(false)
+  origen         String              @default("MANUAL")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  receptor       ReceptorFacturacion @relation(fields: [receptorId], references: [id], onDelete: Cascade)
 
   @@unique([receptorId, email])
   @@index([receptorId])
@@ -1650,146 +1622,102 @@ model ReceptorFacturacionContacto {
 }
 
 model RcvFacturaEnvioConfig {
-  id Int @id @default(autoincrement())
-
-  /**
-   * econnet | rids
-   */
-  empresaKey String @unique
-
-  /**
-   * Habilita el módulo para la empresa emisora.
-   */
-  activo Boolean @default(false)
-
-  /**
-   * Permite consultar BaseAPI/SII si hace falta
-   * obtener el DTE/PDF.
-   */
-  consultaSiiActiva Boolean @default(true)
-
-  /**
-   * IMPORTANTE:
-   * Durante desarrollo debe quedar false.
-   * Cuando sea true, el scheduler podrá enviar
-   * automáticamente los registros preparados.
-   */
-  envioAutomatico Boolean @default(false)
-
-  /**
-   * Hora prevista para buscar facturas nuevas.
-   */
-  horaConsulta String @default("07:30")
-
-  horaEnvio String @default("08:00")
-
-  /**
-   * Evita hacer catch-up de facturas demasiado antiguas.
-   * Ejemplo:
-   * una factura emitida hace 10 días puede enviarse,
-   * una de hace 8 meses no.
-   */
-  diasAntiguedadMax Int @default(30)
-
-  /**
-   * Adjuntar representación PDF del DTE.
-   */
-  adjuntarPdf Boolean @default(true)
-
-  ultimaConsultaAt DateTime?
-  ultimoEnvioAt    DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                Int       @id @default(autoincrement())
+  /// *
+  ///    * econnet | rids
+  empresaKey        String    @unique
+  /// *
+  ///    * Habilita el módulo para la empresa emisora.
+  activo            Boolean   @default(false)
+  /// *
+  ///    * Permite consultar BaseAPI/SII si hace falta
+  ///    * obtener el DTE/PDF.
+  consultaSiiActiva Boolean   @default(true)
+  /// *
+  ///    * IMPORTANTE:
+  ///    * Durante desarrollo debe quedar false.
+  ///    * Cuando sea true, el scheduler podrá enviar
+  ///    * automáticamente los registros preparados.
+  envioAutomatico   Boolean   @default(false)
+  /// *
+  ///    * Hora prevista para buscar facturas nuevas.
+  horaConsulta      String    @default("07:30")
+  /// *
+  ///    * Evita hacer catch-up de facturas demasiado antiguas.
+  ///    * Ejemplo:
+  ///    * una factura emitida hace 10 días puede enviarse,
+  ///    * una de hace 8 meses no.
+  diasAntiguedadMax Int       @default(30)
+  /// *
+  ///    * Adjuntar representación PDF del DTE.
+  adjuntarPdf       Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  horaEnvio         String    @default("08:00")
+  ultimaConsultaAt  DateTime?
+  ultimoEnvioAt     DateTime?
 
   @@index([activo])
   @@index([envioAutomatico])
 }
 
 model RcvFacturaEnvio {
-  id Int @id @default(autoincrement())
-
-  /**
-   * Empresa que EMITE el DTE.
-   * econnet | rids
-   */
-  empresaKey String
-
-  /**
-   * Por ahora solamente trabajaremos sobre RCV ventas.
-   */
-  tipoRcv String @default("ventas")
-
-  /**
-   * Identificación tributaria.
-   * Inicialmente:
-   * 33 = Factura Electrónica
-   * 34 = Factura Exenta Electrónica
-   */
-  tipoDoc String
-  folio   String
-
-  /**
-   * Cliente receptor.
-   * Siempre normalizado:
-   * 775530502
-   */
-  rutContraparte String
-
-  razonSocial String?
-
-  /**
-   * Un registro por cada contacto que debe recibir
-   * la factura.
-   */
-  emailDestino  String
-  nombreDestino String?
-
-  asunto String?
-
-  /**
-   * Estados previstos:
-   * PENDIENTE
-   * PROCESANDO
-   * ENVIADO
-   * ERROR
-   * Se mantiene String para seguir el mismo patrón
-   * que RcvRecordatorioEnvio.
-   */
-  estado String @default("PENDIENTE")
-
-  /**
-   * true = generado por automatización.
-   */
-  automatico Boolean @default(true)
-
-  /**
-   * Snapshot financiero/documental al momento
-   * de preparar el envío.
-   */
-  montoTotal   Int       @default(0)
-  fechaEmision DateTime?
-
-  /**
-   * Control del worker.
-   */
+  id              Int       @id @default(autoincrement())
+  /// *
+  ///    * Empresa que EMITE el DTE.
+  ///    * econnet | rids
+  empresaKey      String
+  /// *
+  ///    * Por ahora solamente trabajaremos sobre RCV ventas.
+  tipoRcv         String    @default("ventas")
+  /// *
+  ///    * Identificación tributaria.
+  ///    * Inicialmente:
+  ///    * 33 = Factura Electrónica
+  ///    * 34 = Factura Exenta Electrónica
+  tipoDoc         String
+  folio           String
+  /// *
+  ///    * Cliente receptor.
+  ///    * Siempre normalizado:
+  ///    * 775530502
+  rutContraparte  String
+  razonSocial     String?
+  /// *
+  ///    * Un registro por cada contacto que debe recibir
+  ///    * la factura.
+  emailDestino    String
+  nombreDestino   String?
+  asunto          String?
+  /// *
+  ///    * Estados previstos:
+  ///    * PENDIENTE
+  ///    * PROCESANDO
+  ///    * ENVIADO
+  ///    * ERROR
+  ///    * Se mantiene String para seguir el mismo patrón
+  ///    * que RcvRecordatorioEnvio.
+  estado          String    @default("PENDIENTE")
+  /// *
+  ///    * true = generado por automatización.
+  automatico      Boolean   @default(true)
+  /// *
+  ///    * Snapshot financiero/documental al momento
+  ///    * de preparar el envío.
+  montoTotal      Int       @default(0)
+  fechaEmision    DateTime?
+  /// *
+  ///    * Control del worker.
   intentos        Int       @default(0)
   ultimoIntentoAt DateTime?
   procesandoAt    DateTime?
+  /// *
+  ///    * Resultado final.
+  enviadoAt       DateTime?
+  error           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  /**
-   * Resultado final.
-   */
-  enviadoAt DateTime?
-  error     String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /**
-   * Evita enviar dos veces la misma factura
-   * al mismo destinatario.
-   */
   @@unique([empresaKey, tipoRcv, tipoDoc, folio, rutContraparte, emailDestino])
   @@index([empresaKey])
   @@index([rutContraparte])

@@ -69,6 +69,81 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 
         const fechaTrabajo = data.fecha ? new Date(data.fecha) : new Date();
 
+        /* =====================================================
+   VALIDAR ORDEN DE SALIDA
+===================================================== */
+
+        let ordenGrupoIdFinal: number | null = null;
+
+        if (data.area === "SALIDA") {
+            ordenGrupoIdFinal =
+                data.ordenGrupoId
+                    ? Number(data.ordenGrupoId)
+                    : null;
+
+            if (
+                !ordenGrupoIdFinal ||
+                !Number.isInteger(ordenGrupoIdFinal) ||
+                ordenGrupoIdFinal <= 0
+            ) {
+                return res.status(400).json({
+                    error:
+                        "Una orden de SALIDA debe tener un ordenGrupoId válido.",
+                });
+            }
+
+            const ordenOrigen =
+                await prisma.detalleTrabajoGestioo.findUnique({
+                    where: {
+                        id: ordenGrupoIdFinal,
+                    },
+
+                    select: {
+                        id: true,
+                        area: true,
+                        numeroOrden: true,
+                        equipoId: true,
+                    },
+                });
+
+            if (!ordenOrigen) {
+                return res.status(404).json({
+                    error:
+                        `No existe la orden de origen #${ordenGrupoIdFinal}.`,
+                });
+            }
+
+            const salidaExistente =
+                await prisma.detalleTrabajoGestioo.findFirst({
+                    where: {
+                        ordenGrupoId:
+                            ordenGrupoIdFinal,
+
+                        area:
+                            "SALIDA",
+                    },
+
+                    select: {
+                        id: true,
+                        numeroOrden: true,
+                        fecha: true,
+                    },
+                });
+
+            if (salidaExistente) {
+                return res.status(409).json({
+                    error:
+                        `La orden #${ordenGrupoIdFinal} ya tiene una salida registrada.`,
+
+                    salidaExistenteId:
+                        salidaExistente.id,
+
+                    numeroOrden:
+                        salidaExistente.numeroOrden,
+                });
+            }
+        }
+
         // Resolver numeroOrden para areas distintas de ENTRADA
         if (data.area !== "ENTRADA" && data.ordenGrupoId) {
             const ordenGrupo = await prisma.detalleTrabajoGestioo.findUnique({
@@ -122,7 +197,12 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 data: {
                     fecha: fechaTrabajo,
                     numeroOrden,
-                    ordenGrupoId: data.ordenGrupoId ?? null,
+                    ordenGrupoId:
+                        data.area === "SALIDA"
+                            ? ordenGrupoIdFinal
+                            : data.ordenGrupoId
+                                ? Number(data.ordenGrupoId)
+                                : null,
                     fechaIngreso:
                         data.area === "ENTRADA"
                             ? fechaTrabajo
@@ -188,9 +268,25 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
 
         return res.status(201).json(trabajoFinal);
 
-    } catch (error) {
-        console.error("❌ Error al crear detalle de trabajo:", error);
-        return res.status(500).json({ error: "Error al crear detalle de trabajo" });
+    } catch (error: any) {
+        console.error(
+            "❌ Error al crear detalle de trabajo:",
+            error
+        );
+
+        if (
+            error?.code === "P2002"
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta orden ya tiene una salida registrada.",
+            });
+        }
+
+        return res.status(500).json({
+            error:
+                "Error al crear detalle de trabajo",
+        });
     }
 }
 
@@ -375,6 +471,53 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             return res.status(404).json({ error: "Detalle de trabajo no encontrado" });
         }
 
+        /* =====================================================
+   PROTEGER CAMBIO A SALIDA
+===================================================== */
+
+        if (
+            data.area === "SALIDA" &&
+            existing.area !== "SALIDA"
+        ) {
+            const ordenGrupoId =
+                existing.ordenGrupoId ??
+                existing.id;
+
+            const salidaExistente =
+                await prisma.detalleTrabajoGestioo.findFirst({
+                    where: {
+                        ordenGrupoId,
+
+                        area:
+                            "SALIDA",
+
+                        id: {
+                            not:
+                                existing.id,
+                        },
+                    },
+
+                    select: {
+                        id: true,
+                        numeroOrden: true,
+                        fecha: true,
+                    },
+                });
+
+            if (salidaExistente) {
+                return res.status(409).json({
+                    error:
+                        `La orden #${ordenGrupoId} ya tiene una salida registrada.`,
+
+                    salidaExistenteId:
+                        salidaExistente.id,
+
+                    numeroOrden:
+                        salidaExistente.numeroOrden,
+                });
+            }
+        }
+
         // Validar técnico si viene
         if (data.tecnicoId !== undefined && data.tecnicoId !== null) {
             const tecnico = await prisma.tecnico.findUnique({
@@ -384,20 +527,6 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             if (!tecnico) {
                 return res.status(400).json({ error: "Técnico no válido" });
             }
-        }
-
-        // Si se está cambiando a SALIDA → cerrar entradas previas
-        if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
-            await prisma.detalleTrabajoGestioo.updateMany({
-                where: {
-                    equipoId: existing.equipoId,
-                    area: "ENTRADA",
-                    estado: { not: "COMPLETADA" },
-                },
-                data: {
-                    estado: "COMPLETADA",
-                },
-            });
         }
 
         const destinoEquipoSolicitado =
@@ -531,10 +660,24 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
 
         return res.json(detalleActualizado);
 
-    } catch (error) {
-        console.error("❌ Error al actualizar detalle:", error);
+    } catch (error: any) {
+        console.error(
+            "❌ Error al actualizar detalle:",
+            error
+        );
+
+        if (
+            error?.code === "P2002"
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta orden ya tiene una salida registrada.",
+            });
+        }
+
         return res.status(500).json({
-            error: "Error al actualizar detalle de trabajo",
+            error:
+                "Error al actualizar detalle de trabajo",
         });
     }
 }
