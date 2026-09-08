@@ -2,6 +2,7 @@ import type { EmpresaBaseApiKey } from "../baseapi.empresas.js";
 export type ProcesarEnviosFacturaOptions = {
     empresa?: EmpresaBaseApiKey;
     limite?: number;
+    ids?: number[];
 };
 export type ResultadoProcesarEnviosFactura = {
     recuperados: number;

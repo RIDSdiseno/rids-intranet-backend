@@ -1624,38 +1624,40 @@ model ReceptorFacturacionContacto {
 model RcvFacturaEnvioConfig {
   id                Int       @id @default(autoincrement())
   /// *
-  ///    * econnet | rids
+  /// * econnet | rids
   empresaKey        String    @unique
   /// *
-  ///    * Habilita el módulo para la empresa emisora.
+  /// * Habilita el módulo para la empresa emisora.
   activo            Boolean   @default(false)
   /// *
-  ///    * Permite consultar BaseAPI/SII si hace falta
-  ///    * obtener el DTE/PDF.
+  /// * Permite consultar BaseAPI/SII si hace falta
+  /// * obtener el DTE/PDF.
   consultaSiiActiva Boolean   @default(true)
   /// *
-  ///    * IMPORTANTE:
-  ///    * Durante desarrollo debe quedar false.
-  ///    * Cuando sea true, el scheduler podrá enviar
-  ///    * automáticamente los registros preparados.
+  /// * IMPORTANTE:
+  /// * Durante desarrollo debe quedar false.
+  /// * Cuando sea true, el scheduler podrá enviar
+  /// * automáticamente los registros preparados.
   envioAutomatico   Boolean   @default(false)
   /// *
-  ///    * Hora prevista para buscar facturas nuevas.
+  /// * Hora prevista para buscar facturas nuevas.
   horaConsulta      String    @default("07:30")
   /// *
-  ///    * Evita hacer catch-up de facturas demasiado antiguas.
-  ///    * Ejemplo:
-  ///    * una factura emitida hace 10 días puede enviarse,
-  ///    * una de hace 8 meses no.
+  /// * Evita hacer catch-up de facturas demasiado antiguas.
+  /// * Ejemplo:
+  /// * una factura emitida hace 10 días puede enviarse,
+  /// * una de hace 8 meses no.
   diasAntiguedadMax Int       @default(30)
   /// *
-  ///    * Adjuntar representación PDF del DTE.
+  /// * Adjuntar representación PDF del DTE.
   adjuntarPdf       Boolean   @default(true)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   horaEnvio         String    @default("08:00")
   ultimaConsultaAt  DateTime?
   ultimoEnvioAt     DateTime?
+  /// Última ejecución del proceso de recuperación/reintento.
+  ultimoRecoveryAt  DateTime?
 
   @@index([activo])
   @@index([envioAutomatico])
@@ -1664,55 +1666,55 @@ model RcvFacturaEnvioConfig {
 model RcvFacturaEnvio {
   id              Int       @id @default(autoincrement())
   /// *
-  ///    * Empresa que EMITE el DTE.
-  ///    * econnet | rids
+  /// * Empresa que EMITE el DTE.
+  /// * econnet | rids
   empresaKey      String
   /// *
-  ///    * Por ahora solamente trabajaremos sobre RCV ventas.
+  /// * Por ahora solamente trabajaremos sobre RCV ventas.
   tipoRcv         String    @default("ventas")
   /// *
-  ///    * Identificación tributaria.
-  ///    * Inicialmente:
-  ///    * 33 = Factura Electrónica
-  ///    * 34 = Factura Exenta Electrónica
+  /// * Identificación tributaria.
+  /// * Inicialmente:
+  /// * 33 = Factura Electrónica
+  /// * 34 = Factura Exenta Electrónica
   tipoDoc         String
   folio           String
   /// *
-  ///    * Cliente receptor.
-  ///    * Siempre normalizado:
-  ///    * 775530502
+  /// * Cliente receptor.
+  /// * Siempre normalizado:
+  /// * 775530502
   rutContraparte  String
   razonSocial     String?
   /// *
-  ///    * Un registro por cada contacto que debe recibir
-  ///    * la factura.
+  /// * Un registro por cada contacto que debe recibir
+  /// * la factura.
   emailDestino    String
   nombreDestino   String?
   asunto          String?
   /// *
-  ///    * Estados previstos:
-  ///    * PENDIENTE
-  ///    * PROCESANDO
-  ///    * ENVIADO
-  ///    * ERROR
-  ///    * Se mantiene String para seguir el mismo patrón
-  ///    * que RcvRecordatorioEnvio.
+  /// * Estados previstos:
+  /// * PENDIENTE
+  /// * PROCESANDO
+  /// * ENVIADO
+  /// * ERROR
+  /// * Se mantiene String para seguir el mismo patrón
+  /// * que RcvRecordatorioEnvio.
   estado          String    @default("PENDIENTE")
   /// *
-  ///    * true = generado por automatización.
+  /// * true = generado por automatización.
   automatico      Boolean   @default(true)
   /// *
-  ///    * Snapshot financiero/documental al momento
-  ///    * de preparar el envío.
+  /// * Snapshot financiero/documental al momento
+  /// * de preparar el envío.
   montoTotal      Int       @default(0)
   fechaEmision    DateTime?
   /// *
-  ///    * Control del worker.
+  /// * Control del worker.
   intentos        Int       @default(0)
   ultimoIntentoAt DateTime?
   procesandoAt    DateTime?
   /// *
-  ///    * Resultado final.
+  /// * Resultado final.
   enviadoAt       DateTime?
   error           String?
   createdAt       DateTime  @default(now())

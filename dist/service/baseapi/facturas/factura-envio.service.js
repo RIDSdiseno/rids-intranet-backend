@@ -318,11 +318,16 @@ export async function procesarEnviosFactura(options) {
         .rcvFacturaEnvio
         .findMany({
         where: {
-            ...(options
-                ?.empresa
+            ...(options?.empresa
                 ? {
-                    empresaKey: options
-                        .empresa,
+                    empresaKey: options.empresa,
+                }
+                : {}),
+            ...(options?.ids?.length
+                ? {
+                    id: {
+                        in: options.ids,
+                    },
                 }
                 : {}),
             enviadoAt: null,

@@ -31,6 +31,19 @@ export type ProcesarEnviosFacturaOptions = {
 
     limite?:
     number;
+
+    ids?:
+    number[];
+
+    /*
+     * true por defecto.
+     *
+     * Permite desactivar la recuperación automática
+     * cuando el proceso ya viene desde el recovery
+     * específico del scheduler.
+     */
+    recuperarAtascados?:
+    boolean;
 };
 
 export type ResultadoProcesarEnviosFactura = {
@@ -161,8 +174,11 @@ function normalizeEmail(
 
 async function recuperarEnviosAtascados(
     empresa?:
-        EmpresaBaseApiKey
-): Promise<number> {
+        EmpresaBaseApiKey,
+
+    limite:
+        number = 100
+): Promise<number[]> {
     const ahora =
         new Date();
 
@@ -174,10 +190,18 @@ async function recuperarEnviosAtascados(
             1000
         );
 
-    const resultado =
+    /*
+     * Primero localizamos los posibles registros
+     * atascados.
+     *
+     * Todavía NO asumimos que son nuestros:
+     * otra réplica podría estar intentando
+     * recuperarlos simultáneamente.
+     */
+    const candidatos =
         await prisma
             .rcvFacturaEnvio
-            .updateMany({
+            .findMany({
                 where: {
                     ...(empresa
                         ? {
@@ -198,27 +222,100 @@ async function recuperarEnviosAtascados(
                     },
                 },
 
-                data: {
-                    estado:
-                        "ERROR",
-
-                    procesandoAt:
-                        null,
-
-                    error:
-                        `Proceso abandonado: permaneció en PROCESANDO más de ${MINUTOS_PROCESANDO_TIMEOUT} minutos`,
+                select: {
+                    id:
+                        true,
                 },
+
+                orderBy: [
+                    {
+                        procesandoAt:
+                            "asc",
+                    },
+                    {
+                        id:
+                            "asc",
+                    },
+                ],
+
+                take:
+                    Math.max(
+                        1,
+                        Math.min(
+                            limite,
+                            100
+                        )
+                    ),
             });
 
+    const idsRecuperados:
+        number[] =
+        [];
+
+    /*
+     * Claim atómico individual.
+     *
+     * Aunque dos procesos hayan encontrado el mismo ID,
+     * solamente uno podrá cambiarlo de PROCESANDO a ERROR.
+     */
+    for (
+        const candidato
+        of candidatos
+    ) {
+        const resultado =
+            await prisma
+                .rcvFacturaEnvio
+                .updateMany({
+                    where: {
+                        id:
+                            candidato.id,
+
+                        estado:
+                            "PROCESANDO",
+
+                        enviadoAt:
+                            null,
+
+                        procesandoAt: {
+                            lt:
+                                fechaLimite,
+                        },
+                    },
+
+                    data: {
+                        estado:
+                            "ERROR",
+
+                        procesandoAt:
+                            null,
+
+                        error:
+                            `Proceso abandonado: permaneció en PROCESANDO más de ${MINUTOS_PROCESANDO_TIMEOUT} minutos`,
+                    },
+                });
+
+        if (
+            resultado.count ===
+            1
+        ) {
+            idsRecuperados.push(
+                candidato.id
+            );
+        }
+    }
+
     if (
-        resultado.count >
+        idsRecuperados.length >
         0
     ) {
         console.warn(
             "[FACTURA ENVÍO] ♻️ Registros recuperados",
             {
                 total:
-                    resultado.count,
+                    idsRecuperados.length,
+
+                ids:
+                    idsRecuperados,
 
                 empresa:
                     empresa ??
@@ -227,7 +324,7 @@ async function recuperarEnviosAtascados(
         );
     }
 
-    return resultado.count;
+    return idsRecuperados;
 }
 
 /* =========================================================
@@ -708,23 +805,40 @@ export async function procesarEnviosFactura(
             )
         );
 
+    const debeRecuperarAtascados =
+        options
+            ?.recuperarAtascados !==
+        false;
+
+    const idsRecuperados =
+        debeRecuperarAtascados
+            ? await recuperarEnviosAtascados(
+                options
+                    ?.empresa,
+                limite
+            )
+            : [];
+
     const recuperados =
-        await recuperarEnviosAtascados(
-            options
-                ?.empresa
-        );
+        idsRecuperados.length;
 
     const pendientes =
         await prisma
             .rcvFacturaEnvio
             .findMany({
                 where: {
-                    ...(options
-                        ?.empresa
+                    ...(options?.empresa
                         ? {
                             empresaKey:
-                                options
-                                    .empresa,
+                                options.empresa,
+                        }
+                        : {}),
+
+                    ...(options?.ids?.length
+                        ? {
+                            id: {
+                                in: options.ids,
+                            },
                         }
                         : {}),
 
@@ -741,7 +855,6 @@ export async function procesarEnviosFactura(
                             estado:
                                 "PENDIENTE",
                         },
-
                         {
                             estado:
                                 "ERROR",
@@ -1383,5 +1496,139 @@ export async function procesarEnviosFactura(
         omitidos,
 
         cancelados,
+    };
+}
+
+/* =========================================================
+   RECOVERY PROGRAMADO
+========================================================= */
+
+export async function procesarRecoveryEnviosFactura(
+    options?: {
+        empresa?:
+        EmpresaBaseApiKey;
+
+        limite?:
+        number;
+    }
+): Promise<
+    ResultadoProcesarEnviosFactura
+> {
+    const limite =
+        Math.max(
+            1,
+            Math.min(
+                Number(
+                    options
+                        ?.limite ??
+                    100
+                ),
+                100
+            )
+        );
+
+    /*
+     * 1. Recuperamos únicamente registros realmente
+     *    atascados en PROCESANDO.
+     */
+    const idsRecuperados =
+        await recuperarEnviosAtascados(
+            options
+                ?.empresa,
+            limite
+        );
+
+    /*
+     * No existe nada que reintentar.
+     */
+    if (
+        idsRecuperados.length ===
+        0
+    ) {
+        console.log(
+            "[FACTURA RECOVERY] ✅ Sin registros atascados",
+            {
+                empresa:
+                    options
+                        ?.empresa ??
+                    "todas",
+            }
+        );
+
+        return {
+            recuperados:
+                0,
+
+            encontrados:
+                0,
+
+            procesados:
+                0,
+
+            enviados:
+                0,
+
+            errores:
+                0,
+
+            omitidos:
+                0,
+
+            cancelados:
+                0,
+        };
+    }
+
+    console.log(
+        "[FACTURA RECOVERY] 🔁 Reintentando registros recuperados",
+        {
+            empresa:
+                options
+                    ?.empresa ??
+                "todas",
+
+            total:
+                idsRecuperados.length,
+
+            ids:
+                idsRecuperados,
+        }
+    );
+
+    /*
+     * 2. Procesamos EXCLUSIVAMENTE los IDs que acabamos
+     *    de recuperar.
+     *
+     * recuperarAtascados=false evita ejecutar una segunda
+     * recuperación dentro de procesarEnviosFactura().
+     */
+    const resultado =
+        await procesarEnviosFactura({
+            ...(options?.empresa
+                ? {
+                    empresa:
+                        options.empresa,
+                }
+                : {}),
+
+            ids:
+                idsRecuperados,
+
+            limite:
+                idsRecuperados.length,
+
+            recuperarAtascados:
+                false,
+        });
+
+    /*
+     * procesarEnviosFactura() no realizó el recovery porque
+     * lo desactivamos. Reponemos aquí el número real.
+     */
+    return {
+        ...resultado,
+
+        recuperados:
+            idsRecuperados.length,
     };
 }

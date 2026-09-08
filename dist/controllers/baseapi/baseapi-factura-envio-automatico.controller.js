@@ -187,10 +187,8 @@ export async function prepararEnvioFacturas(req, res) {
 ========================================================= */
 export async function enviarFacturasPendientes(req, res) {
     try {
-        const empresaInput = req.body
-            ?.empresa ??
-            req.query
-                ?.empresa;
+        const empresaInput = req.body?.empresa ??
+            req.query?.empresa;
         let empresa;
         if (empresaInput !==
             undefined) {
@@ -208,15 +206,12 @@ export async function enviarFacturasPendientes(req, res) {
             empresa =
                 empresas[0];
         }
-        const limiteRaw = req.body
-            ?.limite ??
-            req.query
-                ?.limite ??
+        const limiteRaw = req.body?.limite ??
+            req.query?.limite ??
             20;
         const limite = Number(limiteRaw);
         if (!Number.isFinite(limite) ||
-            limite <=
-                0) {
+            limite <= 0) {
             return res
                 .status(400)
                 .json({
@@ -224,19 +219,52 @@ export async function enviarFacturasPendientes(req, res) {
                 error: "limite debe ser un número mayor que 0.",
             });
         }
+        /* =====================================================
+           IDS OPCIONALES
+        ===================================================== */
+        const idsInput = req.body?.ids ??
+            req.query?.ids;
+        let ids;
+        if (idsInput !==
+            undefined) {
+            const idsArray = Array.isArray(idsInput)
+                ? idsInput
+                : String(idsInput).split(",");
+            ids =
+                idsArray
+                    .map((value) => Number(value))
+                    .filter((id) => Number.isInteger(id) &&
+                    id > 0);
+            if (ids.length ===
+                0) {
+                return res
+                    .status(400)
+                    .json({
+                    ok: false,
+                    error: "Debe indicar al menos un id válido.",
+                });
+            }
+        }
         console.log("[FACTURA AUTO] Parámetros recibidos en /enviar-pendientes", {
             empresa: empresa ??
                 "todas",
             limite,
+            ids: ids ??
+                "todos",
         });
-        const resultado = await procesarEnviosFactura(empresa
-            ? {
-                empresa,
-                limite,
-            }
-            : {
-                limite,
-            });
+        const resultado = await procesarEnviosFactura({
+            ...(empresa
+                ? {
+                    empresa,
+                }
+                : {}),
+            limite,
+            ...(ids
+                ? {
+                    ids,
+                }
+                : {}),
+        });
         return res.json({
             ok: true,
             ...resultado,

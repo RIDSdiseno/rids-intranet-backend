@@ -334,10 +334,8 @@ export async function enviarFacturasPendientes(
 ) {
     try {
         const empresaInput =
-            req.body
-                ?.empresa ??
-            req.query
-                ?.empresa;
+            req.body?.empresa ??
+            req.query?.empresa;
 
         let empresa:
             EmpresaFacturaKey |
@@ -358,13 +356,9 @@ export async function enviarFacturasPendientes(
                 1
             ) {
                 return res
-                    .status(
-                        400
-                    )
+                    .status(400)
                     .json({
-                        ok:
-                            false,
-
+                        ok: false,
                         error:
                             "Debe indicar una empresa válida: econnet o rids.",
                     });
@@ -375,10 +369,8 @@ export async function enviarFacturasPendientes(
         }
 
         const limiteRaw =
-            req.body
-                ?.limite ??
-            req.query
-                ?.limite ??
+            req.body?.limite ??
+            req.query?.limite ??
             20;
 
         const limite =
@@ -390,20 +382,70 @@ export async function enviarFacturasPendientes(
             !Number.isFinite(
                 limite
             ) ||
-            limite <=
-            0
+            limite <= 0
         ) {
             return res
-                .status(
-                    400
-                )
+                .status(400)
                 .json({
-                    ok:
-                        false,
-
+                    ok: false,
                     error:
                         "limite debe ser un número mayor que 0.",
                 });
+        }
+
+        /* =====================================================
+           IDS OPCIONALES
+        ===================================================== */
+
+        const idsInput =
+            req.body?.ids ??
+            req.query?.ids;
+
+        let ids:
+            number[] |
+            undefined;
+
+        if (
+            idsInput !==
+            undefined
+        ) {
+            const idsArray =
+                Array.isArray(
+                    idsInput
+                )
+                    ? idsInput
+                    : String(
+                        idsInput
+                    ).split(",");
+
+            ids =
+                idsArray
+                    .map(
+                        (value) =>
+                            Number(
+                                value
+                            )
+                    )
+                    .filter(
+                        (id) =>
+                            Number.isInteger(
+                                id
+                            ) &&
+                            id > 0
+                    );
+
+            if (
+                ids.length ===
+                0
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        ok: false,
+                        error:
+                            "Debe indicar al menos un id válido.",
+                    });
+            }
         }
 
         console.log(
@@ -414,26 +456,32 @@ export async function enviarFacturasPendientes(
                     "todas",
 
                 limite,
+
+                ids:
+                    ids ??
+                    "todos",
             }
         );
 
         const resultado =
-            await procesarEnviosFactura(
-                empresa
+            await procesarEnviosFactura({
+                ...(empresa
                     ? {
                         empresa,
+                    }
+                    : {}),
 
-                        limite,
+                limite,
+
+                ...(ids
+                    ? {
+                        ids,
                     }
-                    : {
-                        limite,
-                    }
-            );
+                    : {}),
+            });
 
         return res.json({
-            ok:
-                true,
-
+            ok: true,
             ...resultado,
         });
     } catch (
@@ -455,13 +503,9 @@ export async function enviarFacturasPendientes(
         );
 
         return res
-            .status(
-                500
-            )
+            .status(500)
             .json({
-                ok:
-                    false,
-
+                ok: false,
                 error:
                     message,
             });
