@@ -17,6 +17,7 @@ import { generarDtePdfBuffer, } from "../baseapi-dte-pdf.service.js";
  * - caída de conexión
  */
 const MINUTOS_PROCESANDO_TIMEOUT = 15;
+const MAX_INTENTOS = 3;
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -90,25 +91,13 @@ async function resolverPeriodoDte(empresaKey, tipoDoc, folio, fechaVencimiento) 
 /* =========================================================
    RECUPERAR REGISTROS ATASCADOS
 ========================================================= */
-async function recuperarRecordatoriosAtascados(empresa) {
+async function recuperarRecordatoriosAtascados(empresa, limite = 100) {
     const ahora = new Date();
     const fechaLimite = new Date(ahora.getTime() -
         MINUTOS_PROCESANDO_TIMEOUT *
             60 *
             1000);
-    /*
-     * Un registro se recupera solamente si:
-     *
-     * - sigue en PROCESANDO
-     * - todavía NO fue enviado
-     * - procesandoAt es anterior al timeout
-     *
-     * No modificamos "intentos":
-     *
-     * el intento ya fue incrementado cuando
-     * el worker realizó el claim originalmente.
-     */
-    const resultado = await prisma.rcvRecordatorioEnvio.updateMany({
+    const candidatos = await prisma.rcvRecordatorioEnvio.findMany({
         where: {
             ...(empresa
                 ? {
@@ -121,24 +110,51 @@ async function recuperarRecordatoriosAtascados(empresa) {
                 lt: fechaLimite,
             },
         },
-        data: {
-            estado: "ERROR",
-            procesandoAt: null,
-            error: `Proceso abandonado: permaneció en PROCESANDO más de ${MINUTOS_PROCESANDO_TIMEOUT} minutos`,
+        select: {
+            id: true,
         },
+        orderBy: [
+            {
+                procesandoAt: "asc",
+            },
+            {
+                id: "asc",
+            },
+        ],
+        take: Math.max(1, Math.min(limite, 100)),
     });
-    if (resultado.count >
+    const idsRecuperados = [];
+    for (const candidato of candidatos) {
+        const resultado = await prisma.rcvRecordatorioEnvio.updateMany({
+            where: {
+                id: candidato.id,
+                estado: "PROCESANDO",
+                enviadoAt: null,
+                procesandoAt: {
+                    lt: fechaLimite,
+                },
+            },
+            data: {
+                estado: "ERROR",
+                procesandoAt: null,
+                error: `Proceso abandonado: permaneció en PROCESANDO más de ${MINUTOS_PROCESANDO_TIMEOUT} minutos`,
+            },
+        });
+        if (resultado.count ===
+            1) {
+            idsRecuperados.push(candidato.id);
+        }
+    }
+    if (idsRecuperados.length >
         0) {
-        console.warn("[COBRANZA ENVÍO] ♻️ Recordatorios PROCESANDO recuperados", {
-            total: resultado.count,
+        console.warn("[COBRANZA ENVÍO] ♻️ Recordatorios recuperados", {
+            total: idsRecuperados.length,
+            ids: idsRecuperados,
             empresa: empresa ??
                 "todas",
-            timeoutMinutos: MINUTOS_PROCESANDO_TIMEOUT,
-            fechaLimite: fechaLimite
-                .toISOString(),
         });
     }
-    return resultado.count;
+    return idsRecuperados;
 }
 /* =========================================================
    CLAIM ATÓMICO
@@ -164,6 +180,9 @@ async function intentarTomarRecordatorio(id) {
                 ],
             },
             enviadoAt: null,
+            intentos: {
+                lt: MAX_INTENTOS,
+            },
         },
         data: {
             estado: "PROCESANDO",
@@ -184,12 +203,9 @@ async function intentarTomarRecordatorio(id) {
 export async function procesarEnviosCobranza(options) {
     const limite = Math.max(1, Math.min(Number(options?.limite ??
         20), 100));
-    /*
- * Antes de buscar nuevos trabajos recuperamos
- * los que hayan quedado bloqueados por una
- * ejecución anterior.
- */
-    const recuperados = await recuperarRecordatoriosAtascados(options?.empresa);
+    const debeRecuperarAtascados = options?.recuperarAtascados !== false;
+    const idsRecuperados = debeRecuperarAtascados ? await recuperarRecordatoriosAtascados(options?.empresa, limite) : [];
+    const recuperados = idsRecuperados.length;
     /*
      * En la primera fase procesaremos:
      *
@@ -205,16 +221,23 @@ export async function procesarEnviosCobranza(options) {
                         .empresa,
                 }
                 : {}),
+            ...(options?.ids?.length
+                ? {
+                    id: {
+                        in: options.ids,
+                    },
+                }
+                : {}),
             enviadoAt: null,
+            intentos: {
+                lt: MAX_INTENTOS,
+            },
             OR: [
                 {
                     estado: "PENDIENTE",
                 },
                 {
                     estado: "ERROR",
-                    intentos: {
-                        lt: 3,
-                    },
                 },
             ],
         },
@@ -266,7 +289,7 @@ export async function procesarEnviosCobranza(options) {
                         id: recordatorio.id,
                     },
                     data: {
-                        estado: "ERROR",
+                        estado: "CANCELADO",
                         procesandoAt: null,
                         error: "Automatización de cobranza desactivada",
                     },
@@ -473,6 +496,49 @@ export async function procesarEnviosCobranza(options) {
         enviados,
         errores,
         omitidos,
+    };
+}
+export async function procesarRecoveryEnviosCobranza(options) {
+    const limite = Math.max(1, Math.min(Number(options
+        ?.limite ??
+        100), 100));
+    const idsRecuperados = await recuperarRecordatoriosAtascados(options
+        ?.empresa, limite);
+    if (idsRecuperados.length ===
+        0) {
+        console.log("[COBRANZA RECOVERY] ✅ Sin recordatorios atascados", {
+            empresa: options
+                ?.empresa ??
+                "todas",
+        });
+        return {
+            recuperados: 0,
+            procesados: 0,
+            enviados: 0,
+            errores: 0,
+            omitidos: 0,
+        };
+    }
+    console.log("[COBRANZA RECOVERY] 🔁 Reintentando recordatorios recuperados", {
+        empresa: options
+            ?.empresa ??
+            "todas",
+        total: idsRecuperados.length,
+        ids: idsRecuperados,
+    });
+    const resultado = await procesarEnviosCobranza({
+        ...(options?.empresa
+            ? {
+                empresa: options.empresa,
+            }
+            : {}),
+        ids: idsRecuperados,
+        limite: idsRecuperados.length,
+        recuperarAtascados: false,
+    });
+    return {
+        ...resultado,
+        recuperados: idsRecuperados.length,
     };
 }
 //# sourceMappingURL=cobranza-envio.service.js.map

@@ -1,5 +1,5 @@
 // src/service/baseapi/cobranza/cobranza-email.service.ts
-import { transporter, } from "../../../lib/mailer.js";
+import { transporterFinanzas, } from "../../baseapi/mailer-finanzas.js";
 import { getConfigCorreoEmpresa, getNombreEmpresaCobranza, } from "./cobranza-empresa.config.js";
 /* =========================================================
    HELPERS
@@ -709,9 +709,9 @@ export async function enviarCorreoCobranza(params) {
                 .length ??
                 0,
         });
-        const resultado = await transporter.sendMail({
+        const resultado = await transporterFinanzas.sendMail({
             from: process.env
-                .SMTP_USER,
+                .SMTP_FINANZAS_USER,
             to,
             subject: asunto,
             html,

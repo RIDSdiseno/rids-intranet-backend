@@ -1,7 +1,7 @@
 // src/service/baseapi/facturas/factura-envio-scheduler.service.ts
 import { prisma, } from "../../../lib/prisma.js";
 import { prepararFacturasEmitidas, } from "./factura-envio-automatico.service.js";
-import { procesarEnviosFactura, } from "./factura-envio.service.js";
+import { procesarEnviosFactura, procesarRecoveryEnviosFactura } from "./factura-envio.service.js";
 /* =========================================================
    CONFIG
 ========================================================= */
@@ -14,6 +14,7 @@ const TIME_ZONE = "America/Santiago";
  * mediante ultimaConsultaAt / ultimoEnvioAt.
  */
 let cicloEnCurso = false;
+const MINUTOS_RECOVERY_DESPUES_ENVIO = 20;
 /* =========================================================
    FECHA / HORA CHILE
 ========================================================= */
@@ -38,6 +39,20 @@ function getFechaHoraChile() {
         hora: `${get("hour")}:${get("minute")}`,
         horaCompleta: `${get("hour")}:${get("minute")}:${get("second")}`,
     };
+}
+function sumarMinutosHora(hora, minutos) {
+    const match = /^(\d{2}):(\d{2})$/.exec(hora);
+    if (!match) {
+        throw new Error(`Hora inválida: ${hora}`);
+    }
+    const horas = Number(match[1]);
+    const mins = Number(match[2]);
+    const minutosDia = 24 * 60;
+    const total = (horas * 60 +
+        mins +
+        minutos) %
+        minutosDia;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 /* =========================================================
    CLAIM ATÓMICO CONSULTA
@@ -145,6 +160,44 @@ async function intentarTomarEnvio(id, ahora) {
     return tomado;
 }
 /* =========================================================
+   CLAIM ATÓMICO RECOVERY
+========================================================= */
+async function intentarTomarRecovery(id, ahora) {
+    const inicioMinuto = new Date(Math.floor(ahora.getTime() /
+        60_000) *
+        60_000);
+    const resultado = await prisma
+        .rcvFacturaEnvioConfig
+        .updateMany({
+        where: {
+            id,
+            OR: [
+                {
+                    ultimoRecoveryAt: null,
+                },
+                {
+                    ultimoRecoveryAt: {
+                        lt: inicioMinuto,
+                    },
+                },
+            ],
+        },
+        data: {
+            ultimoRecoveryAt: ahora,
+        },
+    });
+    const tomado = resultado.count ===
+        1;
+    if (!tomado) {
+        console.log("[FACTURA SCHEDULER] 🔒 Recovery tomado por otra instancia", {
+            configId: id,
+            inicioMinuto: inicioMinuto
+                .toISOString(),
+        });
+    }
+    return tomado;
+}
+/* =========================================================
    PROCESAR CONFIG
 ========================================================= */
 async function procesarConfiguracion(config, ahora, horaActual) {
@@ -220,10 +273,11 @@ async function procesarConfiguracion(config, ahora, horaActual) {
         try {
             const resultado = await procesarEnviosFactura({
                 empresa,
-                limite: 20,
+                limite: 50,
             });
             console.log("[FACTURA SCHEDULER] ✅ Envío terminado", {
                 empresa,
+                recuperados: resultado.recuperados,
                 encontrados: resultado
                     .encontrados,
                 procesados: resultado
@@ -238,6 +292,54 @@ async function procesarConfiguracion(config, ahora, horaActual) {
         }
         catch (error) {
             console.error("[FACTURA SCHEDULER] ❌ Error procesando envíos", {
+                empresa,
+                error: error instanceof Error
+                    ? error.message
+                    : String(error),
+            });
+        }
+    }
+    /*
+ * =====================================================
+ * RECOVERY / REINTENTOS
+ * =====================================================
+ */
+    const horaRecovery = sumarMinutosHora(config.horaEnvio, MINUTOS_RECOVERY_DESPUES_ENVIO);
+    if (config.envioAutomatico &&
+        horaActual ===
+            horaRecovery) {
+        const tomado = await intentarTomarRecovery(config.id, ahora);
+        if (!tomado) {
+            console.log("[FACTURA SCHEDULER] ⏭ Recovery ya tomado este minuto", {
+                empresa,
+                horaActual,
+            });
+            return;
+        }
+        console.log("[FACTURA SCHEDULER] ♻️ Ejecutando recovery", {
+            empresa,
+            horaEnvio: config.horaEnvio,
+            horaRecovery,
+            horaActual,
+        });
+        try {
+            const resultado = await procesarRecoveryEnviosFactura({
+                empresa,
+                limite: 50,
+            });
+            console.log("[FACTURA SCHEDULER] ✅ Recovery terminado", {
+                empresa,
+                recuperados: resultado.recuperados,
+                encontrados: resultado.encontrados,
+                procesados: resultado.procesados,
+                enviados: resultado.enviados,
+                errores: resultado.errores,
+                omitidos: resultado.omitidos,
+                cancelados: resultado.cancelados,
+            });
+        }
+        catch (error) {
+            console.error("[FACTURA SCHEDULER] ❌ Error en recovery", {
                 empresa,
                 error: error instanceof Error
                     ? error.message
@@ -278,16 +380,18 @@ export async function ejecutarCicloFacturasAutomaticas() {
          * No imprimimos un log cada minuto cuando no
          * hay nada que ejecutar para evitar llenar Railway.
          */
-        const configRelevante = configs.some((config) => (config
-            .consultaSiiActiva &&
-            hora ===
-                config
-                    .horaConsulta) ||
-            (config
-                .envioAutomatico &&
+        const configRelevante = configs.some((config) => {
+            const horaRecovery = sumarMinutosHora(config.horaEnvio, MINUTOS_RECOVERY_DESPUES_ENVIO);
+            return ((config.consultaSiiActiva &&
                 hora ===
-                    config
-                        .horaEnvio));
+                    config.horaConsulta) ||
+                (config.envioAutomatico &&
+                    hora ===
+                        config.horaEnvio) ||
+                (config.envioAutomatico &&
+                    hora ===
+                        horaRecovery));
+        });
         if (configRelevante) {
             console.log("[FACTURA SCHEDULER] ⏱ Ciclo", {
                 fecha,

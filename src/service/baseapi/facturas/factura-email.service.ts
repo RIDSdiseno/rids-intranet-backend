@@ -1,8 +1,8 @@
 // src/service/baseapi/facturas/factura-email.service.ts
 
 import {
-    transporter,
-} from "../../../lib/mailer.js";
+    transporterFinanzas,
+} from "../../baseapi/mailer-finanzas.js";
 
 import type {
     EmpresaBaseApiKey,
@@ -951,10 +951,10 @@ export async function enviarCorreoFactura(
         );
 
         const resultado =
-            await transporter.sendMail({
+            await transporterFinanzas.sendMail({
                 from:
                     process.env
-                        .SMTP_USER,
+                        .SMTP_FINANZAS_USER,
 
                 to,
 
