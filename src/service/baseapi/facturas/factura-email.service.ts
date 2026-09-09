@@ -1,8 +1,8 @@
 // src/service/baseapi/facturas/factura-email.service.ts
 
 import {
-    transporterFinanzas,
-} from "../../baseapi/mailer-finanzas.js";
+    graphFinanzasService,
+} from "../../baseapi/graph-finanzas.service.js";
 
 import type {
     EmpresaBaseApiKey,
@@ -971,40 +971,80 @@ export async function enviarCorreoFactura(
             }
         );
 
-        const resultado =
-            await transporterFinanzas.sendMail({
+        const graphInicio =
+            Date.now();
+
+        console.log(
+            "[FACTURA EMAIL] ⏱ Graph iniciado",
+            {
+                folio:
+                    params.folio,
+
                 from:
                     process.env
-                        .SMTP_FINANZAS_USER,
+                        .GRAPH_FINANZAS_USER,
 
                 to,
+            }
+        );
 
-                subject:
-                    asunto,
+        await graphFinanzasService.sendMail({
+            to,
 
+            subject:
+                asunto,
+
+            bodyHtml:
                 html,
 
-                ...(params.adjuntoPdf
-                    ? {
-                        attachments: [
-                            {
-                                filename:
-                                    params
-                                        .adjuntoPdf
-                                        .filename,
+            attachments:
+                params.adjuntoPdf
+                    ? [
+                        {
+                            name:
+                                params
+                                    .adjuntoPdf
+                                    .filename,
 
-                                content:
-                                    params
-                                        .adjuntoPdf
-                                        .content,
+                            contentType:
+                                "application/pdf",
 
-                                contentType:
-                                    "application/pdf",
-                            },
-                        ],
-                    }
-                    : {}),
-            });
+                            contentBytes:
+                                params
+                                    .adjuntoPdf
+                                    .content
+                                    .toString(
+                                        "base64"
+                                    ),
+                        },
+                    ]
+                    : [],
+        });
+
+        const graphDuracionMs =
+            Date.now() -
+            graphInicio;
+
+        console.log(
+            "[FACTURA EMAIL] ⏱ Graph completado",
+            {
+                folio:
+                    params.folio,
+
+                duracionMs:
+                    graphDuracionMs,
+
+                duracionSegundos:
+                    Number(
+                        (
+                            graphDuracionMs /
+                            1000
+                        ).toFixed(
+                            2
+                        )
+                    ),
+            }
+        );
 
         const smtpDuracionMs =
             Date.now() -
@@ -1035,25 +1075,22 @@ export async function enviarCorreoFactura(
             "[FACTURA EMAIL] ✅ Correo enviado",
             {
                 folio:
-                    params
-                        .folio,
+                    params.folio,
 
                 destinatarioReal:
                     to,
 
-                messageId:
-                    resultado
-                        .messageId,
+                proveedor:
+                    "MICROSOFT_GRAPH",
+
+                duracionMs:
+                    graphDuracionMs,
             }
         );
 
         return {
             ok:
                 true,
-
-            messageId:
-                resultado
-                    .messageId,
         };
     } catch (
     error

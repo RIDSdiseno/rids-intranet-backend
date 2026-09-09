@@ -1,5 +1,5 @@
 // src/service/baseapi/facturas/factura-email.service.ts
-import { transporterFinanzas, } from "../../baseapi/mailer-finanzas.js";
+import { graphFinanzasService, } from "../../baseapi/graph-finanzas.service.js";
 import { getConfigCorreoEmpresa, getNombreEmpresaCobranza, } from "../cobranza/cobranza-empresa.config.js";
 /* =========================================================
    HELPERS
@@ -664,39 +664,65 @@ export async function enviarCorreoFactura(params) {
                 .length ??
                 0,
         });
-        const resultado = await transporterFinanzas.sendMail({
+        const smtpInicio = Date.now();
+        console.log("[FACTURA EMAIL] ⏱ SMTP iniciado", {
+            folio: params.folio,
             from: process.env
                 .SMTP_FINANZAS_USER,
             to,
+            fecha: new Date()
+                .toISOString(),
+        });
+        const graphInicio = Date.now();
+        console.log("[FACTURA EMAIL] ⏱ Graph iniciado", {
+            folio: params.folio,
+            from: process.env
+                .GRAPH_FINANZAS_USER,
+            to,
+        });
+        await graphFinanzasService.sendMail({
+            to,
             subject: asunto,
-            html,
-            ...(params.adjuntoPdf
-                ? {
-                    attachments: [
-                        {
-                            filename: params
-                                .adjuntoPdf
-                                .filename,
-                            content: params
-                                .adjuntoPdf
-                                .content,
-                            contentType: "application/pdf",
-                        },
-                    ],
-                }
-                : {}),
+            bodyHtml: html,
+            attachments: params.adjuntoPdf
+                ? [
+                    {
+                        name: params
+                            .adjuntoPdf
+                            .filename,
+                        contentType: "application/pdf",
+                        contentBytes: params
+                            .adjuntoPdf
+                            .content
+                            .toString("base64"),
+                    },
+                ]
+                : [],
+        });
+        const graphDuracionMs = Date.now() -
+            graphInicio;
+        console.log("[FACTURA EMAIL] ⏱ Graph completado", {
+            folio: params.folio,
+            duracionMs: graphDuracionMs,
+            duracionSegundos: Number((graphDuracionMs /
+                1000).toFixed(2)),
+        });
+        const smtpDuracionMs = Date.now() -
+            smtpInicio;
+        console.log("[FACTURA EMAIL] ⏱ SMTP completado", {
+            folio: params.folio,
+            duracionMs: smtpDuracionMs,
+            duracionSegundos: Number((smtpDuracionMs /
+                1000).toFixed(2)),
         });
         console.log("[FACTURA EMAIL] ✅ Correo enviado", {
-            folio: params
-                .folio,
+            folio: params.folio,
             destinatarioReal: to,
-            messageId: resultado
-                .messageId,
+            proveedor: "MICROSOFT_GRAPH",
+            duracionMs: graphDuracionMs,
         });
         return {
             ok: true,
-            messageId: resultado
-                .messageId,
         };
     }
     catch (error) {
