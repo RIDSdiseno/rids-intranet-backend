@@ -1,6 +1,16 @@
 // src/lib/mailer-finanzas.ts
 
+import dns from "node:dns";
 import nodemailer from "nodemailer";
+
+/*
+ * Railway puede resolver el SMTP primero por IPv6.
+ * Priorizamos IPv4 para evitar ENETUNREACH
+ * cuando el contenedor no tiene salida IPv6.
+ */
+dns.setDefaultResultOrder(
+    "ipv4first"
+);
 
 const SMTP_HOST =
     process.env.SMTP_HOST?.trim();
@@ -62,6 +72,18 @@ export const transporterFinanzas =
             pass:
                 SMTP_FINANZAS_PASSWORD,
         },
+
+        connectionTimeout:
+            30_000,
+
+        greetingTimeout:
+            30_000,
+
+        socketTimeout:
+            60_000,
+
+        dnsTimeout:
+            30_000,
 
         tls: {
             rejectUnauthorized:

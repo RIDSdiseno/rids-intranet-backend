@@ -1,1 +1,1 @@
-{"version":3,"file":"mailer-finanzas.d.ts","sourceRoot":"","sources":["../../../src/service/baseapi/mailer-finanzas.ts"],"names":[],"mappings":"AAEA,OAAO,UAAU,MAAM,YAAY,CAAC;AA2CpC,eAAO,MAAM,mBAAmB,oJAwB1B,CAAC"}
+{"version":3,"file":"mailer-finanzas.d.ts","sourceRoot":"","sources":["../../../src/service/baseapi/mailer-finanzas.ts"],"names":[],"mappings":"AAGA,OAAO,UAAU,MAAM,YAAY,CAAC;AAoDpC,eAAO,MAAM,mBAAmB,oJAoC1B,CAAC"}
