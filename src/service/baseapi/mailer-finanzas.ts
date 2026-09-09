@@ -8,10 +8,10 @@ import nodemailer from "nodemailer";
  * Priorizamos IPv4 para evitar ENETUNREACH
  * cuando el contenedor no tiene salida IPv6.
  */
-dns.setDefaultResultOrder(
+/*dns.setDefaultResultOrder(
     "ipv4first"
 );
-
+*/
 const SMTP_HOST =
     process.env.SMTP_HOST?.trim();
 
