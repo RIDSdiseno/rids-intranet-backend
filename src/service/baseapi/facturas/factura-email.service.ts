@@ -950,27 +950,6 @@ export async function enviarCorreoFactura(
             }
         );
 
-        const smtpInicio =
-            Date.now();
-
-        console.log(
-            "[FACTURA EMAIL] ⏱ SMTP iniciado",
-            {
-                folio:
-                    params.folio,
-
-                from:
-                    process.env
-                        .SMTP_FINANZAS_USER,
-
-                to,
-
-                fecha:
-                    new Date()
-                        .toISOString(),
-            }
-        );
-
         const graphInicio =
             Date.now();
 
@@ -1038,31 +1017,6 @@ export async function enviarCorreoFactura(
                     Number(
                         (
                             graphDuracionMs /
-                            1000
-                        ).toFixed(
-                            2
-                        )
-                    ),
-            }
-        );
-
-        const smtpDuracionMs =
-            Date.now() -
-            smtpInicio;
-
-        console.log(
-            "[FACTURA EMAIL] ⏱ SMTP completado",
-            {
-                folio:
-                    params.folio,
-
-                duracionMs:
-                    smtpDuracionMs,
-
-                duracionSegundos:
-                    Number(
-                        (
-                            smtpDuracionMs /
                             1000
                         ).toFixed(
                             2

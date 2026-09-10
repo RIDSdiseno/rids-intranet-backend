@@ -14,9 +14,13 @@ import { startAgendaNotificacionesCron } from "./jobs/agenda-jobs/agenda-notific
 import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordatorios.cron.js";
 import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
 import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
+
 import {
   iniciarSchedulerFacturasAutomaticas,
 } from "./service/baseapi/facturas/factura-envio-scheduler.service.js";
+import {
+    iniciarCobranzaScheduler,
+} from "./service/baseapi/cobranza/cobranza-scheduler.service.js";
 
 import { prismaBase } from "./lib/prisma.js";
 
@@ -98,7 +102,7 @@ server.listen(PORT, () => {
   startTicketSlaAlertsCron();
 
   iniciarSchedulerFacturasAutomaticas();
-
+  iniciarCobranzaScheduler();
   // 🆕 Iniciar job de emails
   if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
     startEmailReaderJob();

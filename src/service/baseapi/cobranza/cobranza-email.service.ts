@@ -1,8 +1,8 @@
 // src/service/baseapi/cobranza/cobranza-email.service.ts
 
 import {
-    transporterFinanzas,
-} from "../../baseapi/mailer-finanzas.js";
+    graphFinanzasService,
+} from "../../baseapi/graph-finanzas.service.js";
 
 import type {
     EmpresaKey,
@@ -1023,63 +1023,102 @@ export async function enviarCorreoCobranza(
             }
         );
 
-        const resultado =
-            await transporterFinanzas.sendMail({
+        const graphInicio =
+            Date.now();
+
+        console.log(
+            "[COBRANZA EMAIL] ⏱ Graph iniciado",
+            {
+                folio:
+                    params.folio,
+
                 from:
                     process.env
-                        .SMTP_FINANZAS_USER,
+                        .GRAPH_FINANZAS_USER,
 
+                to,
+            }
+        );
+
+        const resultado =
+            await graphFinanzasService.sendMail({
                 to,
 
                 subject:
                     asunto,
 
-                html,
+                bodyHtml:
+                    html,
 
-                ...(params.adjuntoPdf
-                    ? {
-                        attachments: [
+                attachments:
+                    params.adjuntoPdf
+                        ? [
                             {
-                                filename:
+                                name:
                                     params
                                         .adjuntoPdf
                                         .filename,
 
-                                content:
-                                    params
-                                        .adjuntoPdf
-                                        .content,
-
                                 contentType:
                                     "application/pdf",
+
+                                contentBytes:
+                                    params
+                                        .adjuntoPdf
+                                        .content
+                                        .toString(
+                                            "base64"
+                                        ),
                             },
-                        ],
-                    }
-                    : {}),
+                        ]
+                        : [],
             });
+
+        const graphDuracionMs =
+            Date.now() -
+            graphInicio;
+
+        console.log(
+            "[COBRANZA EMAIL] ⏱ Graph completado",
+            {
+                folio:
+                    params.folio,
+
+                duracionMs:
+                    graphDuracionMs,
+
+                duracionSegundos:
+                    Number(
+                        (
+                            graphDuracionMs /
+                            1000
+                        ).toFixed(
+                            2
+                        )
+                    ),
+            }
+        );
 
         console.log(
             "[COBRANZA EMAIL] ✅ Correo enviado",
             {
                 folio:
-                    params
-                        .folio,
+                    params.folio,
 
-                to,
+                destinatarioReal:
+                    to,
 
-                messageId:
-                    resultado
-                        .messageId,
+                proveedor:
+                    "MICROSOFT_GRAPH",
+
+                duracionMs:
+                    resultado.duracionMs,
             }
         );
 
         return {
             ok:
                 true,
-
-            messageId:
-                resultado
-                    .messageId,
         };
     } catch (
     error

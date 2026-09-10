@@ -27,19 +27,81 @@ export type EstadoDocumentoCobranza = {
    HELPERS
 ========================================================= */
 
+const TIMEZONE_CHILE =
+    "America/Santiago";
+
+const MS_DIA =
+    86_400_000;
+
 function normalizarFechaDia(
     value: Date
 ): Date {
-    const fecha = new Date(value);
-
-    fecha.setHours(
-        0,
-        0,
-        0,
-        0
+    return new Date(
+        Date.UTC(
+            value.getUTCFullYear(),
+            value.getUTCMonth(),
+            value.getUTCDate()
+        )
     );
+}
 
-    return fecha;
+function obtenerFechaActualChile(
+    referencia = new Date()
+): Date {
+    const parts =
+        new Intl.DateTimeFormat(
+            "en-CA",
+            {
+                timeZone:
+                    TIMEZONE_CHILE,
+
+                year:
+                    "numeric",
+
+                month:
+                    "2-digit",
+
+                day:
+                    "2-digit",
+            }
+        ).formatToParts(
+            referencia
+        );
+
+    const year =
+        Number(
+            parts.find(
+                (part) =>
+                    part.type ===
+                    "year"
+            )?.value
+        );
+
+    const month =
+        Number(
+            parts.find(
+                (part) =>
+                    part.type ===
+                    "month"
+            )?.value
+        );
+
+    const day =
+        Number(
+            parts.find(
+                (part) =>
+                    part.type ===
+                    "day"
+            )?.value
+        );
+
+    return new Date(
+        Date.UTC(
+            year,
+            month - 1,
+            day
+        )
+    );
 }
 
 function parseFecha(
@@ -90,20 +152,22 @@ function parseFecha(
 
         const date =
             new Date(
-                year,
-                month - 1,
-                day
+                Date.UTC(
+                    year,
+                    month - 1,
+                    day
+                )
             );
 
         if (
             Number.isNaN(
                 date.getTime()
             ) ||
-            date.getFullYear() !==
+            date.getUTCFullYear() !==
             year ||
-            date.getMonth() !==
+            date.getUTCMonth() !==
             month - 1 ||
-            date.getDate() !==
+            date.getUTCDate() !==
             day
         ) {
             return null;
@@ -142,20 +206,22 @@ function parseFecha(
 
         const date =
             new Date(
-                year,
-                month - 1,
-                day
+                Date.UTC(
+                    year,
+                    month - 1,
+                    day
+                )
             );
 
         if (
             Number.isNaN(
                 date.getTime()
             ) ||
-            date.getFullYear() !==
+            date.getUTCFullYear() !==
             year ||
-            date.getMonth() !==
+            date.getUTCMonth() !==
             month - 1 ||
-            date.getDate() !==
+            date.getUTCDate() !==
             day
         ) {
             return null;
@@ -247,18 +313,18 @@ function calcularDiasDiferencia(
             fechaVencimiento
         );
 
-    const hoy =
-        normalizarFechaDia(
+    const hoyChile =
+        obtenerFechaActualChile(
             referencia
         );
 
     const diferenciaMs =
-        hoy.getTime() -
+        hoyChile.getTime() -
         vencimiento.getTime();
 
     return Math.round(
         diferenciaMs /
-        86_400_000
+        MS_DIA
     );
 }
 
@@ -791,32 +857,6 @@ export async function obtenerEstadosDocumentosCobranza(
             )
         );
 
-    const whereBase = {
-        ...(empresasEncontradas.length > 0
-            ? {
-                empresaKey: {
-                    in: empresasEncontradas,
-                },
-            }
-            : {}),
-
-        ...(folios.length > 0
-            ? {
-                folio: {
-                    in: folios,
-                },
-            }
-            : {}),
-
-        ...(tiposDoc.length > 0
-            ? {
-                tipoDoc: {
-                    in: tiposDoc,
-                },
-            }
-            : {}),
-    };
-
     const whereDocumentos = {
         ...(empresasEncontradas.length > 0
             ? {
@@ -943,10 +983,8 @@ export async function obtenerEstadosDocumentosCobranza(
         );
     }
 
-    const hoy =
-        normalizarFechaDia(
-            new Date()
-        );
+    const ahora =
+        new Date();
 
     const resultados:
         DocumentoCobranzaBatch[] =
@@ -1023,7 +1061,7 @@ export async function obtenerEstadosDocumentosCobranza(
             const dias =
                 calcularDiasDiferencia(
                     fechaDocumento,
-                    hoy
+                    ahora
                 );
 
             resultados.push({
@@ -1137,7 +1175,7 @@ export async function obtenerEstadosDocumentosCobranza(
             const dias =
                 calcularDiasDiferencia(
                     fecha,
-                    hoy
+                    ahora
                 );
 
             resultados.push({
@@ -1189,7 +1227,7 @@ export async function obtenerEstadosDocumentosCobranza(
             const dias =
                 calcularDiasDiferencia(
                     fechaDocumento,
-                    hoy
+                    ahora
                 );
 
             resultados.push({
