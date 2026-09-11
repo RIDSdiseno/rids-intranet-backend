@@ -303,6 +303,786 @@ function filtrarRcvPorRutCliente(
     };
 }
 
+/* =========================================================
+   INFORMACIÓN ENVÍO DE FACTURA
+========================================================= */
+
+function getTipoDocBaseApi(
+    doc: any
+): string {
+    return String(
+        doc?.["Tipo Doc"] ??
+        doc?.tipoDoc ??
+        doc?.tipoDTE ??
+        ""
+    ).trim();
+}
+
+function getFolioBaseApi(
+    doc: any
+): string {
+    return String(
+        doc?.["Folio"] ??
+        doc?.folio ??
+        doc?.Nro ??
+        doc?.numero ??
+        ""
+    ).trim();
+}
+
+function getEmpresaDocumentoBaseApi(
+    doc: any
+): "econnet" | "rids" | null {
+    const value =
+        String(
+            doc?.empresaOrigen ??
+            doc?.empresaKey ??
+            doc?.empresa ??
+            ""
+        )
+            .trim()
+            .toLowerCase();
+
+    if (
+        value === "econnet" ||
+        value === "rids"
+    ) {
+        return value;
+    }
+
+    return null;
+}
+
+function getFacturaEnvioKey(
+    params: {
+        empresaKey: string;
+        tipoDoc: string;
+        folio: string;
+        rutContraparte: string;
+    }
+) {
+    return [
+        String(
+            params.empresaKey ??
+            ""
+        )
+            .trim()
+            .toLowerCase(),
+
+        String(
+            params.tipoDoc ??
+            ""
+        )
+            .trim(),
+
+        String(
+            params.folio ??
+            ""
+        )
+            .trim(),
+
+        normalizeRut(
+            params.rutContraparte
+        ),
+    ].join("|");
+}
+
+async function anotarDocumentosEnvioFactura(
+    documentos: any[]
+) {
+    if (
+        documentos.length ===
+        0
+    ) {
+        return documentos;
+    }
+
+    /*
+     * =====================================================
+     * 1. Identificadores presentes en la respuesta RCV
+     * =====================================================
+     */
+
+    const empresas =
+        [
+            ...new Set(
+                documentos
+                    .map(
+                        (
+                            doc
+                        ) =>
+                            getEmpresaDocumentoBaseApi(
+                                doc
+                            )
+                    )
+                    .filter(
+                        (
+                            value
+                        ): value is
+                            "econnet" |
+                            "rids" =>
+                            value !==
+                            null
+                    )
+            ),
+        ];
+
+    const tiposDoc =
+        [
+            ...new Set(
+                documentos
+                    .map(
+                        (
+                            doc
+                        ) =>
+                            getTipoDocBaseApi(
+                                doc
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            ),
+        ];
+
+    const folios =
+        [
+            ...new Set(
+                documentos
+                    .map(
+                        (
+                            doc
+                        ) =>
+                            getFolioBaseApi(
+                                doc
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            ),
+        ];
+
+    const ruts =
+        [
+            ...new Set(
+                documentos
+                    .map(
+                        (
+                            doc
+                        ) =>
+                            getRutDocumentoBaseApi(
+                                doc
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            ),
+        ];
+
+    if (
+        empresas.length ===
+        0 ||
+        tiposDoc.length ===
+        0 ||
+        folios.length ===
+        0 ||
+        ruts.length ===
+        0
+    ) {
+        return documentos.map(
+            (
+                doc
+            ) => ({
+                ...doc,
+
+                facturaEnvio: {
+                    tieneRegistro:
+                        false,
+
+                    estado:
+                        "SIN_ENVIO",
+
+                    totalDestinatarios:
+                        0,
+
+                    enviados:
+                        0,
+
+                    pendientes:
+                        0,
+
+                    procesando:
+                        0,
+
+                    errores:
+                        0,
+
+                    cancelados:
+                        0,
+
+                    ultimoEnvioAt:
+                        null,
+
+                    ultimoIntentoAt:
+                        null,
+
+                    asunto:
+                        null,
+
+                    destinatarios:
+                        [],
+                },
+            })
+        );
+    }
+
+    /*
+     * =====================================================
+     * 2. Cargar envíos existentes EN BATCH
+     * =====================================================
+     */
+
+    const envios =
+        await prisma
+            .rcvFacturaEnvio
+            .findMany({
+                where: {
+                    empresaKey: {
+                        in:
+                            empresas,
+                    },
+
+                    tipoRcv:
+                        "ventas",
+
+                    tipoDoc: {
+                        in:
+                            tiposDoc,
+                    },
+
+                    folio: {
+                        in:
+                            folios,
+                    },
+
+                    rutContraparte: {
+                        in:
+                            ruts,
+                    },
+                },
+
+                select: {
+                    id:
+                        true,
+
+                    empresaKey:
+                        true,
+
+                    tipoRcv:
+                        true,
+
+                    tipoDoc:
+                        true,
+
+                    folio:
+                        true,
+
+                    rutContraparte:
+                        true,
+
+                    razonSocial:
+                        true,
+
+                    emailDestino:
+                        true,
+
+                    nombreDestino:
+                        true,
+
+                    asunto:
+                        true,
+
+                    estado:
+                        true,
+
+                    automatico:
+                        true,
+
+                    montoTotal:
+                        true,
+
+                    fechaEmision:
+                        true,
+
+                    intentos:
+                        true,
+
+                    ultimoIntentoAt:
+                        true,
+
+                    procesandoAt:
+                        true,
+
+                    enviadoAt:
+                        true,
+
+                    error:
+                        true,
+
+                    createdAt:
+                        true,
+
+                    updatedAt:
+                        true,
+                },
+
+                orderBy: [
+                    {
+                        createdAt:
+                            "asc",
+                    },
+
+                    {
+                        id:
+                            "asc",
+                    },
+                ],
+            });
+
+    /*
+     * =====================================================
+     * 3. Agrupar por factura
+     * =====================================================
+     */
+
+    const enviosPorFactura =
+        new Map<
+            string,
+            typeof envios
+        >();
+
+    for (
+        const envio
+        of envios
+    ) {
+        const key =
+            getFacturaEnvioKey({
+                empresaKey:
+                    envio
+                        .empresaKey,
+
+                tipoDoc:
+                    envio
+                        .tipoDoc,
+
+                folio:
+                    envio
+                        .folio,
+
+                rutContraparte:
+                    envio
+                        .rutContraparte,
+            });
+
+        const actual =
+            enviosPorFactura.get(
+                key
+            ) ??
+            [];
+
+        actual.push(
+            envio
+        );
+
+        enviosPorFactura.set(
+            key,
+            actual
+        );
+    }
+
+    /*
+     * =====================================================
+     * 4. Anotar cada documento
+     * =====================================================
+     */
+
+    return documentos.map(
+        (
+            doc
+        ) => {
+            const empresaKey =
+                getEmpresaDocumentoBaseApi(
+                    doc
+                );
+
+            const tipoDoc =
+                getTipoDocBaseApi(
+                    doc
+                );
+
+            const folio =
+                getFolioBaseApi(
+                    doc
+                );
+
+            const rutContraparte =
+                getRutDocumentoBaseApi(
+                    doc
+                );
+
+            if (
+                !empresaKey ||
+                !tipoDoc ||
+                !folio ||
+                !rutContraparte
+            ) {
+                return {
+                    ...doc,
+
+                    facturaEnvio: {
+                        tieneRegistro:
+                            false,
+
+                        estado:
+                            "SIN_ENVIO",
+
+                        totalDestinatarios:
+                            0,
+
+                        enviados:
+                            0,
+
+                        pendientes:
+                            0,
+
+                        procesando:
+                            0,
+
+                        errores:
+                            0,
+
+                        cancelados:
+                            0,
+
+                        ultimoEnvioAt:
+                            null,
+
+                        ultimoIntentoAt:
+                            null,
+
+                        asunto:
+                            null,
+
+                        destinatarios:
+                            [],
+                    },
+                };
+            }
+
+            const key =
+                getFacturaEnvioKey({
+                    empresaKey,
+                    tipoDoc,
+                    folio,
+                    rutContraparte,
+                });
+
+            const registros =
+                enviosPorFactura.get(
+                    key
+                ) ??
+                [];
+
+            if (
+                registros.length ===
+                0
+            ) {
+                return {
+                    ...doc,
+
+                    facturaEnvio: {
+                        tieneRegistro:
+                            false,
+
+                        estado:
+                            "SIN_ENVIO",
+
+                        totalDestinatarios:
+                            0,
+
+                        enviados:
+                            0,
+
+                        pendientes:
+                            0,
+
+                        procesando:
+                            0,
+
+                        errores:
+                            0,
+
+                        cancelados:
+                            0,
+
+                        ultimoEnvioAt:
+                            null,
+
+                        ultimoIntentoAt:
+                            null,
+
+                        asunto:
+                            null,
+
+                        destinatarios:
+                            [],
+                    },
+                };
+            }
+
+            const enviados =
+                registros.filter(
+                    (
+                        item
+                    ) =>
+                        item.estado ===
+                        "ENVIADO" ||
+                        Boolean(
+                            item.enviadoAt
+                        )
+                ).length;
+
+            const pendientes =
+                registros.filter(
+                    (
+                        item
+                    ) =>
+                        item.estado ===
+                        "PENDIENTE"
+                ).length;
+
+            const procesando =
+                registros.filter(
+                    (
+                        item
+                    ) =>
+                        item.estado ===
+                        "PROCESANDO"
+                ).length;
+
+            const errores =
+                registros.filter(
+                    (
+                        item
+                    ) =>
+                        item.estado ===
+                        "ERROR"
+                ).length;
+
+            const cancelados =
+                registros.filter(
+                    (
+                        item
+                    ) =>
+                        item.estado ===
+                        "CANCELADO"
+                ).length;
+
+            let estado =
+                "PARCIAL";
+
+            if (
+                enviados ===
+                registros.length
+            ) {
+                estado =
+                    "ENVIADO";
+            } else if (
+                pendientes ===
+                registros.length
+            ) {
+                estado =
+                    "PENDIENTE";
+            } else if (
+                procesando ===
+                registros.length
+            ) {
+                estado =
+                    "PROCESANDO";
+            } else if (
+                errores ===
+                registros.length
+            ) {
+                estado =
+                    "ERROR";
+            } else if (
+                cancelados ===
+                registros.length
+            ) {
+                estado =
+                    "CANCELADO";
+            }
+
+            const fechasEnvio =
+                registros
+                    .map(
+                        (
+                            item
+                        ) =>
+                            item
+                                .enviadoAt
+                    )
+                    .filter(
+                        (
+                            value
+                        ): value is Date =>
+                            value !==
+                            null
+                    );
+
+            const ultimoEnvioAt =
+                fechasEnvio.length >
+                    0
+                    ? new Date(
+                        Math.max(
+                            ...fechasEnvio.map(
+                                (
+                                    fecha
+                                ) =>
+                                    fecha
+                                        .getTime()
+                            )
+                        )
+                    )
+                    : null;
+
+            const fechasIntento =
+                registros
+                    .map(
+                        (
+                            item
+                        ) =>
+                            item
+                                .ultimoIntentoAt
+                    )
+                    .filter(
+                        (
+                            value
+                        ): value is Date =>
+                            value !==
+                            null
+                    );
+
+            const ultimoIntentoAt =
+                fechasIntento.length >
+                    0
+                    ? new Date(
+                        Math.max(
+                            ...fechasIntento.map(
+                                (
+                                    fecha
+                                ) =>
+                                    fecha
+                                        .getTime()
+                            )
+                        )
+                    )
+                    : null;
+
+            const ultimoConAsunto =
+                [
+                    ...registros,
+                ]
+                    .reverse()
+                    .find(
+                        (
+                            item
+                        ) =>
+                            Boolean(
+                                item.asunto
+                            )
+                    );
+
+            return {
+                ...doc,
+
+                facturaEnvio: {
+                    tieneRegistro:
+                        true,
+
+                    estado,
+
+                    totalDestinatarios:
+                        registros.length,
+
+                    enviados,
+
+                    pendientes,
+
+                    procesando,
+
+                    errores,
+
+                    cancelados,
+
+                    ultimoEnvioAt,
+
+                    ultimoIntentoAt,
+
+                    asunto:
+                        ultimoConAsunto
+                            ?.asunto ??
+                        null,
+
+                    destinatarios:
+                        registros.map(
+                            (
+                                item
+                            ) => ({
+                                id:
+                                    item.id,
+
+                                nombre:
+                                    item
+                                        .nombreDestino,
+
+                                email:
+                                    item
+                                        .emailDestino,
+
+                                estado:
+                                    item
+                                        .estado,
+
+                                enviadoAt:
+                                    item
+                                        .enviadoAt,
+
+                                ultimoIntentoAt:
+                                    item
+                                        .ultimoIntentoAt,
+
+                                intentos:
+                                    item
+                                        .intentos,
+
+                                error:
+                                    item
+                                        .error,
+
+                                automatico:
+                                    item
+                                        .automatico,
+                            })
+                        ),
+                },
+            };
+        }
+    );
+}
+
 // Función para consultar las RCV de ventas en BaseAPI, dado la empresa, el periodo, y si se debe forzar la actualización. Maneja la construcción del endpoint, el body de la petición, y la normalización de errores.
 export async function getVentasRcvBaseApi(req: Request, res: Response) {
     try {
@@ -362,21 +1142,40 @@ export async function getVentasRcvBaseApi(req: Request, res: Response) {
         let data = mergeRcvResponses(resultados, "ventas");
 
         // Anotar estadoPago en cada documento: CONFIRMADA | VENCIDA | PENDIENTE
-        const documentosAnotados =
+        const documentosConCobranza =
             await anotarDocumentosCobranza(
                 data.data?.datos ?? [],
                 "ventas"
             );
 
+        const documentosAnotados =
+            await anotarDocumentosEnvioFactura(
+                documentosConCobranza
+            );
+
         data = {
             ...data,
 
+            detalleVentas:
+                documentosAnotados,
+
+            ventas:
+                documentosAnotados,
+
+            documentos:
+                documentosAnotados,
+
+            total:
+                documentosAnotados.length,
+
             data: {
-                ...(data.data ||
-                    {}),
+                ...(data.data || {}),
 
                 datos:
                     documentosAnotados,
+
+                totalRegistros:
+                    documentosAnotados.length,
             },
         };
 
@@ -452,11 +1251,26 @@ export async function getComprasRcvBaseApi(req: Request, res: Response) {
         data = {
             ...data,
 
+            detalleCompras:
+                documentosAnotados,
+
+            compras:
+                documentosAnotados,
+
+            documentos:
+                documentosAnotados,
+
+            total:
+                documentosAnotados.length,
+
             data: {
                 ...(data.data || {}),
 
                 datos:
                     documentosAnotados,
+
+                totalRegistros:
+                    documentosAnotados.length,
             },
         };
 

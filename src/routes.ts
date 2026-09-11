@@ -92,9 +92,11 @@ import baseApiCobranzaAutomaticoRoutes from "./routes/baseapi-routes/baseapi-cob
 
 import baseApiFacturaEnvioAutomaticoRoutes from "./routes/baseapi-routes/baseapi-factura-envio-automatico.routes.js";
 
-import receptoresFacturacionRoutes  from "./routes/baseapi-routes/facturas/factura-receptores.routes.js";
+import receptoresFacturacionRoutes from "./routes/baseapi-routes/facturas/factura-receptores.routes.js";
 
 import receptoresCobranzaRoutes from "./routes/baseapi-routes/cobranza/cobranza-receptores.routes.js";
+
+import baseApiFinanzasDashboardRoutes from "./routes/baseapi-routes/baseapi-finanzas-dashboard.routes.js";
 
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
@@ -229,6 +231,8 @@ api.use("/baseapi/cobranza/automatizacion", baseApiCobranzaAutomaticoRoutes);
 api.use("/baseapi/facturas/automatizacion", baseApiFacturaEnvioAutomaticoRoutes);
 api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
 api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
+
+api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
 
 /* ===================== Export ===================== */
 export default api;
