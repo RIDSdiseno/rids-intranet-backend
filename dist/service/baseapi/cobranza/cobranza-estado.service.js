@@ -4,10 +4,25 @@ import { getOverride as getVencimientoOverride } from "../../../controllers/base
 /* =========================================================
    HELPERS
 ========================================================= */
+const TIMEZONE_CHILE = "America/Santiago";
+const MS_DIA = 86_400_000;
 function normalizarFechaDia(value) {
-    const fecha = new Date(value);
-    fecha.setHours(0, 0, 0, 0);
-    return fecha;
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+function obtenerFechaActualChile(referencia = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIMEZONE_CHILE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(referencia);
+    const year = Number(parts.find((part) => part.type ===
+        "year")?.value);
+    const month = Number(parts.find((part) => part.type ===
+        "month")?.value);
+    const day = Number(parts.find((part) => part.type ===
+        "day")?.value);
+    return new Date(Date.UTC(year, month - 1, day));
 }
 function parseFecha(value) {
     if (value === null ||
@@ -30,13 +45,13 @@ function parseFecha(value) {
             "");
         const day = Number(fechaIsoMatch[3] ??
             "");
-        const date = new Date(year, month - 1, day);
+        const date = new Date(Date.UTC(year, month - 1, day));
         if (Number.isNaN(date.getTime()) ||
-            date.getFullYear() !==
+            date.getUTCFullYear() !==
                 year ||
-            date.getMonth() !==
+            date.getUTCMonth() !==
                 month - 1 ||
-            date.getDate() !==
+            date.getUTCDate() !==
                 day) {
             return null;
         }
@@ -53,13 +68,13 @@ function parseFecha(value) {
             "");
         const year = Number(fechaLatinaMatch[3] ??
             "");
-        const date = new Date(year, month - 1, day);
+        const date = new Date(Date.UTC(year, month - 1, day));
         if (Number.isNaN(date.getTime()) ||
-            date.getFullYear() !==
+            date.getUTCFullYear() !==
                 year ||
-            date.getMonth() !==
+            date.getUTCMonth() !==
                 month - 1 ||
-            date.getDate() !==
+            date.getUTCDate() !==
                 day) {
             return null;
         }
@@ -112,11 +127,11 @@ function obtenerFechaVencimientoDocumento(doc) {
 }
 function calcularDiasDiferencia(fechaVencimiento, referencia = new Date()) {
     const vencimiento = normalizarFechaDia(fechaVencimiento);
-    const hoy = normalizarFechaDia(referencia);
-    const diferenciaMs = hoy.getTime() -
+    const hoyChile = obtenerFechaActualChile(referencia);
+    const diferenciaMs = hoyChile.getTime() -
         vencimiento.getTime();
     return Math.round(diferenciaMs /
-        86_400_000);
+        MS_DIA);
 }
 /**
  * Convención:
@@ -361,29 +376,6 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
     const rutsContraparte = Array.from(new Set(documentos
         .map((doc) => getRutContraparteDocumento(doc))
         .filter(Boolean)));
-    const whereBase = {
-        ...(empresasEncontradas.length > 0
-            ? {
-                empresaKey: {
-                    in: empresasEncontradas,
-                },
-            }
-            : {}),
-        ...(folios.length > 0
-            ? {
-                folio: {
-                    in: folios,
-                },
-            }
-            : {}),
-        ...(tiposDoc.length > 0
-            ? {
-                tipoDoc: {
-                    in: tiposDoc,
-                },
-            }
-            : {}),
-    };
     const whereDocumentos = {
         ...(empresasEncontradas.length > 0
             ? {
@@ -450,7 +442,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         const key = getVencimientoKey(vencimiento.empresaKey, vencimiento.tipoDoc, vencimiento.folio);
         vencimientoMap.set(key, vencimiento);
     }
-    const hoy = normalizarFechaDia(new Date());
+    const ahora = new Date();
     const resultados = [];
     for (const documento of documentos) {
         const empresaKey = getEmpresaDocumento(documento, empresaFallback);
@@ -479,7 +471,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                 });
                 continue;
             }
-            const dias = calcularDiasDiferencia(fechaDocumento, hoy);
+            const dias = calcularDiasDiferencia(fechaDocumento, ahora);
             resultados.push({
                 documento,
                 estado: {
@@ -526,7 +518,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         if (vencimientoOverride
             ?.fechaVencimiento) {
             const fecha = new Date(vencimientoOverride.fechaVencimiento);
-            const dias = calcularDiasDiferencia(fecha, hoy);
+            const dias = calcularDiasDiferencia(fecha, ahora);
             resultados.push({
                 documento,
                 estado: {
@@ -549,7 +541,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
          */
         const fechaDocumento = obtenerFechaVencimientoDocumento(documento);
         if (fechaDocumento) {
-            const dias = calcularDiasDiferencia(fechaDocumento, hoy);
+            const dias = calcularDiasDiferencia(fechaDocumento, ahora);
             resultados.push({
                 documento,
                 estado: {

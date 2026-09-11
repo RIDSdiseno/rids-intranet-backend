@@ -649,19 +649,34 @@ async function completarVencimientosCobranza(empresa, evaluadosIniciales, consul
         conVencimiento: facturasCache.filter((item) => Boolean(item.fechaVencimiento)).length,
     });
     /*
-     * =====================================================
-     * 2. Cargar días de crédito de clientes EN BATCH
-     * =====================================================
+ * =====================================================
+ * 2. Cargar días de crédito EN BATCH
+ * =====================================================
+ *
+ * Prioridad:
+ *
+ * 1. ReceptorCobranza.diasCredito
+ * 2. DetalleEmpresa.diasCredito (fallback legacy)
+ *
+ * ReceptorCobranza es la nueva fuente principal.
+ */
+    const receptoresCobranzaCredito = await prisma.receptorCobranza.findMany({
+        where: {
+            activo: true,
+            diasCredito: {
+                not: null,
+            },
+        },
+        select: {
+            rut: true,
+            diasCredito: true,
+        },
+    });
+    /*
+     * Fallback legacy.
      *
-     * Se cargan solamente registros que tengan diasCredito.
-     *
-     * Luego normalizamos el RUT en memoria para que:
-     *
-     * 77.581.503-5
-     * 77581503-5
-     * 775815035
-     *
-     * sean considerados el mismo RUT.
+     * Se mantiene temporalmente mientras terminamos
+     * de migrar todos los clientes.
      */
     const detallesEmpresa = await prisma.detalleEmpresa.findMany({
         where: {
@@ -675,15 +690,45 @@ async function completarVencimientosCobranza(empresa, evaluadosIniciales, consul
         },
     });
     const diasCreditoPorRut = new Map();
+    /*
+     * Primero cargar legacy.
+     *
+     * Así, posteriormente ReceptorCobranza sobrescribe
+     * cualquier valor antiguo.
+     */
     for (const detalle of detallesEmpresa) {
         if (detalle.diasCredito ===
             null) {
             continue;
         }
-        diasCreditoPorRut.set(normalizeRut(detalle.rut), detalle.diasCredito);
+        const rut = normalizeRut(detalle.rut);
+        if (!rut) {
+            continue;
+        }
+        diasCreditoPorRut.set(rut, detalle.diasCredito);
+    }
+    /*
+     * Nueva fuente principal.
+     */
+    for (const receptor of receptoresCobranzaCredito) {
+        if (receptor.diasCredito ===
+            null) {
+            continue;
+        }
+        const rut = normalizeRut(receptor.rut);
+        if (!rut) {
+            continue;
+        }
+        /*
+         * Sobrescribe cualquier dato legacy
+         * para el mismo RUT.
+         */
+        diasCreditoPorRut.set(rut, receptor.diasCredito);
     }
     console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} clientes con días de crédito configurados`, {
-        total: diasCreditoPorRut.size,
+        receptoresCobranza: receptoresCobranzaCredito.length,
+        legacyDetalleEmpresa: detallesEmpresa.length,
+        totalRutUnicos: diasCreditoPorRut.size,
     });
     /*
      * Documentos que aún no podemos resolver
@@ -904,17 +949,74 @@ async function resolverDestinatariosCobranza(candidatos) {
     }
     const inicio = Date.now();
     /*
-     * Consultamos desde Empresa y no desde DetalleEmpresa.
+     * =====================================================
+     * 1. RUT únicos de los candidatos
+     * =====================================================
+     */
+    const ruts = [
+        ...new Set(candidatos
+            .map((candidato) => normalizeRut(candidato
+            .rutContraparte))
+            .filter(Boolean)),
+    ];
+    /*
+     * =====================================================
+     * 2. Nueva fuente:
+     *    ReceptorCobranza
+     * =====================================================
+     */
+    const receptoresCobranza = ruts.length >
+        0
+        ? await prisma.receptorCobranza.findMany({
+            where: {
+                rut: {
+                    in: ruts,
+                },
+            },
+            select: {
+                id: true,
+                rut: true,
+                razonSocial: true,
+                activo: true,
+                recibeCobranza: true,
+                empresaId: true,
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+                contactos: {
+                    where: {
+                        activo: true,
+                        recibeCobranza: true,
+                    },
+                    select: {
+                        id: true,
+                        nombre: true,
+                        email: true,
+                        principal: true,
+                    },
+                },
+            },
+        })
+        : [];
+    const receptoresPorRut = new Map();
+    for (const receptor of receptoresCobranza) {
+        const rut = normalizeRut(receptor.rut);
+        if (!rut) {
+            continue;
+        }
+        receptoresPorRut.set(rut, receptor);
+    }
+    /*
+     * =====================================================
+     * 3. Fuente legacy:
+     *    Empresa + ContactoEmpresa
      *
-     * Esto evita que un DetalleEmpresa huérfano
-     * provoque:
-     *
-     * "Field empresa is required to return data,
-     * got null instead"
-     *
-     * especialmente porque usamos:
-     *
-     * relationMode = "prisma"
+     * Solamente será utilizada cuando NO exista
+     * ReceptorCobranza para ese RUT.
+     * =====================================================
      */
     const empresasClientes = await prisma.empresa.findMany({
         where: {
@@ -946,9 +1048,6 @@ async function resolverDestinatariosCobranza(candidatos) {
             },
         },
     });
-    /*
-     * Indexar empresas por RUT normalizado.
-     */
     const empresasPorRut = new Map();
     for (const empresaCliente of empresasClientes) {
         const rut = normalizeRut(empresaCliente
@@ -959,31 +1058,203 @@ async function resolverDestinatariosCobranza(candidatos) {
         }
         empresasPorRut.set(rut, empresaCliente);
     }
-    console.log("[COBRANZA AUTO] Empresas CRM disponibles para cobranza", {
-        total: empresasPorRut.size,
+    console.log("[COBRANZA AUTO] Fuentes disponibles para destinatarios", {
+        receptoresCobranza: receptoresPorRut.size,
+        empresasLegacy: empresasPorRut.size,
     });
     let conDestinatario = 0;
     let sinDestinatario = 0;
+    /*
+     * =====================================================
+     * 4. Resolver candidato por candidato
+     * =====================================================
+     */
     for (const candidato of candidatos) {
         const rut = normalizeRut(candidato
             .rutContraparte);
+        /*
+         * =================================================
+         * A. RECEPTOR COBRANZA
+         * =================================================
+         */
+        const receptor = receptoresPorRut.get(rut);
+        if (receptor) {
+            /*
+             * Si está relacionado con Empresa,
+             * conservamos esa información.
+             *
+             * Si es receptor externo:
+             *
+             * empresaClienteId = null
+             */
+            candidato.empresaClienteId =
+                receptor.empresa
+                    ?.id_empresa ??
+                    receptor.empresaId ??
+                    null;
+            candidato.empresaClienteNombre =
+                receptor.empresa
+                    ?.nombre ??
+                    receptor.razonSocial ??
+                    candidato.razonSocial ??
+                    null;
+            /*
+             * ---------------------------------------------
+             * A.1 Receptor desactivado
+             * ---------------------------------------------
+             */
+            if (!receptor.activo) {
+                candidato.destinatarios =
+                    [];
+                candidato.tieneDestinatarioCobranza =
+                    false;
+                sinDestinatario++;
+                console.warn("[COBRANZA AUTO] ⏭ Receptor de cobranza inactivo", {
+                    receptorId: receptor.id,
+                    rut,
+                    razonSocial: receptor
+                        .razonSocial,
+                    folio: candidato
+                        .folio,
+                });
+                continue;
+            }
+            /*
+             * ---------------------------------------------
+             * A.2 Cobranza deshabilitada
+             * ---------------------------------------------
+             *
+             * IMPORTANTE:
+             *
+             * Si existe ReceptorCobranza y está
+             * deshabilitado NO hacemos fallback
+             * a Empresa.
+             */
+            if (!receptor.recibeCobranza) {
+                candidato.destinatarios =
+                    [];
+                candidato.tieneDestinatarioCobranza =
+                    false;
+                sinDestinatario++;
+                console.warn("[COBRANZA AUTO] ⏭ Receptor con cobranza deshabilitada", {
+                    receptorId: receptor.id,
+                    rut,
+                    razonSocial: receptor
+                        .razonSocial,
+                    folio: candidato
+                        .folio,
+                });
+                continue;
+            }
+            /*
+             * ---------------------------------------------
+             * A.3 Contactos ReceptorCobranza
+             * ---------------------------------------------
+             */
+            const emailsUsados = new Set();
+            const destinatarios = [];
+            for (const contacto of receptor.contactos) {
+                const email = String(contacto.email ??
+                    "")
+                    .trim()
+                    .toLowerCase();
+                if (!email) {
+                    continue;
+                }
+                if (emailsUsados.has(email)) {
+                    continue;
+                }
+                emailsUsados.add(email);
+                destinatarios.push({
+                    contactoId: contacto.id,
+                    nombre: contacto.nombre ??
+                        receptor.razonSocial ??
+                        candidato.razonSocial ??
+                        "Contacto cobranza",
+                    email,
+                    /*
+                     * ReceptorCobranzaContacto
+                     * actualmente no tiene cargo.
+                     */
+                    cargo: null,
+                    principal: contacto.principal,
+                });
+            }
+            destinatarios.sort((a, b) => Number(b.principal) -
+                Number(a.principal));
+            candidato.destinatarios =
+                destinatarios;
+            candidato.tieneDestinatarioCobranza =
+                destinatarios.length >
+                    0;
+            if (candidato
+                .tieneDestinatarioCobranza) {
+                conDestinatario++;
+                console.log("[COBRANZA AUTO] 📧 Destinatarios resueltos desde ReceptorCobranza", {
+                    receptorId: receptor.id,
+                    empresaId: candidato
+                        .empresaClienteId,
+                    empresa: candidato
+                        .empresaClienteNombre,
+                    rut,
+                    tipoDoc: candidato
+                        .tipoDoc,
+                    folio: candidato
+                        .folio,
+                    destinatarios: destinatarios.map((destinatario) => ({
+                        contactoId: destinatario
+                            .contactoId,
+                        nombre: destinatario
+                            .nombre,
+                        email: destinatario
+                            .email,
+                        principal: destinatario
+                            .principal,
+                    })),
+                });
+            }
+            else {
+                sinDestinatario++;
+                console.warn("[COBRANZA AUTO] ⚠ Receptor habilitado pero sin contactos válidos", {
+                    receptorId: receptor.id,
+                    rut,
+                    razonSocial: receptor
+                        .razonSocial,
+                    folio: candidato
+                        .folio,
+                });
+            }
+            /*
+             * ReceptorCobranza es autoritativo.
+             *
+             * No continuar hacia legacy.
+             */
+            continue;
+        }
+        /*
+         * =================================================
+         * B. FALLBACK LEGACY
+         * =================================================
+         */
         const empresaCliente = empresasPorRut.get(rut);
         /*
          * -----------------------------------------------
-         * A. No existe empresa CRM para ese RUT
+         * B.1 No existe tampoco Empresa
          * -----------------------------------------------
          */
         if (!empresaCliente) {
             candidato.empresaClienteId =
                 null;
             candidato.empresaClienteNombre =
-                null;
+                candidato
+                    .razonSocial ??
+                    null;
             candidato.destinatarios =
                 [];
             candidato.tieneDestinatarioCobranza =
                 false;
             sinDestinatario++;
-            console.warn("[COBRANZA AUTO] ⚠ Candidato sin empresa CRM asociada", {
+            console.warn("[COBRANZA AUTO] ⚠ Candidato sin ReceptorCobranza ni Empresa CRM", {
                 rut,
                 razonSocial: candidato
                     .razonSocial,
@@ -1002,7 +1273,7 @@ async function resolverDestinatariosCobranza(candidatos) {
                 .nombre;
         /*
          * -----------------------------------------------
-         * B. Empresa desactivada
+         * B.2 Empresa inactiva
          * -----------------------------------------------
          */
         if (!empresaCliente
@@ -1012,7 +1283,7 @@ async function resolverDestinatariosCobranza(candidatos) {
             candidato.tieneDestinatarioCobranza =
                 false;
             sinDestinatario++;
-            console.warn("[COBRANZA AUTO] ⏭ Empresa cliente inactiva, no se usará para cobranza", {
+            console.warn("[COBRANZA AUTO] ⏭ Empresa legacy inactiva", {
                 empresaId: empresaCliente
                     .id_empresa,
                 empresa: empresaCliente
@@ -1025,7 +1296,7 @@ async function resolverDestinatariosCobranza(candidatos) {
         }
         /*
          * -----------------------------------------------
-         * C. Cobranza deshabilitada para la empresa
+         * B.3 Empresa sin cobranza
          * -----------------------------------------------
          */
         if (!empresaCliente
@@ -1035,7 +1306,7 @@ async function resolverDestinatariosCobranza(candidatos) {
             candidato.tieneDestinatarioCobranza =
                 false;
             sinDestinatario++;
-            console.warn("[COBRANZA AUTO] ⏭ Empresa con cobranza deshabilitada", {
+            console.warn("[COBRANZA AUTO] ⏭ Empresa legacy con cobranza deshabilitada", {
                 empresaId: empresaCliente
                     .id_empresa,
                 empresa: empresaCliente
@@ -1048,12 +1319,8 @@ async function resolverDestinatariosCobranza(candidatos) {
         }
         /*
          * -----------------------------------------------
-         * D. Preparar contactos de cobranza
+         * B.4 Contactos legacy
          * -----------------------------------------------
-         *
-         * La consulta Prisma ya dejó solamente:
-         *
-         * recibeCobranza = true
          */
         const emailsUsados = new Set();
         const destinatarios = [];
@@ -1063,15 +1330,9 @@ async function resolverDestinatariosCobranza(candidatos) {
                 "")
                 .trim()
                 .toLowerCase();
-            /*
-             * Contacto sin email.
-             */
             if (!email) {
                 continue;
             }
-            /*
-             * Evitar destinatarios repetidos.
-             */
             if (emailsUsados.has(email)) {
                 continue;
             }
@@ -1085,9 +1346,6 @@ async function resolverDestinatariosCobranza(candidatos) {
                 principal: contacto.principal,
             });
         }
-        /*
-         * Contacto principal primero.
-         */
         destinatarios.sort((a, b) => Number(b.principal) -
             Number(a.principal));
         candidato.destinatarios =
@@ -1095,15 +1353,10 @@ async function resolverDestinatariosCobranza(candidatos) {
         candidato.tieneDestinatarioCobranza =
             destinatarios.length >
                 0;
-        /*
-         * -----------------------------------------------
-         * E. Resultado
-         * -----------------------------------------------
-         */
         if (candidato
             .tieneDestinatarioCobranza) {
             conDestinatario++;
-            console.log("[COBRANZA AUTO] 📧 Destinatarios resueltos", {
+            console.log("[COBRANZA AUTO] 📧 Destinatarios resueltos desde Empresa legacy", {
                 empresaId: candidato
                     .empresaClienteId,
                 empresa: candidato
@@ -1127,7 +1380,7 @@ async function resolverDestinatariosCobranza(candidatos) {
         }
         else {
             sinDestinatario++;
-            console.warn("[COBRANZA AUTO] ⚠ Empresa habilitada para cobranza pero sin contactos destinatarios válidos", {
+            console.warn("[COBRANZA AUTO] ⚠ Empresa legacy habilitada pero sin contactos válidos", {
                 empresaId: candidato
                     .empresaClienteId,
                 empresa: candidato

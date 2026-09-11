@@ -67,6 +67,7 @@ import baseApiDteRoutes from "./routes/baseapi-routes/baseapi-dte.routes.js";
 import baseApiCobranzaAutomaticoRoutes from "./routes/baseapi-routes/baseapi-cobranza-automatico.routes.js";
 import baseApiFacturaEnvioAutomaticoRoutes from "./routes/baseapi-routes/baseapi-factura-envio-automatico.routes.js";
 import receptoresFacturacionRoutes from "./routes/baseapi-routes/facturas/factura-receptores.routes.js";
+import receptoresCobranzaRoutes from "./routes/baseapi-routes/cobranza/cobranza-receptores.routes.js";
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 /* ===================== Bitacora Tecnico ===================== */
@@ -165,6 +166,7 @@ api.use("/baseapi/dte", baseApiDteRoutes);
 api.use("/baseapi/cobranza/automatizacion", baseApiCobranzaAutomaticoRoutes);
 api.use("/baseapi/facturas/automatizacion", baseApiFacturaEnvioAutomaticoRoutes);
 api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
+api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

@@ -1568,66 +1568,50 @@ model RcvVencimiento {
 }
 
 model RcvCobranzaConfig {
-  id         Int    @id @default(autoincrement())
-  empresaKey String @unique
-
-  activo            Boolean @default(false)
-  consultaSiiActiva Boolean @default(true)
-  envioAutomatico   Boolean @default(false)
-
-  diasPorVencer Int[] @default([-7, -3])
-  diasVencidos  Int[] @default([0, 3, 7, 15, 30])
-
-  horaConsultaSii String @default("07:30")
-  horaCobranza    String @default("08:00")
-
-  adjuntarPdf Boolean @default(true)
-
-  /**
-   * Locks del scheduler.
-   * Evitan que dos instancias de Railway ejecuten
-   * el mismo proceso durante el mismo minuto.
-   */
-  ultimaConsultaAt DateTime?
-  ultimoEnvioAt    DateTime?
-  ultimoRecoveryAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                Int       @id @default(autoincrement())
+  empresaKey        String    @unique
+  activo            Boolean   @default(false)
+  consultaSiiActiva Boolean   @default(true)
+  envioAutomatico   Boolean   @default(false)
+  diasPorVencer     Int[]     @default([-7, -3])
+  diasVencidos      Int[]     @default([0, 3, 7, 15, 30])
+  horaConsultaSii   String    @default("07:30")
+  horaCobranza      String    @default("08:00")
+  adjuntarPdf       Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  /// *
+  ///    * Locks del scheduler.
+  ///    * Evitan que dos instancias de Railway ejecuten
+  ///    * el mismo proceso durante el mismo minuto.
+  ultimaConsultaAt  DateTime?
+  ultimoEnvioAt     DateTime?
+  ultimoRecoveryAt  DateTime?
 
   @@index([activo])
   @@index([envioAutomatico])
 }
 
 model ReceptorCobranza {
-  id Int @id @default(autoincrement())
-
+  id             Int                        @id @default(autoincrement())
   /// RUT del cliente/deudor.
   /// Idealmente normalizado: 760159867
-  rut String @unique
-
-  razonSocial String?
-
+  rut            String                     @unique
+  razonSocial    String?
   /// Habilita este receptor para cobranza.
-  activo         Boolean @default(true)
-  recibeCobranza Boolean @default(true)
-
+  activo         Boolean                    @default(true)
+  recibeCobranza Boolean                    @default(true)
   /// Condición de pago utilizada cuando el DTE
   /// no contiene FchVenc.
-  diasCredito Int?
-
+  diasCredito    Int?
   /// Relación opcional si además es una Empresa real del CRM.
-  empresaId Int?
-
+  empresaId      Int?
   /// RCV | CRM | MANUAL
-  origen String @default("RCV")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  empresa Empresa? @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-
-  contactos ReceptorCobranzaContacto[]
+  origen         String                     @default("RCV")
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  empresa        Empresa?                   @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  contactos      ReceptorCobranzaContacto[]
 
   @@index([empresaId])
   @@index([activo])
@@ -1636,23 +1620,18 @@ model ReceptorCobranza {
 }
 
 model ReceptorCobranzaContacto {
-  id         Int @id @default(autoincrement())
-  receptorId Int
-
-  nombre String?
-  email  String
-
-  activo         Boolean @default(true)
-  recibeCobranza Boolean @default(true)
-  principal      Boolean @default(false)
-
+  id             Int              @id @default(autoincrement())
+  receptorId     Int
+  nombre         String?
+  email          String
+  activo         Boolean          @default(true)
+  recibeCobranza Boolean          @default(true)
+  principal      Boolean          @default(false)
   /// MANUAL | CRM | RCV
-  origen String @default("MANUAL")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  receptor ReceptorCobranza @relation(fields: [receptorId], references: [id], onDelete: Cascade)
+  origen         String           @default("MANUAL")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  receptor       ReceptorCobranza @relation(fields: [receptorId], references: [id], onDelete: Cascade)
 
   @@unique([receptorId, email])
   @@index([receptorId])

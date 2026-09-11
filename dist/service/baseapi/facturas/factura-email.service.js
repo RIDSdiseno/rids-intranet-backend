@@ -664,15 +664,6 @@ export async function enviarCorreoFactura(params) {
                 .length ??
                 0,
         });
-        const smtpInicio = Date.now();
-        console.log("[FACTURA EMAIL] ⏱ SMTP iniciado", {
-            folio: params.folio,
-            from: process.env
-                .SMTP_FINANZAS_USER,
-            to,
-            fecha: new Date()
-                .toISOString(),
-        });
         const graphInicio = Date.now();
         console.log("[FACTURA EMAIL] ⏱ Graph iniciado", {
             folio: params.folio,
@@ -705,14 +696,6 @@ export async function enviarCorreoFactura(params) {
             folio: params.folio,
             duracionMs: graphDuracionMs,
             duracionSegundos: Number((graphDuracionMs /
-                1000).toFixed(2)),
-        });
-        const smtpDuracionMs = Date.now() -
-            smtpInicio;
-        console.log("[FACTURA EMAIL] ⏱ SMTP completado", {
-            folio: params.folio,
-            duracionMs: smtpDuracionMs,
-            duracionSegundos: Number((smtpDuracionMs /
                 1000).toFixed(2)),
         });
         console.log("[FACTURA EMAIL] ✅ Correo enviado", {

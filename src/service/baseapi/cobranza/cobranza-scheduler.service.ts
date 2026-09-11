@@ -218,22 +218,6 @@ async function ejecutarCicloCobranza() {
                     },
                 });
 
-        console.log(
-            "[COBRANZA SCHEDULER] ⏱ Ciclo",
-            {
-                fecha,
-                hora,
-                timezone:
-                    TIMEZONE,
-
-                nowIso:
-                    iso,
-
-                configsActivas:
-                    configs.length,
-            }
-        );
-
         for (
             const config
             of configs

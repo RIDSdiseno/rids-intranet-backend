@@ -94,6 +94,8 @@ import baseApiFacturaEnvioAutomaticoRoutes from "./routes/baseapi-routes/baseapi
 
 import receptoresFacturacionRoutes  from "./routes/baseapi-routes/facturas/factura-receptores.routes.js";
 
+import receptoresCobranzaRoutes from "./routes/baseapi-routes/cobranza/cobranza-receptores.routes.js";
+
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 
@@ -226,6 +228,7 @@ api.use("/baseapi/cobranza/automatizacion", baseApiCobranzaAutomaticoRoutes);
 
 api.use("/baseapi/facturas/automatizacion", baseApiFacturaEnvioAutomaticoRoutes);
 api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
+api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
 
 /* ===================== Export ===================== */
 export default api;
