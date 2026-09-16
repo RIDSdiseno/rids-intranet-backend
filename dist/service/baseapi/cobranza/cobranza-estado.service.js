@@ -102,8 +102,11 @@ function getRutContraparteDocumento(doc) {
         doc?.["RUT Cliente"] ??
         doc?.["Rut Receptor"] ??
         doc?.["RUT Receptor"] ??
+        doc?.["Rut Proveedor"] ??
+        doc?.["RUT Proveedor"] ??
         doc?.rutCliente ??
         doc?.rutReceptor ??
+        doc?.rutProveedor ??
         doc?.rut ??
         doc?.RUT ??
         "");
@@ -124,6 +127,31 @@ function obtenerFechaVencimientoDocumento(doc) {
         }
     }
     return null;
+}
+function obtenerFechaEmisionDocumento(doc) {
+    const candidates = [
+        doc?.["Fecha Docto"],
+        doc?.["Fecha Documento"],
+        doc?.["Fecha Emisión"],
+        doc?.["Fecha Emision"],
+        doc?.fechaDocto,
+        doc?.fechaDocumento,
+        doc?.fechaEmision,
+        doc?.FchEmis,
+    ];
+    for (const value of candidates) {
+        const parsed = parseFecha(value);
+        if (parsed) {
+            return parsed;
+        }
+    }
+    return null;
+}
+function sumarDiasFecha(fecha, dias) {
+    const result = normalizarFechaDia(fecha);
+    result.setUTCDate(result.getUTCDate() +
+        dias);
+    return result;
 }
 function calcularDiasDiferencia(fechaVencimiento, referencia = new Date()) {
     const vencimiento = normalizarFechaDia(fechaVencimiento);
@@ -288,25 +316,9 @@ export async function obtenerEstadoDocumentoCobranza(doc, tipoRcv, empresaFallba
    ANOTAR DOCUMENTO
 ========================================================= */
 export async function anotarDocumentoCobranza(doc, tipoRcv, empresaFallback) {
-    const estado = await obtenerEstadoDocumentoCobranza(doc, tipoRcv, empresaFallback);
-    const result = {
-        ...doc,
-        estadoPago: estado.estadoPago,
-    };
-    if (estado.fechaVencimientoIso) {
-        for (const key of [
-            "FchVenc",
-            "FchVencimiento",
-            "fechaVencimiento",
-            "vencimiento",
-            "fecha_vencimiento",
-            "Vencimiento",
-        ]) {
-            result[key] =
-                estado.fechaVencimientoIso;
-        }
-    }
-    return result;
+    const resultados = await anotarDocumentosCobranza([doc], tipoRcv, empresaFallback);
+    return (resultados[0] ??
+        doc);
 }
 function getConciliacionKey(empresaKey, tipoDoc, folio, rutContraparte) {
     return [
@@ -324,6 +336,37 @@ function getConciliacionKey(empresaKey, tipoDoc, folio, rutContraparte) {
 function getVencimientoKey(empresaKey, tipoDoc, folio) {
     return [
         String(empresaKey ??
+            "")
+            .trim()
+            .toLowerCase(),
+        String(tipoDoc ??
+            "").trim(),
+        String(folio ??
+            "").trim(),
+    ].join("|");
+}
+function getCreditoRutKey(rut) {
+    return normalizarRut(rut);
+}
+function getFacturaDteKey(empresaKey, tipoDoc, folio) {
+    return [
+        String(empresaKey ??
+            "")
+            .trim()
+            .toLowerCase(),
+        String(tipoDoc ??
+            "").trim(),
+        String(folio ??
+            "").trim(),
+    ].join("|");
+}
+function getRecordatorioKey(empresaKey, tipoRcv, tipoDoc, folio) {
+    return [
+        String(empresaKey ??
+            "")
+            .trim()
+            .toLowerCase(),
+        String(tipoRcv ??
             "")
             .trim()
             .toLowerCase(),
@@ -359,6 +402,158 @@ function getFolioDocumento(doc) {
         doc?.Nro ??
         doc?.numero ??
         "").trim();
+}
+function crearResumenAutomatizacionVacio() {
+    return {
+        tieneHistorial: false,
+        estado: "SIN_RECORDATORIOS",
+        total: 0,
+        enviados: 0,
+        pendientes: 0,
+        procesando: 0,
+        errores: 0,
+        ultimoEnvioAt: null,
+        ultimoRegistroAt: null,
+        ultimoTipoRecordatorio: null,
+        ultimoCicloVencimiento: null,
+        destinatarios: [],
+        historial: [],
+    };
+}
+function resumirAutomatizacionCobranza(recordatorios) {
+    if (recordatorios.length === 0) {
+        return crearResumenAutomatizacionVacio();
+    }
+    /*
+     * Orden más reciente primero.
+     */
+    const ordenados = recordatorios
+        .slice()
+        .sort((a, b) => b.createdAt.getTime() -
+        a.createdAt.getTime());
+    const enviados = ordenados.filter((item) => item.estado ===
+        "ENVIADO" ||
+        Boolean(item.enviadoAt));
+    const pendientes = ordenados.filter((item) => item.estado ===
+        "PENDIENTE");
+    const procesando = ordenados.filter((item) => item.estado ===
+        "PROCESANDO");
+    const errores = ordenados.filter((item) => item.estado ===
+        "ERROR");
+    /*
+     * Último ciclo generado.
+     *
+     * No usamos solamente el número de ciclo porque existen
+     * ciclos negativos (-7, -3), cero y positivos.
+     * createdAt refleja mejor cuál fue el ciclo más reciente
+     * realmente registrado.
+     */
+    const ultimoRegistro = ordenados[0] ??
+        null;
+    const ultimoTipoRecordatorio = ultimoRegistro
+        ?.tipoRecordatorio ??
+        null;
+    const ultimoCicloVencimiento = ultimoRegistro
+        ?.cicloVencimiento ??
+        null;
+    /*
+     * Para el estado operacional usamos solamente el último
+     * tipo/ciclo. Así un ERROR antiguo no deja toda la factura
+     * permanentemente marcada como error después de que hubo
+     * recordatorios posteriores correctos.
+     */
+    const ultimoCiclo = ultimoRegistro
+        ? ordenados.filter((item) => item.tipoRecordatorio ===
+            ultimoRegistro.tipoRecordatorio &&
+            item.cicloVencimiento ===
+                ultimoRegistro.cicloVencimiento)
+        : [];
+    const enviadosUltimoCiclo = ultimoCiclo.filter((item) => item.estado ===
+        "ENVIADO" ||
+        Boolean(item.enviadoAt));
+    const pendientesUltimoCiclo = ultimoCiclo.filter((item) => item.estado ===
+        "PENDIENTE");
+    const procesandoUltimoCiclo = ultimoCiclo.filter((item) => item.estado ===
+        "PROCESANDO");
+    const erroresUltimoCiclo = ultimoCiclo.filter((item) => item.estado ===
+        "ERROR");
+    let estado = "ENVIADO";
+    if (erroresUltimoCiclo.length >
+        0 &&
+        enviadosUltimoCiclo.length >
+            0) {
+        estado =
+            "PARCIAL";
+    }
+    else if (erroresUltimoCiclo.length >
+        0) {
+        estado =
+            "ERROR";
+    }
+    else if (procesandoUltimoCiclo.length >
+        0) {
+        estado =
+            "PROCESANDO";
+    }
+    else if (pendientesUltimoCiclo.length >
+        0) {
+        estado =
+            "PENDIENTE";
+    }
+    const ultimoEnvio = enviados
+        .filter((item) => item.enviadoAt)
+        .sort((a, b) => (b.enviadoAt
+        ?.getTime() ??
+        0) -
+        (a.enviadoAt
+            ?.getTime() ??
+            0))[0] ??
+        null;
+    return {
+        tieneHistorial: true,
+        estado,
+        total: ordenados.length,
+        enviados: enviados.length,
+        pendientes: pendientes.length,
+        procesando: procesando.length,
+        errores: errores.length,
+        ultimoEnvioAt: ultimoEnvio
+            ?.enviadoAt ??
+            null,
+        ultimoRegistroAt: ultimoRegistro
+            ?.createdAt ??
+            null,
+        ultimoTipoRecordatorio,
+        ultimoCicloVencimiento,
+        /*
+         * Para la tabla principal necesitamos los
+         * destinatarios del ciclo actual.
+         */
+        destinatarios: ultimoCiclo.map((item) => ({
+            email: item.emailDestino,
+            nombre: item.nombreDestino,
+            estado: item.estado,
+            enviadoAt: item.enviadoAt,
+            error: item.error,
+            intentos: item.intentos,
+        })),
+        /*
+         * Historial completo para el modal.
+         */
+        historial: ordenados.map((item) => ({
+            id: item.id,
+            tipoRecordatorio: item.tipoRecordatorio,
+            cicloVencimiento: item.cicloVencimiento,
+            email: item.emailDestino,
+            nombre: item.nombreDestino,
+            estado: item.estado,
+            enviadoAt: item.enviadoAt,
+            error: item.error,
+            intentos: item.intentos,
+            ultimoIntentoAt: item.ultimoIntentoAt,
+            createdAt: item.createdAt,
+        })),
+    };
 }
 export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empresaFallback) {
     if (!Array.isArray(documentos) || documentos.length === 0) {
@@ -409,7 +604,13 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
             }
             : {}),
     };
-    const [conciliaciones, vencimientos,] = await Promise.all([
+    const tiposDteNumericos = Array.from(new Set(tiposDoc
+        .map((value) => Number(value))
+        .filter(Number.isFinite)));
+    const foliosNumericos = Array.from(new Set(folios
+        .map((value) => Number(value))
+        .filter(Number.isFinite)));
+    const [conciliaciones, vencimientos, recordatorios, facturasDte, receptoresCobranza, detallesEmpresa,] = await Promise.all([
         prisma.rcvConciliacion.findMany({
             where: {
                 ...whereConciliaciones,
@@ -421,6 +622,85 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         }),
         prisma.rcvVencimiento.findMany({
             where: whereDocumentos,
+        }),
+        prisma.rcvRecordatorioEnvio.findMany({
+            where: {
+                ...whereDocumentos,
+                tipoRcv,
+                automatico: true,
+            },
+            orderBy: [
+                {
+                    createdAt: "desc",
+                },
+            ],
+        }),
+        /*
+         * DTE ya guardados localmente.
+         *
+         * Esto NO consulta BaseAPI/SII.
+         */
+        empresasEncontradas.length >
+            0 &&
+            tiposDteNumericos.length >
+                0 &&
+            foliosNumericos.length >
+                0
+            ? prisma.facturaDTE.findMany({
+                where: {
+                    empresaAlias: {
+                        in: empresasEncontradas,
+                    },
+                    tipoDTE: {
+                        in: tiposDteNumericos,
+                    },
+                    folio: {
+                        in: foliosNumericos,
+                    },
+                    fechaVencimiento: {
+                        not: null,
+                    },
+                },
+                select: {
+                    empresaAlias: true,
+                    tipoDTE: true,
+                    folio: true,
+                    fechaVencimiento: true,
+                },
+            })
+            : Promise.resolve([]),
+        /*
+         * ReceptorCobranza es la fuente principal
+         * para días de crédito.
+         *
+         * NO filtramos recibeCobranza.
+         * Ese flag controla envío, no vencimiento.
+         */
+        prisma.receptorCobranza.findMany({
+            where: {
+                activo: true,
+                diasCredito: {
+                    not: null,
+                },
+            },
+            select: {
+                rut: true,
+                diasCredito: true,
+            },
+        }),
+        /*
+         * Fallback legacy.
+         */
+        prisma.detalleEmpresa.findMany({
+            where: {
+                diasCredito: {
+                    not: null,
+                },
+            },
+            select: {
+                rut: true,
+                diasCredito: true,
+            },
         }),
     ]);
     /*
@@ -438,6 +718,58 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
         }
     }
     const vencimientoMap = new Map();
+    const recordatoriosMap = new Map();
+    const facturaDteMap = new Map();
+    const diasCreditoPorRut = new Map();
+    /*
+     * Primero legacy.
+     */
+    for (const detalle of detallesEmpresa) {
+        if (detalle.diasCredito ===
+            null) {
+            continue;
+        }
+        const rut = getCreditoRutKey(detalle.rut);
+        if (!rut) {
+            continue;
+        }
+        diasCreditoPorRut.set(rut, {
+            dias: detalle.diasCredito,
+            origen: "DETALLE_EMPRESA",
+        });
+    }
+    /*
+     * Después ReceptorCobranza,
+     * para que sobrescriba legacy.
+     */
+    for (const receptor of receptoresCobranza) {
+        if (receptor.diasCredito ===
+            null) {
+            continue;
+        }
+        const rut = getCreditoRutKey(receptor.rut);
+        if (!rut) {
+            continue;
+        }
+        diasCreditoPorRut.set(rut, {
+            dias: receptor.diasCredito,
+            origen: "RECEPTOR_COBRANZA",
+        });
+    }
+    for (const factura of facturasDte) {
+        if (!factura.fechaVencimiento) {
+            continue;
+        }
+        const key = getFacturaDteKey(String(factura.empresaAlias), String(factura.tipoDTE), String(factura.folio));
+        facturaDteMap.set(key, factura.fechaVencimiento);
+    }
+    for (const recordatorio of recordatorios) {
+        const key = getRecordatorioKey(recordatorio.empresaKey, recordatorio.tipoRcv, recordatorio.tipoDoc, recordatorio.folio);
+        const actuales = recordatoriosMap.get(key) ??
+            [];
+        actuales.push(recordatorio);
+        recordatoriosMap.set(key, actuales);
+    }
     for (const vencimiento of vencimientos) {
         const key = getVencimientoKey(vencimiento.empresaKey, vencimiento.tipoDoc, vencimiento.folio);
         vencimientoMap.set(key, vencimiento);
@@ -468,6 +800,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                         conciliada: false,
                         origenVencimiento: "SIN_FECHA",
                     },
+                    automatizacion: crearResumenAutomatizacionVacio(),
                 });
                 continue;
             }
@@ -486,11 +819,15 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                     conciliada: false,
                     origenVencimiento: "DOCUMENTO",
                 },
+                automatizacion: crearResumenAutomatizacionVacio(),
             });
             continue;
         }
         const conciliacionKey = getConciliacionKey(empresaKey, tipoDoc, folio, rutContraparte);
         const vencimientoKey = getVencimientoKey(empresaKey, tipoDoc, folio);
+        const recordatorioKey = getRecordatorioKey(empresaKey, tipoRcv, tipoDoc, folio);
+        const recordatoriosDocumento = recordatoriosMap.get(recordatorioKey) ?? [];
+        const automatizacion = resumirAutomatizacionCobranza(recordatoriosDocumento);
         /*
          * 1. CONCILIACIÓN
          */
@@ -508,6 +845,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                     conciliada: true,
                     origenVencimiento: "SIN_FECHA",
                 },
+                automatizacion
             });
             continue;
         }
@@ -533,6 +871,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                     conciliada: false,
                     origenVencimiento: "OVERRIDE",
                 },
+                automatizacion
             });
             continue;
         }
@@ -556,8 +895,76 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                     conciliada: false,
                     origenVencimiento: "DOCUMENTO",
                 },
+                automatizacion
             });
             continue;
+        }
+        /*
+ * 4. FACTURA DTE CACHEADA
+ *
+ * Solo llegamos aquí si el documento RCV
+ * no traía vencimiento.
+ */
+        const facturaDteKey = getFacturaDteKey(empresaKey, tipoDoc, folio);
+        const fechaFacturaDte = facturaDteMap.get(facturaDteKey);
+        if (fechaFacturaDte) {
+            const fecha = normalizarFechaDia(fechaFacturaDte);
+            const dias = calcularDiasDiferencia(fecha, ahora);
+            resultados.push({
+                documento,
+                estado: {
+                    estadoPago: dias > 0
+                        ? "VENCIDA"
+                        : "PENDIENTE",
+                    fechaVencimiento: fecha,
+                    fechaVencimientoIso: fecha
+                        .toISOString()
+                        .slice(0, 10),
+                    diasDiferencia: dias,
+                    conciliada: false,
+                    origenVencimiento: "DTE_CACHE",
+                },
+                automatizacion,
+            });
+            continue;
+        }
+        /*
+         * 5. DÍAS DE CRÉDITO
+         */
+        const credito = diasCreditoPorRut.get(rutContraparte);
+        if (credito &&
+            credito.dias >= 0) {
+            const fechaEmision = obtenerFechaEmisionDocumento(documento);
+            if (fechaEmision) {
+                const fechaVencimiento = sumarDiasFecha(fechaEmision, credito.dias);
+                const dias = calcularDiasDiferencia(fechaVencimiento, ahora);
+                /*
+                 * Dejamos además estos datos sobre
+                 * el documento porque la automatización
+                 * ya utiliza esa nomenclatura.
+                 */
+                documento.diasCreditoCobranza =
+                    credito.dias;
+                documento.origenVencimientoCobranza =
+                    credito.origen;
+                resultados.push({
+                    documento,
+                    estado: {
+                        estadoPago: dias > 0
+                            ? "VENCIDA"
+                            : "PENDIENTE",
+                        fechaVencimiento: fechaVencimiento,
+                        fechaVencimientoIso: fechaVencimiento
+                            .toISOString()
+                            .slice(0, 10),
+                        diasDiferencia: dias,
+                        conciliada: false,
+                        origenVencimiento: credito.origen,
+                    },
+                    automatizacion,
+                });
+                continue;
+            }
         }
         /*
          * 4. SIN FECHA
@@ -572,18 +979,28 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
                 conciliada: false,
                 origenVencimiento: "SIN_FECHA",
             },
+            automatizacion
         });
     }
     return resultados;
 }
 export async function anotarDocumentosCobranza(documentos, tipoRcv, empresaFallback) {
     const evaluados = await obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empresaFallback);
-    return evaluados.map(({ documento, estado, }) => {
+    return evaluados.map(({ documento, estado, automatizacion }) => {
         const result = {
             ...documento,
             estadoPago: estado.estadoPago,
+            fechaVencimientoCobranza: estado.fechaVencimientoIso,
             diasDiferenciaCobranza: estado.diasDiferencia,
+            diasCreditoCobranza: typeof documento
+                ?.diasCreditoCobranza ===
+                "number"
+                ? documento
+                    .diasCreditoCobranza
+                : null,
+            conciliada: estado.conciliada,
             origenVencimiento: estado.origenVencimiento,
+            cobranzaAutomatica: automatizacion,
         };
         if (estado.fechaVencimientoIso) {
             for (const key of [

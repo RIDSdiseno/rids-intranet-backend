@@ -1581,9 +1581,9 @@ model RcvCobranzaConfig {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   /// *
-  ///    * Locks del scheduler.
-  ///    * Evitan que dos instancias de Railway ejecuten
-  ///    * el mismo proceso durante el mismo minuto.
+  /// * Locks del scheduler.
+  /// * Evitan que dos instancias de Railway ejecuten
+  /// * el mismo proceso durante el mismo minuto.
   ultimaConsultaAt  DateTime?
   ultimoEnvioAt     DateTime?
   ultimoRecoveryAt  DateTime?
@@ -2207,6 +2207,18 @@ model SeguimientoOportunidadVenta {
 
   @@index([oportunidadId])
   @@index([createdAt])
+}
+
+model EmpresaFavoritaTecnico {
+  id        Int      @id @default(autoincrement())
+  tecnicoId Int
+  empresaId Int
+  origen    String   @default("RIDS") @db.VarChar(16)
+  createdAt DateTime @default(now())
+
+  @@unique([tecnicoId, origen, empresaId])
+  @@index([origen, empresaId])
+  @@index([tecnicoId])
 }
 
 enum TipoBitacoraTecnico {

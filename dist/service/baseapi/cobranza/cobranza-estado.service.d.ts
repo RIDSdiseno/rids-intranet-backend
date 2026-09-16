@@ -6,7 +6,44 @@ export type EstadoDocumentoCobranza = {
     fechaVencimientoIso: string | null;
     diasDiferencia: number | null;
     conciliada: boolean;
-    origenVencimiento: "OVERRIDE" | "DOCUMENTO" | "SIN_FECHA";
+    origenVencimiento: "OVERRIDE" | "DOCUMENTO" | "DTE_CACHE" | "RECEPTOR_COBRANZA" | "DETALLE_EMPRESA" | "SIN_FECHA";
+};
+export type EstadoAutomatizacionCobranza = "SIN_RECORDATORIOS" | "ENVIADO" | "PENDIENTE" | "PROCESANDO" | "ERROR" | "PARCIAL";
+export type DestinatarioAutomatizacionCobranza = {
+    email: string;
+    nombre: string | null;
+    estado: string;
+    enviadoAt: Date | null;
+    error: string | null;
+    intentos: number;
+};
+export type HistorialAutomatizacionCobranza = {
+    id: number;
+    tipoRecordatorio: string;
+    cicloVencimiento: string | null;
+    email: string;
+    nombre: string | null;
+    estado: string;
+    enviadoAt: Date | null;
+    error: string | null;
+    intentos: number;
+    ultimoIntentoAt: Date | null;
+    createdAt: Date;
+};
+export type ResumenAutomatizacionCobranza = {
+    tieneHistorial: boolean;
+    estado: EstadoAutomatizacionCobranza;
+    total: number;
+    enviados: number;
+    pendientes: number;
+    procesando: number;
+    errores: number;
+    ultimoEnvioAt: Date | null;
+    ultimoRegistroAt: Date | null;
+    ultimoTipoRecordatorio: string | null;
+    ultimoCicloVencimiento: string | null;
+    destinatarios: DestinatarioAutomatizacionCobranza[];
+    historial: HistorialAutomatizacionCobranza[];
 };
 /**
  * Convención:
@@ -24,6 +61,7 @@ export declare function anotarDocumentoCobranza(doc: any, tipoRcv: TipoRcvCobran
 type DocumentoCobranzaBatch = {
     documento: any;
     estado: EstadoDocumentoCobranza;
+    automatizacion: ResumenAutomatizacionCobranza;
 };
 export declare function obtenerEstadosDocumentosCobranza(documentos: any[], tipoRcv: TipoRcvCobranza, empresaFallback?: EmpresaKey): Promise<DocumentoCobranzaBatch[]>;
 export declare function anotarDocumentosCobranza(documentos: any[], tipoRcv: TipoRcvCobranza, empresaFallback?: EmpresaKey): Promise<any[]>;

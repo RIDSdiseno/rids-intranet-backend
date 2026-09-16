@@ -3,7 +3,7 @@ import { prisma } from "../../../lib/prisma.js";
 import { getOverride as getVencimientoOverride } from "../../../controllers/baseapi/rcv-vencimientos.store.js";
 
 export type EstadoPagoRcv =
-    | "CONFIRMADA"
+    | "PAGADA"
     | "PENDIENTE"
     | "VENCIDA";
 
@@ -615,7 +615,7 @@ export async function obtenerEstadoDocumentoCobranza(
     ) {
         return {
             estadoPago:
-                "CONFIRMADA",
+                "PAGADA",
 
             fechaVencimiento:
                 null,
@@ -1965,7 +1965,7 @@ export async function obtenerEstadosDocumentosCobranza(
 
                 estado: {
                     estadoPago:
-                        "CONFIRMADA",
+                        "PAGADA",
 
                     fechaVencimiento:
                         null,

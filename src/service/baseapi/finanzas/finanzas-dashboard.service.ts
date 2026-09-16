@@ -17,6 +17,7 @@ type MesDashboard = {
     // Ventas
     facturadoBruto: number;
     facturadoNeto: number;
+    documentosVentas: number;
 
     // Compras
     comprasBruto: number;
@@ -644,6 +645,9 @@ export async function obtenerDashboardFinanzas(
                 facturadoNeto:
                     0,
 
+                documentosVentas:
+                    0,
+
                 pagado:
                     0,
 
@@ -771,6 +775,9 @@ export async function obtenerDashboardFinanzas(
 
             bucket.facturadoNeto +=
                 neto;
+
+            bucket.documentosVentas +=
+                1;
 
             const estado =
                 String(

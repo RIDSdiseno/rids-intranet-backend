@@ -674,16 +674,49 @@ export async function enviarCorreoCobranza(params) {
         });
         const html = construirHtmlCobranza(params);
         /*
-         * SEGURIDAD PARA PRUEBAS
-         *
-         * Mientras COBRANZA_TEST_EMAIL esté definido,
-         * todos los emails se redirigen a esa dirección.
-         */
+ * =========================================================
+ * SEGURIDAD DE ENVÍO
+ * =========================================================
+ *
+ * Prioridad:
+ *
+ * 1. Si COBRANZA_TEST_EMAIL existe:
+ *    siempre redirige el correo a pruebas.
+ *
+ * 2. Si no existe COBRANZA_TEST_EMAIL:
+ *    solo permitimos envío real cuando
+ *    COBRANZA_LIVE_SEND=true.
+ *
+ * Esto evita que eliminar accidentalmente
+ * COBRANZA_TEST_EMAIL habilite correos reales.
+ */
         const testEmail = process.env
             .COBRANZA_TEST_EMAIL
-            ?.trim();
-        const to = testEmail ||
-            emailDestino;
+            ?.trim()
+            .toLowerCase();
+        const envioRealHabilitado = String(process.env
+            .COBRANZA_LIVE_SEND ??
+            "")
+            .trim()
+            .toLowerCase() ===
+            "true";
+        let to;
+        let modoPrueba;
+        if (testEmail) {
+            to =
+                testEmail;
+            modoPrueba =
+                true;
+        }
+        else {
+            if (!envioRealHabilitado) {
+                throw new Error("Envío real de cobranza bloqueado: configura COBRANZA_TEST_EMAIL o COBRANZA_LIVE_SEND=true.");
+            }
+            to =
+                emailDestino;
+            modoPrueba =
+                false;
+        }
         console.log("[COBRANZA EMAIL] 📤 Preparando correo", {
             empresa: params
                 .empresaKey,
@@ -691,7 +724,8 @@ export async function enviarCorreoCobranza(params) {
                 .folio,
             destinatarioOriginal: emailDestino,
             destinatarioReal: to,
-            modoPrueba: Boolean(testEmail),
+            modoPrueba,
+            envioRealHabilitado,
             asunto,
         });
         console.log("[COBRANZA EMAIL] 📎 Adjunto", {
