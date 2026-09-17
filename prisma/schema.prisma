@@ -422,34 +422,40 @@ model ServicioGestioo {
 }
 
 model DetalleTrabajoGestioo {
-  id                Int                 @id @default(autoincrement())
-  fecha             DateTime            @default(now())
-  tipoTrabajo       String
-  descripcion       String?
-  estado            String?             @default("pendiente")
-  notas             String?
-  area              AreaGestioo         @default(ENTRADA)
-  prioridad         PrioridadGestioo    @default(NORMAL)
-  entidadId         Int?
-  productoId        Int?
-  servicioId        Int?
-  equipoId          Int?
-  tecnicoId         Int?
-  incluyeCargador   Boolean             @default(false)
-  fechaIngreso      DateTime?
-  ordenGrupoId      Int?
-  numeroOrden       String?
-  origenTrabajo     OrigenTrabajo       @default(INDEPENDIENTE)
-  cotizacionId      Int?
-  destinoEquipo     DestinoEquipoTaller @default(SIN_DEFINIR)
-  destinoEquipoNota String?
-  cotizacion        CotizacionGestioo?  @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
-  tecnico           Tecnico?            @relation(fields: [tecnicoId], references: [id_tecnico])
-  entidad           EntidadGestioo?     @relation(fields: [entidadId], references: [id])
-  producto          ProductoGestioo?    @relation(fields: [productoId], references: [id])
-  servicio          ServicioGestioo?    @relation(fields: [servicioId], references: [id])
-  equipo            Equipo?             @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
-  bitacoras         BitacoraTecnico[]
+  id                           Int                 @id @default(autoincrement())
+  fecha                        DateTime            @default(now())
+  tipoTrabajo                  String
+  descripcion                  String?
+  estado                       String?             @default("pendiente")
+  notas                        String?
+  area                         AreaGestioo         @default(ENTRADA)
+  prioridad                    PrioridadGestioo    @default(NORMAL)
+  entidadId                    Int?
+  productoId                   Int?
+  servicioId                   Int?
+  equipoId                     Int?
+  tecnicoId                    Int?
+  incluyeCargador              Boolean             @default(false)
+  fechaIngreso                 DateTime?
+  ordenGrupoId                 Int?
+  numeroOrden                  String?
+  origenTrabajo                OrigenTrabajo       @default(INDEPENDIENTE)
+  cotizacionId                 Int?
+  destinoEquipo                DestinoEquipoTaller @default(SIN_DEFINIR)
+  destinoEquipoNota            String?
+  firmaEntradaAt               DateTime?
+  firmaEntradaPublicId         String?
+  firmaEntradaUrl              String?
+  nombreFirmanteEntrada        String?
+  emailFirmanteEntrada         String?
+  solicitanteFirmanteEntradaId Int?
+  cotizacion                   CotizacionGestioo?  @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
+  tecnico                      Tecnico?            @relation(fields: [tecnicoId], references: [id_tecnico])
+  entidad                      EntidadGestioo?     @relation(fields: [entidadId], references: [id])
+  producto                     ProductoGestioo?    @relation(fields: [productoId], references: [id])
+  servicio                     ServicioGestioo?    @relation(fields: [servicioId], references: [id])
+  equipo                       Equipo?             @relation("EquipoToTrabajoGestioo", fields: [equipoId], references: [id_equipo])
+  bitacoras                    BitacoraTecnico[]
 
   @@index([cotizacionId])
   @@index([productoId])
@@ -783,40 +789,45 @@ model RefreshToken {
 }
 
 model Tecnico {
-  id_tecnico                 Int                              @id @default(autoincrement())
-  nombre                     String
-  email                      String                           @unique
-  passwordHash               String
-  status                     Boolean                          @default(true)
-  empresaId                  Int?
-  rol                        String                           @default("TECNICO")
-  teamviewerUserId           String?                          @unique
-  firmaTexto                 String?
-  area                       String?
-  cargo                      String?
-  empresa                    Empresa?                         @relation(fields: [empresaId], references: [id_empresa])
-  tokens                     RefreshToken[]
-  historiales                Historial[]
-  visitas                    Visita[]
-  detalleTrabajos            DetalleTrabajoGestioo[]
-  entregas                   Entrega[]
-  tickets                    Ticket[]
-  firma                      Firma?
-  cotizaciones               CotizacionGestioo[]
-  auditLogs                  AuditLog[]
-  mantencionesRemotas        MantencionRemota[]               @relation("TecnicoMantencionesRemotas")
-  passwordResetTokens        PasswordResetToken[]
-  agendasAsignadas           AgendaTecnico[]
-  analisisInventarioIAs      AnalisisInventarioIA[]
-  manualTutoriales           ManualTutorial[]
-  bitacoras                  BitacoraTecnico[]
-  equipoMantenciones         EquipoMantencion[]
-  cotizacionMasivaPlantillas CotizacionMasivaPlantilla[]
-  oportunidadesVenta         OportunidadVenta[]               @relation("ResponsableOportunidadVenta")
-  historialEtapasOportunidad HistorialEtapaOportunidadVenta[]
-  seguimientosOportunidad    SeguimientoOportunidadVenta[]
-  recordatoriosRecibidos     Recordatorio[]                   @relation("RecordatorioDestinatario")
-  recordatoriosCreados       Recordatorio[]                   @relation("RecordatorioCreador")
+  id_tecnico                      Int                              @id @default(autoincrement())
+  nombre                          String
+  email                           String                           @unique
+  passwordHash                    String
+  status                          Boolean                          @default(true)
+  empresaId                       Int?
+  rol                             String                           @default("TECNICO")
+  teamviewerUserId                String?                          @unique
+  firmaTexto                      String?
+  area                            String?
+  cargo                           String?
+  empresa                         Empresa?                         @relation(fields: [empresaId], references: [id_empresa])
+  tokens                          RefreshToken[]
+  historiales                     Historial[]
+  visitas                         Visita[]
+  detalleTrabajos                 DetalleTrabajoGestioo[]
+  entregas                        Entrega[]
+  tickets                         Ticket[]
+  firma                           Firma?
+  cotizaciones                    CotizacionGestioo[]
+  auditLogs                       AuditLog[]
+  mantencionesRemotas             MantencionRemota[]               @relation("TecnicoMantencionesRemotas")
+  passwordResetTokens             PasswordResetToken[]
+  agendasAsignadas                AgendaTecnico[]
+  analisisInventarioIAs           AnalisisInventarioIA[]
+  manualTutoriales                ManualTutorial[]
+  bitacoras                       BitacoraTecnico[]
+  equipoMantenciones              EquipoMantencion[]
+  cotizacionMasivaPlantillas      CotizacionMasivaPlantilla[]
+  oportunidadesVenta              OportunidadVenta[]               @relation("ResponsableOportunidadVenta")
+  historialEtapasOportunidad      HistorialEtapaOportunidadVenta[]
+  seguimientosOportunidad         SeguimientoOportunidadVenta[]
+  recordatoriosRecibidos          Recordatorio[]                   @relation("RecordatorioDestinatario")
+  recordatoriosCreados            Recordatorio[]                   @relation("RecordatorioCreador")
+  evidenciasBitacora              BitacoraEvidencia[]              @relation("BitacoraEvidenciaSubidaPor")
+  aprobacionesBitacoraSolicitadas BitacoraAprobacion[]             @relation("BitacoraAprobacionSolicitante")
+
+  aprobacionesBitacoraAsignadas BitacoraAprobacion[] @relation("BitacoraAprobacionAprobador")
+  eventosBitacora               BitacoraEvento[]     @relation("BitacoraEventoActor")
 
   @@index([empresaId])
 }
@@ -1946,6 +1957,10 @@ model BitacoraTecnico {
   equipo                   Equipo?                @relation(fields: [equipoId], references: [id_equipo])
   cotizacion               CotizacionGestioo?     @relation(fields: [cotizacionId], references: [id])
   recordatorios            Recordatorio[]         @relation("BitacoraRecordatorios")
+  evidencias               BitacoraEvidencia[]
+  etapas                   BitacoraEtapa[]
+  aprobaciones             BitacoraAprobacion[]
+  eventos                  BitacoraEvento[]
 
   @@index([fecha])
   @@index([tecnicoId])
@@ -1963,6 +1978,134 @@ model BitacoraTecnico {
   @@index([recordatorioCompletado])
   @@index([recordatorioNotificadoAt])
   @@index([recordatorioCompletado, recordatorioNotificadoAt, recordatorioAt])
+}
+
+model BitacoraEvidencia {
+  id Int @id @default(autoincrement())
+
+  bitacoraId Int
+
+  // Temporal mientras migramos las evidencias actuales.
+  etapa   EtapaEvidenciaBitacora
+  etapaId Int?
+
+  tipo TipoEvidenciaBitacora
+
+  nombre   String
+  mimeType String
+  bytes    Int
+
+  url         String?
+  storagePath String
+  publicId    String? @unique
+
+  descripcion String?
+
+  subidoPorId Int
+
+  createdAt DateTime @default(now())
+
+  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+
+  etapaRegistro BitacoraEtapa? @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+
+  subidoPor Tecnico @relation("BitacoraEvidenciaSubidaPor", fields: [subidoPorId], references: [id_tecnico])
+
+  @@index([bitacoraId])
+  @@index([bitacoraId, etapa])
+  @@index([etapaId])
+  @@index([subidoPorId])
+  @@index([createdAt])
+}
+
+model BitacoraEtapa {
+  id Int @id @default(autoincrement())
+
+  bitacoraId Int
+
+  etapa  EtapaBitacora
+  estado EstadoEtapaBitacora @default(PENDIENTE)
+
+  titulo      String?
+  descripcion String?
+
+  requiereRevision Boolean @default(false)
+
+  iniciadoAt   DateTime?
+  completadoAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+
+  evidencias   BitacoraEvidencia[]
+  aprobaciones BitacoraAprobacion[]
+  eventos      BitacoraEvento[]
+
+  @@unique([bitacoraId, etapa])
+  @@index([bitacoraId])
+  @@index([etapa])
+  @@index([estado])
+}
+
+model BitacoraAprobacion {
+  id Int @id @default(autoincrement())
+
+  bitacoraId Int
+  etapaId    Int
+
+  estado EstadoAprobacionBitacora @default(PENDIENTE)
+
+  solicitadoPorId Int
+  aprobadorId     Int
+
+  comentarioSolicitud String?
+  comentarioRespuesta String?
+
+  solicitadoAt DateTime  @default(now())
+  respondidoAt DateTime?
+
+  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+
+  etapa BitacoraEtapa @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+
+  solicitadoPor Tecnico @relation("BitacoraAprobacionSolicitante", fields: [solicitadoPorId], references: [id_tecnico])
+
+  aprobador Tecnico @relation("BitacoraAprobacionAprobador", fields: [aprobadorId], references: [id_tecnico])
+
+  @@index([bitacoraId])
+  @@index([etapaId])
+  @@index([solicitadoPorId])
+  @@index([aprobadorId, estado])
+  @@index([solicitadoAt])
+}
+
+model BitacoraEvento {
+  id Int @id @default(autoincrement())
+
+  bitacoraId Int
+  etapaId    Int?
+
+  tipo TipoEventoBitacora
+
+  actorId Int?
+
+  descripcion String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+
+  etapa BitacoraEtapa? @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+
+  actor Tecnico? @relation("BitacoraEventoActor", fields: [actorId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([bitacoraId, createdAt])
+  @@index([etapaId])
+  @@index([actorId])
+  @@index([tipo])
 }
 
 model Recordatorio {
@@ -2235,7 +2378,65 @@ enum TipoBitacoraTecnico {
 enum EstadoBitacoraTecnico {
   REGISTRADA
   REVISADA
+  PENDIENTE_APROBACION
+  APROBADA
+  EN_PROCESO
+  PENDIENTE_CIERRE
+  CERRADA
+  RECHAZADA
   ANULADA
+}
+
+enum EstadoAprobacionBitacora {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  CANCELADA
+}
+
+enum EtapaEvidenciaBitacora {
+  ANTES
+  EN_PROCESO
+  DESPUES
+}
+
+enum TipoEvidenciaBitacora {
+  IMAGEN
+  VIDEO
+}
+
+enum EtapaBitacora {
+  ANTES
+  EN_PROCESO
+  DESPUES
+}
+
+enum EstadoEtapaBitacora {
+  PENDIENTE
+  EN_PROCESO
+  PENDIENTE_REVISION
+  APROBADA
+  RECHAZADA
+  COMPLETADA
+}
+
+enum TipoEventoBitacora {
+  CREADA
+
+  ETAPA_INICIADA
+  ETAPA_ACTUALIZADA
+  ETAPA_COMPLETADA
+
+  EVIDENCIA_AGREGADA
+  EVIDENCIA_ELIMINADA
+
+  REVISION_SOLICITADA
+  REVISION_APROBADA
+  REVISION_RECHAZADA
+  REVISION_CANCELADA
+
+  BITACORA_CERRADA
+  BITACORA_ANULADA
 }
 
 enum TipoManualTutorial {

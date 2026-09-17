@@ -113,6 +113,24 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 });
             }
 
+            if (ordenOrigen.area !== "ENTRADA") {
+                return res.status(400).json({
+                    error:
+                        `La orden #${ordenGrupoIdFinal} no corresponde a una orden de ENTRADA.`,
+                });
+            }
+
+            if (
+                ordenOrigen.equipoId &&
+                data.equipoId &&
+                ordenOrigen.equipoId !== Number(data.equipoId)
+            ) {
+                return res.status(400).json({
+                    error:
+                        "El equipo de la salida no corresponde al equipo de la orden de entrada.",
+                });
+            }
+
             const salidaExistente =
                 await prisma.detalleTrabajoGestioo.findFirst({
                     where: {
@@ -180,16 +198,34 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        if (
+            data.area === "SALIDA" &&
+            (
+                !destinoEquipoSolicitado ||
+                destinoEquipoSolicitado === DestinoEquipoTaller.SIN_DEFINIR
+            )
+        ) {
+            return res.status(400).json({
+                error:
+                    "Debe confirmar el destino del equipo antes de registrar la salida.",
+            });
+        }
+
         const trabajoFinal = await prisma.$transaction(async (tx) => {
-            // Cerrar entradas previas si es SALIDA — solo una vez, dentro de la transacción
-            if (data.area === "SALIDA" && equipoIdFinal) {
+            // Si es SALIDA, cerrar únicamente la ENTRADA
+            // perteneciente a esta misma orden/grupo.
+            if (data.area === "SALIDA" && ordenGrupoIdFinal) {
                 await tx.detalleTrabajoGestioo.updateMany({
                     where: {
-                        equipoId: equipoIdFinal,
+                        ordenGrupoId: ordenGrupoIdFinal,
                         area: "ENTRADA",
-                        estado: { not: "COMPLETADA" },
+                        estado: {
+                            not: "COMPLETADA",
+                        },
                     },
-                    data: { estado: "COMPLETADA" },
+                    data: {
+                        estado: "COMPLETADA",
+                    },
                 });
             }
 
@@ -541,6 +577,24 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        const destinoEquipoFinal =
+            data.destinoEquipo !== undefined
+                ? destinoEquipoSolicitado
+                : existing.destinoEquipo;
+
+        if (
+            data.area === "SALIDA" &&
+            (
+                !destinoEquipoFinal ||
+                destinoEquipoFinal === DestinoEquipoTaller.SIN_DEFINIR
+            )
+        ) {
+            return res.status(400).json({
+                error:
+                    "Debe confirmar el destino del equipo antes de registrar la salida.",
+            });
+        }
+
         // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData: any = {
             tipoTrabajo: data.tipoTrabajo,
@@ -615,12 +669,21 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
 
         const detalleActualizado = await prisma.$transaction(async (tx) => {
-            if (data.area === "SALIDA" && existing.area !== "SALIDA" && existing.equipoId) {
+            if (
+                data.area === "SALIDA" &&
+                existing.area !== "SALIDA"
+            ) {
+                const ordenGrupoId =
+                    existing.ordenGrupoId ??
+                    existing.id;
+
                 await tx.detalleTrabajoGestioo.updateMany({
                     where: {
-                        equipoId: existing.equipoId,
+                        ordenGrupoId,
                         area: "ENTRADA",
-                        estado: { not: "COMPLETADA" },
+                        estado: {
+                            not: "COMPLETADA",
+                        },
                     },
                     data: {
                         estado: "COMPLETADA",

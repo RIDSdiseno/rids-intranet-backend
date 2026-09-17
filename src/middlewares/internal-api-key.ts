@@ -1,3 +1,4 @@
+// src/middlewares/internal-api-key.ts
 import type {
   Request,
   Response,

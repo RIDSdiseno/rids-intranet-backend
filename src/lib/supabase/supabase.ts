@@ -23,3 +23,6 @@ export const TICKET_ATTACHMENTS_BUCKET =
 
 export const MANUALES_TUTORIALES_BUCKET =
   process.env.SUPABASE_MANUALES_TUTORIALES_BUCKET || "manuales-tutoriales";
+
+export const BITACORA_EVIDENCIAS_BUCKET =
+  process.env.SUPABASE_BITACORA_EVIDENCIAS_BUCKET || "bitacora-evidencias";

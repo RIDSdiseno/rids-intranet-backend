@@ -6,19 +6,22 @@ import type {
 
 import {
     EstadoBitacoraTecnico,
+    EstadoEtapaBitacora,
     EstadoRecordatorio,
+    EtapaBitacora,
     OrigenRecordatorio,
     Prisma,
     TipoBitacoraTecnico,
+    TipoEventoBitacora,
 } from "@prisma/client";
 
 import {
     prismaBase as prisma,
-} from "../lib/prisma.js";
+} from "../../lib/prisma.js";
 
 import {
     sincronizarRecordatorioBitacora,
-} from "../service/recordatorios/recordatorios.service.js";
+} from "../../service/recordatorios/recordatorios.service.js";
 
 function parsePositiveInt(value: unknown): number | undefined {
     const n = Number(value);
@@ -203,83 +206,266 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
             recordatorioNotificadoAt: null,
         };
 
-        const bitacora = await prisma.bitacoraTecnico.create({
-            data: createData,
-            include: {
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
-                        rol: true,
+        const bitacora =
+            await prisma.$transaction(
+                async (
+                    tx
+                ) => {
+                    const creada =
+                        await tx.bitacoraTecnico.create({
+                            data:
+                                createData,
+
+                            include: {
+                                tecnico: {
+                                    select: {
+                                        id_tecnico:
+                                            true,
+
+                                        nombre:
+                                            true,
+
+                                        email:
+                                            true,
+
+                                        rol:
+                                            true,
+                                    },
+                                },
+
+                                empresa: {
+                                    select: {
+                                        id_empresa:
+                                            true,
+
+                                        nombre:
+                                            true,
+                                    },
+                                },
+
+                                solicitante: {
+                                    select: {
+                                        id_solicitante:
+                                            true,
+
+                                        nombre:
+                                            true,
+
+                                        email:
+                                            true,
+                                    },
+                                },
+
+                                ticket: {
+                                    select: {
+                                        id:
+                                            true,
+
+                                        publicId:
+                                            true,
+
+                                        subject:
+                                            true,
+
+                                        status:
+                                            true,
+                                    },
+                                },
+
+                                trabajo: {
+                                    select: {
+                                        id:
+                                            true,
+
+                                        numeroOrden:
+                                            true,
+
+                                        tipoTrabajo:
+                                            true,
+
+                                        estado:
+                                            true,
+
+                                        area:
+                                            true,
+
+                                        destinoEquipo:
+                                            true,
+                                    },
+                                },
+
+                                visita: {
+                                    select: {
+                                        id_visita:
+                                            true,
+
+                                        inicio:
+                                            true,
+
+                                        fin:
+                                            true,
+
+                                        status:
+                                            true,
+                                    },
+                                },
+
+                                mantencion: {
+                                    select: {
+                                        id_mantencion:
+                                            true,
+
+                                        inicio:
+                                            true,
+
+                                        fin:
+                                            true,
+
+                                        status:
+                                            true,
+                                    },
+                                },
+
+                                equipo: {
+                                    select: {
+                                        id_equipo:
+                                            true,
+
+                                        serial:
+                                            true,
+
+                                        marca:
+                                            true,
+
+                                        modelo:
+                                            true,
+
+                                        tipo:
+                                            true,
+                                    },
+                                },
+
+                                cotizacion: {
+                                    select: {
+                                        id:
+                                            true,
+
+                                        fecha:
+                                            true,
+
+                                        estado:
+                                            true,
+
+                                        total:
+                                            true,
+                                    },
+                                },
+                            },
+                        });
+
+                    await tx.bitacoraEtapa.createMany({
+                        data: [
+                            {
+                                bitacoraId:
+                                    creada.id,
+
+                                etapa:
+                                    EtapaBitacora.ANTES,
+
+                                estado:
+                                    EstadoEtapaBitacora.EN_PROCESO,
+
+                                iniciadoAt:
+                                    new Date(),
+                            },
+
+                            {
+                                bitacoraId:
+                                    creada.id,
+
+                                etapa:
+                                    EtapaBitacora.EN_PROCESO,
+
+                                estado:
+                                    EstadoEtapaBitacora.PENDIENTE,
+                            },
+
+                            {
+                                bitacoraId:
+                                    creada.id,
+
+                                etapa:
+                                    EtapaBitacora.DESPUES,
+
+                                estado:
+                                    EstadoEtapaBitacora.PENDIENTE,
+                            },
+                        ],
+                    });
+
+                    await tx.bitacoraEvento.create({
+                        data: {
+                            bitacoraId:
+                                creada.id,
+
+                            tipo:
+                                TipoEventoBitacora.CREADA,
+
+                            actorId:
+                                tecnicoIdFinal,
+
+                            descripcion:
+                                "Bitácora técnica creada",
+                        },
+                    });
+
+                    return creada;
+                }
+            );
+
+        const bitacoraCompleta =
+            await prisma.bitacoraTecnico.findUnique({
+                where: {
+                    id:
+                        bitacora.id,
+                },
+
+                include: {
+                    tecnico:
+                        true,
+
+                    empresa:
+                        true,
+
+                    solicitante:
+                        true,
+
+                    ticket:
+                        true,
+
+                    trabajo:
+                        true,
+
+                    visita:
+                        true,
+
+                    mantencion:
+                        true,
+
+                    equipo:
+                        true,
+
+                    cotizacion:
+                        true,
+
+                    etapas: {
+                        orderBy: {
+                            id:
+                                "asc",
+                        },
                     },
                 },
-                empresa: {
-                    select: {
-                        id_empresa: true,
-                        nombre: true,
-                    },
-                },
-                solicitante: {
-                    select: {
-                        id_solicitante: true,
-                        nombre: true,
-                        email: true,
-                    },
-                },
-                ticket: {
-                    select: {
-                        id: true,
-                        publicId: true,
-                        subject: true,
-                        status: true,
-                    },
-                },
-                trabajo: {
-                    select: {
-                        id: true,
-                        numeroOrden: true,
-                        tipoTrabajo: true,
-                        estado: true,
-                        area: true,
-                        destinoEquipo: true,
-                    },
-                },
-                visita: {
-                    select: {
-                        id_visita: true,
-                        inicio: true,
-                        fin: true,
-                        status: true,
-                    },
-                },
-                mantencion: {
-                    select: {
-                        id_mantencion: true,
-                        inicio: true,
-                        fin: true,
-                        status: true,
-                    },
-                },
-                equipo: {
-                    select: {
-                        id_equipo: true,
-                        serial: true,
-                        marca: true,
-                        modelo: true,
-                        tipo: true,
-                    },
-                },
-                cotizacion: {
-                    select: {
-                        id: true,
-                        fecha: true,
-                        estado: true,
-                        total: true,
-                    },
-                },
-            },
-        });
+            });
 
         /*
  * Mantiene sincronizado el recordatorio específico de la bitácora
@@ -302,7 +488,7 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
                 bitacora.recordatorioAt,
         });
 
-        return res.status(201).json({ data: bitacora });
+        return res.status(201).json({ data: bitacoraCompleta, });
     } catch (error) {
         console.error("❌ Error al crear bitácora técnica:", error);
         return res.status(500).json({
@@ -579,20 +765,159 @@ export async function obtenerBitacoraTecnicoPorId(req: Request, res: Response) {
             });
         }
 
-        const bitacora = await prisma.bitacoraTecnico.findUnique({
-            where: { id },
-            include: {
-                tecnico: true,
-                empresa: true,
-                solicitante: true,
-                ticket: true,
-                trabajo: true,
-                visita: true,
-                mantencion: true,
-                equipo: true,
-                cotizacion: true,
-            },
-        });
+        const bitacora =
+            await prisma.bitacoraTecnico.findUnique({
+                where: {
+                    id,
+                },
+
+                include: {
+                    tecnico:
+                        true,
+
+                    empresa:
+                        true,
+
+                    solicitante:
+                        true,
+
+                    ticket:
+                        true,
+
+                    trabajo:
+                        true,
+
+                    visita:
+                        true,
+
+                    mantencion:
+                        true,
+
+                    equipo:
+                        true,
+
+                    cotizacion:
+                        true,
+
+                    evidencias: {
+                        orderBy: {
+                            createdAt:
+                                "asc",
+                        },
+
+                        include: {
+                            subidoPor: {
+                                select: {
+                                    id_tecnico:
+                                        true,
+
+                                    nombre:
+                                        true,
+
+                                    email:
+                                        true,
+
+                                    rol:
+                                        true,
+                                },
+                            },
+                        },
+                    },
+                    etapas: {
+                        orderBy: {
+                            id:
+                                "asc",
+                        },
+
+                        include: {
+                            evidencias: {
+                                orderBy: {
+                                    createdAt:
+                                        "asc",
+                                },
+
+                                include: {
+                                    subidoPor: {
+                                        select: {
+                                            id_tecnico:
+                                                true,
+
+                                            nombre:
+                                                true,
+
+                                            email:
+                                                true,
+
+                                            rol:
+                                                true,
+                                        },
+                                    },
+                                },
+                            },
+
+                            aprobaciones: {
+                                orderBy: {
+                                    solicitadoAt:
+                                        "desc",
+                                },
+
+                                include: {
+                                    solicitadoPor: {
+                                        select: {
+                                            id_tecnico:
+                                                true,
+
+                                            nombre:
+                                                true,
+
+                                            email:
+                                                true,
+                                        },
+                                    },
+
+                                    aprobador: {
+                                        select: {
+                                            id_tecnico:
+                                                true,
+
+                                            nombre:
+                                                true,
+
+                                            email:
+                                                true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+
+                    eventos: {
+                        orderBy: {
+                            createdAt:
+                                "asc",
+                        },
+
+                        include: {
+                            actor: {
+                                select: {
+                                    id_tecnico:
+                                        true,
+
+                                    nombre:
+                                        true,
+
+                                    email:
+                                        true,
+                                },
+                            },
+
+                            etapa:
+                                true,
+                        },
+                    },
+                },
+            });
 
         if (!bitacora) {
             return res.status(404).json({

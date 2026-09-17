@@ -102,7 +102,7 @@ import baseApiFinanzasDashboardRoutes from "./routes/baseapi-routes/baseapi-fina
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 
 /* ===================== Bitacora Tecnico ===================== */
-import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
+import bitacoraTecnicoRoutes from "./routes/bitacora-routes/bitacora-tecnico.routes.js";
 
 /* ===================== Ubicaciones Tecnicos ===================== */
 import ubicacionesRouter from "./routes/ubicaciones.routes.js";
@@ -119,6 +119,9 @@ import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-m
 
 /* ===================== Recordatorios ===================== */
 import recordatoriosRouter from "./routes/recordatorios.routes.js";
+
+/* ===================== RUTAS INTERNAS ===================== */
+import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
 
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
@@ -233,6 +236,10 @@ api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
 api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
 
 api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
+
+/* ===================== RUTAS INTERNAS ===================== */
+
+api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes,);
 
 /* ===================== Export ===================== */
 export default api;
