@@ -125,6 +125,10 @@ api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 
 api.use("/equipos/agent", equipoAgentRoutes);
 
+/* ===================== Whatchimp ===================== */
+
+api.use(whatchimpRouter);
+
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
 
@@ -195,9 +199,6 @@ api.use("/reportes", reportesRouter);
 
 /* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
-
-/* ===================== Whatchimp ===================== */
-api.use(whatchimpRouter);
 
 /* ===================== CLOUDINARY ===================== */
 api.use("/upload-imagenes", uploadRoutes);
