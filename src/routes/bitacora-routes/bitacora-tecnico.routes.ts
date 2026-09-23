@@ -18,6 +18,14 @@ import {
 } from "../../controllers/controllers-bitacora-tecnico/bitacora-evidencias.controller.js";
 
 import {
+    actualizarEtapaBitacora,
+    completarEtapaBitacora,
+    obtenerEtapasBitacora,
+    responderRevisionEtapa,
+    solicitarRevisionEtapa,
+} from "../../controllers/controllers-bitacora-tecnico/bitacora-etapas.controller.js";
+
+import {
     uploadBitacoraEvidencia,
 } from "../../middlewares/bitacora-evidencias-upload.middleware.js";
 
@@ -51,6 +59,18 @@ router.get("/:id/evidencias", auth(), obtenerEvidenciasBitacora);
 router.post("/:id/evidencias", auth(), uploadBitacoraEvidencia.single("archivo"), agregarEvidenciaBitacora);
 
 router.delete("/:id/evidencias/:evidenciaId", auth(), eliminarEvidenciaBitacora);
+
+/* Etapas */
+
+router.get("/:id/etapas", auth(), obtenerEtapasBitacora);
+
+router.patch("/:id/etapas/:etapaId", auth(), actualizarEtapaBitacora);
+
+router.post("/:id/etapas/:etapaId/completar", auth(), completarEtapaBitacora);
+
+router.post("/:id/etapas/:etapaId/solicitar-revision", auth(), solicitarRevisionEtapa);
+
+router.post("/:id/etapas/:etapaId/aprobaciones/:aprobacionId/responder", auth(), responderRevisionEtapa);
 
 /*
  * Acciones por ID.

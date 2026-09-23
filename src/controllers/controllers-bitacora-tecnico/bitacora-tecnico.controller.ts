@@ -20,6 +20,10 @@ import {
 } from "../../lib/prisma.js";
 
 import {
+    agregarUrlsFirmadasAEvidencias,
+} from "../../service/bitacora/bitacora-evidencias-storage.service.js";
+
+import {
     sincronizarRecordatorioBitacora,
 } from "../../service/recordatorios/recordatorios.service.js";
 
@@ -117,15 +121,38 @@ function normalizeTipoActividad(value: unknown): TipoBitacoraTecnico {
     return TipoBitacoraTecnico.OTRO;
 }
 
-function normalizeEstado(value: unknown): EstadoBitacoraTecnico {
-    if (
-        typeof value === "string" &&
-        Object.values(EstadoBitacoraTecnico).includes(value as EstadoBitacoraTecnico)
-    ) {
-        return value as EstadoBitacoraTecnico;
-    }
+function obtenerUsuarioAutenticadoId(
+    req:
+        Request
+):
+    | number
+    | undefined {
+    const user =
+        (
+            req as Request & {
+                user?: {
+                    id?: number;
+                    id_tecnico?: number;
+                    tecnicoId?: number;
+                    userId?: number;
+                };
+            }
+        ).user;
 
-    return EstadoBitacoraTecnico.REGISTRADA;
+    return (
+        parsePositiveInt(
+            user?.id_tecnico
+        ) ??
+        parsePositiveInt(
+            user?.tecnicoId
+        ) ??
+        parsePositiveInt(
+            user?.id
+        ) ??
+        parsePositiveInt(
+            user?.userId
+        )
+    );
 }
 
 export async function crearBitacoraTecnico(req: Request, res: Response) {
@@ -160,6 +187,20 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
         if (!tecnicoIdFinal) {
             return res.status(400).json({
                 error: "El técnico es obligatorio",
+            });
+        }
+
+        const actorId =
+            obtenerUsuarioAutenticadoId(
+                req
+            );
+
+        if (
+            !actorId
+        ) {
+            return res.status(401).json({
+                error:
+                    "No fue posible identificar al usuario autenticado",
             });
         }
 
@@ -411,8 +452,7 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
                             tipo:
                                 TipoEventoBitacora.CREADA,
 
-                            actorId:
-                                tecnicoIdFinal,
+                            actorId,
 
                             descripcion:
                                 "Bitácora técnica creada",
@@ -663,6 +703,19 @@ export async function obtenerBitacorasTecnico(req: Request, res: Response) {
                         },
                     },
                 },
+                {
+                    etapas: {
+                        some: {
+                            descripcion: {
+                                contains:
+                                    q,
+
+                                mode:
+                                    "insensitive",
+                            },
+                        },
+                    },
+                },
             ];
         }
 
@@ -823,6 +876,7 @@ export async function obtenerBitacoraTecnicoPorId(req: Request, res: Response) {
                             },
                         },
                     },
+
                     etapas: {
                         orderBy: {
                             id:
@@ -925,7 +979,38 @@ export async function obtenerBitacoraTecnicoPorId(req: Request, res: Response) {
             });
         }
 
-        return res.json({ data: bitacora });
+        const evidenciasConUrl =
+            await agregarUrlsFirmadasAEvidencias(
+                bitacora.evidencias
+            );
+
+        const etapasConUrl =
+            await Promise.all(
+                bitacora.etapas.map(
+                    async (
+                        etapa
+                    ) => ({
+                        ...etapa,
+
+                        evidencias:
+                            await agregarUrlsFirmadasAEvidencias(
+                                etapa.evidencias
+                            ),
+                    })
+                )
+            );
+
+        return res.json({
+            data: {
+                ...bitacora,
+
+                evidencias:
+                    evidenciasConUrl,
+
+                etapas:
+                    etapasConUrl,
+            },
+        });
     } catch (error) {
         console.error("❌ Error al obtener bitácora técnica:", error);
         return res.status(500).json({
@@ -952,7 +1037,6 @@ export async function actualizarBitacoraTecnico(
             titulo,
             descripcion,
             tipoActividad,
-            estado,
             tecnicoId,
             empresaId,
             solicitanteId,
@@ -995,9 +1079,6 @@ export async function actualizarBitacoraTecnico(
                 normalizeTipoActividad(
                     tipoActividad
                 ),
-
-            estado:
-                normalizeEstado(estado),
 
             tecnicoId:
                 tecnicoIdFinal,

@@ -3,15 +3,19 @@ import {
     BITACORA_EVIDENCIAS_BUCKET,
 } from "../../lib/supabase/supabase.js";
 
-type EtapaEvidenciaBitacoraStorage =
-    | "ANTES"
-    | "EN_PROCESO"
-    | "DESPUES";
+import {
+    EtapaBitacora,
+} from "@prisma/client";
 
 type SubirEvidenciaBitacoraStorageParams = {
-    bitacoraId: number;
-    etapa: EtapaEvidenciaBitacoraStorage;
-    file: Express.Multer.File;
+    bitacoraId:
+        number;
+
+    etapa:
+        EtapaBitacora;
+
+    file:
+        Express.Multer.File;
 };
 
 type ResultadoSubidaEvidencia = {
@@ -42,7 +46,7 @@ function construirStoragePath({
     nombreArchivo,
 }: {
     bitacoraId: number;
-    etapa: EtapaEvidenciaBitacoraStorage;
+    etapa: EtapaBitacora;
     nombreArchivo: string;
 }): string {
     const timestamp =

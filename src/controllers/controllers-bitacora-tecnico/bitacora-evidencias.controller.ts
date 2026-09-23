@@ -6,7 +6,9 @@ import type {
 } from "express";
 
 import {
+    EstadoEtapaBitacora,
     EtapaBitacora,
+    EtapaEvidenciaBitacora,
     TipoEvidenciaBitacora,
     TipoEventoBitacora,
 } from "@prisma/client";
@@ -48,11 +50,12 @@ const VIDEO_MIME_TYPES = new Set([
     "video/quicktime",
 ]);
 
-const ETAPAS_VALIDAS = new Set(
-    Object.values(
-        EtapaBitacora
-    )
-);
+const ETAPAS_VALIDAS =
+    new Set(
+        Object.values(
+            EtapaBitacora
+        )
+    );
 
 /* =====================================================
    HELPERS
@@ -131,12 +134,14 @@ function normalizarDescripcion(
 }
 
 function obtenerEtapa(
-    value: unknown
+    value:
+        unknown
 ):
     | EtapaBitacora
     | null {
     if (
-        typeof value !== "string"
+        typeof value !==
+        "string"
     ) {
         return null;
     }
@@ -156,6 +161,25 @@ function obtenerEtapa(
 
     return etapa as
         EtapaBitacora;
+}
+
+function obtenerEtapaLegacy(
+    etapa:
+        EtapaBitacora
+):
+    EtapaEvidenciaBitacora {
+    switch (
+    etapa
+    ) {
+        case EtapaBitacora.ANTES:
+            return EtapaEvidenciaBitacora.ANTES;
+
+        case EtapaBitacora.EN_PROCESO:
+            return EtapaEvidenciaBitacora.EN_PROCESO;
+
+        case EtapaBitacora.DESPUES:
+            return EtapaEvidenciaBitacora.DESPUES;
+    }
 }
 
 function obtenerTipoDesdeMime(
@@ -442,6 +466,61 @@ export async function agregarEvidenciaBitacora(
             });
         }
 
+        const etapaRegistro =
+            await prisma.bitacoraEtapa.findUnique({
+                where: {
+                    bitacoraId_etapa: {
+                        bitacoraId,
+
+                        etapa,
+                    },
+                },
+
+                select: {
+                    id:
+                        true,
+
+                    etapa:
+                        true,
+
+                    estado:
+                        true,
+                },
+            });
+
+        if (
+            !etapaRegistro
+        ) {
+            return res.status(404).json({
+                error:
+                    "La etapa indicada no existe para esta bitácora",
+            });
+        }
+
+        if (
+            etapaRegistro.estado ===
+            EstadoEtapaBitacora.PENDIENTE
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta etapa todavía no se encuentra habilitada",
+            });
+        }
+
+        if (
+            etapaRegistro.estado ===
+            EstadoEtapaBitacora.PENDIENTE_REVISION ||
+            etapaRegistro.estado ===
+            EstadoEtapaBitacora.APROBADA ||
+            etapaRegistro.estado ===
+            EstadoEtapaBitacora.COMPLETADA
+        ) {
+            return res.status(409).json({
+                error:
+                    "No se pueden agregar evidencias a esta etapa en su estado actual",
+            });
+        }
+
         /*
          * Validar también que el usuario autenticado
          * exista como técnico activo.
@@ -492,70 +571,108 @@ export async function agregarEvidenciaBitacora(
          * la referencia en PostgreSQL.
          */
         const evidencia =
-            await prisma.bitacoraEvidencia.create({
-                data: {
-                    bitacoraId,
+            await prisma.$transaction(
+                async (
+                    tx
+                ) => {
+                    const creada =
+                        await tx.bitacoraEvidencia.create({
+                            data: {
+                                bitacoraId,
 
-                    etapaId:
-                        etapaRegistro.id,
+                                etapaId:
+                                    etapaRegistro.id,
 
-                    /*
-                     * Mantén temporalmente este campo
-                     * mientras todavía exista en Prisma.
-                     */
-                    etapa:
-                        etapa as any,
+                                /*
+                                 * Legacy temporal.
+                                 */
+                                etapa:
+                                    obtenerEtapaLegacy(
+                                        etapa
+                                    ),
 
-                    tipo,
+                                tipo,
 
-                    nombre:
-                        file.originalname,
+                                nombre:
+                                    file.originalname,
 
-                    mimeType:
-                        file.mimetype,
+                                mimeType:
+                                    file.mimetype,
 
-                    bytes:
-                        file.size,
+                                bytes:
+                                    file.size,
 
-                    url:
-                        null,
+                                url:
+                                    null,
 
-                    storagePath:
-                        resultadoStorage.storagePath,
+                                storagePath:
+                                    resultadoStorage.storagePath,
 
-                    publicId:
-                        randomUUID(),
+                                publicId:
+                                    randomUUID(),
 
-                    descripcion:
-                        normalizarDescripcion(
-                            req.body.descripcion
-                        ),
+                                descripcion:
+                                    normalizarDescripcion(
+                                        req.body.descripcion
+                                    ),
 
-                    subidoPorId,
-                },
+                                subidoPorId,
+                            },
 
-                include: {
-                    subidoPor: {
-                        select: {
-                            id_tecnico:
-                                true,
+                            include: {
+                                subidoPor: {
+                                    select: {
+                                        id_tecnico:
+                                            true,
 
-                            nombre:
-                                true,
+                                        nombre:
+                                            true,
 
-                            email:
-                                true,
+                                        email:
+                                            true,
 
-                            rol:
-                                true,
+                                        rol:
+                                            true,
+                                    },
+                                },
+
+                                etapaRegistro:
+                                    true,
+                            },
+                        });
+
+                    await tx.bitacoraEvento.create({
+                        data: {
+                            bitacoraId,
+
+                            etapaId:
+                                etapaRegistro.id,
+
+                            actorId:
+                                subidoPorId,
+
+                            tipo:
+                                TipoEventoBitacora.EVIDENCIA_AGREGADA,
+
+                            descripcion:
+                                `Evidencia agregada: ${file.originalname}`,
+
+                            metadata: {
+                                evidenciaId:
+                                    creada.id,
+
+                                nombre:
+                                    file.originalname,
+
+                                tipo,
+                            },
                         },
-                    },
+                    });
 
-                    etapaRegistro:
-                        true,
-                },
-            });
-            
+                    return creada;
+                }
+            );
+
         /*
          * Generar URL temporal para que el frontend
          * pueda visualizar inmediatamente el archivo.
@@ -666,6 +783,9 @@ export async function eliminarEvidenciaBitacora(
                     bitacoraId:
                         true,
 
+                    etapaId:
+                        true,
+
                     storagePath:
                         true,
 
@@ -674,6 +794,19 @@ export async function eliminarEvidenciaBitacora(
 
                     subidoPorId:
                         true,
+
+                    etapaRegistro: {
+                        select: {
+                            id:
+                                true,
+
+                            estado:
+                                true,
+
+                            etapa:
+                                true,
+                        },
+                    },
                 },
             });
 
@@ -684,26 +817,102 @@ export async function eliminarEvidenciaBitacora(
             });
         }
 
+        if (
+            !evidencia.etapaRegistro
+        ) {
+            return res.status(409).json({
+                error:
+                    "La evidencia no tiene una etapa asociada correctamente",
+            });
+        }
+
+        if (
+            evidencia.etapaRegistro.estado ===
+            EstadoEtapaBitacora.PENDIENTE_REVISION ||
+            evidencia.etapaRegistro.estado ===
+            EstadoEtapaBitacora.APROBADA ||
+            evidencia.etapaRegistro.estado ===
+            EstadoEtapaBitacora.COMPLETADA
+        ) {
+            return res.status(409).json({
+                error:
+                    "No se puede eliminar evidencia de una etapa bloqueada o finalizada",
+            });
+        }
+
+        const actorId =
+            obtenerUsuarioAutenticadoId(
+                req
+            );
+
+        if (
+            !actorId
+        ) {
+            return res.status(401).json({
+                error:
+                    "No fue posible identificar al usuario autenticado",
+            });
+        }
+
         /*
          * Primero eliminamos el archivo físico.
          *
          * Si Supabase falla, conservamos la referencia
          * en PostgreSQL para no perder trazabilidad.
          */
-        await eliminarEvidenciaBitacoraStorage(
-            evidencia.storagePath
+        await prisma.$transaction(
+            async (
+                tx
+            ) => {
+                await tx.bitacoraEvidencia.delete({
+                    where: {
+                        id:
+                            evidencia.id,
+                    },
+                });
+
+                await tx.bitacoraEvento.create({
+                    data: {
+                        bitacoraId,
+
+                        etapaId:
+                            evidencia.etapaId,
+
+                        actorId,
+
+                        tipo:
+                            TipoEventoBitacora.EVIDENCIA_ELIMINADA,
+
+                        descripcion:
+                            `Evidencia eliminada: ${evidencia.nombre}`,
+
+                        metadata: {
+                            evidenciaId:
+                                evidencia.id,
+
+                            nombre:
+                                evidencia.nombre,
+
+                            storagePath:
+                                evidencia.storagePath,
+                        },
+                    },
+                });
+            }
         );
 
-        /*
-         * Solamente después de confirmar el borrado
-         * en Storage se elimina la fila.
-         */
-        await prisma.bitacoraEvidencia.delete({
-            where: {
-                id:
-                    evidencia.id,
-            },
-        });
+        try {
+            await eliminarEvidenciaBitacoraStorage(
+                evidencia.storagePath
+            );
+        } catch (
+        storageError
+        ) {
+            console.error(
+                "⚠️ La evidencia fue eliminada de PostgreSQL pero no se pudo eliminar de Storage:",
+                storageError
+            );
+        }
 
         return res.json({
             message:

@@ -825,9 +825,8 @@ model Tecnico {
   recordatoriosCreados            Recordatorio[]                   @relation("RecordatorioCreador")
   evidenciasBitacora              BitacoraEvidencia[]              @relation("BitacoraEvidenciaSubidaPor")
   aprobacionesBitacoraSolicitadas BitacoraAprobacion[]             @relation("BitacoraAprobacionSolicitante")
-
-  aprobacionesBitacoraAsignadas BitacoraAprobacion[] @relation("BitacoraAprobacionAprobador")
-  eventosBitacora               BitacoraEvento[]     @relation("BitacoraEventoActor")
+  aprobacionesBitacoraAsignadas   BitacoraAprobacion[]             @relation("BitacoraAprobacionAprobador")
+  eventosBitacora                 BitacoraEvento[]                 @relation("BitacoraEventoActor")
 
   @@index([empresaId])
 }
@@ -1981,35 +1980,23 @@ model BitacoraTecnico {
 }
 
 model BitacoraEvidencia {
-  id Int @id @default(autoincrement())
-
-  bitacoraId Int
-
-  // Temporal mientras migramos las evidencias actuales.
-  etapa   EtapaEvidenciaBitacora
-  etapaId Int?
-
-  tipo TipoEvidenciaBitacora
-
-  nombre   String
-  mimeType String
-  bytes    Int
-
-  url         String?
-  storagePath String
-  publicId    String? @unique
-
-  descripcion String?
-
-  subidoPorId Int
-
-  createdAt DateTime @default(now())
-
-  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
-
-  etapaRegistro BitacoraEtapa? @relation(fields: [etapaId], references: [id], onDelete: Cascade)
-
-  subidoPor Tecnico @relation("BitacoraEvidenciaSubidaPor", fields: [subidoPorId], references: [id_tecnico])
+  id            Int                    @id @default(autoincrement())
+  bitacoraId    Int
+  etapa         EtapaEvidenciaBitacora
+  tipo          TipoEvidenciaBitacora
+  nombre        String
+  mimeType      String
+  bytes         Int
+  url           String?
+  storagePath   String
+  publicId      String?                @unique
+  descripcion   String?
+  subidoPorId   Int
+  createdAt     DateTime               @default(now())
+  etapaId       Int?
+  bitacora      BitacoraTecnico        @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+  etapaRegistro BitacoraEtapa?         @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  subidoPor     Tecnico                @relation("BitacoraEvidenciaSubidaPor", fields: [subidoPorId], references: [id_tecnico])
 
   @@index([bitacoraId])
   @@index([bitacoraId, etapa])
@@ -2019,29 +2006,21 @@ model BitacoraEvidencia {
 }
 
 model BitacoraEtapa {
-  id Int @id @default(autoincrement())
-
-  bitacoraId Int
-
-  etapa  EtapaBitacora
-  estado EstadoEtapaBitacora @default(PENDIENTE)
-
-  titulo      String?
-  descripcion String?
-
-  requiereRevision Boolean @default(false)
-
-  iniciadoAt   DateTime?
-  completadoAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
-
-  evidencias   BitacoraEvidencia[]
-  aprobaciones BitacoraAprobacion[]
-  eventos      BitacoraEvento[]
+  id               Int                  @id @default(autoincrement())
+  bitacoraId       Int
+  etapa            EtapaBitacora
+  estado           EstadoEtapaBitacora  @default(PENDIENTE)
+  titulo           String?
+  descripcion      String?
+  requiereRevision Boolean              @default(false)
+  iniciadoAt       DateTime?
+  completadoAt     DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  bitacora         BitacoraTecnico      @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+  evidencias       BitacoraEvidencia[]
+  aprobaciones     BitacoraAprobacion[]
+  eventos          BitacoraEvento[]
 
   @@unique([bitacoraId, etapa])
   @@index([bitacoraId])
@@ -2050,29 +2029,20 @@ model BitacoraEtapa {
 }
 
 model BitacoraAprobacion {
-  id Int @id @default(autoincrement())
-
-  bitacoraId Int
-  etapaId    Int
-
-  estado EstadoAprobacionBitacora @default(PENDIENTE)
-
-  solicitadoPorId Int
-  aprobadorId     Int
-
+  id                  Int                      @id @default(autoincrement())
+  bitacoraId          Int
+  etapaId             Int
+  estado              EstadoAprobacionBitacora @default(PENDIENTE)
+  solicitadoPorId     Int
+  aprobadorId         Int
   comentarioSolicitud String?
   comentarioRespuesta String?
-
-  solicitadoAt DateTime  @default(now())
-  respondidoAt DateTime?
-
-  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
-
-  etapa BitacoraEtapa @relation(fields: [etapaId], references: [id], onDelete: Cascade)
-
-  solicitadoPor Tecnico @relation("BitacoraAprobacionSolicitante", fields: [solicitadoPorId], references: [id_tecnico])
-
-  aprobador Tecnico @relation("BitacoraAprobacionAprobador", fields: [aprobadorId], references: [id_tecnico])
+  solicitadoAt        DateTime                 @default(now())
+  respondidoAt        DateTime?
+  bitacora            BitacoraTecnico          @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+  etapa               BitacoraEtapa            @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  solicitadoPor       Tecnico                  @relation("BitacoraAprobacionSolicitante", fields: [solicitadoPorId], references: [id_tecnico])
+  aprobador           Tecnico                  @relation("BitacoraAprobacionAprobador", fields: [aprobadorId], references: [id_tecnico])
 
   @@index([bitacoraId])
   @@index([etapaId])
@@ -2082,25 +2052,17 @@ model BitacoraAprobacion {
 }
 
 model BitacoraEvento {
-  id Int @id @default(autoincrement())
-
-  bitacoraId Int
-  etapaId    Int?
-
-  tipo TipoEventoBitacora
-
-  actorId Int?
-
+  id          Int                @id @default(autoincrement())
+  bitacoraId  Int
+  etapaId     Int?
+  tipo        TipoEventoBitacora
+  actorId     Int?
   descripcion String?
   metadata    Json?
-
-  createdAt DateTime @default(now())
-
-  bitacora BitacoraTecnico @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
-
-  etapa BitacoraEtapa? @relation(fields: [etapaId], references: [id], onDelete: Cascade)
-
-  actor Tecnico? @relation("BitacoraEventoActor", fields: [actorId], references: [id_tecnico], onDelete: SetNull)
+  createdAt   DateTime           @default(now())
+  bitacora    BitacoraTecnico    @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
+  etapa       BitacoraEtapa?     @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  actor       Tecnico?           @relation("BitacoraEventoActor", fields: [actorId], references: [id_tecnico], onDelete: SetNull)
 
   @@index([bitacoraId, createdAt])
   @@index([etapaId])
@@ -2378,13 +2340,13 @@ enum TipoBitacoraTecnico {
 enum EstadoBitacoraTecnico {
   REGISTRADA
   REVISADA
+  ANULADA
   PENDIENTE_APROBACION
   APROBADA
   EN_PROCESO
   PENDIENTE_CIERRE
   CERRADA
   RECHAZADA
-  ANULADA
 }
 
 enum EstadoAprobacionBitacora {
@@ -2422,19 +2384,15 @@ enum EstadoEtapaBitacora {
 
 enum TipoEventoBitacora {
   CREADA
-
   ETAPA_INICIADA
   ETAPA_ACTUALIZADA
   ETAPA_COMPLETADA
-
   EVIDENCIA_AGREGADA
   EVIDENCIA_ELIMINADA
-
   REVISION_SOLICITADA
   REVISION_APROBADA
   REVISION_RECHAZADA
   REVISION_CANCELADA
-
   BITACORA_CERRADA
   BITACORA_ANULADA
 }
