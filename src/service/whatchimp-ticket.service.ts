@@ -28,7 +28,7 @@ export async function searchEmpresaByName(
 
   // 1. Lookup por dominio del correo (más confiable)
   if (email && email.includes("@")) {
-    const domain = email.split("@")[1].toLowerCase().trim();
+    const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
     const byDomain = await prisma.empresa.findMany({
       where: { dominios: { has: domain } },
       select: { id_empresa: true, nombre: true },
@@ -91,7 +91,7 @@ export async function createTicketFromWhatsapp(
 
     // a) Por dominio del correo (más confiable)
     if (email.includes("@")) {
-      const domain = email.split("@")[1].toLowerCase().trim();
+      const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
       empresa = await prisma.empresa.findFirst({
         where: { dominios: { has: domain } },
         select: { id_empresa: true, nombre: true },
@@ -111,7 +111,7 @@ export async function createTicketFromWhatsapp(
     // c) Por alias (fallback final)
     if (!empresa) {
       const hits = await searchEmpresaByName(company);
-      if (hits.length === 1) {
+      if (hits.length === 1 && hits[0]) {
         empresa = await prisma.empresa.findUnique({
           where: { id_empresa: hits[0].id },
           select: { id_empresa: true, nombre: true },
