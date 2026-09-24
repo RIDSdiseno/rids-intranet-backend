@@ -4,7 +4,7 @@ import { prisma } from "../../../lib/prisma.js";
 
 import {
     sincronizarRecordatorioTicketParaTodos,
-} from "../../../service/recordatorios/recordatorios.service.js";
+} from "../../../service/recordatorios.service.js";
 
 import { bus } from "../../../lib/events.js";
 

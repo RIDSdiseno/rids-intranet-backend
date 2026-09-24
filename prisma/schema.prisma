@@ -2328,6 +2328,7 @@ model EmpresaFavoritaTecnico {
 
 enum TipoBitacoraTecnico {
   SOPORTE
+  INSTALACION
   TERRENO
   REMOTO
   TALLER

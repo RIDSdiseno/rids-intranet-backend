@@ -9,18 +9,107 @@ import {
 
 type SubirEvidenciaBitacoraStorageParams = {
     bitacoraId:
-        number;
+    number;
 
     etapa:
-        EtapaBitacora;
+    EtapaBitacora;
 
     file:
-        Express.Multer.File;
+    Express.Multer.File;
 };
 
 type ResultadoSubidaEvidencia = {
     storagePath: string;
 };
+
+function obtenerMensajeErrorStorage(
+    error: unknown
+): string {
+    if (
+        !error ||
+        typeof error !==
+        "object"
+    ) {
+        return "Error desconocido de Supabase Storage";
+    }
+
+    const storageError =
+        error as {
+            message?: unknown;
+            name?: unknown;
+            status?: unknown;
+            statusCode?: unknown;
+            code?: unknown;
+            error?: unknown;
+        };
+
+    const message =
+        typeof storageError.message ===
+            "string"
+            ? storageError.message.trim()
+            : "";
+
+    /*
+     * Algunas respuestas de Storage pueden devolver
+     * literalmente "<none>" como message.
+     */
+    if (
+        message &&
+        message !== "<none>"
+    ) {
+        return message;
+    }
+
+    const partes:
+        string[] = [];
+
+    if (
+        storageError.statusCode !==
+        undefined
+    ) {
+        partes.push(
+            `statusCode=${String(
+                storageError.statusCode
+            )}`
+        );
+    }
+
+    if (
+        storageError.status !==
+        undefined
+    ) {
+        partes.push(
+            `status=${String(
+                storageError.status
+            )}`
+        );
+    }
+
+    if (
+        storageError.code !==
+        undefined
+    ) {
+        partes.push(
+            `code=${String(
+                storageError.code
+            )}`
+        );
+    }
+
+    if (
+        typeof storageError.error ===
+        "string" &&
+        storageError.error.trim()
+    ) {
+        partes.push(
+            storageError.error.trim()
+        );
+    }
+
+    return partes.length > 0
+        ? partes.join(" | ")
+        : "Error desconocido de Supabase Storage";
+}
 
 function sanitizarNombreArchivo(
     nombre: string
@@ -78,7 +167,8 @@ function construirStoragePath({
  * mediante createSignedUrl().
  */
 export async function subirEvidenciaBitacoraStorage(
-    params: SubirEvidenciaBitacoraStorageParams
+    params:
+        SubirEvidenciaBitacoraStorageParams
 ): Promise<ResultadoSubidaEvidencia> {
     const {
         bitacoraId,
@@ -87,8 +177,11 @@ export async function subirEvidenciaBitacoraStorage(
     } = params;
 
     if (
-        !Number.isInteger(bitacoraId) ||
-        bitacoraId <= 0
+        !Number.isInteger(
+            bitacoraId
+        ) ||
+        bitacoraId <=
+        0
     ) {
         throw new Error(
             "bitacoraId inválido"
@@ -100,16 +193,32 @@ export async function subirEvidenciaBitacoraStorage(
             "ANTES",
             "EN_PROCESO",
             "DESPUES",
-        ].includes(etapa)
+        ].includes(
+            etapa
+        )
     ) {
         throw new Error(
             "Etapa de evidencia inválida"
         );
     }
 
-    if (!file?.buffer?.length) {
+    if (
+        !file?.buffer?.length
+    ) {
         throw new Error(
             "El archivo está vacío"
+        );
+    }
+
+    const bucket =
+        String(
+            BITACORA_EVIDENCIAS_BUCKET ??
+            ""
+        ).trim();
+
+    if (!bucket) {
+        throw new Error(
+            "BITACORA_EVIDENCIAS_BUCKET no está configurado"
         );
     }
 
@@ -117,16 +226,18 @@ export async function subirEvidenciaBitacoraStorage(
         construirStoragePath({
             bitacoraId,
             etapa,
+
             nombreArchivo:
                 file.originalname,
         });
 
     const {
+        data,
         error,
     } =
         await supabaseAdmin.storage
             .from(
-                BITACORA_EVIDENCIAS_BUCKET
+                bucket
             )
             .upload(
                 storagePath,
@@ -135,25 +246,66 @@ export async function subirEvidenciaBitacoraStorage(
                     contentType:
                         file.mimetype,
 
-                    /*
-                     * No sobrescribir evidencia existente.
-                     */
                     upsert:
                         false,
 
-                    /*
-                     * Mantener un cache razonable.
-                     * Las signed URLs seguirán controlando
-                     * el acceso al archivo privado.
-                     */
                     cacheControl:
                         "3600",
                 }
             );
 
     if (error) {
+        const mensajeError =
+            obtenerMensajeErrorStorage(
+                error
+            );
+
+        console.error(
+            "❌ Error Supabase Storage al subir evidencia:",
+            {
+                mensajeError,
+
+                message:
+                    error.message,
+
+                name:
+                    error.name,
+
+                statusCode:
+                    "statusCode" in error
+                        ? error.statusCode
+                        : undefined,
+
+                error,
+
+                bucket,
+
+                storagePath,
+
+                mimeType:
+                    file.mimetype,
+
+                sizeBytes:
+                    file.size,
+
+                sizeMB:
+                    Number(
+                        (
+                            file.size /
+                            1024 /
+                            1024
+                        ).toFixed(
+                            2
+                        )
+                    ),
+
+                originalname:
+                    file.originalname,
+            }
+        );
+
         throw new Error(
-            `Error subiendo evidencia a Supabase: ${error.message}`
+            `Error subiendo evidencia a Supabase: ${mensajeError}`
         );
     }
 

@@ -25,7 +25,12 @@ import {
 
 import {
     sincronizarRecordatorioBitacora,
-} from "../../service/recordatorios/recordatorios.service.js";
+} from "../../service/recordatorios.service.js";
+
+import {
+    obtenerActorBitacora,
+    puedeModificarBitacora,
+} from "../../service/bitacora/bitacora-permisos.helper.js";
 
 function parsePositiveInt(value: unknown): number | undefined {
     const n = Number(value);
@@ -182,27 +187,43 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
             });
         }
 
-        const tecnicoIdFinal = parsePositiveInt(tecnicoId);
-
-        if (!tecnicoIdFinal) {
-            return res.status(400).json({
-                error: "El técnico es obligatorio",
-            });
-        }
-
-        const actorId =
-            obtenerUsuarioAutenticadoId(
+        const actor =
+            obtenerActorBitacora(
                 req
             );
 
         if (
-            !actorId
+            !actor.tecnicoId
         ) {
             return res.status(401).json({
                 error:
                     "No fue posible identificar al usuario autenticado",
             });
         }
+
+        /*
+         * Un usuario normal solamente puede crear
+         * una bitácora para sí mismo.
+         *
+         * ADMIN puede indicar otro técnico.
+         */
+        const tecnicoIdSolicitado =
+            parsePositiveInt(
+                tecnicoId
+            );
+
+        const tecnicoIdFinal =
+            actor.rol === "ADMIN"
+                ? (
+                    tecnicoIdSolicitado ??
+                    actor.tecnicoId
+                )
+                : actor.tecnicoId;
+
+
+
+        const actorId =
+            actor.tecnicoId;
 
         const recordatorioAtFinal =
             parseOptionalDateTime(recordatorioAt);
@@ -219,6 +240,31 @@ export async function crearBitacoraTecnico(req: Request, res: Response) {
         if (!validarRecordatorioFuturo(recordatorioAtFinal)) {
             return res.status(400).json({
                 error: "El recordatorio debe programarse para una fecha futura",
+            });
+        }
+
+        const tecnicoResponsable =
+            await prisma.tecnico.findFirst({
+                where: {
+                    id_tecnico:
+                        tecnicoIdFinal,
+
+                    status:
+                        true,
+                },
+
+                select: {
+                    id_tecnico:
+                        true,
+                },
+            });
+
+        if (
+            !tecnicoResponsable
+        ) {
+            return res.status(400).json({
+                error:
+                    "El técnico seleccionado no existe o está inactivo",
             });
         }
 
@@ -1032,6 +1078,56 @@ export async function actualizarBitacoraTecnico(
             });
         }
 
+        const existente =
+            await prisma.bitacoraTecnico.findUnique({
+                where: {
+                    id,
+                },
+
+                select: {
+                    id:
+                        true,
+
+                    tecnicoId:
+                        true,
+
+                    estado:
+                        true,
+                },
+            });
+
+        if (
+            !existente
+        ) {
+            return res.status(404).json({
+                error:
+                    "Bitácora no encontrada",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    existente.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "No tienes permisos para modificar esta bitácora",
+            });
+        }
+
         const {
             fecha,
             titulo,
@@ -1058,13 +1154,54 @@ export async function actualizarBitacoraTecnico(
             });
         }
 
-        const tecnicoIdFinal =
-            parsePositiveInt(tecnicoId);
+        const tecnicoIdSolicitado =
+            parsePositiveInt(
+                tecnicoId
+            );
 
-        if (!tecnicoIdFinal) {
-            return res.status(400).json({
-                error: "El técnico es obligatorio",
-            });
+        const tecnicoIdFinal =
+            actor.rol === "ADMIN"
+                ? (
+                    tecnicoIdSolicitado ??
+                    existente.tecnicoId
+                )
+                : existente.tecnicoId;
+
+        /*
+* Si ADMIN reasigna la bitácora,
+* comprobar que el técnico destino exista
+* y esté activo.
+*/
+        if (
+            actor.rol ===
+            "ADMIN" &&
+            tecnicoIdFinal !==
+            existente.tecnicoId
+        ) {
+            const tecnicoNuevo =
+                await prisma.tecnico.findFirst({
+                    where: {
+                        id_tecnico:
+                            tecnicoIdFinal,
+
+                        status:
+                            true,
+                    },
+
+                    select: {
+                        id_tecnico:
+                            true,
+                    },
+                });
+
+            if (
+                !tecnicoNuevo
+            ) {
+                return res.status(400).json({
+                    error:
+                        "El técnico seleccionado no existe o está inactivo",
+                });
+            }
         }
 
         const updateData:
@@ -1241,33 +1378,109 @@ export async function actualizarBitacoraTecnico(
     }
 }
 
-export async function eliminarBitacoraTecnico(req: Request, res: Response) {
+export async function eliminarBitacoraTecnico(
+    req:
+        Request,
+    res:
+        Response
+) {
     try {
-        const id = Number(req.params.id);
+        const id =
+            Number(
+                req.params.id
+            );
 
-        if (!Number.isInteger(id)) {
+        if (
+            !Number.isInteger(
+                id
+            ) ||
+            id <= 0
+        ) {
             return res.status(400).json({
-                error: "ID inválido",
+                error:
+                    "ID inválido",
+            });
+        }
+
+        const existente =
+            await prisma.bitacoraTecnico.findUnique({
+                where: {
+                    id,
+                },
+
+                select: {
+                    id:
+                        true,
+
+                    tecnicoId:
+                        true,
+                },
+            });
+
+        if (
+            !existente
+        ) {
+            return res.status(404).json({
+                error:
+                    "Bitácora no encontrada",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    existente.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "No tienes permisos para eliminar esta bitácora",
             });
         }
 
         await prisma.bitacoraTecnico.delete({
-            where: { id },
+            where: {
+                id,
+            },
         });
 
         return res.json({
-            message: "Bitácora eliminada correctamente",
+            message:
+                "Bitácora eliminada correctamente",
         });
-    } catch (error: any) {
-        if (error.code === "P2025") {
+    } catch (
+    error:
+        any
+    ) {
+        if (
+            error.code ===
+            "P2025"
+        ) {
             return res.status(404).json({
-                error: "Bitácora no encontrada",
+                error:
+                    "Bitácora no encontrada",
             });
         }
 
-        console.error("❌ Error al eliminar bitácora técnica:", error);
+        console.error(
+            "❌ Error al eliminar bitácora técnica:",
+            error
+        );
+
         return res.status(500).json({
-            error: "Error al eliminar bitácora técnica",
+            error:
+                "Error al eliminar bitácora técnica",
         });
     }
 }

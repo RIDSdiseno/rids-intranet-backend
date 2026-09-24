@@ -31,7 +31,7 @@ import {
     sincronizarRecordatorioTicket,
     sincronizarRecordatorioTicketParaTodos
 }
-    from "../recordatorios/recordatorios.service.js";
+ from "../recordatorios.service.js";
 
 /* ======================================================
    Tipos

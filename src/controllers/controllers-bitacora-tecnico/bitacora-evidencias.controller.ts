@@ -28,6 +28,11 @@ import {
     subirEvidenciaBitacoraStorage,
 } from "../../service/bitacora/bitacora-evidencias-storage.service.js";
 
+import {
+    obtenerActorBitacora,
+    puedeModificarBitacora,
+} from "../../service/bitacora/bitacora-permisos.helper.js";
+
 /* =====================================================
    CONSTANTES
 ===================================================== */
@@ -37,6 +42,9 @@ const MAX_IMAGE_BYTES =
 
 const MAX_VIDEO_BYTES =
     150 * 1024 * 1024;
+
+const MAX_EVIDENCIAS_POR_ETAPA =
+    10;
 
 const IMAGE_MIME_TYPES = new Set([
     "image/jpeg",
@@ -459,10 +467,34 @@ export async function agregarEvidenciaBitacora(
                 },
             });
 
+
         if (!bitacora) {
             return res.status(404).json({
                 error:
                     "Bitácora no encontrada",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    bitacora.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "No tienes permisos para agregar evidencias a esta bitácora",
             });
         }
 
@@ -550,6 +582,31 @@ export async function agregarEvidenciaBitacora(
             return res.status(403).json({
                 error:
                     "El usuario autenticado no corresponde a un técnico activo",
+            });
+        }
+
+        /*
+ * Máximo de evidencias permitidas por etapa.
+ *
+ * Se valida antes de subir a Supabase para evitar
+ * archivos huérfanos cuando la etapa ya alcanzó
+ * el límite.
+ */
+        const totalEvidenciasEtapa =
+            await prisma.bitacoraEvidencia.count({
+                where: {
+                    etapaId:
+                        etapaRegistro.id,
+                },
+            });
+
+        if (
+            totalEvidenciasEtapa >=
+            MAX_EVIDENCIAS_POR_ETAPA
+        ) {
+            return res.status(409).json({
+                error:
+                    `La etapa admite un máximo de ${MAX_EVIDENCIAS_POR_ETAPA} evidencias`,
             });
         }
 
@@ -795,6 +852,13 @@ export async function eliminarEvidenciaBitacora(
                     subidoPorId:
                         true,
 
+                    bitacora: {
+                        select: {
+                            tecnicoId:
+                                true,
+                        },
+                    },
+
                     etapaRegistro: {
                         select: {
                             id:
@@ -814,6 +878,29 @@ export async function eliminarEvidenciaBitacora(
             return res.status(404).json({
                 error:
                     "Evidencia no encontrada para esta bitácora",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    evidencia.bitacora.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "No tienes permisos para eliminar evidencias de esta bitácora",
             });
         }
 
@@ -841,18 +928,7 @@ export async function eliminarEvidenciaBitacora(
         }
 
         const actorId =
-            obtenerUsuarioAutenticadoId(
-                req
-            );
-
-        if (
-            !actorId
-        ) {
-            return res.status(401).json({
-                error:
-                    "No fue posible identificar al usuario autenticado",
-            });
-        }
+            actor.tecnicoId;
 
         /*
          * Primero eliminamos el archivo físico.

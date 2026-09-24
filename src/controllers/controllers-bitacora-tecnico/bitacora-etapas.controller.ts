@@ -22,6 +22,16 @@ import {
     agregarUrlsFirmadasAEvidencias,
 } from "../../service/bitacora/bitacora-evidencias-storage.service.js";
 
+import {
+    enviarCorreoResultadoRevisionBitacora,
+    enviarCorreoSolicitudRevisionBitacora,
+} from "../../service/bitacora/bitacora-mail.service.js";
+
+import {
+    obtenerActorBitacora,
+    puedeModificarBitacora,
+} from "../../service/bitacora/bitacora-permisos.helper.js";
+
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -489,6 +499,15 @@ export async function actualizarEtapaBitacora(
 
                     bitacoraId,
                 },
+
+                include: {
+                    bitacora: {
+                        select: {
+                            tecnicoId:
+                                true,
+                        },
+                    },
+                },
             });
 
         if (
@@ -497,6 +516,29 @@ export async function actualizarEtapaBitacora(
             return res.status(404).json({
                 error:
                     "Etapa no encontrada",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    existente.bitacora.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "No tienes permisos para modificar esta bitácora",
             });
         }
 
@@ -752,6 +794,22 @@ export async function solicitarRevisionEtapa(
                                 true,
                         },
                     },
+
+                    bitacora: {
+                        select: {
+                            id:
+                                true,
+
+                            titulo:
+                                true,
+
+                            descripcion:
+                                true,
+
+                            tecnicoId:
+                                true,
+                        },
+                    },
                 },
             });
 
@@ -761,6 +819,39 @@ export async function solicitarRevisionEtapa(
             return res.status(404).json({
                 error:
                     "Etapa no encontrada",
+            });
+        }
+
+        if (
+            aprobadorId ===
+            etapa.bitacora.tecnicoId
+        ) {
+            return res.status(400).json({
+                error:
+                    "El revisor debe ser distinto al técnico responsable de la bitácora",
+            });
+        }
+
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
+        if (
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    etapa.bitacora.tecnicoId,
+            })
+        ) {
+            return res.status(403).json({
+                error:
+                    "Solo el técnico responsable o un administrador puede solicitar una revisión",
             });
         }
 
@@ -931,6 +1022,65 @@ export async function solicitarRevisionEtapa(
                 }
             );
 
+        if (
+            resultado.aprobador.email
+        ) {
+            try {
+                await enviarCorreoSolicitudRevisionBitacora({
+                    destinatarioEmail:
+                        resultado.aprobador.email,
+
+                    destinatarioNombre:
+                        resultado.aprobador.nombre,
+
+                    solicitadoPorNombre:
+                        resultado.solicitadoPor.nombre,
+
+                    bitacoraId,
+
+                    tituloBitacora:
+                        etapa.bitacora.titulo,
+
+                    etapa:
+                        etapa.etapa,
+
+                    comentarioSolicitud:
+                        resultado.comentarioSolicitud,
+                });
+
+                console.log(
+                    "[BITACORA MAIL] ✅ Solicitud de revisión enviada",
+                    {
+                        bitacoraId,
+                        etapaId,
+                        aprobacionId:
+                            resultado.id,
+
+                        destinatario:
+                            resultado.aprobador.email,
+                    }
+                );
+            } catch (
+            emailError
+            ) {
+                console.error(
+                    "[BITACORA MAIL] ❌ Error enviando solicitud de revisión:",
+                    emailError
+                );
+            }
+        } else {
+            console.warn(
+                "[BITACORA MAIL] ⚠️ Revisor sin correo",
+                {
+                    bitacoraId,
+                    etapaId,
+
+                    aprobadorId:
+                        resultado.aprobadorId,
+                }
+            );
+        }
+
         return res.status(201).json({
             data:
                 resultado,
@@ -1031,6 +1181,42 @@ export async function responderRevisionEtapa(
                 include: {
                     etapa:
                         true,
+
+                    solicitadoPor: {
+                        select: {
+                            id_tecnico:
+                                true,
+
+                            nombre:
+                                true,
+
+                            email:
+                                true,
+                        },
+                    },
+
+                    aprobador: {
+                        select: {
+                            id_tecnico:
+                                true,
+
+                            nombre:
+                                true,
+
+                            email:
+                                true,
+                        },
+                    },
+
+                    bitacora: {
+                        select: {
+                            id:
+                                true,
+
+                            titulo:
+                                true,
+                        },
+                    },
                 },
             });
 
@@ -1107,10 +1293,11 @@ export async function responderRevisionEtapa(
                                     ? EstadoEtapaBitacora.APROBADA
                                     : EstadoEtapaBitacora.RECHAZADA,
 
+                            /*
+                             * Aprobar una revisión NO completa la etapa.
+                             */
                             completadoAt:
-                                aprobar
-                                    ? ahora
-                                    : null,
+                                null,
                         },
                     });
 
@@ -1139,33 +1326,77 @@ export async function responderRevisionEtapa(
                         },
                     });
 
-                    /*
-                     * Solo una aprobación positiva avanza
-                     * automáticamente a la siguiente etapa.
-                     */
-                    if (
-                        aprobar
-                    ) {
-                        await avanzarDespuesDeCompletarEtapa({
-                            tx,
-
-                            bitacoraId,
-
-                            etapaActual: {
-                                id:
-                                    etapaId,
-
-                                etapa:
-                                    aprobacion.etapa.etapa,
-                            },
-
-                            actorId,
-                        });
-                    }
-
                     return actualizada;
                 }
             );
+
+        if (
+            aprobacion.solicitadoPor.email
+        ) {
+            try {
+                await enviarCorreoResultadoRevisionBitacora({
+                    destinatarioEmail:
+                        aprobacion.solicitadoPor.email,
+
+                    destinatarioNombre:
+                        aprobacion.solicitadoPor.nombre,
+
+                    revisorNombre:
+                        aprobacion.aprobador.nombre,
+
+                    bitacoraId,
+
+                    tituloBitacora:
+                        aprobacion.bitacora.titulo,
+
+                    etapa:
+                        aprobacion.etapa.etapa,
+
+                    aprobada:
+                        aprobar,
+
+                    comentarioRespuesta:
+                        resultado.comentarioRespuesta,
+                });
+
+                console.log(
+                    "[BITACORA MAIL] ✅ Resultado de revisión enviado",
+                    {
+                        bitacoraId,
+                        etapaId,
+                        aprobacionId,
+
+                        resultado:
+                            aprobar
+                                ? "APROBADA"
+                                : "RECHAZADA",
+
+                        destinatario:
+                            aprobacion
+                                .solicitadoPor
+                                .email,
+                    }
+                );
+            } catch (
+            emailError
+            ) {
+                console.error(
+                    "[BITACORA MAIL] ❌ Error enviando resultado de revisión:",
+                    emailError
+                );
+            }
+        } else {
+            console.warn(
+                "[BITACORA MAIL] ⚠️ Solicitante sin correo",
+                {
+                    bitacoraId,
+                    aprobacionId,
+
+                    solicitadoPorId:
+                        aprobacion.solicitadoPorId,
+                }
+            );
+        }
 
         return res.json({
             data:
@@ -1252,8 +1483,17 @@ export async function completarEtapaBitacora(
                                 true,
                         },
                     },
+
+                    bitacora: {
+                        select: {
+                            tecnicoId:
+                                true,
+                        },
+                    },
                 },
             });
+
+
 
         if (
             !etapa
@@ -1273,25 +1513,87 @@ export async function completarEtapaBitacora(
             });
         }
 
+        const actor =
+            obtenerActorBitacora(
+                req
+            );
+
         if (
-            etapa.estado !==
-            EstadoEtapaBitacora.EN_PROCESO
+            !puedeModificarBitacora({
+                actorId:
+                    actor.tecnicoId,
+
+                rol:
+                    actor.rol,
+
+                tecnicoResponsableId:
+                    etapa.bitacora.tecnicoId,
+            })
         ) {
-            return res.status(409).json({
+            return res.status(403).json({
                 error:
-                    "Solo una etapa en proceso puede ser completada",
+                    "Solo el técnico responsable o un administrador puede completar esta etapa",
             });
         }
 
+        /*
+ * Sin revisión:
+ * EN_PROCESO -> COMPLETADA
+ *
+ * Con revisión:
+ * APROBADA -> COMPLETADA
+ */
+        const puedeCompletarSinRevision =
+            !etapa.requiereRevision &&
+            etapa.estado ===
+            EstadoEtapaBitacora.EN_PROCESO;
+
+        const puedeCompletarConRevision =
+            etapa.requiereRevision &&
+            etapa.estado ===
+            EstadoEtapaBitacora.APROBADA;
+
         if (
-            etapa.requiereRevision
+            !puedeCompletarSinRevision &&
+            !puedeCompletarConRevision
         ) {
+            if (
+                etapa.requiereRevision &&
+                etapa.estado ===
+                EstadoEtapaBitacora.EN_PROCESO
+            ) {
+                return res.status(409).json({
+                    error:
+                        "Esta etapa requiere revisión. Debes solicitar y obtener aprobación antes de completarla.",
+                });
+            }
+
+            if (
+                etapa.requiereRevision &&
+                etapa.estado ===
+                EstadoEtapaBitacora.PENDIENTE_REVISION
+            ) {
+                return res.status(409).json({
+                    error:
+                        "La etapa todavía está pendiente de revisión.",
+                });
+            }
+
+            if (
+                etapa.estado ===
+                EstadoEtapaBitacora.RECHAZADA
+            ) {
+                return res.status(409).json({
+                    error:
+                        "La etapa fue rechazada. Debes corregirla y solicitar una nueva revisión.",
+                });
+            }
+
             return res.status(409).json({
                 error:
-                    "Esta etapa requiere revisión. Debes solicitar aprobación antes de continuar.",
+                    "La etapa no se encuentra disponible para ser completada.",
             });
         }
-
         const resultado =
             await prisma.$transaction(
                 async (

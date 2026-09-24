@@ -5,7 +5,7 @@ import {
     OrigenRecordatorio,
 } from "@prisma/client";
 
-import { prismaBase as prisma } from "../../lib/prisma.js";
+import { prismaBase as prisma } from "../lib/prisma.js";
 
 interface SincronizarRecordatorioBitacoraParams {
     bitacoraId: number;
