@@ -1,0 +1,1247 @@
+import { EstadoBitacoraTecnico, EstadoEtapaBitacora, EstadoRecordatorio, EtapaBitacora, OrigenRecordatorio, Prisma, TipoBitacoraTecnico, TipoEventoBitacora, } from "@prisma/client";
+import { prismaBase as prisma, } from "../../lib/prisma.js";
+import { agregarUrlsFirmadasAEvidencias, } from "../../service/bitacora/bitacora-evidencias-storage.service.js";
+import { sincronizarRecordatorioBitacora, } from "../../service/recordatorios.service.js";
+import { obtenerActorBitacora, puedeModificarBitacora, } from "../../service/bitacora/bitacora-permisos.helper.js";
+function parsePositiveInt(value) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+function normalizeText(value) {
+    return (value ?? "").trim().replace(/\s+/g, " ");
+}
+function parseFecha(value) {
+    if (typeof value !== "string" || !value.trim())
+        return undefined;
+    const clean = value.trim();
+    // Si viene solo YYYY-MM-DD, guardar al mediodía UTC para evitar desfase visual en Chile.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+        const date = new Date(`${clean}T12:00:00.000Z`);
+        return Number.isNaN(date.getTime()) ? undefined : date;
+    }
+    const date = new Date(clean);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+}
+function parseOptionalDateTime(value) {
+    /*
+     * undefined significa que el frontend no envió el campo.
+     * Es útil al actualizar para conservar el valor actual.
+     */
+    if (value === undefined) {
+        return undefined;
+    }
+    /*
+     * null o string vacío significa eliminar el recordatorio.
+     */
+    if (value === null ||
+        (typeof value === "string" && !value.trim())) {
+        return null;
+    }
+    if (typeof value !== "string") {
+        return undefined;
+    }
+    const date = new Date(value.trim());
+    return Number.isNaN(date.getTime())
+        ? undefined
+        : date;
+}
+function validarRecordatorioFuturo(recordatorioAt) {
+    if (!recordatorioAt) {
+        return true;
+    }
+    return recordatorioAt.getTime() > Date.now();
+}
+function buildDateRange(fecha) {
+    if (!fecha)
+        return null;
+    // Forzar UTC explícito para que coincida con cómo Prisma guarda las fechas
+    const desde = new Date(`${fecha}T00:00:00.000Z`);
+    const hasta = new Date(`${fecha}T23:59:59.999Z`);
+    if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
+        return null;
+    }
+    return {
+        gte: desde,
+        lte: hasta,
+    };
+}
+function normalizeTipoActividad(value) {
+    if (typeof value === "string" &&
+        Object.values(TipoBitacoraTecnico).includes(value)) {
+        return value;
+    }
+    return TipoBitacoraTecnico.OTRO;
+}
+function obtenerUsuarioAutenticadoId(req) {
+    const user = req.user;
+    return (parsePositiveInt(user?.id_tecnico) ??
+        parsePositiveInt(user?.tecnicoId) ??
+        parsePositiveInt(user?.id) ??
+        parsePositiveInt(user?.userId));
+}
+export async function crearBitacoraTecnico(req, res) {
+    try {
+        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
+        const descripcionNormalizada = normalizeText(descripcion);
+        if (!descripcionNormalizada) {
+            return res.status(400).json({
+                error: "La descripción es obligatoria",
+            });
+        }
+        const actor = obtenerActorBitacora(req);
+        if (!actor.tecnicoId) {
+            return res.status(401).json({
+                error: "No fue posible identificar al usuario autenticado",
+            });
+        }
+        /*
+         * Un usuario normal solamente puede crear
+         * una bitácora para sí mismo.
+         *
+         * ADMIN puede indicar otro técnico.
+         */
+        const tecnicoIdSolicitado = parsePositiveInt(tecnicoId);
+        const tecnicoIdFinal = actor.rol === "ADMIN"
+            ? (tecnicoIdSolicitado ??
+                actor.tecnicoId)
+            : actor.tecnicoId;
+        const actorId = actor.tecnicoId;
+        const recordatorioAtFinal = parseOptionalDateTime(recordatorioAt);
+        if (recordatorioAt !== undefined &&
+            recordatorioAtFinal === undefined) {
+            return res.status(400).json({
+                error: "La fecha del recordatorio no es válida",
+            });
+        }
+        if (!validarRecordatorioFuturo(recordatorioAtFinal)) {
+            return res.status(400).json({
+                error: "El recordatorio debe programarse para una fecha futura",
+            });
+        }
+        const tecnicoResponsable = await prisma.tecnico.findFirst({
+            where: {
+                id_tecnico: tecnicoIdFinal,
+                status: true,
+            },
+            select: {
+                id_tecnico: true,
+            },
+        });
+        if (!tecnicoResponsable) {
+            return res.status(400).json({
+                error: "El técnico seleccionado no existe o está inactivo",
+            });
+        }
+        const createData = {
+            fecha: parseFecha(fecha) ?? new Date(),
+            titulo: normalizeText(titulo) || null,
+            descripcion: descripcionNormalizada,
+            tipoActividad: normalizeTipoActividad(tipoActividad),
+            estado: EstadoBitacoraTecnico.REGISTRADA,
+            tecnicoId: tecnicoIdFinal,
+            empresaId: parsePositiveInt(empresaId) ?? null,
+            solicitanteId: parsePositiveInt(solicitanteId) ?? null,
+            ticketId: parsePositiveInt(ticketId) ?? null,
+            trabajoId: parsePositiveInt(trabajoId) ?? null,
+            visitaId: parsePositiveInt(visitaId) ?? null,
+            mantencionId: parsePositiveInt(mantencionId) ?? null,
+            equipoId: parsePositiveInt(equipoId) ?? null,
+            cotizacionId: parsePositiveInt(cotizacionId) ?? null,
+            recordatorioAt: recordatorioAtFinal ?? null,
+            recordatorioCompletado: false,
+            recordatorioCompletadoAt: null,
+            recordatorioNotificadoAt: null,
+        };
+        const bitacora = await prisma.$transaction(async (tx) => {
+            const creada = await tx.bitacoraTecnico.create({
+                data: createData,
+                include: {
+                    tecnico: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                            rol: true,
+                        },
+                    },
+                    empresa: {
+                        select: {
+                            id_empresa: true,
+                            nombre: true,
+                        },
+                    },
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                        },
+                    },
+                    ticket: {
+                        select: {
+                            id: true,
+                            publicId: true,
+                            subject: true,
+                            status: true,
+                        },
+                    },
+                    trabajo: {
+                        select: {
+                            id: true,
+                            numeroOrden: true,
+                            tipoTrabajo: true,
+                            estado: true,
+                            area: true,
+                            destinoEquipo: true,
+                        },
+                    },
+                    visita: {
+                        select: {
+                            id_visita: true,
+                            inicio: true,
+                            fin: true,
+                            status: true,
+                        },
+                    },
+                    mantencion: {
+                        select: {
+                            id_mantencion: true,
+                            inicio: true,
+                            fin: true,
+                            status: true,
+                        },
+                    },
+                    equipo: {
+                        select: {
+                            id_equipo: true,
+                            serial: true,
+                            marca: true,
+                            modelo: true,
+                            tipo: true,
+                        },
+                    },
+                    cotizacion: {
+                        select: {
+                            id: true,
+                            fecha: true,
+                            estado: true,
+                            total: true,
+                        },
+                    },
+                },
+            });
+            await tx.bitacoraEtapa.createMany({
+                data: [
+                    {
+                        bitacoraId: creada.id,
+                        etapa: EtapaBitacora.ANTES,
+                        estado: EstadoEtapaBitacora.EN_PROCESO,
+                        iniciadoAt: new Date(),
+                    },
+                    {
+                        bitacoraId: creada.id,
+                        etapa: EtapaBitacora.EN_PROCESO,
+                        estado: EstadoEtapaBitacora.PENDIENTE,
+                    },
+                    {
+                        bitacoraId: creada.id,
+                        etapa: EtapaBitacora.DESPUES,
+                        estado: EstadoEtapaBitacora.PENDIENTE,
+                    },
+                ],
+            });
+            await tx.bitacoraEvento.create({
+                data: {
+                    bitacoraId: creada.id,
+                    tipo: TipoEventoBitacora.CREADA,
+                    actorId,
+                    descripcion: "Bitácora técnica creada",
+                },
+            });
+            return creada;
+        });
+        const bitacoraCompleta = await prisma.bitacoraTecnico.findUnique({
+            where: {
+                id: bitacora.id,
+            },
+            include: {
+                tecnico: true,
+                empresa: true,
+                solicitante: true,
+                ticket: true,
+                trabajo: true,
+                visita: true,
+                mantencion: true,
+                equipo: true,
+                cotizacion: true,
+                etapas: {
+                    orderBy: {
+                        id: "asc",
+                    },
+                },
+            },
+        });
+        /*
+ * Mantiene sincronizado el recordatorio específico de la bitácora
+ * con la tabla global utilizada por la campana.
+ */
+        await sincronizarRecordatorioBitacora({
+            bitacoraId: bitacora.id,
+            tecnicoId: tecnicoIdFinal,
+            titulo: bitacora.titulo,
+            descripcion: bitacora.descripcion,
+            recordatorioAt: bitacora.recordatorioAt,
+        });
+        return res.status(201).json({ data: bitacoraCompleta, });
+    }
+    catch (error) {
+        console.error("❌ Error al crear bitácora técnica:", error);
+        return res.status(500).json({
+            error: "Error al crear bitácora técnica",
+        });
+    }
+}
+export async function obtenerBitacorasTecnico(req, res) {
+    try {
+        const { fecha, desde, hasta, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, tipoActividad, estado, search, } = req.query;
+        const where = {};
+        const tecnicoIdNum = parsePositiveInt(tecnicoId);
+        const empresaIdNum = parsePositiveInt(empresaId);
+        const solicitanteIdNum = parsePositiveInt(solicitanteId);
+        const ticketIdNum = parsePositiveInt(ticketId);
+        const trabajoIdNum = parsePositiveInt(trabajoId);
+        const visitaIdNum = parsePositiveInt(visitaId);
+        const mantencionIdNum = parsePositiveInt(mantencionId);
+        const equipoIdNum = parsePositiveInt(equipoId);
+        const cotizacionIdNum = parsePositiveInt(cotizacionId);
+        if (tecnicoIdNum)
+            where.tecnicoId = tecnicoIdNum;
+        if (empresaIdNum)
+            where.empresaId = empresaIdNum;
+        if (solicitanteIdNum)
+            where.solicitanteId = solicitanteIdNum;
+        if (ticketIdNum)
+            where.ticketId = ticketIdNum;
+        if (trabajoIdNum)
+            where.trabajoId = trabajoIdNum;
+        if (visitaIdNum)
+            where.visitaId = visitaIdNum;
+        if (mantencionIdNum)
+            where.mantencionId = mantencionIdNum;
+        if (equipoIdNum)
+            where.equipoId = equipoIdNum;
+        if (cotizacionIdNum)
+            where.cotizacionId = cotizacionIdNum;
+        if (typeof tipoActividad === "string" &&
+            Object.values(TipoBitacoraTecnico).includes(tipoActividad)) {
+            where.tipoActividad = tipoActividad;
+        }
+        if (typeof estado === "string" &&
+            Object.values(EstadoBitacoraTecnico).includes(estado)) {
+            where.estado = estado;
+        }
+        if (typeof fecha === "string" && fecha.trim()) {
+            const rangoFecha = buildDateRange(fecha);
+            if (rangoFecha) {
+                where.fecha = rangoFecha;
+            }
+        }
+        else {
+            const fechaFiltro = {};
+            if (typeof desde === "string" && desde.trim()) {
+                const desdeDate = new Date(`${desde}T00:00:00.000Z`);
+                if (!Number.isNaN(desdeDate.getTime())) {
+                    fechaFiltro.gte = desdeDate;
+                }
+            }
+            if (typeof hasta === "string" && hasta.trim()) {
+                const hastaDate = new Date(`${hasta}T23:59:59.999Z`);
+                if (!Number.isNaN(hastaDate.getTime())) {
+                    fechaFiltro.lte = hastaDate;
+                }
+            }
+            if (Object.keys(fechaFiltro).length > 0) {
+                where.fecha = fechaFiltro;
+            }
+        }
+        if (typeof search === "string" && search.trim()) {
+            const q = search.trim();
+            where.OR = [
+                {
+                    titulo: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    descripcion: {
+                        contains: q,
+                        mode: "insensitive",
+                    },
+                },
+                {
+                    tecnico: {
+                        nombre: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    empresa: {
+                        nombre: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    solicitante: {
+                        nombre: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    ticket: {
+                        subject: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    trabajo: {
+                        numeroOrden: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    equipo: {
+                        serial: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    equipo: {
+                        marca: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    equipo: {
+                        modelo: {
+                            contains: q,
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    etapas: {
+                        some: {
+                            descripcion: {
+                                contains: q,
+                                mode: "insensitive",
+                            },
+                        },
+                    },
+                },
+            ];
+        }
+        const bitacoras = await prisma.bitacoraTecnico.findMany({
+            where,
+            orderBy: [
+                { fecha: "desc" },
+                { createdAt: "desc" },
+            ],
+            include: {
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                        rol: true,
+                    },
+                },
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+                solicitante: {
+                    select: {
+                        id_solicitante: true,
+                        nombre: true,
+                        email: true,
+                    },
+                },
+                ticket: {
+                    select: {
+                        id: true,
+                        publicId: true,
+                        subject: true,
+                        status: true,
+                    },
+                },
+                trabajo: {
+                    select: {
+                        id: true,
+                        numeroOrden: true,
+                        tipoTrabajo: true,
+                        estado: true,
+                    },
+                },
+                visita: {
+                    select: {
+                        id_visita: true,
+                        inicio: true,
+                        fin: true,
+                        status: true,
+                    },
+                },
+                mantencion: {
+                    select: {
+                        id_mantencion: true,
+                        inicio: true,
+                        fin: true,
+                        status: true,
+                    },
+                },
+                equipo: {
+                    select: {
+                        id_equipo: true,
+                        serial: true,
+                        marca: true,
+                        modelo: true,
+                        tipo: true,
+                    },
+                },
+                cotizacion: {
+                    select: {
+                        id: true,
+                        fecha: true,
+                        estado: true,
+                        total: true,
+                    },
+                },
+            },
+        });
+        return res.json({ data: bitacoras });
+    }
+    catch (error) {
+        console.error("❌ Error al obtener bitácoras técnicas:", error);
+        return res.status(500).json({
+            error: "Error al obtener bitácoras técnicas",
+        });
+    }
+}
+export async function obtenerBitacoraTecnicoPorId(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id)) {
+            return res.status(400).json({
+                error: "ID inválido",
+            });
+        }
+        const bitacora = await prisma.bitacoraTecnico.findUnique({
+            where: {
+                id,
+            },
+            include: {
+                tecnico: true,
+                empresa: true,
+                solicitante: true,
+                ticket: true,
+                trabajo: true,
+                visita: true,
+                mantencion: true,
+                equipo: true,
+                cotizacion: true,
+                evidencias: {
+                    orderBy: {
+                        createdAt: "asc",
+                    },
+                    include: {
+                        subidoPor: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                                email: true,
+                                rol: true,
+                            },
+                        },
+                    },
+                },
+                etapas: {
+                    orderBy: {
+                        id: "asc",
+                    },
+                    include: {
+                        evidencias: {
+                            orderBy: {
+                                createdAt: "asc",
+                            },
+                            include: {
+                                subidoPor: {
+                                    select: {
+                                        id_tecnico: true,
+                                        nombre: true,
+                                        email: true,
+                                        rol: true,
+                                    },
+                                },
+                            },
+                        },
+                        aprobaciones: {
+                            orderBy: {
+                                solicitadoAt: "desc",
+                            },
+                            include: {
+                                solicitadoPor: {
+                                    select: {
+                                        id_tecnico: true,
+                                        nombre: true,
+                                        email: true,
+                                    },
+                                },
+                                aprobador: {
+                                    select: {
+                                        id_tecnico: true,
+                                        nombre: true,
+                                        email: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                eventos: {
+                    orderBy: {
+                        createdAt: "asc",
+                    },
+                    include: {
+                        actor: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                                email: true,
+                            },
+                        },
+                        etapa: true,
+                    },
+                },
+            },
+        });
+        if (!bitacora) {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        const evidenciasConUrl = await agregarUrlsFirmadasAEvidencias(bitacora.evidencias);
+        const etapasConUrl = await Promise.all(bitacora.etapas.map(async (etapa) => ({
+            ...etapa,
+            evidencias: await agregarUrlsFirmadasAEvidencias(etapa.evidencias),
+        })));
+        return res.json({
+            data: {
+                ...bitacora,
+                evidencias: evidenciasConUrl,
+                etapas: etapasConUrl,
+            },
+        });
+    }
+    catch (error) {
+        console.error("❌ Error al obtener bitácora técnica:", error);
+        return res.status(500).json({
+            error: "Error al obtener bitácora técnica",
+        });
+    }
+}
+export async function actualizarBitacoraTecnico(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                error: "ID inválido",
+            });
+        }
+        const existente = await prisma.bitacoraTecnico.findUnique({
+            where: {
+                id,
+            },
+            select: {
+                id: true,
+                tecnicoId: true,
+                estado: true,
+            },
+        });
+        if (!existente) {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        const actor = obtenerActorBitacora(req);
+        if (!puedeModificarBitacora({
+            actorId: actor.tecnicoId,
+            rol: actor.rol,
+            tecnicoResponsableId: existente.tecnicoId,
+        })) {
+            return res.status(403).json({
+                error: "No tienes permisos para modificar esta bitácora",
+            });
+        }
+        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
+        const descripcionNormalizada = normalizeText(descripcion);
+        if (!descripcionNormalizada) {
+            return res.status(400).json({
+                error: "La descripción es obligatoria",
+            });
+        }
+        const tecnicoIdSolicitado = parsePositiveInt(tecnicoId);
+        const tecnicoIdFinal = actor.rol === "ADMIN"
+            ? (tecnicoIdSolicitado ??
+                existente.tecnicoId)
+            : existente.tecnicoId;
+        /*
+* Si ADMIN reasigna la bitácora,
+* comprobar que el técnico destino exista
+* y esté activo.
+*/
+        if (actor.rol ===
+            "ADMIN" &&
+            tecnicoIdFinal !==
+                existente.tecnicoId) {
+            const tecnicoNuevo = await prisma.tecnico.findFirst({
+                where: {
+                    id_tecnico: tecnicoIdFinal,
+                    status: true,
+                },
+                select: {
+                    id_tecnico: true,
+                },
+            });
+            if (!tecnicoNuevo) {
+                return res.status(400).json({
+                    error: "El técnico seleccionado no existe o está inactivo",
+                });
+            }
+        }
+        const updateData = {
+            titulo: normalizeText(titulo) || null,
+            descripcion: descripcionNormalizada,
+            tipoActividad: normalizeTipoActividad(tipoActividad),
+            tecnicoId: tecnicoIdFinal,
+            empresaId: parsePositiveInt(empresaId) ??
+                null,
+            solicitanteId: parsePositiveInt(solicitanteId) ?? null,
+            ticketId: parsePositiveInt(ticketId) ??
+                null,
+            trabajoId: parsePositiveInt(trabajoId) ??
+                null,
+            visitaId: parsePositiveInt(visitaId) ??
+                null,
+            mantencionId: parsePositiveInt(mantencionId) ?? null,
+            equipoId: parsePositiveInt(equipoId) ??
+                null,
+            cotizacionId: parsePositiveInt(cotizacionId) ?? null,
+        };
+        const fechaParsed = parseFecha(fecha);
+        if (fechaParsed) {
+            updateData.fecha =
+                fechaParsed;
+        }
+        /*
+         * Solo modifica el recordatorio si el frontend
+         * incluyó explícitamente recordatorioAt.
+         */
+        if (recordatorioAt !== undefined) {
+            const recordatorioAtActualizado = parseOptionalDateTime(recordatorioAt);
+            if (recordatorioAtActualizado ===
+                undefined) {
+                return res.status(400).json({
+                    error: "La fecha del recordatorio no es válida",
+                });
+            }
+            if (recordatorioAtActualizado !==
+                null &&
+                !validarRecordatorioFuturo(recordatorioAtActualizado)) {
+                return res.status(400).json({
+                    error: "El recordatorio debe programarse para una fecha futura",
+                });
+            }
+            updateData.recordatorioAt =
+                recordatorioAtActualizado;
+            /*
+             * Si se cambia o elimina la fecha,
+             * se reinicia el estado del recordatorio.
+             */
+            updateData.recordatorioCompletado =
+                false;
+            updateData.recordatorioCompletadoAt =
+                null;
+            updateData.recordatorioNotificadoAt =
+                null;
+        }
+        const bitacora = await prisma.bitacoraTecnico.update({
+            where: {
+                id,
+            },
+            data: updateData,
+            include: {
+                tecnico: true,
+                empresa: true,
+                solicitante: true,
+                ticket: true,
+                trabajo: true,
+                visita: true,
+                mantencion: true,
+                equipo: true,
+                cotizacion: true,
+            },
+        });
+        /*
+* Actualizar también el registro global de recordatorios.
+*/
+        await sincronizarRecordatorioBitacora({
+            bitacoraId: bitacora.id,
+            tecnicoId: bitacora.tecnicoId,
+            titulo: bitacora.titulo,
+            descripcion: bitacora.descripcion,
+            recordatorioAt: bitacora.recordatorioAt,
+        });
+        return res.json({
+            data: bitacora,
+        });
+    }
+    catch (error) {
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        console.error("❌ Error al actualizar bitácora técnica:", error);
+        return res.status(500).json({
+            error: "Error al actualizar bitácora técnica",
+        });
+    }
+}
+export async function eliminarBitacoraTecnico(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) ||
+            id <= 0) {
+            return res.status(400).json({
+                error: "ID inválido",
+            });
+        }
+        const existente = await prisma.bitacoraTecnico.findUnique({
+            where: {
+                id,
+            },
+            select: {
+                id: true,
+                tecnicoId: true,
+            },
+        });
+        if (!existente) {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        const actor = obtenerActorBitacora(req);
+        if (!puedeModificarBitacora({
+            actorId: actor.tecnicoId,
+            rol: actor.rol,
+            tecnicoResponsableId: existente.tecnicoId,
+        })) {
+            return res.status(403).json({
+                error: "No tienes permisos para eliminar esta bitácora",
+            });
+        }
+        await prisma.bitacoraTecnico.delete({
+            where: {
+                id,
+            },
+        });
+        return res.json({
+            message: "Bitácora eliminada correctamente",
+        });
+    }
+    catch (error) {
+        if (error.code ===
+            "P2025") {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        console.error("❌ Error al eliminar bitácora técnica:", error);
+        return res.status(500).json({
+            error: "Error al eliminar bitácora técnica",
+        });
+    }
+}
+export async function obtenerOpcionesRelacionBitacora(req, res) {
+    try {
+        const empresaId = Number(req.query.empresaId);
+        const tipo = String(req.query.tipo ?? "");
+        if (!Number.isInteger(empresaId) || empresaId <= 0) {
+            return res.status(400).json({
+                error: "empresaId inválido",
+            });
+        }
+        if (!tipo) {
+            return res.status(400).json({
+                error: "El tipo de relación es obligatorio",
+            });
+        }
+        switch (tipo) {
+            case "solicitantes": {
+                const solicitantes = await prisma.solicitante.findMany({
+                    where: {
+                        empresaId,
+                        isActive: true,
+                        deletedAt: null,
+                    },
+                    orderBy: {
+                        nombre: "asc",
+                    },
+                    select: {
+                        id_solicitante: true,
+                        nombre: true,
+                        email: true,
+                        telefono: true,
+                    },
+                });
+                return res.json({ data: solicitantes });
+            }
+            case "tickets": {
+                const tickets = await prisma.ticket.findMany({
+                    where: {
+                        empresaId,
+                        deletedAt: null,
+                    },
+                    orderBy: {
+                        createdAt: "desc",
+                    },
+                    take: 100,
+                    select: {
+                        id: true,
+                        publicId: true,
+                        subject: true,
+                        status: true,
+                        priority: true,
+                        createdAt: true,
+                    },
+                });
+                return res.json({ data: tickets });
+            }
+            case "trabajos": {
+                const trabajos = await prisma.detalleTrabajoGestioo.findMany({
+                    where: {
+                        OR: [
+                            {
+                                entidad: {
+                                    empresaId,
+                                },
+                            },
+                            {
+                                equipo: {
+                                    empresaId,
+                                },
+                            },
+                        ],
+                    },
+                    orderBy: {
+                        fecha: "desc",
+                    },
+                    take: 100,
+                    select: {
+                        id: true,
+                        numeroOrden: true,
+                        tipoTrabajo: true,
+                        descripcion: true,
+                        estado: true,
+                        fecha: true,
+                        area: true,
+                        destinoEquipo: true,
+                        equipo: {
+                            select: {
+                                id_equipo: true,
+                                serial: true,
+                                marca: true,
+                                modelo: true,
+                            },
+                        },
+                        entidad: {
+                            select: {
+                                id: true,
+                                nombre: true,
+                            },
+                        },
+                    },
+                });
+                return res.json({ data: trabajos });
+            }
+            case "visitas": {
+                const visitas = await prisma.visita.findMany({
+                    where: {
+                        empresaId,
+                    },
+                    orderBy: {
+                        inicio: "desc",
+                    },
+                    take: 100,
+                    select: {
+                        id_visita: true,
+                        inicio: true,
+                        fin: true,
+                        status: true,
+                        solicitante: true,
+                        direccion_visita: true,
+                        tecnico: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                            },
+                        },
+                    },
+                });
+                return res.json({ data: visitas });
+            }
+            case "mantenciones": {
+                const mantenciones = await prisma.mantencionRemota.findMany({
+                    where: {
+                        empresaId,
+                    },
+                    orderBy: {
+                        inicio: "desc",
+                    },
+                    take: 100,
+                    select: {
+                        id_mantencion: true,
+                        inicio: true,
+                        fin: true,
+                        status: true,
+                        solicitante: true,
+                        deviceNombre: true,
+                        tecnico: {
+                            select: {
+                                id_tecnico: true,
+                                nombre: true,
+                            },
+                        },
+                    },
+                });
+                return res.json({ data: mantenciones });
+            }
+            case "equipos": {
+                const equipos = await prisma.equipo.findMany({
+                    where: {
+                        deletedAt: null,
+                        OR: [
+                            {
+                                empresaId,
+                            },
+                            {
+                                solicitante: {
+                                    is: {
+                                        empresaId,
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    orderBy: [
+                        { marca: "asc" },
+                        { modelo: "asc" },
+                        { serial: "asc" },
+                    ],
+                    take: 200,
+                    select: {
+                        id_equipo: true,
+                        serial: true,
+                        marca: true,
+                        modelo: true,
+                        tipo: true,
+                        estado: true,
+                        empresaId: true,
+                        idSolicitante: true,
+                        solicitante: {
+                            select: {
+                                id_solicitante: true,
+                                nombre: true,
+                                empresaId: true,
+                            },
+                        },
+                        empresa: {
+                            select: {
+                                id_empresa: true,
+                                nombre: true,
+                            },
+                        },
+                    },
+                });
+                return res.json({ data: equipos });
+            }
+            case "cotizaciones": {
+                const cotizaciones = await prisma.cotizacionGestioo.findMany({
+                    where: {
+                        entidad: {
+                            empresaId,
+                        },
+                    },
+                    orderBy: {
+                        fecha: "desc",
+                    },
+                    take: 100,
+                    select: {
+                        id: true,
+                        fecha: true,
+                        estado: true,
+                        total: true,
+                        entidad: {
+                            select: {
+                                id: true,
+                                nombre: true,
+                            },
+                        },
+                    },
+                });
+                return res.json({ data: cotizaciones });
+            }
+            default:
+                return res.status(400).json({
+                    error: "Tipo de relación no soportado",
+                });
+        }
+    }
+    catch (error) {
+        console.error("❌ Error al obtener opciones de relación:", error);
+        return res.status(500).json({
+            error: "Error al obtener opciones de relación",
+        });
+    }
+}
+export async function actualizarRecordatorioBitacora(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                error: "ID inválido",
+            });
+        }
+        if (typeof req.body.completado !== "boolean") {
+            return res.status(400).json({
+                error: "El campo completado debe ser booleano",
+            });
+        }
+        const completado = req.body.completado;
+        const existente = await prisma.bitacoraTecnico.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                recordatorioAt: true,
+            },
+        });
+        if (!existente) {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        if (!existente.recordatorioAt) {
+            return res.status(400).json({
+                error: "La bitácora no tiene un recordatorio configurado",
+            });
+        }
+        const bitacora = await prisma.bitacoraTecnico.update({
+            where: { id },
+            data: {
+                recordatorioCompletado: completado,
+                recordatorioCompletadoAt: completado
+                    ? new Date()
+                    : null,
+            },
+            include: {
+                tecnico: {
+                    select: {
+                        id_tecnico: true,
+                        nombre: true,
+                        email: true,
+                        rol: true,
+                    },
+                },
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+            },
+        });
+        const recordatorioGlobal = await prisma.recordatorio.findFirst({
+            where: {
+                bitacoraId: id,
+                origen: OrigenRecordatorio.BITACORA
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+        });
+        if (recordatorioGlobal) {
+            await prisma.recordatorio.update({
+                where: {
+                    id: recordatorioGlobal.id,
+                },
+                data: {
+                    /*
+                     * Mantener sincronizado el estado global
+                     * con el estado almacenado en BitacoraTecnico.
+                     */
+                    estado: completado
+                        ? EstadoRecordatorio.COMPLETADO
+                        : EstadoRecordatorio.PENDIENTE,
+                    completadoAt: completado
+                        ? new Date()
+                        : null,
+                    leidoAt: completado
+                        ? new Date()
+                        : null,
+                    /*
+                     * Al reactivar se permite que vuelva
+                     * a generar una notificación.
+                     */
+                    notificadoAt: completado
+                        ? recordatorioGlobal.notificadoAt
+                        : null,
+                    canceladoAt: null,
+                },
+            });
+        }
+        return res.json({
+            data: bitacora,
+            message: completado
+                ? "Recordatorio completado correctamente"
+                : "Recordatorio reactivado correctamente",
+        });
+    }
+    catch (error) {
+        if (error.code === "P2025") {
+            return res.status(404).json({
+                error: "Bitácora no encontrada",
+            });
+        }
+        console.error("❌ Error actualizando recordatorio:", error);
+        return res.status(500).json({
+            error: "Error al actualizar el recordatorio",
+        });
+    }
+}
+//# sourceMappingURL=bitacora-tecnico.controller.js.map

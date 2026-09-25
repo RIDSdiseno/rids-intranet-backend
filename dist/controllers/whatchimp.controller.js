@@ -83,7 +83,10 @@ export const wcReceive = async (req, res) => {
         if (process.env.SEND_TO_WC === "1") {
             await wcSendText(inc.from, reply);
         }
-        return res.status(200).type("text/plain; charset=utf-8").send(reply);
+        return res.status(200).json({
+            ok: true,
+            reply
+        });
     }
     catch (e) {
         console.error(`[CRITICAL ERROR]`, e);

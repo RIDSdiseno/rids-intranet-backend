@@ -251,7 +251,7 @@ export async function obtenerEstadoDocumentoCobranza(doc, tipoRcv, empresaFallba
         ?.estadoConciliacion ===
         "CONCILIADA") {
         return {
-            estadoPago: "CONFIRMADA",
+            estadoPago: "PAGADA",
             fechaVencimiento: null,
             fechaVencimientoIso: null,
             diasDiferencia: null,
@@ -838,7 +838,7 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
             resultados.push({
                 documento,
                 estado: {
-                    estadoPago: "CONFIRMADA",
+                    estadoPago: "PAGADA",
                     fechaVencimiento: null,
                     fechaVencimientoIso: null,
                     diasDiferencia: null,

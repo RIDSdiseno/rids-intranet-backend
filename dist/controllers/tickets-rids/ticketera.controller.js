@@ -10,7 +10,7 @@ import { bus } from "../../lib/events.js";
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
 import { uploadTicketAttachmentBuffer } from "../../config/ticket-attachments-storage.js";
 import { sendTicketPendingEmail } from "./tickets-sla/ticket-sla-alert-mailer.js";
-import { sincronizarRecordatorioTicket } from "../../service/recordatorios/recordatorios.service.js";
+import { sincronizarRecordatorioTicket } from "../../service/recordatorios.service.js";
 import { supabaseAdmin, TICKET_ATTACHMENTS_BUCKET, } from "../../lib/supabase/supabase.js";
 // Agrega esta función helper junto a escapeHtml
 function toHtmlEntities(str) {

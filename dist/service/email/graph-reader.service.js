@@ -10,7 +10,7 @@ import { bus } from "../../lib/events.js";
 import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 import { ticketEmailTemplateService } from "../email/reply-templates/ticket-email-template.service.js";
-import { sincronizarRecordatorioTicket, sincronizarRecordatorioTicketParaTodos } from "../recordatorios/recordatorios.service.js";
+import { sincronizarRecordatorioTicket, sincronizarRecordatorioTicketParaTodos } from "../recordatorios.service.js";
 /* ======================================================
    Configuración adjuntos Graph
 ====================================================== */

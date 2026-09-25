@@ -576,7 +576,7 @@ async function completarVencimientosCobranza(empresa, evaluadosIniciales, consul
      */
     const pendientes = evaluadosIniciales.filter(({ documento, estado, }) => {
         if (estado.estadoPago ===
-            "CONFIRMADA") {
+            "PAGADA") {
             return false;
         }
         if (estado.fechaVencimiento &&
@@ -1774,7 +1774,7 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendient
     const inicioReglas = Date.now();
     for (const { documento, estado, } of evaluados) {
         if (estado.estadoPago ===
-            "CONFIRMADA") {
+            "PAGADA") {
             confirmadosOmitidos++;
             continue;
         }

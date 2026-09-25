@@ -1,4 +1,4 @@
-export type EstadoPagoRcv = "CONFIRMADA" | "PENDIENTE" | "VENCIDA";
+export type EstadoPagoRcv = "PAGADA" | "PENDIENTE" | "VENCIDA";
 export type EmpresaKey = "econnet" | "rids";
 export type EstadoDocumentoCobranza = {
     estadoPago: EstadoPagoRcv;

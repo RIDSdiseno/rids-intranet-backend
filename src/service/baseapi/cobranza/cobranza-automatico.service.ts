@@ -1417,7 +1417,7 @@ async function completarVencimientosCobranza(
             }) => {
                 if (
                     estado.estadoPago ===
-                    "CONFIRMADA"
+                    "PAGADA"
                 ) {
                     return false;
                 }
@@ -3882,7 +3882,7 @@ async function procesarEmpresaCobranza(
     ) {
         if (
             estado.estadoPago ===
-            "CONFIRMADA"
+            "PAGADA"
         ) {
             confirmadosOmitidos++;
 

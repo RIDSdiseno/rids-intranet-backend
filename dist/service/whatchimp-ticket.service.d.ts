@@ -15,5 +15,9 @@ export interface WhatsappTicketResult {
     ticketId?: number;
     error?: string;
 }
+export declare function searchEmpresaByName(query: string, email?: string): Promise<Array<{
+    id: number;
+    nombre: string;
+}>>;
 export declare function createTicketFromWhatsapp(input: WhatsappTicketInput): Promise<WhatsappTicketResult>;
 //# sourceMappingURL=whatchimp-ticket.service.d.ts.map

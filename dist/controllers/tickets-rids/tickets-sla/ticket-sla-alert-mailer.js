@@ -1,7 +1,7 @@
 // src/controllers/tickets-rids/tickets-sla/ticket-sla-alert-mailer.ts
 import { graphReaderService } from "../../../service/email/graph-reader.service.js";
 import { prisma } from "../../../lib/prisma.js";
-import { sincronizarRecordatorioTicketParaTodos, } from "../../../service/recordatorios/recordatorios.service.js";
+import { sincronizarRecordatorioTicketParaTodos, } from "../../../service/recordatorios.service.js";
 import { bus } from "../../../lib/events.js";
 function getAlertTitle(alertType) {
     switch (alertType) {

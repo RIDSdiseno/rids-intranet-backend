@@ -72,7 +72,7 @@ import baseApiFinanzasDashboardRoutes from "./routes/baseapi-routes/baseapi-fina
 /* ===================== Manuales y Tutoriales ===================== */
 import manualesTutorialesRouter from "./routes/manuales-tutoriales.routes.js";
 /* ===================== Bitacora Tecnico ===================== */
-import bitacoraTecnicoRoutes from "./routes/bitacora-tecnico.routes.js";
+import bitacoraTecnicoRoutes from "./routes/bitacora-routes/bitacora-tecnico.routes.js";
 /* ===================== Ubicaciones Tecnicos ===================== */
 import ubicacionesRouter from "./routes/ubicaciones.routes.js";
 /* ===================== Entregas (comprobantes) ===================== */
@@ -83,11 +83,15 @@ import equipoAgentRoutes from "./routes/agente-inventario-routes/equipo-agent.ro
 import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-mantencion.routes.js";
 /* ===================== Recordatorios ===================== */
 import recordatoriosRouter from "./routes/recordatorios.routes.js";
+/* ===================== RUTAS INTERNAS ===================== */
+import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
 api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 api.use("/equipos/agent", equipoAgentRoutes);
+/* ===================== Whatchimp ===================== */
+api.use(whatchimpRouter);
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
 /* ===================== App Core ===================== */
@@ -145,8 +149,6 @@ api.use(syncAccess, msSyncRouter);
 api.use("/reportes", reportesRouter);
 /* ===================== Debug ===================== */
 api.use("/debug", debugRouter);
-/* ===================== Whatchimp ===================== */
-api.use(whatchimpRouter);
 /* ===================== CLOUDINARY ===================== */
 api.use("/upload-imagenes", uploadRoutes);
 /* ===================== HISTORIAL DE CAMBIOS ===================== */
@@ -169,6 +171,8 @@ api.use("/baseapi/facturas/automatizacion", baseApiFacturaEnvioAutomaticoRoutes)
 api.use("/baseapi/facturas/receptores", receptoresFacturacionRoutes);
 api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
 api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
+/* ===================== RUTAS INTERNAS ===================== */
+api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

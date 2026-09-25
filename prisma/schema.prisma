@@ -1946,6 +1946,7 @@ model BitacoraTecnico {
   recordatorioCompletadoAt DateTime?
   /// Evita que un proceso automático envíe el mismo aviso varias veces.
   recordatorioNotificadoAt DateTime?
+  usaEtapas                Boolean                @default(false)
   tecnico                  Tecnico                @relation(fields: [tecnicoId], references: [id_tecnico])
   empresa                  Empresa?               @relation(fields: [empresaId], references: [id_empresa])
   solicitante              Solicitante?           @relation(fields: [solicitanteId], references: [id_solicitante])
@@ -2039,6 +2040,7 @@ model BitacoraAprobacion {
   comentarioRespuesta String?
   solicitadoAt        DateTime                 @default(now())
   respondidoAt        DateTime?
+  solicitudRevisionId String?
   bitacora            BitacoraTecnico          @relation(fields: [bitacoraId], references: [id], onDelete: Cascade)
   etapa               BitacoraEtapa            @relation(fields: [etapaId], references: [id], onDelete: Cascade)
   solicitadoPor       Tecnico                  @relation("BitacoraAprobacionSolicitante", fields: [solicitadoPorId], references: [id_tecnico])
@@ -2049,6 +2051,7 @@ model BitacoraAprobacion {
   @@index([solicitadoPorId])
   @@index([aprobadorId, estado])
   @@index([solicitadoAt])
+  @@index([etapaId, solicitudRevisionId])
 }
 
 model BitacoraEvento {
@@ -2328,7 +2331,6 @@ model EmpresaFavoritaTecnico {
 
 enum TipoBitacoraTecnico {
   SOPORTE
-  INSTALACION
   TERRENO
   REMOTO
   TALLER
@@ -2336,6 +2338,7 @@ enum TipoBitacoraTecnico {
   ADMINISTRATIVO
   REUNION
   OTRO
+  INSTALACION
 }
 
 enum EstadoBitacoraTecnico {
