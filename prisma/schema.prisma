@@ -1936,7 +1936,6 @@ model BitacoraTecnico {
   mantencionId             Int?
   equipoId                 Int?
   cotizacionId             Int?
-  usaEtapas                Boolean                @default(false)
   createdAt                DateTime               @default(now())
   updatedAt                DateTime               @updatedAt
   /// Fecha y hora en la que debe mostrarse o enviarse el recordatorio.
@@ -2036,7 +2035,6 @@ model BitacoraAprobacion {
   etapaId             Int
   estado              EstadoAprobacionBitacora @default(PENDIENTE)
   solicitadoPorId     Int
-  solicitudRevisionId String?
   aprobadorId         Int
   comentarioSolicitud String?
   comentarioRespuesta String?
@@ -2054,7 +2052,6 @@ model BitacoraAprobacion {
   @@index([solicitadoPorId])
   @@index([aprobadorId, estado])
   @@index([solicitadoAt])
-  @@index([etapaId, solicitudRevisionId])
 }
 
 model BitacoraEvento {

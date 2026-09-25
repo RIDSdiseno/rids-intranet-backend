@@ -81,13 +81,22 @@ function obtenerUsuarioAutenticadoId(req) {
 }
 export async function crearBitacoraTecnico(req, res) {
     try {
-        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
+        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, usaEtapas, } = req.body;
         const descripcionNormalizada = normalizeText(descripcion);
         if (!descripcionNormalizada) {
             return res.status(400).json({
                 error: "La descripción es obligatoria",
             });
         }
+        if (usaEtapas !==
+            undefined &&
+            typeof usaEtapas !==
+                "boolean") {
+            return res.status(400).json({
+                error: "El campo usaEtapas debe ser booleano",
+            });
+        }
+        const usaEtapasFinal = usaEtapas === true;
         const actor = obtenerActorBitacora(req);
         if (!actor.tecnicoId) {
             return res.status(401).json({
@@ -147,6 +156,7 @@ export async function crearBitacoraTecnico(req, res) {
             mantencionId: parsePositiveInt(mantencionId) ?? null,
             equipoId: parsePositiveInt(equipoId) ?? null,
             cotizacionId: parsePositiveInt(cotizacionId) ?? null,
+            usaEtapas: usaEtapasFinal,
             recordatorioAt: recordatorioAtFinal ?? null,
             recordatorioCompletado: false,
             recordatorioCompletadoAt: null,
@@ -230,26 +240,28 @@ export async function crearBitacoraTecnico(req, res) {
                     },
                 },
             });
-            await tx.bitacoraEtapa.createMany({
-                data: [
-                    {
-                        bitacoraId: creada.id,
-                        etapa: EtapaBitacora.ANTES,
-                        estado: EstadoEtapaBitacora.EN_PROCESO,
-                        iniciadoAt: new Date(),
-                    },
-                    {
-                        bitacoraId: creada.id,
-                        etapa: EtapaBitacora.EN_PROCESO,
-                        estado: EstadoEtapaBitacora.PENDIENTE,
-                    },
-                    {
-                        bitacoraId: creada.id,
-                        etapa: EtapaBitacora.DESPUES,
-                        estado: EstadoEtapaBitacora.PENDIENTE,
-                    },
-                ],
-            });
+            if (creada.usaEtapas) {
+                await tx.bitacoraEtapa.createMany({
+                    data: [
+                        {
+                            bitacoraId: creada.id,
+                            etapa: EtapaBitacora.ANTES,
+                            estado: EstadoEtapaBitacora.EN_PROCESO,
+                            iniciadoAt: new Date(),
+                        },
+                        {
+                            bitacoraId: creada.id,
+                            etapa: EtapaBitacora.EN_PROCESO,
+                            estado: EstadoEtapaBitacora.PENDIENTE,
+                        },
+                        {
+                            bitacoraId: creada.id,
+                            etapa: EtapaBitacora.DESPUES,
+                            estado: EstadoEtapaBitacora.PENDIENTE,
+                        },
+                    ],
+                });
+            }
             await tx.bitacoraEvento.create({
                 data: {
                     bitacoraId: creada.id,
@@ -681,6 +693,7 @@ export async function actualizarBitacoraTecnico(req, res) {
                 id: true,
                 tecnicoId: true,
                 estado: true,
+                usaEtapas: true,
             },
         });
         if (!existente) {
@@ -698,13 +711,25 @@ export async function actualizarBitacoraTecnico(req, res) {
                 error: "No tienes permisos para modificar esta bitácora",
             });
         }
-        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, } = req.body;
+        const { fecha, titulo, descripcion, tipoActividad, tecnicoId, empresaId, solicitanteId, ticketId, trabajoId, visitaId, mantencionId, equipoId, cotizacionId, recordatorioAt, usaEtapas, } = req.body;
         const descripcionNormalizada = normalizeText(descripcion);
         if (!descripcionNormalizada) {
             return res.status(400).json({
                 error: "La descripción es obligatoria",
             });
         }
+        if (usaEtapas !==
+            undefined &&
+            typeof usaEtapas !==
+                "boolean") {
+            return res.status(400).json({
+                error: "El campo usaEtapas debe ser booleano",
+            });
+        }
+        const usaEtapasFinal = typeof usaEtapas ===
+            "boolean"
+            ? usaEtapas
+            : existente.usaEtapas;
         const tecnicoIdSolicitado = parsePositiveInt(tecnicoId);
         const tecnicoIdFinal = actor.rol === "ADMIN"
             ? (tecnicoIdSolicitado ??
@@ -752,6 +777,7 @@ export async function actualizarBitacoraTecnico(req, res) {
             equipoId: parsePositiveInt(equipoId) ??
                 null,
             cotizacionId: parsePositiveInt(cotizacionId) ?? null,
+            usaEtapas: usaEtapasFinal,
         };
         const fechaParsed = parseFecha(fecha);
         if (fechaParsed) {
@@ -790,22 +816,127 @@ export async function actualizarBitacoraTecnico(req, res) {
             updateData.recordatorioNotificadoAt =
                 null;
         }
-        const bitacora = await prisma.bitacoraTecnico.update({
-            where: {
-                id,
-            },
-            data: updateData,
-            include: {
-                tecnico: true,
-                empresa: true,
-                solicitante: true,
-                ticket: true,
-                trabajo: true,
-                visita: true,
-                mantencion: true,
-                equipo: true,
-                cotizacion: true,
-            },
+        const activandoEtapas = !existente.usaEtapas &&
+            usaEtapasFinal;
+        const desactivandoEtapas = existente.usaEtapas &&
+            !usaEtapasFinal;
+        if (desactivandoEtapas) {
+            const etapaConActividad = await prisma.bitacoraEtapa.findFirst({
+                where: {
+                    bitacoraId: id,
+                    OR: [
+                        {
+                            titulo: {
+                                not: null,
+                            },
+                        },
+                        {
+                            descripcion: {
+                                not: null,
+                            },
+                        },
+                        {
+                            requiereRevision: true,
+                        },
+                        {
+                            evidencias: {
+                                some: {},
+                            },
+                        },
+                        {
+                            aprobaciones: {
+                                some: {},
+                            },
+                        },
+                        {
+                            eventos: {
+                                some: {},
+                            },
+                        },
+                        {
+                            estado: {
+                                in: [
+                                    EstadoEtapaBitacora.PENDIENTE_REVISION,
+                                    EstadoEtapaBitacora.APROBADA,
+                                    EstadoEtapaBitacora.RECHAZADA,
+                                    EstadoEtapaBitacora.COMPLETADA,
+                                ],
+                            },
+                        },
+                    ],
+                },
+                select: {
+                    id: true,
+                },
+            });
+            if (etapaConActividad) {
+                return res.status(409).json({
+                    error: "No puedes desactivar el seguimiento por etapas porque ya existe información, evidencias o revisiones registradas.",
+                });
+            }
+        }
+        const bitacora = await prisma.$transaction(async (tx) => {
+            /*
+             * Se está activando el seguimiento
+             * por primera vez.
+             */
+            if (activandoEtapas) {
+                await tx.bitacoraEtapa.createMany({
+                    data: [
+                        {
+                            bitacoraId: id,
+                            etapa: EtapaBitacora.ANTES,
+                            estado: EstadoEtapaBitacora.EN_PROCESO,
+                            iniciadoAt: new Date(),
+                        },
+                        {
+                            bitacoraId: id,
+                            etapa: EtapaBitacora.EN_PROCESO,
+                            estado: EstadoEtapaBitacora.PENDIENTE,
+                        },
+                        {
+                            bitacoraId: id,
+                            etapa: EtapaBitacora.DESPUES,
+                            estado: EstadoEtapaBitacora.PENDIENTE,
+                        },
+                    ],
+                    skipDuplicates: true,
+                });
+            }
+            /*
+             * Si se está desactivando y sabemos
+             * que no existe actividad asociada,
+             * eliminamos las etapas vacías.
+             */
+            if (desactivandoEtapas) {
+                await tx.bitacoraEtapa.deleteMany({
+                    where: {
+                        bitacoraId: id,
+                    },
+                });
+            }
+            return tx.bitacoraTecnico.update({
+                where: {
+                    id,
+                },
+                data: updateData,
+                include: {
+                    tecnico: true,
+                    empresa: true,
+                    solicitante: true,
+                    ticket: true,
+                    trabajo: true,
+                    visita: true,
+                    mantencion: true,
+                    equipo: true,
+                    cotizacion: true,
+                    etapas: {
+                        orderBy: {
+                            id: "asc",
+                        },
+                    },
+                },
+            });
         });
         /*
 * Actualizar también el registro global de recordatorios.

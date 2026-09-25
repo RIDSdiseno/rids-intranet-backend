@@ -28,7 +28,7 @@ function obtenerLinkBitacora(bitacoraId) {
     if (!APP_URL) {
         return null;
     }
-    return `${APP_URL}/bitacora-tecnico?bitacoraId=${bitacoraId}`;
+    return `${APP_URL}/bitacora-tecnico?registro=${bitacoraId}`;
 }
 /* =====================================================
    SOLICITUD DE REVISIÓN
@@ -192,9 +192,11 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
     const etapaLabel = obtenerNombreEtapa(params.etapa);
     const titulo = params.tituloBitacora?.trim() ||
         `Bitácora #${params.bitacoraId}`;
-    const resultado = params.aprobada
-        ? "aprobada"
-        : "rechazada";
+    const resultadoEtapa = params.etapaRechazada
+        ? "rechazada"
+        : params.etapaAprobada
+            ? "aprobada"
+            : "pendiente de revisión";
     const link = obtenerLinkBitacora(params.bitacoraId);
     await transporter.sendMail({
         from: {
@@ -202,7 +204,11 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
             address: SMTP_USER,
         },
         to: params.destinatarioEmail,
-        subject: `Revisión ${resultado} · ${titulo} · ${etapaLabel}`,
+        subject: params.etapaRechazada
+            ? `Etapa rechazada · ${titulo} · ${etapaLabel}`
+            : params.etapaAprobada
+                ? `Etapa aprobada · ${titulo} · ${etapaLabel}`
+                : `Revisión respondida · ${titulo} · ${etapaLabel}`,
         html: `
             <div
                 style="
@@ -243,7 +249,11 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
             : "#b91c1c"};
                             "
                         >
-                            Revisión ${resultado}
+                            ${params.etapaRechazada
+            ? "Etapa rechazada"
+            : params.etapaAprobada
+                ? "Etapa aprobada"
+                : "Revisión respondida"}
                         </h2>
                     </div>
 
@@ -264,10 +274,12 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
     <strong>
         ${escaparHtml(params.revisorNombre)}
     </strong>
+
     ${params.aprobada
             ? "aprobó"
             : "rechazó"}
-    la revisión solicitada.
+
+    su revisión asignada para esta etapa.
 </p>
 
                         <div
@@ -289,6 +301,45 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
                                 ${escaparHtml(etapaLabel)}
                             </p>
                         </div>
+
+                        <div
+    style="
+        margin:20px 0;
+        padding:16px;
+        background:#f8fafc;
+        border:1px solid #e2e8f0;
+        border-radius:12px;
+    "
+>
+    <p
+        style="
+            margin:0 0 8px;
+            font-weight:600;
+        "
+    >
+        Estado de la revisión
+    </p>
+
+    <p style="margin:0 0 6px;">
+        <strong>Aprobaciones:</strong>
+
+        ${params.totalAprobados}
+        de
+        ${params.totalRevisores}
+    </p>
+
+    <p style="margin:0 0 6px;">
+        <strong>Pendientes:</strong>
+
+        ${params.totalPendientes}
+    </p>
+
+    <p style="margin:0;">
+        <strong>Estado de la etapa:</strong>
+
+        ${escaparHtml(resultadoEtapa)}
+    </p>
+</div>
 
                         ${params.comentarioRespuesta
             ? `
