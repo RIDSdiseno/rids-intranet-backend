@@ -1,6 +1,6 @@
 // src/controllers/controllers-agente-inventario/equipo-agent.controller.ts
 import type { Request, Response } from "express";
-import { prisma } from "../../lib/prisma.js";
+import { prisma, prismaBase } from "../../lib/prisma.js";
 
 type EquipoAgentPayload = {
     empresaId?: number | string | null;
@@ -2023,7 +2023,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         if (equipo) {
             equipo =
-                await prisma.equipo.update({
+                await prismaBase.equipo.update({
                     where: {
                         id_equipo:
                             equipo.id_equipo,
@@ -2045,7 +2045,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
             try {
                 equipo =
-                    await prisma.equipo.create({
+                    await prismaBase.equipo.create({
                         data: {
                             ...equipoUpdateData,
 
@@ -2132,7 +2132,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                         equipoExistente;
 
                     equipo =
-                        await prisma.equipo.update({
+                        await prismaBase.equipo.update({
                             where: {
                                 id_equipo:
                                     equipoExistente.id_equipo,

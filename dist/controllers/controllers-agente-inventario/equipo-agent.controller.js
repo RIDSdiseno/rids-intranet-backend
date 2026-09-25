@@ -1,4 +1,4 @@
-import { prisma } from "../../lib/prisma.js";
+import { prisma, prismaBase } from "../../lib/prisma.js";
 /* =========================
    HELPERS
 ========================= */
@@ -1125,7 +1125,7 @@ export async function receiveEquipoAgentInventory(req, res) {
         let equipoAntesUpdate = equipo;
         if (equipo) {
             equipo =
-                await prisma.equipo.update({
+                await prismaBase.equipo.update({
                     where: {
                         id_equipo: equipo.id_equipo,
                     },
@@ -1139,7 +1139,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     : `AGENT-${Date.now()}`);
             try {
                 equipo =
-                    await prisma.equipo.create({
+                    await prismaBase.equipo.create({
                         data: {
                             ...equipoUpdateData,
                             serial: serialForCreate,
@@ -1194,7 +1194,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     equipoAntesUpdate =
                         equipoExistente;
                     equipo =
-                        await prisma.equipo.update({
+                        await prismaBase.equipo.update({
                             where: {
                                 id_equipo: equipoExistente.id_equipo,
                             },
