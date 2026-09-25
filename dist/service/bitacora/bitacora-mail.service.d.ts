@@ -23,6 +23,6 @@ type ResultadoRevisionParams = {
     etapaRechazada: boolean;
 };
 export declare function enviarCorreoSolicitudRevisionBitacora(params: SolicitudRevisionParams): Promise<void>;
-export declare function enviarCorreoResultadoRevisionBitacora(params: ResultadoRevisionParams): Promise<void>;
+export declare function enviarCorreoResultadoRevisionBitacora(params: ResultadoRevisionParams): Promise<import("nodemailer/lib/smtp-pool/index.js").SentMessageInfo | undefined>;
 export {};
 //# sourceMappingURL=bitacora-mail.service.d.ts.map

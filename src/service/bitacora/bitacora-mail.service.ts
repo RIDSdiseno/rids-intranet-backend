@@ -381,26 +381,62 @@ export async function enviarCorreoResultadoRevisionBitacora(
             params.bitacoraId
         );
 
-    await transporter.sendMail({
-        from: {
-            name:
-                "CRM RIDS",
+    const inicioEnvio =
+        Date.now();
 
-            address:
-                SMTP_USER,
-        },
+    const iniciadoAt =
+        new Date();
 
-        to:
-            params.destinatarioEmail,
+    const comentarioLength =
+        params
+            .comentarioRespuesta
+            ?.length ??
+        0;
 
-        subject:
-            params.etapaRechazada
-                ? `Etapa rechazada · ${titulo} · ${etapaLabel}`
-                : params.etapaAprobada
-                    ? `Etapa aprobada · ${titulo} · ${etapaLabel}`
-                    : `Revisión respondida · ${titulo} · ${etapaLabel}`,
+    console.log(
+        "[BITACORA MAIL] 📤 Iniciando envío de resultado de revisión",
+        {
+            bitacoraId:
+                params.bitacoraId,
 
-        html: `
+            destinatario:
+                params.destinatarioEmail,
+
+            etapa:
+                params.etapa,
+
+            aprobada:
+                params.aprobada,
+
+            comentarioLength,
+
+            iniciadoAt:
+                iniciadoAt
+                    .toISOString(),
+        }
+    );
+
+    const info =
+        await transporter.sendMail({
+            from: {
+                name:
+                    "CRM RIDS",
+
+                address:
+                    SMTP_USER,
+            },
+
+            to:
+                params.destinatarioEmail,
+
+            subject:
+                params.etapaRechazada
+                    ? `Etapa rechazada · ${titulo} · ${etapaLabel}`
+                    : params.etapaAprobada
+                        ? `Etapa aprobada · ${titulo} · ${etapaLabel}`
+                        : `Revisión respondida · ${titulo} · ${etapaLabel}`,
+
+            html: `
             <div
                 style="
                     margin:0;
@@ -424,13 +460,13 @@ export async function enviarCorreoResultadoRevisionBitacora(
                         style="
                             padding:22px 24px;
                             background:${params.aprobada
-                ? "#ecfdf5"
-                : "#fef2f2"
-            };
+                    ? "#ecfdf5"
+                    : "#fef2f2"
+                };
                             border-bottom:1px solid ${params.aprobada
-                ? "#a7f3d0"
-                : "#fecaca"
-            };
+                    ? "#a7f3d0"
+                    : "#fecaca"
+                };
                         "
                     >
                         <h2
@@ -438,17 +474,17 @@ export async function enviarCorreoResultadoRevisionBitacora(
                                 margin:0;
                                 font-size:20px;
                                 color:${params.aprobada
-                ? "#047857"
-                : "#b91c1c"
-            };
+                    ? "#047857"
+                    : "#b91c1c"
+                };
                             "
                         >
                             ${params.etapaRechazada
-                ? "Etapa rechazada"
-                : params.etapaAprobada
-                    ? "Etapa aprobada"
-                    : "Revisión respondida"
-            }
+                    ? "Etapa rechazada"
+                    : params.etapaAprobada
+                        ? "Etapa aprobada"
+                        : "Revisión respondida"
+                }
                         </h2>
                     </div>
 
@@ -462,22 +498,22 @@ export async function enviarCorreoResultadoRevisionBitacora(
                             Hola
                             <strong>
                                 ${escaparHtml(
-                params.destinatarioNombre
-            )}
+                    params.destinatarioNombre
+                )}
                             </strong>,
                         </p>
 
                         <p>
     <strong>
         ${escaparHtml(
-                params.revisorNombre
-            )}
+                    params.revisorNombre
+                )}
     </strong>
 
     ${params.aprobada
-                ? "aprobó"
-                : "rechazó"
-            }
+                    ? "aprobó"
+                    : "rechazó"
+                }
 
     su revisión asignada para esta etapa.
 </p>
@@ -494,15 +530,15 @@ export async function enviarCorreoResultadoRevisionBitacora(
                             <p style="margin:0 0 8px;">
                                 <strong>Bitácora:</strong>
                                 ${escaparHtml(
-                titulo
-            )}
+                    titulo
+                )}
                             </p>
 
                             <p style="margin:0;">
                                 <strong>Etapa:</strong>
                                 ${escaparHtml(
-                etapaLabel
-            )}
+                    etapaLabel
+                )}
                             </p>
                         </div>
 
@@ -542,25 +578,25 @@ export async function enviarCorreoResultadoRevisionBitacora(
         <strong>Estado de la etapa:</strong>
 
         ${escaparHtml(
-                resultadoEtapa
-            )}
+                    resultadoEtapa
+                )}
     </p>
 </div>
 
                         ${params.comentarioRespuesta
-                ? `
+                    ? `
                                     <div
                                         style="
                                             margin:20px 0;
                                             padding:16px;
                                             border-left:4px solid ${params.aprobada
-                    ? "#10b981"
-                    : "#ef4444"
-                };
+                        ? "#10b981"
+                        : "#ef4444"
+                    };
                                             background:${params.aprobada
-                    ? "#ecfdf5"
-                    : "#fef2f2"
-                };
+                        ? "#ecfdf5"
+                        : "#fef2f2"
+                    };
                                         "
                                     >
                                         <strong>
@@ -569,21 +605,21 @@ export async function enviarCorreoResultadoRevisionBitacora(
 
                                         <div style="margin-top:6px;">
                                             ${escaparHtml(
-                    params.comentarioRespuesta
-                )}
+                        params.comentarioRespuesta
+                    )}
                                         </div>
                                     </div>
                                 `
-                : ""
-            }
+                    : ""
+                }
 
                         ${link
-                ? `
+                    ? `
                                     <p style="margin-top:24px;">
                                         <a
                                             href="${escaparHtml(
-                    link
-                )}"
+                        link
+                    )}"
                                             style="
                                                 display:inline-block;
                                                 padding:11px 18px;
@@ -598,11 +634,63 @@ export async function enviarCorreoResultadoRevisionBitacora(
                                         </a>
                                     </p>
                                 `
-                : ""
-            }
+                    : ""
+                }
                     </div>
                 </div>
             </div>
         `,
-    });
+        });
+
+    const finalizadoAt =
+        new Date();
+
+    const duracionMs =
+        Date.now() -
+        inicioEnvio;
+
+    console.log(
+        "[BITACORA MAIL] ✅ SMTP aceptó resultado de revisión",
+        {
+            bitacoraId:
+                params.bitacoraId,
+
+            destinatario:
+                params.destinatarioEmail,
+
+            messageId:
+                info.messageId,
+
+            accepted:
+                info.accepted,
+
+            rejected:
+                info.rejected,
+
+            response:
+                info.response,
+
+            duracionMs,
+
+            duracionSeg:
+                Number(
+                    (
+                        duracionMs /
+                        1000
+                    ).toFixed(
+                        2
+                    )
+                ),
+
+            iniciadoAt:
+                iniciadoAt
+                    .toISOString(),
+
+            finalizadoAt:
+                finalizadoAt
+                    .toISOString(),
+        }
+    );
+
+    return info;
 }

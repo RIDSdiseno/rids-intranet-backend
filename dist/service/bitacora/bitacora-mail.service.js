@@ -198,7 +198,22 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
             ? "aprobada"
             : "pendiente de revisión";
     const link = obtenerLinkBitacora(params.bitacoraId);
-    await transporter.sendMail({
+    const inicioEnvio = Date.now();
+    const iniciadoAt = new Date();
+    const comentarioLength = params
+        .comentarioRespuesta
+        ?.length ??
+        0;
+    console.log("[BITACORA MAIL] 📤 Iniciando envío de resultado de revisión", {
+        bitacoraId: params.bitacoraId,
+        destinatario: params.destinatarioEmail,
+        etapa: params.etapa,
+        aprobada: params.aprobada,
+        comentarioLength,
+        iniciadoAt: iniciadoAt
+            .toISOString(),
+    });
+    const info = await transporter.sendMail({
         from: {
             name: "CRM RIDS",
             address: SMTP_USER,
@@ -391,5 +406,24 @@ export async function enviarCorreoResultadoRevisionBitacora(params) {
             </div>
         `,
     });
+    const finalizadoAt = new Date();
+    const duracionMs = Date.now() -
+        inicioEnvio;
+    console.log("[BITACORA MAIL] ✅ SMTP aceptó resultado de revisión", {
+        bitacoraId: params.bitacoraId,
+        destinatario: params.destinatarioEmail,
+        messageId: info.messageId,
+        accepted: info.accepted,
+        rejected: info.rejected,
+        response: info.response,
+        duracionMs,
+        duracionSeg: Number((duracionMs /
+            1000).toFixed(2)),
+        iniciadoAt: iniciadoAt
+            .toISOString(),
+        finalizadoAt: finalizadoAt
+            .toISOString(),
+    });
+    return info;
 }
 //# sourceMappingURL=bitacora-mail.service.js.map
