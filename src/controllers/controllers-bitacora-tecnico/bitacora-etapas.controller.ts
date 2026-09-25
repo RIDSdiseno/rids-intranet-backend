@@ -32,6 +32,10 @@ import {
     puedeModificarBitacora,
 } from "../../service/bitacora/bitacora-permisos.helper.js";
 
+import {
+    randomUUID
+} from "crypto";
+
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -325,6 +329,9 @@ export async function obtenerEtapasBitacora(
                 select: {
                     id:
                         true,
+
+                    usaEtapas:
+                        true,
                 },
             });
 
@@ -334,6 +341,14 @@ export async function obtenerEtapasBitacora(
             return res.status(404).json({
                 error:
                     "Bitácora no encontrada",
+            });
+        }
+
+        if (
+            !bitacora.usaEtapas
+        ) {
+            return res.json({
+                data: [],
             });
         }
 
@@ -505,6 +520,9 @@ export async function actualizarEtapaBitacora(
                         select: {
                             tecnicoId:
                                 true,
+
+                            usaEtapas:
+                                true,
                         },
                     },
                 },
@@ -516,6 +534,17 @@ export async function actualizarEtapaBitacora(
             return res.status(404).json({
                 error:
                     "Etapa no encontrada",
+            });
+        }
+
+        if (
+            !existente
+                .bitacora
+                .usaEtapas
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta bitácora no utiliza seguimiento por etapas",
             });
         }
 
@@ -738,11 +767,6 @@ export async function solicitarRevisionEtapa(
                 req.params.etapaId
             );
 
-        const aprobadorId =
-            parsePositiveInt(
-                req.body.aprobadorId
-            );
-
         const solicitadoPorId =
             obtenerUsuarioId(
                 req
@@ -750,8 +774,7 @@ export async function solicitarRevisionEtapa(
 
         if (
             !bitacoraId ||
-            !etapaId ||
-            !aprobadorId
+            !etapaId
         ) {
             return res.status(400).json({
                 error:
@@ -768,15 +791,90 @@ export async function solicitarRevisionEtapa(
             });
         }
 
+        /*
+         * =====================================================
+         * REVISORES
+         * =====================================================
+         *
+         * El frontend envía:
+         *
+         * {
+         *     aprobadoresIds: [2, 3, 4]
+         * }
+         */
+
+        const aprobadoresIdsRaw:
+            unknown[] =
+            Array.isArray(
+                req.body.aprobadoresIds
+            )
+                ? req.body.aprobadoresIds
+                : [];
+
+        const aprobadoresIdsParseados:
+            Array<number | undefined> =
+            aprobadoresIdsRaw.map(
+                (
+                    value:
+                        unknown
+                ) =>
+                    parsePositiveInt(
+                        value
+                    )
+            );
+
+        const aprobadoresIds:
+            number[] =
+            Array.from(
+                new Set<number>(
+                    aprobadoresIdsParseados.filter(
+                        (
+                            value:
+                                number |
+                                undefined
+                        ): value is number =>
+                            value !==
+                            undefined
+                    )
+                )
+            );
+
+        /*
+         * Mínimo 1 revisor.
+         * Máximo 4 revisores.
+         */
         if (
-            solicitadoPorId ===
-            aprobadorId
+            aprobadoresIds.length <
+            1 ||
+            aprobadoresIds.length >
+            4
         ) {
             return res.status(400).json({
                 error:
-                    "El usuario revisor debe ser distinto al usuario solicitante",
+                    "Debes seleccionar entre 1 y 4 revisores",
             });
         }
+
+        /*
+         * El solicitante no puede revisarse
+         * a sí mismo.
+         */
+        if (
+            aprobadoresIds.includes(
+                solicitadoPorId
+            )
+        ) {
+            return res.status(400).json({
+                error:
+                    "El usuario solicitante no puede ser revisor de su propia solicitud",
+            });
+        }
+
+        /*
+         * =====================================================
+         * ETAPA
+         * =====================================================
+         */
 
         const etapa =
             await prisma.bitacoraEtapa.findFirst({
@@ -808,7 +906,11 @@ export async function solicitarRevisionEtapa(
 
                             tecnicoId:
                                 true,
+
+                            usaEtapas:
+                                true,
                         },
+
                     },
                 },
             });
@@ -823,14 +925,36 @@ export async function solicitarRevisionEtapa(
         }
 
         if (
-            aprobadorId ===
-            etapa.bitacora.tecnicoId
+            !etapa
+                .bitacora
+                .usaEtapas
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta bitácora no utiliza seguimiento por etapas",
+            });
+        }
+
+        /*
+         * Ningún revisor puede ser el técnico
+         * responsable de la bitácora.
+         */
+        if (
+            aprobadoresIds.includes(
+                etapa.bitacora.tecnicoId
+            )
         ) {
             return res.status(400).json({
                 error:
-                    "El revisor debe ser distinto al técnico responsable de la bitácora",
+                    "El técnico responsable de la bitácora no puede ser revisor",
             });
         }
+
+        /*
+         * =====================================================
+         * PERMISOS
+         * =====================================================
+         */
 
         const actor =
             obtenerActorBitacora(
@@ -855,6 +979,9 @@ export async function solicitarRevisionEtapa(
             });
         }
 
+        /*
+         * Debe existir descripción.
+         */
         if (
             !etapa.descripcion?.trim()
         ) {
@@ -864,6 +991,10 @@ export async function solicitarRevisionEtapa(
             });
         }
 
+        /*
+         * Solo una etapa editable puede solicitar
+         * una nueva revisión.
+         */
         if (
             etapa.estado !==
             EstadoEtapaBitacora.EN_PROCESO &&
@@ -876,6 +1007,10 @@ export async function solicitarRevisionEtapa(
             });
         }
 
+        /*
+         * No puede existir otra solicitud
+         * pendiente para la misma etapa.
+         */
         const revisionPendiente =
             await prisma.bitacoraAprobacion.findFirst({
                 where: {
@@ -883,6 +1018,11 @@ export async function solicitarRevisionEtapa(
 
                     estado:
                         EstadoAprobacionBitacora.PENDIENTE,
+                },
+
+                select: {
+                    id:
+                        true,
                 },
             });
 
@@ -895,11 +1035,19 @@ export async function solicitarRevisionEtapa(
             });
         }
 
-        const revisor =
-            await prisma.tecnico.findFirst({
+        /*
+         * =====================================================
+         * VALIDAR REVISORES
+         * =====================================================
+         */
+
+        const revisores =
+            await prisma.tecnico.findMany({
                 where: {
-                    id_tecnico:
-                        aprobadorId,
+                    id_tecnico: {
+                        in:
+                            aprobadoresIds,
+                    },
 
                     status:
                         true,
@@ -917,67 +1065,109 @@ export async function solicitarRevisionEtapa(
                 },
             });
 
+        /*
+         * Si solicitamos 3 IDs y Prisma devuelve 2,
+         * alguno no existe o está inactivo.
+         */
         if (
-            !revisor
+            revisores.length !==
+            aprobadoresIds.length
         ) {
-            return res.status(404).json({
+            return res.status(400).json({
                 error:
-                    "El revisor seleccionado no existe o está inactivo",
+                    "Uno o más revisores seleccionados no existen o están inactivos",
             });
         }
+
+        /*
+         * =====================================================
+         * IDENTIFICADOR DE LA SOLICITUD
+         * =====================================================
+         *
+         * Todas las aprobaciones creadas aquí
+         * pertenecen a la misma solicitud.
+         */
+
+        const solicitudRevisionId =
+            randomUUID();
+
+        const comentarioSolicitud =
+            normalizeText(
+                req.body
+                    .comentarioSolicitud
+            );
+
+        /*
+         * =====================================================
+         * CREAR SOLICITUD
+         * =====================================================
+         */
 
         const resultado =
             await prisma.$transaction(
                 async (
                     tx
                 ) => {
-                    const aprobacion =
-                        await tx.bitacoraAprobacion.create({
-                            data: {
-                                bitacoraId,
+                    const aprobaciones =
+                        await Promise.all(
+                            revisores.map(
+                                (
+                                    revisor
+                                ) =>
+                                    tx.bitacoraAprobacion.create({
+                                        data: {
+                                            bitacoraId,
 
-                                etapaId,
+                                            etapaId,
 
-                                solicitadoPorId,
+                                            solicitudRevisionId,
 
-                                aprobadorId,
+                                            solicitadoPorId,
 
-                                comentarioSolicitud:
-                                    normalizeText(
-                                        req.body
-                                            .comentarioSolicitud
-                                    ),
-                            },
+                                            aprobadorId:
+                                                revisor.id_tecnico,
 
-                            include: {
-                                solicitadoPor: {
-                                    select: {
-                                        id_tecnico:
-                                            true,
+                                            estado:
+                                                EstadoAprobacionBitacora.PENDIENTE,
 
-                                        nombre:
-                                            true,
+                                            comentarioSolicitud,
+                                        },
 
-                                        email:
-                                            true,
-                                    },
-                                },
+                                        include: {
+                                            solicitadoPor: {
+                                                select: {
+                                                    id_tecnico:
+                                                        true,
 
-                                aprobador: {
-                                    select: {
-                                        id_tecnico:
-                                            true,
+                                                    nombre:
+                                                        true,
 
-                                        nombre:
-                                            true,
+                                                    email:
+                                                        true,
+                                                },
+                                            },
 
-                                        email:
-                                            true,
-                                    },
-                                },
-                            },
-                        });
+                                            aprobador: {
+                                                select: {
+                                                    id_tecnico:
+                                                        true,
 
+                                                    nombre:
+                                                        true,
+
+                                                    email:
+                                                        true,
+                                                },
+                                            },
+                                        },
+                                    })
+                            )
+                        );
+
+                    /*
+                     * La etapa queda bloqueada
+                     * mientras existan revisiones pendientes.
+                     */
                     await tx.bitacoraEtapa.update({
                         where: {
                             id:
@@ -990,9 +1180,15 @@ export async function solicitarRevisionEtapa(
 
                             estado:
                                 EstadoEtapaBitacora.PENDIENTE_REVISION,
+
+                            completadoAt:
+                                null,
                         },
                     });
 
+                    /*
+                     * Un solo evento representa la solicitud completa.
+                     */
                     await tx.bitacoraEvento.create({
                         data: {
                             bitacoraId,
@@ -1006,46 +1202,106 @@ export async function solicitarRevisionEtapa(
                                 TipoEventoBitacora.REVISION_SOLICITADA,
 
                             descripcion:
-                                `Revisión solicitada a ${revisor.nombre}`,
+                                revisores.length ===
+                                    1 &&
+                                    revisores[0]
+                                    ? `Revisión solicitada a ${revisores[0].nombre}`
+                                    : `Revisión solicitada a ${revisores.length} revisores`,
 
                             metadata: {
-                                aprobacionId:
-                                    aprobacion.id,
+                                solicitudRevisionId,
 
-                                aprobadorId:
-                                    revisor.id_tecnico,
+                                aprobadoresIds:
+                                    revisores.map(
+                                        (
+                                            revisor
+                                        ) =>
+                                            revisor.id_tecnico
+                                    ),
+
+                                aprobacionesIds:
+                                    aprobaciones.map(
+                                        (
+                                            aprobacion
+                                        ) =>
+                                            aprobacion.id
+                                    ),
                             },
                         },
                     });
 
-                    return aprobacion;
+                    return {
+                        solicitudRevisionId,
+
+                        aprobaciones,
+                    };
                 }
             );
 
-        if (
-            resultado.aprobador.email
+        /*
+         * =====================================================
+         * CORREOS
+         * =====================================================
+         *
+         * Nunca dentro de la transacción.
+         *
+         * Si un correo falla, las revisiones ya
+         * siguen correctamente registradas.
+         */
+
+        for (
+            const aprobacion
+            of resultado.aprobaciones
         ) {
+            if (
+                !aprobacion
+                    .aprobador
+                    .email
+            ) {
+                console.warn(
+                    "[BITACORA MAIL] ⚠️ Revisor sin correo",
+                    {
+                        bitacoraId,
+                        etapaId,
+
+                        aprobadorId:
+                            aprobacion
+                                .aprobadorId,
+                    }
+                );
+
+                continue;
+            }
+
             try {
                 await enviarCorreoSolicitudRevisionBitacora({
                     destinatarioEmail:
-                        resultado.aprobador.email,
+                        aprobacion
+                            .aprobador
+                            .email,
 
                     destinatarioNombre:
-                        resultado.aprobador.nombre,
+                        aprobacion
+                            .aprobador
+                            .nombre,
 
                     solicitadoPorNombre:
-                        resultado.solicitadoPor.nombre,
+                        aprobacion
+                            .solicitadoPor
+                            .nombre,
 
                     bitacoraId,
 
                     tituloBitacora:
-                        etapa.bitacora.titulo,
+                        etapa.bitacora
+                            .titulo,
 
                     etapa:
                         etapa.etapa,
 
                     comentarioSolicitud:
-                        resultado.comentarioSolicitud,
+                        aprobacion
+                            .comentarioSolicitud,
                 });
 
                 console.log(
@@ -1053,11 +1309,22 @@ export async function solicitarRevisionEtapa(
                     {
                         bitacoraId,
                         etapaId,
+
+                        solicitudRevisionId:
+                            resultado
+                                .solicitudRevisionId,
+
                         aprobacionId:
-                            resultado.id,
+                            aprobacion.id,
+
+                        aprobadorId:
+                            aprobacion
+                                .aprobadorId,
 
                         destinatario:
-                            resultado.aprobador.email,
+                            aprobacion
+                                .aprobador
+                                .email,
                     }
                 );
             } catch (
@@ -1065,20 +1332,21 @@ export async function solicitarRevisionEtapa(
             ) {
                 console.error(
                     "[BITACORA MAIL] ❌ Error enviando solicitud de revisión:",
-                    emailError
+                    {
+                        bitacoraId,
+                        etapaId,
+
+                        aprobacionId:
+                            aprobacion.id,
+
+                        aprobadorId:
+                            aprobacion
+                                .aprobadorId,
+
+                        emailError,
+                    }
                 );
             }
-        } else {
-            console.warn(
-                "[BITACORA MAIL] ⚠️ Revisor sin correo",
-                {
-                    bitacoraId,
-                    etapaId,
-
-                    aprobadorId:
-                        resultado.aprobadorId,
-                }
-            );
         }
 
         return res.status(201).json({
@@ -1086,7 +1354,10 @@ export async function solicitarRevisionEtapa(
                 resultado,
 
             message:
-                "Revisión solicitada correctamente",
+                resultado.aprobaciones.length ===
+                    1
+                    ? "Revisión solicitada correctamente"
+                    : `Revisión solicitada correctamente a ${resultado.aprobaciones.length} revisores`,
         });
     } catch (
     error
@@ -1167,6 +1438,12 @@ export async function responderRevisionEtapa(
             });
         }
 
+        /*
+         * =====================================================
+         * BUSCAR APROBACIÓN
+         * =====================================================
+         */
+
         const aprobacion =
             await prisma.bitacoraAprobacion.findFirst({
                 where: {
@@ -1215,6 +1492,9 @@ export async function responderRevisionEtapa(
 
                             titulo:
                                 true,
+
+                            usaEtapas:
+                                true,
                         },
                     },
                 },
@@ -1229,6 +1509,21 @@ export async function responderRevisionEtapa(
             });
         }
 
+        if (
+            !aprobacion
+                .bitacora
+                .usaEtapas
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta bitácora no utiliza seguimiento por etapas",
+            });
+        }
+
+        /*
+         * Solo puede responder el revisor
+         * al que pertenece esta aprobación.
+         */
         if (
             aprobacion.aprobadorId !==
             actorId
@@ -1248,6 +1543,12 @@ export async function responderRevisionEtapa(
                     "Esta revisión ya fue respondida",
             });
         }
+
+        /*
+         * =====================================================
+         * RESPONDER
+         * =====================================================
+         */
 
         const resultado =
             await prisma.$transaction(
@@ -1281,25 +1582,182 @@ export async function responderRevisionEtapa(
                             },
                         });
 
-                    await tx.bitacoraEtapa.update({
-                        where: {
-                            id:
+                    /*
+                     * =====================================================
+                     * COMPATIBILIDAD CON REVISIONES ANTIGUAS
+                     * =====================================================
+                     *
+                     * Las revisiones creadas antes de este cambio
+                     * no poseen solicitudRevisionId.
+                     *
+                     * En ese caso conservamos el comportamiento
+                     * de una única revisión.
+                     */
+
+                    if (
+                        !aprobacion.solicitudRevisionId
+                    ) {
+                        await tx.bitacoraEtapa.update({
+                            where: {
+                                id:
+                                    etapaId,
+                            },
+
+                            data: {
+                                estado:
+                                    aprobar
+                                        ? EstadoEtapaBitacora.APROBADA
+                                        : EstadoEtapaBitacora.RECHAZADA,
+
+                                completadoAt:
+                                    null,
+                            },
+                        });
+                    } else if (
+                        !aprobar
+                    ) {
+                        /*
+                         * =====================================================
+                         * RECHAZO
+                         * =====================================================
+                         *
+                         * Un solo rechazo hace fallar la solicitud completa.
+                         *
+                         * Las demás revisiones pendientes de la misma
+                         * solicitud se cancelan.
+                         */
+
+                        await tx.bitacoraAprobacion.updateMany({
+                            where: {
                                 etapaId,
-                        },
 
-                        data: {
-                            estado:
-                                aprobar
-                                    ? EstadoEtapaBitacora.APROBADA
-                                    : EstadoEtapaBitacora.RECHAZADA,
+                                solicitudRevisionId:
+                                    aprobacion
+                                        .solicitudRevisionId,
 
+                                id: {
+                                    not:
+                                        aprobacion.id,
+                                },
+
+                                estado:
+                                    EstadoAprobacionBitacora.PENDIENTE,
+                            },
+
+                            data: {
+                                estado:
+                                    EstadoAprobacionBitacora.CANCELADA,
+
+                                respondidoAt:
+                                    ahora,
+                            },
+                        });
+
+                        await tx.bitacoraEtapa.update({
+                            where: {
+                                id:
+                                    etapaId,
+                            },
+
+                            data: {
+                                estado:
+                                    EstadoEtapaBitacora.RECHAZADA,
+
+                                completadoAt:
+                                    null,
+                            },
+                        });
+                    } else {
+                        /*
+                         * =====================================================
+                         * APROBACIÓN
+                         * =====================================================
+                         *
+                         * Si este revisor aprobó, debemos comprobar
+                         * si quedan revisores pendientes dentro de
+                         * esta misma solicitud.
+                         */
+
+                        const pendientes =
+                            await tx.bitacoraAprobacion.count({
+                                where: {
+                                    etapaId,
+
+                                    solicitudRevisionId:
+                                        aprobacion
+                                            .solicitudRevisionId,
+
+                                    estado:
+                                        EstadoAprobacionBitacora.PENDIENTE,
+                                },
+                            });
+
+                        const rechazadas =
+                            await tx.bitacoraAprobacion.count({
+                                where: {
+                                    etapaId,
+
+                                    solicitudRevisionId:
+                                        aprobacion
+                                            .solicitudRevisionId,
+
+                                    estado:
+                                        EstadoAprobacionBitacora.RECHAZADA,
+                                },
+                            });
+
+                        /*
+                         * Solo cuando TODOS hayan aprobado:
+                         *
+                         * pendientes = 0
+                         * rechazadas = 0
+                         */
+                        if (
+                            pendientes ===
+                            0 &&
+                            rechazadas ===
+                            0
+                        ) {
+                            await tx.bitacoraEtapa.update({
+                                where: {
+                                    id:
+                                        etapaId,
+                                },
+
+                                data: {
+                                    estado:
+                                        EstadoEtapaBitacora.APROBADA,
+
+                                    completadoAt:
+                                        null,
+                                },
+                            });
+                        } else {
                             /*
-                             * Aprobar una revisión NO completa la etapa.
+                             * Todavía quedan revisores.
                              */
-                            completadoAt:
-                                null,
-                        },
-                    });
+                            await tx.bitacoraEtapa.update({
+                                where: {
+                                    id:
+                                        etapaId,
+                                },
+
+                                data: {
+                                    estado:
+                                        EstadoEtapaBitacora.PENDIENTE_REVISION,
+
+                                    completadoAt:
+                                        null,
+                                },
+                            });
+                        }
+                    }
+
+                    /*
+                     * =====================================================
+                     * EVENTO
+                     * =====================================================
+                     */
 
                     await tx.bitacoraEvento.create({
                         data: {
@@ -1316,19 +1774,137 @@ export async function responderRevisionEtapa(
 
                             descripcion:
                                 aprobar
-                                    ? `Etapa ${aprobacion.etapa.etapa} aprobada`
-                                    : `Etapa ${aprobacion.etapa.etapa} rechazada`,
+                                    ? `Revisión de ${aprobacion.aprobador.nombre} aprobada para la etapa ${aprobacion.etapa.etapa}`
+                                    : `Revisión de ${aprobacion.aprobador.nombre} rechazada para la etapa ${aprobacion.etapa.etapa}`,
 
                             metadata: {
                                 aprobacionId:
                                     aprobacion.id,
+
+                                solicitudRevisionId:
+                                    aprobacion
+                                        .solicitudRevisionId,
+
+                                aprobadorId:
+                                    aprobacion
+                                        .aprobadorId,
                             },
                         },
                     });
 
-                    return actualizada;
+                    /*
+                     * Consultar estado final de la etapa
+                     * para devolverlo al frontend.
+                     */
+                    const etapaActualizada =
+                        await tx.bitacoraEtapa.findUnique({
+                            where: {
+                                id:
+                                    etapaId,
+                            },
+
+                            select: {
+                                id:
+                                    true,
+
+                                estado:
+                                    true,
+                            },
+                        });
+
+                    /*
+                     * =====================================================
+                     * RESUMEN DE LA SOLICITUD DE REVISIÓN
+                     * =====================================================
+                     *
+                     * Para solicitudes nuevas usamos solicitudRevisionId.
+                     *
+                     * Para revisiones antiguas sin solicitudRevisionId,
+                     * tratamos la aprobación actual como una solicitud
+                     * de un solo revisor.
+                     */
+
+                    const aprobacionesSolicitud =
+                        aprobacion.solicitudRevisionId
+                            ? await tx.bitacoraAprobacion.findMany({
+                                where: {
+                                    etapaId,
+
+                                    solicitudRevisionId:
+                                        aprobacion
+                                            .solicitudRevisionId,
+                                },
+
+                                select: {
+                                    estado:
+                                        true,
+                                },
+                            })
+                            : [
+                                {
+                                    estado:
+                                        actualizada.estado,
+                                },
+                            ];
+
+                    const totalRevisores =
+                        aprobacionesSolicitud.length;
+
+                    const totalAprobados =
+                        aprobacionesSolicitud.filter(
+                            item =>
+                                item.estado ===
+                                EstadoAprobacionBitacora.APROBADA
+                        ).length;
+
+                    const totalPendientes =
+                        aprobacionesSolicitud.filter(
+                            item =>
+                                item.estado ===
+                                EstadoAprobacionBitacora.PENDIENTE
+                        ).length;
+
+                    const totalRechazados =
+                        aprobacionesSolicitud.filter(
+                            item =>
+                                item.estado ===
+                                EstadoAprobacionBitacora.RECHAZADA
+                        ).length;
+
+                    const totalCancelados =
+                        aprobacionesSolicitud.filter(
+                            item =>
+                                item.estado ===
+                                EstadoAprobacionBitacora.CANCELADA
+                        ).length;
+
+                    return {
+                        aprobacion:
+                            actualizada,
+
+                        etapa:
+                            etapaActualizada,
+
+                        resumenRevision: {
+                            totalRevisores,
+
+                            totalAprobados,
+
+                            totalPendientes,
+
+                            totalRechazados,
+
+                            totalCancelados,
+                        },
+                    };
                 }
             );
+
+        /*
+         * =====================================================
+         * CORREO AL SOLICITANTE
+         * =====================================================
+         */
 
         if (
             aprobacion.solicitadoPor.email
@@ -1336,40 +1912,105 @@ export async function responderRevisionEtapa(
             try {
                 await enviarCorreoResultadoRevisionBitacora({
                     destinatarioEmail:
-                        aprobacion.solicitadoPor.email,
+                        aprobacion
+                            .solicitadoPor
+                            .email,
 
                     destinatarioNombre:
-                        aprobacion.solicitadoPor.nombre,
+                        aprobacion
+                            .solicitadoPor
+                            .nombre,
 
                     revisorNombre:
-                        aprobacion.aprobador.nombre,
+                        aprobacion
+                            .aprobador
+                            .nombre,
 
                     bitacoraId,
 
                     tituloBitacora:
-                        aprobacion.bitacora.titulo,
+                        aprobacion
+                            .bitacora
+                            .titulo,
 
                     etapa:
-                        aprobacion.etapa.etapa,
+                        aprobacion
+                            .etapa
+                            .etapa,
 
                     aprobada:
                         aprobar,
 
                     comentarioRespuesta:
-                        resultado.comentarioRespuesta,
+                        resultado
+                            .aprobacion
+                            .comentarioRespuesta,
+
+                    totalRevisores:
+                        resultado
+                            .resumenRevision
+                            .totalRevisores,
+
+                    totalAprobados:
+                        resultado
+                            .resumenRevision
+                            .totalAprobados,
+
+                    totalPendientes:
+                        resultado
+                            .resumenRevision
+                            .totalPendientes,
+
+                    etapaAprobada:
+                        resultado
+                            .etapa
+                            ?.estado ===
+                        EstadoEtapaBitacora.APROBADA,
+
+                    etapaRechazada:
+                        resultado
+                            .etapa
+                            ?.estado ===
+                        EstadoEtapaBitacora.RECHAZADA,
                 });
 
                 console.log(
                     "[BITACORA MAIL] ✅ Resultado de revisión enviado",
                     {
                         bitacoraId,
+
                         etapaId,
+
                         aprobacionId,
 
-                        resultado:
+                        solicitudRevisionId:
+                            aprobacion
+                                .solicitudRevisionId,
+
+                        resultadoIndividual:
                             aprobar
                                 ? "APROBADA"
                                 : "RECHAZADA",
+
+                        estadoEtapa:
+                            resultado
+                                .etapa
+                                ?.estado,
+
+                        totalRevisores:
+                            resultado
+                                .resumenRevision
+                                .totalRevisores,
+
+                        totalAprobados:
+                            resultado
+                                .resumenRevision
+                                .totalAprobados,
+
+                        totalPendientes:
+                            resultado
+                                .resumenRevision
+                                .totalPendientes,
 
                         destinatario:
                             aprobacion
@@ -1393,10 +2034,17 @@ export async function responderRevisionEtapa(
                     aprobacionId,
 
                     solicitadoPorId:
-                        aprobacion.solicitadoPorId,
+                        aprobacion
+                            .solicitadoPorId,
                 }
             );
         }
+
+        /*
+         * =====================================================
+         * RESPUESTA
+         * =====================================================
+         */
 
         return res.json({
             data:
@@ -1404,7 +2052,11 @@ export async function responderRevisionEtapa(
 
             message:
                 aprobar
-                    ? "Revisión aprobada correctamente"
+                    ? resultado.etapa
+                        ?.estado ===
+                        EstadoEtapaBitacora.APROBADA
+                        ? "Revisión aprobada. Todos los revisores aprobaron la etapa."
+                        : "Revisión aprobada. Aún existen revisores pendientes."
                     : "Revisión rechazada correctamente",
         });
     } catch (
@@ -1488,12 +2140,13 @@ export async function completarEtapaBitacora(
                         select: {
                             tecnicoId:
                                 true,
+
+                            usaEtapas:
+                                true,
                         },
                     },
                 },
             });
-
-
 
         if (
             !etapa
@@ -1501,6 +2154,17 @@ export async function completarEtapaBitacora(
             return res.status(404).json({
                 error:
                     "Etapa no encontrada",
+            });
+        }
+
+        if (
+            !etapa
+                .bitacora
+                .usaEtapas
+        ) {
+            return res.status(409).json({
+                error:
+                    "Esta bitácora no utiliza seguimiento por etapas",
             });
         }
 
