@@ -13,7 +13,10 @@ export type RunAIInput = {
   };
 };
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+type ChatMessage =
+  | { role: "system" | "user" | "assistant"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls: any[] }
+  | { role: "tool"; tool_call_id: string; content: string };
 
 interface OpenAIResponse {
   choices: Array<{
@@ -24,7 +27,7 @@ interface OpenAIResponse {
   }>;
 }
 
-import { createTicketFromWhatsapp } from "../service/whatchimp-ticket.service.js";
+import { createTicketFromWhatsapp, searchEmpresaByName } from "../service/whatchimp-ticket.service.js";
 import { sendTicketCreatedEmail } from "../service/email.service.js";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
@@ -33,20 +36,35 @@ const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE ?? 0.2);
 const FD_API_KEY     = process.env.FD_API_KEY || "";
 const FD_DOMAIN      = "rids.freshdesk.com";
 
-// --- 2. Tool ---
+// --- 2. Tools ---
 const tools = [
   {
     type: "function",
     function: {
+      name: "search_company",
+      description: "Busca empresas registradas en el sistema. Llama esta función SIEMPRE antes de create_ticket. Si ya tienes el correo del usuario, inclúyelo en 'email' — el sistema lo usará para identificar la empresa por dominio de forma automática y exacta.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Nombre o parte del nombre de la empresa" },
+          email: { type: "string", description: "Correo electrónico del usuario (opcional pero recomendado)" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_ticket",
-      description: "Crea un ticket de soporte. Llama esta función SOLO cuando tengas los 5 datos obligatorios: name, email, phone, company y description.",
+      description: "Crea un ticket de soporte. Llama esta función SOLO cuando tengas los 5 datos obligatorios y ya hayas confirmado el nombre exacto de la empresa con search_company.",
       parameters: {
         type: "object",
         properties: {
           name:        { type: "string", description: "Nombre completo del contacto" },
           email:       { type: "string", description: "Correo electrónico del contacto" },
           phone:       { type: "string", description: "Teléfono del contacto" },
-          company:     { type: "string", description: "Nombre de la empresa" },
+          company:     { type: "string", description: "Nombre EXACTO de la empresa tal como lo retornó search_company" },
           description: { type: "string", description: "Descripción detallada del problema técnico" },
         },
         required: ["name", "email", "phone", "company", "description"]
@@ -62,21 +80,24 @@ export const runAI = async ({ userText, context }: RunAIInput): Promise<string> 
   console.log("CONTEXTO:", { email: context.email, company: context.company, name: context.name, phone: context.phone });
   console.log("-----------------------------------------");
 
+  const userName = context.name ? context.name.split(" ")[0] : null;
+  const greeting = userName ? `Hola ${userName}` : "Hola";
+
   const systemPrompt = `
 Eres RIDSI, el asistente técnico experto de RIDS. Tu ÚNICA misión es ayudar con problemas informáticos y gestionar tickets de soporte.
 
+${userName ? `El nombre del usuario es "${context.name}". Usa "${userName}" para dirigirte a él/ella de forma natural.` : ""}
+
 REGLAS:
-1. PROHIBIDO: Temas no informáticos (cocina, ocio, cultura general, deportes, etc.).
-2. RESPUESTA ANTE LO PROHIBIDO: "Lo siento, como asistente técnico de RIDS solo puedo ayudarte con temas relacionados a informática, soporte y nuestros servicios. ¿En qué problema técnico te puedo apoyar hoy?".
-3. FLUJO DE TICKETS: Para generar un ticket, DEBES recopilar obligatoriamente estos 5 datos en orden:
-   - Nombre completo del contacto.
-   - Correo electrónico del contacto.
-   - Teléfono del contacto.
-   - Nombre de la Empresa.
-   - Descripción detallada del problema o requerimiento técnico.
-4. Si el usuario entrega varios datos a la vez, captúralos todos. Pide solo los que faltan.
-5. CREACIÓN DEL TICKET: Una vez que tengas los 5 datos, llama INMEDIATAMENTE la función create_ticket. NO confirmes el ticket con texto antes de llamar la función.
-6. DESPUÉS de que la función se ejecute, informa al usuario que el ticket fue creado con su número y que recibirá un correo de confirmación con los detalles en 2 a 4 horas hábiles.
+1. Si es el primer mensaje del usuario (turns = ${context.turns ?? 1}), salúdalo con "${greeting}, soy RIDSI, el asistente técnico de RIDS. ¿En qué te puedo ayudar hoy?".
+2. PROHIBIDO: Temas no informáticos (cocina, ocio, cultura general, deportes, etc.).
+3. RESPUESTA ANTE LO PROHIBIDO: "Lo siento, como asistente técnico de RIDS solo puedo ayudarte con temas relacionados a informática, soporte y nuestros servicios. ¿En qué problema técnico te puedo apoyar hoy?".
+4. FLUJO DE TICKETS: Para generar un ticket necesito 5 datos. Cuando los solicites, pídelos así (EXACTAMENTE con este formato, sin numeración ni lista):
+   "Para poder ayudarte y generar un ticket de soporte, por favor escríbeme en una sola línea y separado por comas: nombre completo, correo electrónico, teléfono, nombre de la empresa y descripción del problema.
+   Ejemplo: Juan Pérez, juan@empresa.cl, 912345678, Empresa SA, mi pc no enciende"
+5. Si el usuario entrega varios datos a la vez, captúralos todos. Pide solo los que faltan usando el mismo formato de línea única separada por comas.
+6. CREACIÓN DEL TICKET: Una vez que tengas los 5 datos, llama INMEDIATAMENTE create_ticket. El sistema resuelve la empresa automáticamente por el dominio del correo. Solo usa search_company si el usuario menciona un nombre de empresa ambiguo o desconocido y quieres verificarlo antes de crear el ticket.
+7. DESPUÉS de que create_ticket se ejecute, informa al usuario que el ticket fue creado con su número y que recibirá un correo de confirmación con los detalles en 2 a 4 horas hábiles.
 
 Mantén un tono profesional, directo y enfocado en la solución técnica.
   `.trim();
@@ -90,18 +111,49 @@ Mantén un tono profesional, directo y enfocado en la solución técnica.
     { role: "user", content: userText }
   ];
 
-  const { text, toolCalls } = await callOpenAI(messages);
+  // Loop agentico: permite search_company → create_ticket en una sola vuelta sin responder al usuario
+  const loopMessages: any[] = [...messages];
+  const MAX_ITER = 5;
 
-  if (toolCalls && toolCalls.length > 0) {
-    for (const tc of toolCalls) {
-      if (tc.function?.name === "create_ticket") {
-        const args = JSON.parse(tc.function.arguments);
-        return await handleTicketCreation(args, context);
-      }
+  for (let i = 0; i < MAX_ITER; i++) {
+    const { text, toolCalls } = await callOpenAI(loopMessages);
+
+    if (!toolCalls || toolCalls.length === 0) {
+      return text || "No pude procesar la respuesta.";
     }
+
+    const tc = toolCalls[0];
+    // Agrega el mensaje del assistant con la tool call al historial
+    loopMessages.push({ role: "assistant", content: text ?? null, tool_calls: toolCalls });
+
+    if (tc.function?.name === "search_company") {
+      const args = JSON.parse(tc.function.arguments);
+      console.log(`[AI] search_company("${args.query}", email="${args.email ?? ""}")`);
+      const results = await searchEmpresaByName(args.query, args.email);
+      console.log(`[AI] search_company results:`, results.map(r => r.nombre));
+
+      loopMessages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: JSON.stringify(
+          results.length > 0
+            ? { found: true, companies: results.map(r => r.nombre) }
+            : { found: false, message: "No se encontraron empresas con ese nombre en el sistema." }
+        ),
+      });
+      continue;
+    }
+
+    if (tc.function?.name === "create_ticket") {
+      const args = JSON.parse(tc.function.arguments);
+      return await handleTicketCreation(args, context);
+    }
+
+    // Tool desconocida — salir del loop
+    return text || "No pude procesar la respuesta.";
   }
 
-  return text || "No pude procesar la respuesta.";
+  return "No pude completar la operación. Por favor intenta nuevamente.";
 };
 
 // --- 4. OpenAI ---

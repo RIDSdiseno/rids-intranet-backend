@@ -110,7 +110,10 @@ export const wcReceive = async (req: Request, res: Response) => {
       await wcSendText(inc.from, reply);
     }
 
-    return res.status(200).type("text/plain; charset=utf-8").send(reply);
+    return res.status(200).json({
+      ok: true,
+      reply
+    });
   } catch (e) {
     console.error(`[CRITICAL ERROR]`, e);
     return res.status(500).json({ ok: false, error: "internal_error" });
