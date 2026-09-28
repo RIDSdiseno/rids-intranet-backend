@@ -131,8 +131,8 @@ Mantén un tono profesional, directo y enfocado en la solución técnica.
 
     if (tc.function?.name === "search_company") {
       const args = JSON.parse(tc.function.arguments);
-      console.log(`[AI] search_company("${args.query}")`);
-      const results = await searchEmpresaByName(args.query);
+      console.log(`[AI] search_company("${args.query}", email="${args.email ?? ""}")`);
+      const results = await searchEmpresaByName(args.query, args.email);
       console.log(`[AI] search_company results:`, results.map(r => r.nombre));
 
       loopMessages.push({
