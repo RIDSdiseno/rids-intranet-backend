@@ -1220,6 +1220,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     idEquipo: equipo.id_equipo,
                 },
                 select: {
+                    // OneDrive
                     oneDrive: true,
                     oneDriveEstado: true,
                     oneDriveInstalado: true,
@@ -1227,6 +1228,21 @@ export async function receiveEquipoAgentInventory(req, res) {
                     oneDriveOperativo: true,
                     oneDriveVersion: true,
                     oneDriveUsuario: true,
+                    // Batería
+                    bateriaPresente: true,
+                    bateriaCantidad: true,
+                    bateriaCargaPorcentaje: true,
+                    bateriaCapacidadDisenoMWh: true,
+                    bateriaCapacidadCompletaMWh: true,
+                    bateriaSaludPorcentaje: true,
+                    bateriaDesgastePorcentaje: true,
+                    bateriaCiclos: true,
+                    bateriaEstado: true,
+                    bateriaNombre: true,
+                    bateriaFabricante: true,
+                    bateriaSerial: true,
+                    bateriaQuimica: true,
+                    bateriaAdvertencia: true,
                 },
             })
             : null;
@@ -1249,6 +1265,34 @@ export async function receiveEquipoAgentInventory(req, res) {
         const oneDriveDetalle = body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
             ? body.oneDriveDetalle
             : undefined;
+        /*
+* =====================================================
+* BATERÍA
+* =====================================================
+*
+* Es importante comprobar si el campo existe.
+*
+* Así, agentes antiguos que todavía no envían
+* información de batería NO borrarán datos ya
+* guardados por una versión nueva.
+*/
+        const hasBateriaPayload = Object.prototype.hasOwnProperty.call(body, "bateriaPresente");
+        const bateriaPresente = hasBateriaPayload
+            ? boolFromUnknown(body.bateriaPresente)
+            : null;
+        const bateriaCantidad = numberOrNull(body.bateriaCantidad);
+        const bateriaCargaPorcentaje = numberOrNull(body.bateriaCargaPorcentaje);
+        const bateriaCapacidadDisenoMWh = numberOrNull(body.bateriaCapacidadDisenoMWh);
+        const bateriaCapacidadCompletaMWh = numberOrNull(body.bateriaCapacidadCompletaMWh);
+        const bateriaSaludPorcentaje = numberOrNull(body.bateriaSaludPorcentaje);
+        const bateriaDesgastePorcentaje = numberOrNull(body.bateriaDesgastePorcentaje);
+        const bateriaCiclos = numberOrNull(body.bateriaCiclos);
+        const bateriaEstado = cleanString(body.bateriaEstado);
+        const bateriaNombre = cleanString(body.bateriaNombre);
+        const bateriaFabricante = cleanString(body.bateriaFabricante);
+        const bateriaSerial = cleanString(body.bateriaSerial);
+        const bateriaQuimica = cleanString(body.bateriaQuimica);
+        const bateriaAdvertencia = cleanString(body.bateriaAdvertencia);
         const detalleDespuesUpdate = await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
@@ -1289,6 +1333,34 @@ export async function receiveEquipoAgentInventory(req, res) {
                 ...(oneDriveVersion ? { oneDriveVersion } : {}),
                 ...(oneDriveUsuario ? { oneDriveUsuario } : {}),
                 ...(oneDriveDetalle !== undefined ? { oneDriveDetalle } : {}),
+                ...(hasBateriaPayload
+                    ? {
+                        bateriaPresente,
+                        bateriaCantidad: bateriaCantidad !== null
+                            ? Math.trunc(bateriaCantidad)
+                            : null,
+                        bateriaCargaPorcentaje: bateriaCargaPorcentaje !== null
+                            ? Math.trunc(bateriaCargaPorcentaje)
+                            : null,
+                        bateriaCapacidadDisenoMWh: bateriaCapacidadDisenoMWh !== null
+                            ? Math.trunc(bateriaCapacidadDisenoMWh)
+                            : null,
+                        bateriaCapacidadCompletaMWh: bateriaCapacidadCompletaMWh !== null
+                            ? Math.trunc(bateriaCapacidadCompletaMWh)
+                            : null,
+                        bateriaSaludPorcentaje,
+                        bateriaDesgastePorcentaje,
+                        bateriaCiclos: bateriaCiclos !== null
+                            ? Math.trunc(bateriaCiclos)
+                            : null,
+                        bateriaEstado,
+                        bateriaNombre,
+                        bateriaFabricante,
+                        bateriaSerial,
+                        bateriaQuimica,
+                        bateriaAdvertencia,
+                    }
+                    : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
@@ -1319,6 +1391,32 @@ export async function receiveEquipoAgentInventory(req, res) {
                 oneDriveVersion,
                 oneDriveUsuario,
                 oneDriveDetalle,
+                bateriaPresente: hasBateriaPayload
+                    ? bateriaPresente
+                    : null,
+                bateriaCantidad: bateriaCantidad !== null
+                    ? Math.trunc(bateriaCantidad)
+                    : null,
+                bateriaCargaPorcentaje: bateriaCargaPorcentaje !== null
+                    ? Math.trunc(bateriaCargaPorcentaje)
+                    : null,
+                bateriaCapacidadDisenoMWh: bateriaCapacidadDisenoMWh !== null
+                    ? Math.trunc(bateriaCapacidadDisenoMWh)
+                    : null,
+                bateriaCapacidadCompletaMWh: bateriaCapacidadCompletaMWh !== null
+                    ? Math.trunc(bateriaCapacidadCompletaMWh)
+                    : null,
+                bateriaSaludPorcentaje,
+                bateriaDesgastePorcentaje,
+                bateriaCiclos: bateriaCiclos !== null
+                    ? Math.trunc(bateriaCiclos)
+                    : null,
+                bateriaEstado,
+                bateriaNombre,
+                bateriaFabricante,
+                bateriaSerial,
+                bateriaQuimica,
+                bateriaAdvertencia,
             },
         });
         const agentAuditChanges = {};
@@ -1383,6 +1481,26 @@ export async function receiveEquipoAgentInventory(req, res) {
         addAgentAuditChange(agentAuditChanges, "oneDriveOperativo", detalleAntesUpdate?.oneDriveOperativo, detalleDespuesUpdate.oneDriveOperativo);
         addAgentAuditChange(agentAuditChanges, "oneDriveInstalado", detalleAntesUpdate?.oneDriveInstalado, detalleDespuesUpdate.oneDriveInstalado);
         addAgentAuditChange(agentAuditChanges, "oneDriveEnEjecucion", detalleAntesUpdate?.oneDriveEnEjecucion, detalleDespuesUpdate.oneDriveEnEjecucion);
+        /*
+  * =====================================================
+  * BATERÍA
+  * =====================================================
+  *
+  * Solo auditamos salud de batería si realmente
+  * existe una batería física.
+  *
+  * SIN_BATERIA se conserva en DetalleEquipo y
+  * EquipoAgenteEvento, pero no genera ruido en
+  * Historial equipo.
+  */
+        if (hasBateriaPayload &&
+            bateriaPresente) {
+            addAgentAuditChange(agentAuditChanges, "bateriaEstado", detalleAntesUpdate?.bateriaEstado, detalleDespuesUpdate.bateriaEstado);
+            addAgentAuditChange(agentAuditChanges, "bateriaSaludPorcentaje", detalleAntesUpdate?.bateriaSaludPorcentaje, detalleDespuesUpdate.bateriaSaludPorcentaje);
+            addAgentAuditChange(agentAuditChanges, "bateriaDesgastePorcentaje", detalleAntesUpdate?.bateriaDesgastePorcentaje, detalleDespuesUpdate.bateriaDesgastePorcentaje);
+            addAgentAuditChange(agentAuditChanges, "bateriaCapacidadCompletaMWh", detalleAntesUpdate?.bateriaCapacidadCompletaMWh, detalleDespuesUpdate.bateriaCapacidadCompletaMWh);
+            addAgentAuditChange(agentAuditChanges, "bateriaCiclos", detalleAntesUpdate?.bateriaCiclos, detalleDespuesUpdate.bateriaCiclos);
+        }
         const camposCambioReal = Object.keys(agentAuditChanges).filter((field) => field !== "origen" &&
             field !== "accionAgente");
         const debeCrearAudit = fueCreadoPorAgente ||
@@ -1478,6 +1596,22 @@ export async function receiveEquipoAgentInventory(req, res) {
                     oneDriveVersion,
                     oneDriveUsuario,
                     oneDriveDetalle: oneDriveDetalle ?? null,
+                    bateria: {
+                        presente: bateriaPresente,
+                        cantidad: bateriaCantidad,
+                        cargaPorcentaje: bateriaCargaPorcentaje,
+                        capacidadDisenoMWh: bateriaCapacidadDisenoMWh,
+                        capacidadCompletaMWh: bateriaCapacidadCompletaMWh,
+                        saludPorcentaje: bateriaSaludPorcentaje,
+                        desgastePorcentaje: bateriaDesgastePorcentaje,
+                        ciclos: bateriaCiclos,
+                        estado: bateriaEstado,
+                        nombre: bateriaNombre,
+                        fabricante: bateriaFabricante,
+                        serial: bateriaSerial,
+                        quimica: bateriaQuimica,
+                        advertencia: bateriaAdvertencia,
+                    },
                     adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                         ? body.adicionalesDetectados.filter((item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR")
                         : [],
@@ -1523,6 +1657,20 @@ export async function receiveEquipoAgentInventory(req, res) {
             oneDriveOperativo,
             oneDriveVersion,
             oneDriveUsuario,
+            bateriaPresente,
+            bateriaCantidad,
+            bateriaCargaPorcentaje,
+            bateriaCapacidadDisenoMWh,
+            bateriaCapacidadCompletaMWh,
+            bateriaSaludPorcentaje,
+            bateriaDesgastePorcentaje,
+            bateriaCiclos,
+            bateriaEstado,
+            bateriaNombre,
+            bateriaFabricante,
+            bateriaSerial,
+            bateriaQuimica,
+            bateriaAdvertencia,
             adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                 ? body.adicionalesDetectados.filter((item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR").length
                 : 0,
