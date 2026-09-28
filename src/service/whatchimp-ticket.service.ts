@@ -21,23 +21,9 @@ export interface WhatsappTicketResult {
 }
 
 export async function searchEmpresaByName(
-  query: string,
-  email?: string
+  query: string
 ): Promise<Array<{ id: number; nombre: string }>> {
   const q = query.trim();
-
-  // 1. Lookup por dominio del correo (más confiable)
-  if (email && email.includes("@")) {
-    const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
-    const byDomain = await prisma.empresa.findMany({
-      where: { dominios: { has: domain } },
-      select: { id_empresa: true, nombre: true },
-    });
-    if (byDomain.length > 0) {
-      console.log(`[SEARCH] Empresa por dominio "${domain}":`, byDomain.map(e => e.nombre));
-      return byDomain.map(e => ({ id: e.id_empresa, nombre: e.nombre }));
-    }
-  }
 
   if (!q) return [];
 
