@@ -117,12 +117,13 @@ export async function createTicketFromWhatsapp(
       if (empresa) console.log(`[WC-TICKET] Empresa por nombre "${company}": ${empresa.nombre}`);
     }
 
-    // c) Por alias (fallback final)
+    // c) Por alias/nombre similar (fallback final — toma el primer resultado)
     if (!empresa) {
       const hits = await searchEmpresaByName(company);
-      if (hits.length === 1 && hits[0]) {
+      const hit = hits[0];
+      if (hit) {
         empresa = await prisma.empresa.findUnique({
-          where: { id_empresa: hits[0].id },
+          where: { id_empresa: hit.id },
           select: { id_empresa: true, nombre: true },
         });
         if (empresa) console.log(`[WC-TICKET] Empresa por alias "${company}": ${empresa.nombre}`);
