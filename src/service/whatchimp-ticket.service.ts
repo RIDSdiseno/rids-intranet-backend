@@ -26,20 +26,28 @@ export async function searchEmpresaByName(
 ): Promise<Array<{ id: number; nombre: string }>> {
   const q = query.trim();
 
-  // 1. Lookup por dominio del correo (más confiable)
+  if (!q && !email) return [];
+
+  const seen = new Set<number>();
+  const result: Array<{ id: number; nombre: string }> = [];
+
+  // 1. Dominio del correo (prioridad máxima, va primero en la lista)
   if (email && email.includes("@")) {
     const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
-    const byDomain = await prisma.empresa.findMany({
-      where: { dominios: { has: domain } },
-      select: { id_empresa: true, nombre: true },
-    });
-    if (byDomain.length > 0) {
-      console.log(`[SEARCH] Empresa por dominio "${domain}":`, byDomain.map(e => e.nombre));
-      return byDomain.map(e => ({ id: e.id_empresa, nombre: e.nombre }));
+    if (domain) {
+      const byDomain = await prisma.empresa.findMany({
+        where: { dominios: { has: domain } },
+        select: { id_empresa: true, nombre: true },
+      });
+      for (const e of byDomain) {
+        seen.add(e.id_empresa);
+        result.push({ id: e.id_empresa, nombre: e.nombre });
+      }
+      if (byDomain.length) console.log(`[SEARCH] Por dominio "${domain}":`, byDomain.map(e => e.nombre));
     }
   }
 
-  if (!q) return [];
+  if (!q) return result;
 
   const qLower = q.toLowerCase();
   const words = qLower.split(/\s+/).filter(w => w.length >= 3);
@@ -50,17 +58,14 @@ export async function searchEmpresaByName(
     return words.some(w => t.includes(w));
   };
 
-  // 2. Fallback: búsqueda por nombre y aliases
+  // 2. Búsqueda por nombre y aliases (agrega resultados no duplicados)
   const [allEmpresas, allAliases] = await Promise.all([
     prisma.empresa.findMany({ select: { id_empresa: true, nombre: true } }),
     prisma.empresaAliasOutlook.findMany({ select: { alias: true, empresaId: true } }),
   ]);
 
-  const seen = new Set<number>();
-  const result: Array<{ id: number; nombre: string }> = [];
-
   for (const e of allEmpresas) {
-    if (matches(e.nombre)) {
+    if (!seen.has(e.id_empresa) && matches(e.nombre)) {
       seen.add(e.id_empresa);
       result.push({ id: e.id_empresa, nombre: e.nombre });
     }
@@ -71,7 +76,7 @@ export async function searchEmpresaByName(
   );
 
   for (const e of allEmpresas) {
-    if (aliasHits.has(e.id_empresa) && !seen.has(e.id_empresa)) {
+    if (!seen.has(e.id_empresa) && aliasHits.has(e.id_empresa)) {
       seen.add(e.id_empresa);
       result.push({ id: e.id_empresa, nombre: e.nombre });
     }
