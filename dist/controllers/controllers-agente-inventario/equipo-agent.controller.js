@@ -864,6 +864,7 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteEmailFuente = cleanString(body.solicitanteEmailFuente) ?? null;
         const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
         const correoSeleccionadoPorTecnico = boolFromUnknown(body.correoSeleccionadoPorTecnico);
+        const requiereRevisionSolicitanteAgente = boolFromUnknown(body.requiereRevisionSolicitante);
         const emailsDetectados = Array.isArray(body.emailsDetectados)
             ? body.emailsDetectados
                 .map((item) => {
@@ -968,12 +969,17 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteDetectadoId = solicitanteDetectado?.id_solicitante ?? null;
         const solicitanteDetectadoEmailFinal = solicitanteEmail ?? equipo?.solicitanteDetectadoEmail ?? null;
         const solicitanteDetectadoIdFinal = solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
-        const fuenteConfiableParaAsignar = correoSeleccionadoPorTecnico ||
-            !conflictoCorreos ||
-            solicitanteEmailFuente === "OutlookProfile" ||
-            solicitanteEmailFuente === "OfficeIdentity" ||
-            solicitanteEmailFuente === "UPN" ||
-            solicitanteEmailFuente === "MacInstallerConfig";
+        const fuenteConfiableParaAsignar = !requiereRevisionSolicitanteAgente &&
+            (correoSeleccionadoPorTecnico ||
+                !conflictoCorreos ||
+                solicitanteEmailFuente ===
+                    "OutlookProfile" ||
+                solicitanteEmailFuente ===
+                    "OfficeIdentity" ||
+                solicitanteEmailFuente ===
+                    "UPN" ||
+                solicitanteEmailFuente ===
+                    "MacInstallerConfig");
         const solicitanteDetectadoBaseValido = Boolean(solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt ===
@@ -1020,31 +1026,88 @@ export async function receiveEquipoAgentInventory(req, res) {
         let idSolicitanteFinal = null;
         let requiereRevisionSolicitante = false;
         let motivoRevisionSolicitante = null;
-        if (solicitanteDetectadoValido && solicitanteDetectadoId) {
-            idSolicitanteFinal = solicitanteDetectadoId;
+        /*
+         * =====================================================
+         * CASO 1:
+         * EL AGENTE DECLARÓ EXPLÍCITAMENTE QUE HAY AMBIGÜEDAD
+         * =====================================================
+         */
+        if (requiereRevisionSolicitanteAgente) {
+            idSolicitanteFinal =
+                solicitanteActualValido
+                    ? solicitanteActualId
+                    : null;
+            requiereRevisionSolicitante =
+                true;
+            motivoRevisionSolicitante =
+                "El agente detectó un cambio de identidad ambiguo. " +
+                    "Se mantiene el solicitante actual hasta revisión manual.";
+        }
+        /*
+         * =====================================================
+         * CASO 2:
+         * NUEVA IDENTIDAD VÁLIDA Y CONFIABLE
+         * =====================================================
+         */
+        else if (solicitanteDetectadoValido &&
+            solicitanteDetectadoId) {
+            idSolicitanteFinal =
+                solicitanteDetectadoId;
             if (solicitanteActualId &&
-                solicitanteActualId !== solicitanteDetectadoId) {
+                solicitanteActualId !==
+                    solicitanteDetectadoId) {
                 motivoRevisionSolicitante =
-                    "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
+                    "El agente actualizó automáticamente el solicitante " +
+                        "porque detectó un email real distinto al asignado.";
             }
         }
-        else if (conflictoCorreos && !correoSeleccionadoPorTecnico && solicitanteDetectadoId) {
-            idSolicitanteFinal = solicitanteActualValido
-                ? solicitanteActualId
-                : null;
-            requiereRevisionSolicitante = true;
+        /*
+         * =====================================================
+         * CASO 3:
+         * CONFLICTO DETECTADO POR COMPATIBILIDAD
+         * CON AGENTES ANTERIORES
+         * =====================================================
+         */
+        else if (conflictoCorreos &&
+            !correoSeleccionadoPorTecnico &&
+            solicitanteDetectadoId) {
+            idSolicitanteFinal =
+                solicitanteActualValido
+                    ? solicitanteActualId
+                    : null;
+            requiereRevisionSolicitante =
+                true;
             motivoRevisionSolicitante =
-                "El agente detectó correos o dominios distintos entre las fuentes del equipo. Se requiere revisión manual antes de cambiar el solicitante.";
+                "El agente detectó correos o dominios distintos entre " +
+                    "las fuentes del equipo. Se requiere revisión manual " +
+                    "antes de cambiar el solicitante.";
         }
+        /*
+         * =====================================================
+         * CASO 4:
+         * CONSERVAR SOLICITANTE ACTUAL
+         * =====================================================
+         */
         else if (solicitanteActualValido) {
-            idSolicitanteFinal = solicitanteActualId;
+            idSolicitanteFinal =
+                solicitanteActualId;
         }
+        /*
+         * =====================================================
+         * CASO 5:
+         * NO EXISTE SOLICITANTE UTILIZABLE
+         * =====================================================
+         */
         else {
-            idSolicitanteFinal = null;
-            requiereRevisionSolicitante = true;
+            idSolicitanteFinal =
+                null;
+            requiereRevisionSolicitante =
+                true;
             if (solicitanteActualId) {
                 motivoRevisionSolicitante =
-                    "El solicitante asignado no pertenece a la empresa detectada o no es válido, y el agente no detectó un email real.";
+                    "El solicitante asignado no pertenece a la empresa " +
+                        "detectada o no es válido, y el agente no detectó " +
+                        "un email real.";
             }
             else {
                 motivoRevisionSolicitante =
@@ -1572,6 +1635,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     solicitanteEmailFuente,
                     conflictoCorreos,
                     correoSeleccionadoPorTecnico,
+                    requiereRevisionSolicitanteAgente,
                     emailsDetectados,
                     dominioEmpresa,
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
