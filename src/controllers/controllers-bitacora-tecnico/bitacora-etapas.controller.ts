@@ -1273,80 +1273,90 @@ export async function solicitarRevisionEtapa(
                 continue;
             }
 
-            try {
-                await enviarCorreoSolicitudRevisionBitacora({
-                    destinatarioEmail:
-                        aprobacion
-                            .aprobador
-                            .email,
+            void enviarCorreoSolicitudRevisionBitacora({
+                destinatarioEmail:
+                    aprobacion
+                        .aprobador
+                        .email,
 
-                    destinatarioNombre:
-                        aprobacion
-                            .aprobador
-                            .nombre,
+                destinatarioNombre:
+                    aprobacion
+                        .aprobador
+                        .nombre,
 
-                    solicitadoPorNombre:
-                        aprobacion
-                            .solicitadoPor
-                            .nombre,
+                solicitadoPorNombre:
+                    aprobacion
+                        .solicitadoPor
+                        .nombre,
 
-                    bitacoraId,
+                bitacoraId,
 
-                    tituloBitacora:
-                        etapa.bitacora
-                            .titulo,
+                tituloBitacora:
+                    etapa
+                        .bitacora
+                        .titulo,
 
-                    etapa:
-                        etapa.etapa,
+                etapa:
+                    etapa.etapa,
 
-                    comentarioSolicitud:
-                        aprobacion
-                            .comentarioSolicitud,
-                });
+                comentarioSolicitud:
+                    aprobacion
+                        .comentarioSolicitud,
+            })
+                .then(
+                    () => {
+                        console.log(
+                            "[BITACORA MAIL] ✅ Solicitud de revisión entregada al SMTP",
+                            {
+                                bitacoraId,
+                                etapaId,
 
-                console.log(
-                    "[BITACORA MAIL] ✅ Solicitud de revisión enviada",
-                    {
-                        bitacoraId,
-                        etapaId,
+                                solicitudRevisionId:
+                                    resultado
+                                        .solicitudRevisionId,
 
-                        solicitudRevisionId:
-                            resultado
-                                .solicitudRevisionId,
+                                aprobacionId:
+                                    aprobacion.id,
 
-                        aprobacionId:
-                            aprobacion.id,
+                                aprobadorId:
+                                    aprobacion
+                                        .aprobadorId,
 
-                        aprobadorId:
-                            aprobacion
-                                .aprobadorId,
+                                destinatario:
+                                    aprobacion
+                                        .aprobador
+                                        .email,
+                            }
+                        );
+                    }
+                )
+                .catch(
+                    (
+                        emailError
+                    ) => {
+                        console.error(
+                            "[BITACORA MAIL] ❌ Error enviando solicitud de revisión:",
+                            {
+                                bitacoraId,
+                                etapaId,
 
-                        destinatario:
-                            aprobacion
-                                .aprobador
-                                .email,
+                                aprobacionId:
+                                    aprobacion.id,
+
+                                aprobadorId:
+                                    aprobacion
+                                        .aprobadorId,
+
+                                destinatario:
+                                    aprobacion
+                                        .aprobador
+                                        .email,
+
+                                emailError,
+                            }
+                        );
                     }
                 );
-            } catch (
-            emailError
-            ) {
-                console.error(
-                    "[BITACORA MAIL] ❌ Error enviando solicitud de revisión:",
-                    {
-                        bitacoraId,
-                        etapaId,
-
-                        aprobacionId:
-                            aprobacion.id,
-
-                        aprobadorId:
-                            aprobacion
-                                .aprobadorId,
-
-                        emailError,
-                    }
-                );
-            }
         }
 
         return res.status(201).json({
@@ -1907,130 +1917,150 @@ export async function responderRevisionEtapa(
          */
 
         if (
-            aprobacion.solicitadoPor.email
+            aprobacion
+                .solicitadoPor
+                .email
         ) {
-            try {
-                await enviarCorreoResultadoRevisionBitacora({
-                    destinatarioEmail:
-                        aprobacion
-                            .solicitadoPor
-                            .email,
+            void enviarCorreoResultadoRevisionBitacora({
+                destinatarioEmail:
+                    aprobacion
+                        .solicitadoPor
+                        .email,
 
-                    destinatarioNombre:
-                        aprobacion
-                            .solicitadoPor
-                            .nombre,
+                destinatarioNombre:
+                    aprobacion
+                        .solicitadoPor
+                        .nombre,
 
-                    revisorNombre:
-                        aprobacion
-                            .aprobador
-                            .nombre,
+                revisorNombre:
+                    aprobacion
+                        .aprobador
+                        .nombre,
 
-                    bitacoraId,
+                bitacoraId,
 
-                    tituloBitacora:
-                        aprobacion
-                            .bitacora
-                            .titulo,
+                tituloBitacora:
+                    aprobacion
+                        .bitacora
+                        .titulo,
 
-                    etapa:
-                        aprobacion
-                            .etapa
-                            .etapa,
+                etapa:
+                    aprobacion
+                        .etapa
+                        .etapa,
 
-                    aprobada:
-                        aprobar,
+                aprobada:
+                    aprobar,
 
-                    comentarioRespuesta:
-                        resultado
-                            .aprobacion
-                            .comentarioRespuesta,
+                comentarioRespuesta:
+                    resultado
+                        .aprobacion
+                        .comentarioRespuesta,
 
-                    totalRevisores:
-                        resultado
-                            .resumenRevision
-                            .totalRevisores,
+                totalRevisores:
+                    resultado
+                        .resumenRevision
+                        .totalRevisores,
 
-                    totalAprobados:
-                        resultado
-                            .resumenRevision
-                            .totalAprobados,
+                totalAprobados:
+                    resultado
+                        .resumenRevision
+                        .totalAprobados,
 
-                    totalPendientes:
-                        resultado
-                            .resumenRevision
-                            .totalPendientes,
+                totalPendientes:
+                    resultado
+                        .resumenRevision
+                        .totalPendientes,
 
-                    etapaAprobada:
-                        resultado
-                            .etapa
-                            ?.estado ===
-                        EstadoEtapaBitacora.APROBADA,
+                etapaAprobada:
+                    resultado
+                        .etapa
+                        ?.estado ===
+                    EstadoEtapaBitacora.APROBADA,
 
-                    etapaRechazada:
-                        resultado
-                            .etapa
-                            ?.estado ===
-                        EstadoEtapaBitacora.RECHAZADA,
-                });
+                etapaRechazada:
+                    resultado
+                        .etapa
+                        ?.estado ===
+                    EstadoEtapaBitacora.RECHAZADA,
+            })
+                .then(
+                    () => {
+                        console.log(
+                            "[BITACORA MAIL] ✅ Resultado de revisión entregado al SMTP",
+                            {
+                                bitacoraId,
 
-                console.log(
-                    "[BITACORA MAIL] ✅ Resultado de revisión enviado",
-                    {
-                        bitacoraId,
+                                etapaId,
 
-                        etapaId,
+                                aprobacionId,
 
-                        aprobacionId,
+                                solicitudRevisionId:
+                                    aprobacion
+                                        .solicitudRevisionId,
 
-                        solicitudRevisionId:
-                            aprobacion
-                                .solicitudRevisionId,
+                                resultadoIndividual:
+                                    aprobar
+                                        ? "APROBADA"
+                                        : "RECHAZADA",
 
-                        resultadoIndividual:
-                            aprobar
-                                ? "APROBADA"
-                                : "RECHAZADA",
+                                estadoEtapa:
+                                    resultado
+                                        .etapa
+                                        ?.estado,
 
-                        estadoEtapa:
-                            resultado
-                                .etapa
-                                ?.estado,
+                                totalRevisores:
+                                    resultado
+                                        .resumenRevision
+                                        .totalRevisores,
 
-                        totalRevisores:
-                            resultado
-                                .resumenRevision
-                                .totalRevisores,
+                                totalAprobados:
+                                    resultado
+                                        .resumenRevision
+                                        .totalAprobados,
 
-                        totalAprobados:
-                            resultado
-                                .resumenRevision
-                                .totalAprobados,
+                                totalPendientes:
+                                    resultado
+                                        .resumenRevision
+                                        .totalPendientes,
 
-                        totalPendientes:
-                            resultado
-                                .resumenRevision
-                                .totalPendientes,
+                                destinatario:
+                                    aprobacion
+                                        .solicitadoPor
+                                        .email,
+                            }
+                        );
+                    }
+                )
+                .catch(
+                    (
+                        emailError
+                    ) => {
+                        console.error(
+                            "[BITACORA MAIL] ❌ Error enviando resultado de revisión:",
+                            {
+                                bitacoraId,
 
-                        destinatario:
-                            aprobacion
-                                .solicitadoPor
-                                .email,
+                                etapaId,
+
+                                aprobacionId,
+
+                                destinatario:
+                                    aprobacion
+                                        .solicitadoPor
+                                        .email,
+
+                                emailError,
+                            }
+                        );
                     }
                 );
-            } catch (
-            emailError
-            ) {
-                console.error(
-                    "[BITACORA MAIL] ❌ Error enviando resultado de revisión:",
-                    emailError
-                );
-            }
         } else {
             console.warn(
                 "[BITACORA MAIL] ⚠️ Solicitante sin correo",
                 {
                     bitacoraId,
+
                     aprobacionId,
 
                     solicitadoPorId:

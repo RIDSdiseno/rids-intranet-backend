@@ -31,24 +31,15 @@ export const transporter = nodemailer.createTransport({
         pass: SMTP_PASSWORD,
     },
     /*
-     * Permite mantener conexiones SMTP reutilizables.
-     * Es útil porque el CRM puede enviar varios correos
-     * consecutivos, especialmente con múltiples revisores.
-     */
-    pool: true,
-    maxConnections: 3,
-    maxMessages: 100,
-    /*
-     * Evita que una conexión SMTP quede esperando
-     * indefinidamente.
+     * Sin pool.
+     *
+     * Cada envío utilizará una conexión SMTP
+     * independiente, evitando reutilizar sockets
+     * potencialmente cerrados/inválidos en Railway.
      */
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
-    socketTimeout: 60_000,
-    /*
-     * Para producción es preferible validar
-     * correctamente el certificado SMTP.
-     */
+    socketTimeout: 30_000,
     tls: {
         rejectUnauthorized: true,
     },
@@ -56,8 +47,8 @@ export const transporter = nodemailer.createTransport({
 /*
  * Comprobación opcional del SMTP.
  *
- * No envía correos; solamente comprueba
- * conexión + autenticación.
+ * No envía correos.
+ * Solo prueba conexión y autenticación.
  */
 export async function verificarSMTP() {
     try {

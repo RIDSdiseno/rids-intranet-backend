@@ -66,23 +66,13 @@ export const transporter =
         },
 
         /*
-         * Permite mantener conexiones SMTP reutilizables.
-         * Es útil porque el CRM puede enviar varios correos
-         * consecutivos, especialmente con múltiples revisores.
+         * Sin pool.
+         *
+         * Cada envío utilizará una conexión SMTP
+         * independiente, evitando reutilizar sockets
+         * potencialmente cerrados/inválidos en Railway.
          */
-        pool:
-            true,
 
-        maxConnections:
-            3,
-
-        maxMessages:
-            100,
-
-        /*
-         * Evita que una conexión SMTP quede esperando
-         * indefinidamente.
-         */
         connectionTimeout:
             15_000,
 
@@ -90,12 +80,8 @@ export const transporter =
             15_000,
 
         socketTimeout:
-            60_000,
+            30_000,
 
-        /*
-         * Para producción es preferible validar
-         * correctamente el certificado SMTP.
-         */
         tls: {
             rejectUnauthorized:
                 true,
@@ -105,8 +91,8 @@ export const transporter =
 /*
  * Comprobación opcional del SMTP.
  *
- * No envía correos; solamente comprueba
- * conexión + autenticación.
+ * No envía correos.
+ * Solo prueba conexión y autenticación.
  */
 export async function verificarSMTP() {
     try {
