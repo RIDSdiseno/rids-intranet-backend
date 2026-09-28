@@ -31,7 +31,11 @@ export async function searchEmpresaByName(
   const seen = new Set<number>();
   const result: Array<{ id: number; nombre: string }> = [];
 
-  // 1. Dominio del correo (prioridad máxima, va primero en la lista)
+  // Palabras genéricas que no sirven para distinguir empresas
+  const STOP_WORDS = new Set(["grupo", "group", "servicios", "soluciones", "ingenieria",
+    "construccion", "consultores", "spa", "ltda", "srl", "eirl", "chile", "and", "the"]);
+
+  // 1. Dominio del correo → si resuelve, es definitivo (no mezclar con otros)
   if (email && email.includes("@")) {
     const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
     if (domain) {
@@ -39,26 +43,26 @@ export async function searchEmpresaByName(
         where: { dominios: { has: domain } },
         select: { id_empresa: true, nombre: true },
       });
-      for (const e of byDomain) {
-        seen.add(e.id_empresa);
-        result.push({ id: e.id_empresa, nombre: e.nombre });
+      if (byDomain.length > 0) {
+        console.log(`[SEARCH] Por dominio "${domain}" (definitivo):`, byDomain.map(e => e.nombre));
+        return byDomain.map(e => ({ id: e.id_empresa, nombre: e.nombre }));
       }
-      if (byDomain.length) console.log(`[SEARCH] Por dominio "${domain}":`, byDomain.map(e => e.nombre));
     }
   }
 
   if (!q) return result;
 
   const qLower = q.toLowerCase();
-  const words = qLower.split(/\s+/).filter(w => w.length >= 3);
+  // Filtra stop words para evitar que "grupo" matchee empresas sin relación
+  const words = qLower.split(/\s+/).filter(w => w.length >= 3 && !STOP_WORDS.has(w));
 
   const matches = (text: string) => {
     const t = text.toLowerCase();
     if (t.includes(qLower) || qLower.includes(t)) return true;
-    return words.some(w => t.includes(w));
+    return words.length > 0 && words.some(w => t.includes(w));
   };
 
-  // 2. Búsqueda por nombre y aliases (agrega resultados no duplicados)
+  // 2. Búsqueda por nombre y aliases
   const [allEmpresas, allAliases] = await Promise.all([
     prisma.empresa.findMany({ select: { id_empresa: true, nombre: true } }),
     prisma.empresaAliasOutlook.findMany({ select: { alias: true, empresaId: true } }),
