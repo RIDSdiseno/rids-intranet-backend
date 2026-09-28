@@ -92,6 +92,28 @@ type EquipoAgentPayload = {
     oneDriveUsuario?: string | null;
     oneDriveDetalle?: any;
 
+    bateriaPresente?: boolean | string | null;
+    bateriaCantidad?: number | string | null;
+
+    bateriaCargaPorcentaje?: number | string | null;
+
+    bateriaCapacidadDisenoMWh?: number | string | null;
+    bateriaCapacidadCompletaMWh?: number | string | null;
+
+    bateriaSaludPorcentaje?: number | string | null;
+    bateriaDesgastePorcentaje?: number | string | null;
+
+    bateriaCiclos?: number | string | null;
+
+    bateriaEstado?: string | null;
+
+    bateriaNombre?: string | null;
+    bateriaFabricante?: string | null;
+    bateriaSerial?: string | null;
+    bateriaQuimica?: string | null;
+
+    bateriaAdvertencia?: string | null;
+
     adicionalesDetectados?: Array<{
         tipo?: string | null;
 
@@ -2158,22 +2180,51 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const soTexto = buildSoText(osName, osVersion, osBuild);
         const fechaRevisionAgente = formatFechaRevisionChileISO();
 
-        const detalleAntesUpdate = equipo?.id_equipo
-            ? await prisma.detalleEquipo.findUnique({
-                where: {
-                    idEquipo: equipo.id_equipo,
-                },
-                select: {
-                    oneDrive: true,
-                    oneDriveEstado: true,
-                    oneDriveInstalado: true,
-                    oneDriveEnEjecucion: true,
-                    oneDriveOperativo: true,
-                    oneDriveVersion: true,
-                    oneDriveUsuario: true,
-                },
-            })
-            : null;
+        const detalleAntesUpdate =
+            equipo?.id_equipo
+                ? await prisma.detalleEquipo.findUnique({
+                    where: {
+                        idEquipo:
+                            equipo.id_equipo,
+                    },
+
+                    select: {
+                        // OneDrive
+                        oneDrive: true,
+                        oneDriveEstado: true,
+                        oneDriveInstalado: true,
+                        oneDriveEnEjecucion: true,
+                        oneDriveOperativo: true,
+                        oneDriveVersion: true,
+                        oneDriveUsuario: true,
+
+                        // Batería
+                        bateriaPresente: true,
+                        bateriaCantidad: true,
+                        bateriaCargaPorcentaje: true,
+
+                        bateriaCapacidadDisenoMWh:
+                            true,
+
+                        bateriaCapacidadCompletaMWh:
+                            true,
+
+                        bateriaSaludPorcentaje:
+                            true,
+
+                        bateriaDesgastePorcentaje:
+                            true,
+
+                        bateriaCiclos: true,
+                        bateriaEstado: true,
+                        bateriaNombre: true,
+                        bateriaFabricante: true,
+                        bateriaSerial: true,
+                        bateriaQuimica: true,
+                        bateriaAdvertencia: true,
+                    },
+                })
+                : null;
 
         const hasOneDriveInstalado = Object.prototype.hasOwnProperty.call(
             body,
@@ -2205,6 +2256,96 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
                 ? body.oneDriveDetalle
                 : undefined;
+
+        /*
+* =====================================================
+* BATERÍA
+* =====================================================
+*
+* Es importante comprobar si el campo existe.
+*
+* Así, agentes antiguos que todavía no envían
+* información de batería NO borrarán datos ya
+* guardados por una versión nueva.
+*/
+
+        const hasBateriaPayload =
+            Object.prototype.hasOwnProperty.call(
+                body,
+                "bateriaPresente"
+            );
+
+        const bateriaPresente =
+            hasBateriaPayload
+                ? boolFromUnknown(
+                    body.bateriaPresente
+                )
+                : null;
+
+        const bateriaCantidad =
+            numberOrNull(
+                body.bateriaCantidad
+            );
+
+        const bateriaCargaPorcentaje =
+            numberOrNull(
+                body.bateriaCargaPorcentaje
+            );
+
+        const bateriaCapacidadDisenoMWh =
+            numberOrNull(
+                body.bateriaCapacidadDisenoMWh
+            );
+
+        const bateriaCapacidadCompletaMWh =
+            numberOrNull(
+                body.bateriaCapacidadCompletaMWh
+            );
+
+        const bateriaSaludPorcentaje =
+            numberOrNull(
+                body.bateriaSaludPorcentaje
+            );
+
+        const bateriaDesgastePorcentaje =
+            numberOrNull(
+                body.bateriaDesgastePorcentaje
+            );
+
+        const bateriaCiclos =
+            numberOrNull(
+                body.bateriaCiclos
+            );
+
+        const bateriaEstado =
+            cleanString(
+                body.bateriaEstado
+            );
+
+        const bateriaNombre =
+            cleanString(
+                body.bateriaNombre
+            );
+
+        const bateriaFabricante =
+            cleanString(
+                body.bateriaFabricante
+            );
+
+        const bateriaSerial =
+            cleanString(
+                body.bateriaSerial
+            );
+
+        const bateriaQuimica =
+            cleanString(
+                body.bateriaQuimica
+            );
+
+        const bateriaAdvertencia =
+            cleanString(
+                body.bateriaAdvertencia
+            );
 
         const detalleDespuesUpdate = await prisma.detalleEquipo.upsert({
             where: {
@@ -2251,6 +2392,59 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 ...(oneDriveVersion ? { oneDriveVersion } : {}),
                 ...(oneDriveUsuario ? { oneDriveUsuario } : {}),
                 ...(oneDriveDetalle !== undefined ? { oneDriveDetalle } : {}),
+
+                ...(hasBateriaPayload
+                    ? {
+                        bateriaPresente,
+
+                        bateriaCantidad:
+                            bateriaCantidad !== null
+                                ? Math.trunc(
+                                    bateriaCantidad
+                                )
+                                : null,
+
+                        bateriaCargaPorcentaje:
+                            bateriaCargaPorcentaje !== null
+                                ? Math.trunc(
+                                    bateriaCargaPorcentaje
+                                )
+                                : null,
+
+                        bateriaCapacidadDisenoMWh:
+                            bateriaCapacidadDisenoMWh !== null
+                                ? Math.trunc(
+                                    bateriaCapacidadDisenoMWh
+                                )
+                                : null,
+
+                        bateriaCapacidadCompletaMWh:
+                            bateriaCapacidadCompletaMWh !== null
+                                ? Math.trunc(
+                                    bateriaCapacidadCompletaMWh
+                                )
+                                : null,
+
+                        bateriaSaludPorcentaje,
+
+                        bateriaDesgastePorcentaje,
+
+                        bateriaCiclos:
+                            bateriaCiclos !== null
+                                ? Math.trunc(
+                                    bateriaCiclos
+                                )
+                                : null,
+
+                        bateriaEstado,
+
+                        bateriaNombre,
+                        bateriaFabricante,
+                        bateriaSerial,
+                        bateriaQuimica,
+                        bateriaAdvertencia,
+                    }
+                    : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
@@ -2287,6 +2481,58 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 oneDriveVersion,
                 oneDriveUsuario,
                 oneDriveDetalle,
+
+                bateriaPresente:
+                    hasBateriaPayload
+                        ? bateriaPresente
+                        : null,
+
+                bateriaCantidad:
+                    bateriaCantidad !== null
+                        ? Math.trunc(
+                            bateriaCantidad
+                        )
+                        : null,
+
+                bateriaCargaPorcentaje:
+                    bateriaCargaPorcentaje !== null
+                        ? Math.trunc(
+                            bateriaCargaPorcentaje
+                        )
+                        : null,
+
+                bateriaCapacidadDisenoMWh:
+                    bateriaCapacidadDisenoMWh !== null
+                        ? Math.trunc(
+                            bateriaCapacidadDisenoMWh
+                        )
+                        : null,
+
+                bateriaCapacidadCompletaMWh:
+                    bateriaCapacidadCompletaMWh !== null
+                        ? Math.trunc(
+                            bateriaCapacidadCompletaMWh
+                        )
+                        : null,
+
+                bateriaSaludPorcentaje,
+
+                bateriaDesgastePorcentaje,
+
+                bateriaCiclos:
+                    bateriaCiclos !== null
+                        ? Math.trunc(
+                            bateriaCiclos
+                        )
+                        : null,
+
+                bateriaEstado,
+
+                bateriaNombre,
+                bateriaFabricante,
+                bateriaSerial,
+                bateriaQuimica,
+                bateriaAdvertencia,
             },
         });
 
@@ -2592,6 +2838,60 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             detalleDespuesUpdate.oneDriveEnEjecucion
         );
 
+        /*
+  * =====================================================
+  * BATERÍA
+  * =====================================================
+  *
+  * Solo auditamos salud de batería si realmente
+  * existe una batería física.
+  *
+  * SIN_BATERIA se conserva en DetalleEquipo y
+  * EquipoAgenteEvento, pero no genera ruido en
+  * Historial equipo.
+  */
+
+        if (
+            hasBateriaPayload &&
+            bateriaPresente
+        ) {
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "bateriaEstado",
+                detalleAntesUpdate?.bateriaEstado,
+                detalleDespuesUpdate.bateriaEstado
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "bateriaSaludPorcentaje",
+                detalleAntesUpdate?.bateriaSaludPorcentaje,
+                detalleDespuesUpdate.bateriaSaludPorcentaje
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "bateriaDesgastePorcentaje",
+                detalleAntesUpdate?.bateriaDesgastePorcentaje,
+                detalleDespuesUpdate.bateriaDesgastePorcentaje
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "bateriaCapacidadCompletaMWh",
+                detalleAntesUpdate?.bateriaCapacidadCompletaMWh,
+                detalleDespuesUpdate.bateriaCapacidadCompletaMWh
+            );
+
+            addAgentAuditChange(
+                agentAuditChanges,
+                "bateriaCiclos",
+                detalleAntesUpdate?.bateriaCiclos,
+                detalleDespuesUpdate.bateriaCiclos
+            );
+        }
+
         const camposCambioReal = Object.keys(agentAuditChanges).filter(
             (field) =>
                 field !== "origen" &&
@@ -2720,6 +3020,50 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     oneDriveUsuario,
                     oneDriveDetalle: oneDriveDetalle ?? null,
 
+                    bateria: {
+                        presente:
+                            bateriaPresente,
+
+                        cantidad:
+                            bateriaCantidad,
+
+                        cargaPorcentaje:
+                            bateriaCargaPorcentaje,
+
+                        capacidadDisenoMWh:
+                            bateriaCapacidadDisenoMWh,
+
+                        capacidadCompletaMWh:
+                            bateriaCapacidadCompletaMWh,
+
+                        saludPorcentaje:
+                            bateriaSaludPorcentaje,
+
+                        desgastePorcentaje:
+                            bateriaDesgastePorcentaje,
+
+                        ciclos:
+                            bateriaCiclos,
+
+                        estado:
+                            bateriaEstado,
+
+                        nombre:
+                            bateriaNombre,
+
+                        fabricante:
+                            bateriaFabricante,
+
+                        serial:
+                            bateriaSerial,
+
+                        quimica:
+                            bateriaQuimica,
+
+                        advertencia:
+                            bateriaAdvertencia,
+                    },
+
                     adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                         ? body.adicionalesDetectados.filter(
                             (item) =>
@@ -2780,6 +3124,25 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             oneDriveOperativo,
             oneDriveVersion,
             oneDriveUsuario,
+
+            bateriaPresente,
+            bateriaCantidad,
+            bateriaCargaPorcentaje,
+
+            bateriaCapacidadDisenoMWh,
+            bateriaCapacidadCompletaMWh,
+
+            bateriaSaludPorcentaje,
+            bateriaDesgastePorcentaje,
+
+            bateriaCiclos,
+            bateriaEstado,
+
+            bateriaNombre,
+            bateriaFabricante,
+            bateriaSerial,
+            bateriaQuimica,
+            bateriaAdvertencia,
 
             adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                 ? body.adicionalesDetectados.filter(

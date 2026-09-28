@@ -660,7 +660,23 @@ model DetalleEquipo {
   oneDriveOperativo   Boolean?
   oneDriveUsuario     String?
   oneDriveVersion     String?
-  equipo              Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
+
+  /// ===================== Agente Windows / Batería =====================
+  bateriaPresente             Boolean?
+  bateriaCantidad             Int?
+  bateriaCargaPorcentaje      Int?
+  bateriaCapacidadDisenoMWh   Int?
+  bateriaCapacidadCompletaMWh Int?
+  bateriaSaludPorcentaje      Float?
+  bateriaDesgastePorcentaje   Float?
+  bateriaCiclos               Int?
+  bateriaEstado               String?
+  bateriaNombre               String?
+  bateriaFabricante           String?
+  bateriaSerial               String?
+  bateriaQuimica              String?
+  bateriaAdvertencia          String?
+  equipo                      Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])
 }
