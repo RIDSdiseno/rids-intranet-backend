@@ -864,6 +864,7 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteEmailFuente = cleanString(body.solicitanteEmailFuente) ?? null;
         const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
         const correoSeleccionadoPorTecnico = boolFromUnknown(body.correoSeleccionadoPorTecnico);
+        const requiereRevisionSolicitanteAgente = boolFromUnknown(body.requiereRevisionSolicitante);
         const emailsDetectados = Array.isArray(body.emailsDetectados)
             ? body.emailsDetectados
                 .map((item) => {
@@ -968,12 +969,17 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteDetectadoId = solicitanteDetectado?.id_solicitante ?? null;
         const solicitanteDetectadoEmailFinal = solicitanteEmail ?? equipo?.solicitanteDetectadoEmail ?? null;
         const solicitanteDetectadoIdFinal = solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
-        const fuenteConfiableParaAsignar = correoSeleccionadoPorTecnico ||
-            !conflictoCorreos ||
-            solicitanteEmailFuente === "OutlookProfile" ||
-            solicitanteEmailFuente === "OfficeIdentity" ||
-            solicitanteEmailFuente === "UPN" ||
-            solicitanteEmailFuente === "MacInstallerConfig";
+        const fuenteConfiableParaAsignar = !requiereRevisionSolicitanteAgente &&
+            (correoSeleccionadoPorTecnico ||
+                !conflictoCorreos ||
+                solicitanteEmailFuente ===
+                    "OutlookProfile" ||
+                solicitanteEmailFuente ===
+                    "OfficeIdentity" ||
+                solicitanteEmailFuente ===
+                    "UPN" ||
+                solicitanteEmailFuente ===
+                    "MacInstallerConfig");
         const solicitanteDetectadoBaseValido = Boolean(solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt ===
@@ -1020,31 +1026,88 @@ export async function receiveEquipoAgentInventory(req, res) {
         let idSolicitanteFinal = null;
         let requiereRevisionSolicitante = false;
         let motivoRevisionSolicitante = null;
-        if (solicitanteDetectadoValido && solicitanteDetectadoId) {
-            idSolicitanteFinal = solicitanteDetectadoId;
+        /*
+         * =====================================================
+         * CASO 1:
+         * EL AGENTE DECLARÓ EXPLÍCITAMENTE QUE HAY AMBIGÜEDAD
+         * =====================================================
+         */
+        if (requiereRevisionSolicitanteAgente) {
+            idSolicitanteFinal =
+                solicitanteActualValido
+                    ? solicitanteActualId
+                    : null;
+            requiereRevisionSolicitante =
+                true;
+            motivoRevisionSolicitante =
+                "El agente detectó un cambio de identidad ambiguo. " +
+                    "Se mantiene el solicitante actual hasta revisión manual.";
+        }
+        /*
+         * =====================================================
+         * CASO 2:
+         * NUEVA IDENTIDAD VÁLIDA Y CONFIABLE
+         * =====================================================
+         */
+        else if (solicitanteDetectadoValido &&
+            solicitanteDetectadoId) {
+            idSolicitanteFinal =
+                solicitanteDetectadoId;
             if (solicitanteActualId &&
-                solicitanteActualId !== solicitanteDetectadoId) {
+                solicitanteActualId !==
+                    solicitanteDetectadoId) {
                 motivoRevisionSolicitante =
-                    "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
+                    "El agente actualizó automáticamente el solicitante " +
+                        "porque detectó un email real distinto al asignado.";
             }
         }
-        else if (conflictoCorreos && !correoSeleccionadoPorTecnico && solicitanteDetectadoId) {
-            idSolicitanteFinal = solicitanteActualValido
-                ? solicitanteActualId
-                : null;
-            requiereRevisionSolicitante = true;
+        /*
+         * =====================================================
+         * CASO 3:
+         * CONFLICTO DETECTADO POR COMPATIBILIDAD
+         * CON AGENTES ANTERIORES
+         * =====================================================
+         */
+        else if (conflictoCorreos &&
+            !correoSeleccionadoPorTecnico &&
+            solicitanteDetectadoId) {
+            idSolicitanteFinal =
+                solicitanteActualValido
+                    ? solicitanteActualId
+                    : null;
+            requiereRevisionSolicitante =
+                true;
             motivoRevisionSolicitante =
-                "El agente detectó correos o dominios distintos entre las fuentes del equipo. Se requiere revisión manual antes de cambiar el solicitante.";
+                "El agente detectó correos o dominios distintos entre " +
+                    "las fuentes del equipo. Se requiere revisión manual " +
+                    "antes de cambiar el solicitante.";
         }
+        /*
+         * =====================================================
+         * CASO 4:
+         * CONSERVAR SOLICITANTE ACTUAL
+         * =====================================================
+         */
         else if (solicitanteActualValido) {
-            idSolicitanteFinal = solicitanteActualId;
+            idSolicitanteFinal =
+                solicitanteActualId;
         }
+        /*
+         * =====================================================
+         * CASO 5:
+         * NO EXISTE SOLICITANTE UTILIZABLE
+         * =====================================================
+         */
         else {
-            idSolicitanteFinal = null;
-            requiereRevisionSolicitante = true;
+            idSolicitanteFinal =
+                null;
+            requiereRevisionSolicitante =
+                true;
             if (solicitanteActualId) {
                 motivoRevisionSolicitante =
-                    "El solicitante asignado no pertenece a la empresa detectada o no es válido, y el agente no detectó un email real.";
+                    "El solicitante asignado no pertenece a la empresa " +
+                        "detectada o no es válido, y el agente no detectó " +
+                        "un email real.";
             }
             else {
                 motivoRevisionSolicitante =
@@ -1220,6 +1283,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     idEquipo: equipo.id_equipo,
                 },
                 select: {
+                    // OneDrive
                     oneDrive: true,
                     oneDriveEstado: true,
                     oneDriveInstalado: true,
@@ -1227,6 +1291,21 @@ export async function receiveEquipoAgentInventory(req, res) {
                     oneDriveOperativo: true,
                     oneDriveVersion: true,
                     oneDriveUsuario: true,
+                    // Batería
+                    bateriaPresente: true,
+                    bateriaCantidad: true,
+                    bateriaCargaPorcentaje: true,
+                    bateriaCapacidadDisenoMWh: true,
+                    bateriaCapacidadCompletaMWh: true,
+                    bateriaSaludPorcentaje: true,
+                    bateriaDesgastePorcentaje: true,
+                    bateriaCiclos: true,
+                    bateriaEstado: true,
+                    bateriaNombre: true,
+                    bateriaFabricante: true,
+                    bateriaSerial: true,
+                    bateriaQuimica: true,
+                    bateriaAdvertencia: true,
                 },
             })
             : null;
@@ -1249,6 +1328,34 @@ export async function receiveEquipoAgentInventory(req, res) {
         const oneDriveDetalle = body.oneDriveDetalle && typeof body.oneDriveDetalle === "object"
             ? body.oneDriveDetalle
             : undefined;
+        /*
+* =====================================================
+* BATERÍA
+* =====================================================
+*
+* Es importante comprobar si el campo existe.
+*
+* Así, agentes antiguos que todavía no envían
+* información de batería NO borrarán datos ya
+* guardados por una versión nueva.
+*/
+        const hasBateriaPayload = Object.prototype.hasOwnProperty.call(body, "bateriaPresente");
+        const bateriaPresente = hasBateriaPayload
+            ? boolFromUnknown(body.bateriaPresente)
+            : null;
+        const bateriaCantidad = numberOrNull(body.bateriaCantidad);
+        const bateriaCargaPorcentaje = numberOrNull(body.bateriaCargaPorcentaje);
+        const bateriaCapacidadDisenoMWh = numberOrNull(body.bateriaCapacidadDisenoMWh);
+        const bateriaCapacidadCompletaMWh = numberOrNull(body.bateriaCapacidadCompletaMWh);
+        const bateriaSaludPorcentaje = numberOrNull(body.bateriaSaludPorcentaje);
+        const bateriaDesgastePorcentaje = numberOrNull(body.bateriaDesgastePorcentaje);
+        const bateriaCiclos = numberOrNull(body.bateriaCiclos);
+        const bateriaEstado = cleanString(body.bateriaEstado);
+        const bateriaNombre = cleanString(body.bateriaNombre);
+        const bateriaFabricante = cleanString(body.bateriaFabricante);
+        const bateriaSerial = cleanString(body.bateriaSerial);
+        const bateriaQuimica = cleanString(body.bateriaQuimica);
+        const bateriaAdvertencia = cleanString(body.bateriaAdvertencia);
         const detalleDespuesUpdate = await prisma.detalleEquipo.upsert({
             where: {
                 idEquipo: equipo.id_equipo,
@@ -1289,6 +1396,34 @@ export async function receiveEquipoAgentInventory(req, res) {
                 ...(oneDriveVersion ? { oneDriveVersion } : {}),
                 ...(oneDriveUsuario ? { oneDriveUsuario } : {}),
                 ...(oneDriveDetalle !== undefined ? { oneDriveDetalle } : {}),
+                ...(hasBateriaPayload
+                    ? {
+                        bateriaPresente,
+                        bateriaCantidad: bateriaCantidad !== null
+                            ? Math.trunc(bateriaCantidad)
+                            : null,
+                        bateriaCargaPorcentaje: bateriaCargaPorcentaje !== null
+                            ? Math.trunc(bateriaCargaPorcentaje)
+                            : null,
+                        bateriaCapacidadDisenoMWh: bateriaCapacidadDisenoMWh !== null
+                            ? Math.trunc(bateriaCapacidadDisenoMWh)
+                            : null,
+                        bateriaCapacidadCompletaMWh: bateriaCapacidadCompletaMWh !== null
+                            ? Math.trunc(bateriaCapacidadCompletaMWh)
+                            : null,
+                        bateriaSaludPorcentaje,
+                        bateriaDesgastePorcentaje,
+                        bateriaCiclos: bateriaCiclos !== null
+                            ? Math.trunc(bateriaCiclos)
+                            : null,
+                        bateriaEstado,
+                        bateriaNombre,
+                        bateriaFabricante,
+                        bateriaSerial,
+                        bateriaQuimica,
+                        bateriaAdvertencia,
+                    }
+                    : {}),
             },
             create: {
                 idEquipo: equipo.id_equipo,
@@ -1319,6 +1454,32 @@ export async function receiveEquipoAgentInventory(req, res) {
                 oneDriveVersion,
                 oneDriveUsuario,
                 oneDriveDetalle,
+                bateriaPresente: hasBateriaPayload
+                    ? bateriaPresente
+                    : null,
+                bateriaCantidad: bateriaCantidad !== null
+                    ? Math.trunc(bateriaCantidad)
+                    : null,
+                bateriaCargaPorcentaje: bateriaCargaPorcentaje !== null
+                    ? Math.trunc(bateriaCargaPorcentaje)
+                    : null,
+                bateriaCapacidadDisenoMWh: bateriaCapacidadDisenoMWh !== null
+                    ? Math.trunc(bateriaCapacidadDisenoMWh)
+                    : null,
+                bateriaCapacidadCompletaMWh: bateriaCapacidadCompletaMWh !== null
+                    ? Math.trunc(bateriaCapacidadCompletaMWh)
+                    : null,
+                bateriaSaludPorcentaje,
+                bateriaDesgastePorcentaje,
+                bateriaCiclos: bateriaCiclos !== null
+                    ? Math.trunc(bateriaCiclos)
+                    : null,
+                bateriaEstado,
+                bateriaNombre,
+                bateriaFabricante,
+                bateriaSerial,
+                bateriaQuimica,
+                bateriaAdvertencia,
             },
         });
         const agentAuditChanges = {};
@@ -1383,6 +1544,26 @@ export async function receiveEquipoAgentInventory(req, res) {
         addAgentAuditChange(agentAuditChanges, "oneDriveOperativo", detalleAntesUpdate?.oneDriveOperativo, detalleDespuesUpdate.oneDriveOperativo);
         addAgentAuditChange(agentAuditChanges, "oneDriveInstalado", detalleAntesUpdate?.oneDriveInstalado, detalleDespuesUpdate.oneDriveInstalado);
         addAgentAuditChange(agentAuditChanges, "oneDriveEnEjecucion", detalleAntesUpdate?.oneDriveEnEjecucion, detalleDespuesUpdate.oneDriveEnEjecucion);
+        /*
+  * =====================================================
+  * BATERÍA
+  * =====================================================
+  *
+  * Solo auditamos salud de batería si realmente
+  * existe una batería física.
+  *
+  * SIN_BATERIA se conserva en DetalleEquipo y
+  * EquipoAgenteEvento, pero no genera ruido en
+  * Historial equipo.
+  */
+        if (hasBateriaPayload &&
+            bateriaPresente) {
+            addAgentAuditChange(agentAuditChanges, "bateriaEstado", detalleAntesUpdate?.bateriaEstado, detalleDespuesUpdate.bateriaEstado);
+            addAgentAuditChange(agentAuditChanges, "bateriaSaludPorcentaje", detalleAntesUpdate?.bateriaSaludPorcentaje, detalleDespuesUpdate.bateriaSaludPorcentaje);
+            addAgentAuditChange(agentAuditChanges, "bateriaDesgastePorcentaje", detalleAntesUpdate?.bateriaDesgastePorcentaje, detalleDespuesUpdate.bateriaDesgastePorcentaje);
+            addAgentAuditChange(agentAuditChanges, "bateriaCapacidadCompletaMWh", detalleAntesUpdate?.bateriaCapacidadCompletaMWh, detalleDespuesUpdate.bateriaCapacidadCompletaMWh);
+            addAgentAuditChange(agentAuditChanges, "bateriaCiclos", detalleAntesUpdate?.bateriaCiclos, detalleDespuesUpdate.bateriaCiclos);
+        }
         const camposCambioReal = Object.keys(agentAuditChanges).filter((field) => field !== "origen" &&
             field !== "accionAgente");
         const debeCrearAudit = fueCreadoPorAgente ||
@@ -1454,6 +1635,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     solicitanteEmailFuente,
                     conflictoCorreos,
                     correoSeleccionadoPorTecnico,
+                    requiereRevisionSolicitanteAgente,
                     emailsDetectados,
                     dominioEmpresa,
                     empresaDetectadaId: empresaDetectada?.id_empresa ?? null,
@@ -1478,6 +1660,22 @@ export async function receiveEquipoAgentInventory(req, res) {
                     oneDriveVersion,
                     oneDriveUsuario,
                     oneDriveDetalle: oneDriveDetalle ?? null,
+                    bateria: {
+                        presente: bateriaPresente,
+                        cantidad: bateriaCantidad,
+                        cargaPorcentaje: bateriaCargaPorcentaje,
+                        capacidadDisenoMWh: bateriaCapacidadDisenoMWh,
+                        capacidadCompletaMWh: bateriaCapacidadCompletaMWh,
+                        saludPorcentaje: bateriaSaludPorcentaje,
+                        desgastePorcentaje: bateriaDesgastePorcentaje,
+                        ciclos: bateriaCiclos,
+                        estado: bateriaEstado,
+                        nombre: bateriaNombre,
+                        fabricante: bateriaFabricante,
+                        serial: bateriaSerial,
+                        quimica: bateriaQuimica,
+                        advertencia: bateriaAdvertencia,
+                    },
                     adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                         ? body.adicionalesDetectados.filter((item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR")
                         : [],
@@ -1523,6 +1721,20 @@ export async function receiveEquipoAgentInventory(req, res) {
             oneDriveOperativo,
             oneDriveVersion,
             oneDriveUsuario,
+            bateriaPresente,
+            bateriaCantidad,
+            bateriaCargaPorcentaje,
+            bateriaCapacidadDisenoMWh,
+            bateriaCapacidadCompletaMWh,
+            bateriaSaludPorcentaje,
+            bateriaDesgastePorcentaje,
+            bateriaCiclos,
+            bateriaEstado,
+            bateriaNombre,
+            bateriaFabricante,
+            bateriaSerial,
+            bateriaQuimica,
+            bateriaAdvertencia,
             adicionalesDetectados: Array.isArray(body.adicionalesDetectados)
                 ? body.adicionalesDetectados.filter((item) => cleanString(item.tipo)?.toUpperCase() === "MONITOR").length
                 : 0,

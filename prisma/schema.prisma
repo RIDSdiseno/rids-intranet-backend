@@ -628,54 +628,53 @@ model EquipoAdicional {
 }
 
 model DetalleEquipo {
-  id                  Int      @id @default(autoincrement()) @map("id_detalle_equipo")
-  idEquipo            Int      @unique
-  macWifi             String?
-  so                  String?
-  tipoDd              String?
-  estadoAlm           String?
-  office              String?
-  teamViewer          String?
-  claveTv             String?
-  revisado            String?
-  adminRidsPassword   String?
-  adminRidsUsuario    String?
-  passwordEmpresa     String?
-  passwordPersonal    String?
-  usuarioEmpresa      String?
-  usuarioPersonal     String?
-  redEthernet         String?
-  antivirusActivo     Boolean?
+  id                          Int      @id @default(autoincrement()) @map("id_detalle_equipo")
+  idEquipo                    Int      @unique
+  macWifi                     String?
+  so                          String?
+  tipoDd                      String?
+  estadoAlm                   String?
+  office                      String?
+  teamViewer                  String?
+  claveTv                     String?
+  revisado                    String?
+  adminRidsPassword           String?
+  adminRidsUsuario            String?
+  passwordEmpresa             String?
+  passwordPersonal            String?
+  usuarioEmpresa              String?
+  usuarioPersonal             String?
+  redEthernet                 String?
+  antivirusActivo             Boolean?
   /// ===================== Agente Windows / Seguridad =====================
-  antivirusNombre     String?
-  bitlockerEstado     String?
-  firewallActivo      Boolean?
-  observacionAgente   String?
-  windowsUpdate       String?
-  oneDrive            String?
-  oneDriveDetalle     Json?
-  oneDriveEnEjecucion Boolean?
-  oneDriveEstado      String?
-  oneDriveInstalado   Boolean?
-  oneDriveOperativo   Boolean?
-  oneDriveUsuario     String?
-  oneDriveVersion     String?
-
+  antivirusNombre             String?
+  bitlockerEstado             String?
+  firewallActivo              Boolean?
+  observacionAgente           String?
+  windowsUpdate               String?
+  oneDrive                    String?
+  oneDriveDetalle             Json?
+  oneDriveEnEjecucion         Boolean?
+  oneDriveEstado              String?
+  oneDriveInstalado           Boolean?
+  oneDriveOperativo           Boolean?
+  oneDriveUsuario             String?
+  oneDriveVersion             String?
+  bateriaAdvertencia          String?
+  bateriaCantidad             Int?
+  bateriaCapacidadCompletaMWh Int?
+  bateriaCapacidadDisenoMWh   Int?
+  bateriaCargaPorcentaje      Int?
+  bateriaCiclos               Int?
+  bateriaDesgastePorcentaje   Float?
+  bateriaEstado               String?
+  bateriaFabricante           String?
+  bateriaNombre               String?
   /// ===================== Agente Windows / Batería =====================
   bateriaPresente             Boolean?
-  bateriaCantidad             Int?
-  bateriaCargaPorcentaje      Int?
-  bateriaCapacidadDisenoMWh   Int?
-  bateriaCapacidadCompletaMWh Int?
-  bateriaSaludPorcentaje      Float?
-  bateriaDesgastePorcentaje   Float?
-  bateriaCiclos               Int?
-  bateriaEstado               String?
-  bateriaNombre               String?
-  bateriaFabricante           String?
-  bateriaSerial               String?
   bateriaQuimica              String?
-  bateriaAdvertencia          String?
+  bateriaSaludPorcentaje      Float?
+  bateriaSerial               String?
   equipo                      Equipo   @relation(fields: [idEquipo], references: [id_equipo], onDelete: Cascade)
 
   @@index([idEquipo])

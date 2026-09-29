@@ -5,44 +5,52 @@ import { bus } from "../lib/events.js";
 import crypto from "crypto";
 export async function searchEmpresaByName(query, email) {
     const q = query.trim();
-    // 1. Lookup por dominio del correo (más confiable)
+    if (!q && !email)
+        return [];
+    const seen = new Set();
+    const result = [];
+    // Palabras genéricas que no sirven para distinguir empresas
+    const STOP_WORDS = new Set(["grupo", "group", "servicios", "soluciones", "ingenieria",
+        "construccion", "consultores", "spa", "ltda", "srl", "eirl", "chile", "and", "the"]);
+    // 1. Dominio del correo → si resuelve, es definitivo (no mezclar con otros)
     if (email && email.includes("@")) {
         const domain = (email.split("@")[1] ?? "").toLowerCase().trim();
-        const byDomain = await prisma.empresa.findMany({
-            where: { dominios: { has: domain } },
-            select: { id_empresa: true, nombre: true },
-        });
-        if (byDomain.length > 0) {
-            console.log(`[SEARCH] Empresa por dominio "${domain}":`, byDomain.map(e => e.nombre));
-            return byDomain.map(e => ({ id: e.id_empresa, nombre: e.nombre }));
+        if (domain) {
+            const byDomain = await prisma.empresa.findMany({
+                where: { dominios: { has: domain } },
+                select: { id_empresa: true, nombre: true },
+            });
+            if (byDomain.length > 0) {
+                console.log(`[SEARCH] Por dominio "${domain}" (definitivo):`, byDomain.map(e => e.nombre));
+                return byDomain.map(e => ({ id: e.id_empresa, nombre: e.nombre }));
+            }
         }
     }
     if (!q)
-        return [];
+        return result;
     const qLower = q.toLowerCase();
-    const words = qLower.split(/\s+/).filter(w => w.length >= 3);
+    // Filtra stop words para evitar que "grupo" matchee empresas sin relación
+    const words = qLower.split(/\s+/).filter(w => w.length >= 3 && !STOP_WORDS.has(w));
     const matches = (text) => {
         const t = text.toLowerCase();
         if (t.includes(qLower) || qLower.includes(t))
             return true;
-        return words.some(w => t.includes(w));
+        return words.length > 0 && words.some(w => t.includes(w));
     };
-    // 2. Fallback: búsqueda por nombre y aliases
+    // 2. Búsqueda por nombre y aliases
     const [allEmpresas, allAliases] = await Promise.all([
         prisma.empresa.findMany({ select: { id_empresa: true, nombre: true } }),
         prisma.empresaAliasOutlook.findMany({ select: { alias: true, empresaId: true } }),
     ]);
-    const seen = new Set();
-    const result = [];
     for (const e of allEmpresas) {
-        if (matches(e.nombre)) {
+        if (!seen.has(e.id_empresa) && matches(e.nombre)) {
             seen.add(e.id_empresa);
             result.push({ id: e.id_empresa, nombre: e.nombre });
         }
     }
     const aliasHits = new Set(allAliases.filter(a => matches(a.alias)).map(a => a.empresaId));
     for (const e of allEmpresas) {
-        if (aliasHits.has(e.id_empresa) && !seen.has(e.id_empresa)) {
+        if (!seen.has(e.id_empresa) && aliasHits.has(e.id_empresa)) {
             seen.add(e.id_empresa);
             result.push({ id: e.id_empresa, nombre: e.nombre });
         }
@@ -73,12 +81,13 @@ export async function createTicketFromWhatsapp(input) {
             if (empresa)
                 console.log(`[WC-TICKET] Empresa por nombre "${company}": ${empresa.nombre}`);
         }
-        // c) Por alias (fallback final)
+        // c) Por alias/nombre similar (fallback final — toma el primer resultado)
         if (!empresa) {
             const hits = await searchEmpresaByName(company);
-            if (hits.length === 1 && hits[0]) {
+            const hit = hits[0];
+            if (hit) {
                 empresa = await prisma.empresa.findUnique({
-                    where: { id_empresa: hits[0].id },
+                    where: { id_empresa: hit.id },
                     select: { id_empresa: true, nombre: true },
                 });
                 if (empresa)
