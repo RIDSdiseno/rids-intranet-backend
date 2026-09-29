@@ -213,19 +213,68 @@ export async function conciliarDocumentoRcv(params: {
         },
     });
 
-    if (enviarCorreo && correoDestino) {
-        try {
-            await enviarCorreoConciliacionRcv({
-                to: correoDestino,
-                conciliacion,
-            });
-        } catch (error) {
-            console.error("No se pudo enviar correo de conciliación:", {
+    if (
+        enviarCorreo &&
+        correoDestino &&
+        correoDestino.length >
+        0
+    ) {
+        void enviarCorreoConciliacionRcv({
+            to:
                 correoDestino,
-                conciliacionId: conciliacion.id,
-                error,
-            });
-        }
+
+            conciliacion,
+        })
+            .then(
+                () => {
+                    console.log(
+                        "[CONCILIACION MAIL] ✅ Correo de conciliación procesado",
+                        {
+                            conciliacionId:
+                                conciliacion.id,
+
+                            empresa:
+                                conciliacion.empresaKey,
+
+                            tipoRcv:
+                                conciliacion.tipoRcv,
+
+                            folio:
+                                conciliacion.folio,
+
+                            destinatarios:
+                                correoDestino,
+                        }
+                    );
+                }
+            )
+            .catch(
+                (
+                    error
+                ) => {
+                    console.error(
+                        "[CONCILIACION MAIL] ❌ No se pudo enviar correo de conciliación",
+                        {
+                            conciliacionId:
+                                conciliacion.id,
+
+                            empresa:
+                                conciliacion.empresaKey,
+
+                            tipoRcv:
+                                conciliacion.tipoRcv,
+
+                            folio:
+                                conciliacion.folio,
+
+                            destinatarios:
+                                correoDestino,
+
+                            error,
+                        }
+                    );
+                }
+            );
     }
 
     return conciliacion;

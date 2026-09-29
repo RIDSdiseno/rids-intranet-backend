@@ -1,6 +1,8 @@
 // src/service/baseapi/baseapi-rcv-conciliacion-mail.service.ts
 import type { RcvConciliacion } from "@prisma/client";
-import { emailSenderService } from "../email/email-sender.service.js";
+import {
+    graphFinanzasService,
+} from "./graph-finanzas.service.js";
 
 function escapeHtml(value: unknown): string {
     return String(value ?? "")
@@ -133,9 +135,47 @@ export async function enviarCorreoConciliacionRcv(params: {
         </div>
     `;
 
-    await emailSenderService.sendHtmlEmail({
+    const inicio =
+        Date.now();
+
+    console.log(
+        "[CONCILIACION MAIL] 📤 Enviando por Microsoft Graph",
+        {
+            from:
+                process.env
+                    .GRAPH_FINANZAS_USER,
+
+            to,
+
+            folio:
+                conciliacion.folio,
+        }
+    );
+
+    await graphFinanzasService.sendMail({
         to,
+
         subject,
-        html,
+
+        bodyHtml:
+            html,
     });
+
+    console.log(
+        "[CONCILIACION MAIL] ✅ Correo enviado por Microsoft Graph",
+        {
+            from:
+                process.env
+                    .GRAPH_FINANZAS_USER,
+
+            to,
+
+            folio:
+                conciliacion.folio,
+
+            duracionMs:
+                Date.now() -
+                inicio,
+        }
+    );
 }

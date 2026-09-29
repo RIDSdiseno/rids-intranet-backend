@@ -12,8 +12,17 @@ type EquipoAgentPayload = {
     solicitanteEmail?: string | null;
     solicitanteNombre?: string | null;
     solicitanteEmailFuente?: string | null;
-    conflictoCorreos?: boolean | string | null;
-    correoSeleccionadoPorTecnico?: boolean | string | null;
+    conflictoCorreos?:
+    boolean | string | null;
+
+    correoSeleccionadoPorTecnico?:
+    boolean | string | null;
+
+    seleccionManualPersistida?:
+    boolean | string | null;
+
+    requiereRevisionSolicitante?:
+    boolean | string | null;
     emailsDetectados?: Array<{
         email?: string | null;
         source?: string | null;
@@ -1660,9 +1669,20 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
 
-        const correoSeleccionadoPorTecnico = boolFromUnknown(
-            body.correoSeleccionadoPorTecnico
-        );
+        const correoSeleccionadoPorTecnico =
+            boolFromUnknown(
+                body.correoSeleccionadoPorTecnico
+            );
+
+        const seleccionManualPersistida =
+            boolFromUnknown(
+                body.seleccionManualPersistida
+            );
+
+        const requiereRevisionSolicitanteAgente =
+            boolFromUnknown(
+                body.requiereRevisionSolicitante
+            );
 
         const emailsDetectados =
             Array.isArray(
@@ -1842,13 +1862,23 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
         const solicitanteDetectadoIdFinal =
             solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
 
+        const fuenteConfiable =
+            solicitanteEmailFuente ===
+            "OutlookProfile" ||
+            solicitanteEmailFuente ===
+            "OfficeIdentity" ||
+            solicitanteEmailFuente ===
+            "UPN" ||
+            solicitanteEmailFuente ===
+            "MacInstallerConfig";
+
         const fuenteConfiableParaAsignar =
-            correoSeleccionadoPorTecnico ||
-            !conflictoCorreos ||
-            solicitanteEmailFuente === "OutlookProfile" ||
-            solicitanteEmailFuente === "OfficeIdentity" ||
-            solicitanteEmailFuente === "UPN" ||
-            solicitanteEmailFuente === "MacInstallerConfig";
+            !requiereRevisionSolicitanteAgente &&
+            (
+                correoSeleccionadoPorTecnico ||
+                seleccionManualPersistida ||
+                fuenteConfiable
+            );
 
         const solicitanteDetectadoBaseValido =
             Boolean(
@@ -1941,8 +1971,31 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                 solicitanteActualId &&
                 solicitanteActualId !== solicitanteDetectadoId
             ) {
-                motivoRevisionSolicitante =
-                    "El agente actualizó automáticamente el solicitante porque detectó un email real distinto al asignado.";
+
+                if (
+                    correoSeleccionadoPorTecnico
+                ) {
+
+                    motivoRevisionSolicitante =
+                        "El solicitante fue actualizado mediante selección " +
+                        "manual del técnico entre las identidades detectadas.";
+
+                }
+                else if (
+                    seleccionManualPersistida
+                ) {
+
+                    motivoRevisionSolicitante =
+                        "El agente aplicó una identidad previamente " +
+                        "confirmada manualmente por un técnico.";
+
+                }
+                else {
+
+                    motivoRevisionSolicitante =
+                        "El agente actualizó automáticamente el solicitante " +
+                        "porque detectó un email confiable distinto al asignado.";
+                }
             }
         } else if (conflictoCorreos && !correoSeleccionadoPorTecnico && solicitanteDetectadoId) {
             idSolicitanteFinal = solicitanteActualValido
@@ -2989,6 +3042,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     solicitanteEmailFuente,
                     conflictoCorreos,
                     correoSeleccionadoPorTecnico,
+                    seleccionManualPersistida,
+                    requiereRevisionSolicitanteAgente,
                     emailsDetectados,
                     dominioEmpresa,
 
