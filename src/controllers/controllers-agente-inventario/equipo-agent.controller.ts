@@ -1875,15 +1875,8 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             !requiereRevisionSolicitanteAgente &&
             (
                 correoSeleccionadoPorTecnico ||
-                !conflictoCorreos ||
-                solicitanteEmailFuente ===
-                "OutlookProfile" ||
-                solicitanteEmailFuente ===
-                "OfficeIdentity" ||
-                solicitanteEmailFuente ===
-                "UPN" ||
-                solicitanteEmailFuente ===
-                "MacInstallerConfig"
+                seleccionManualPersistida ||
+                fuenteConfiable
             );
 
         const solicitanteDetectadoBaseValido =
@@ -2017,38 +2010,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             idSolicitanteFinal =
                 solicitanteDetectadoId;
 
-            if (
-                solicitanteActualId &&
-                solicitanteActualId !==
-                solicitanteDetectadoId
-            ) {
+            requiereRevisionSolicitante =
+                false;
 
-                if (
-                    correoSeleccionadoPorTecnico
-                ) {
-
-                    motivoRevisionSolicitante =
-                        "El solicitante fue actualizado mediante selección " +
-                        "manual del técnico entre las identidades detectadas.";
-
-                }
-                else if (
-                    seleccionManualPersistida
-                ) {
-
-                    motivoRevisionSolicitante =
-                        "El agente aplicó una identidad previamente " +
-                        "confirmada manualmente por un técnico.";
-
-                }
-                else {
-
-                    motivoRevisionSolicitante =
-                        "El agente actualizó automáticamente el solicitante " +
-                        "porque detectó un email confiable distinto al asignado.";
-                }
-            }
-
+            motivoRevisionSolicitante =
+                null;
         }
 
 
@@ -3273,6 +3239,7 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             solicitanteEmailFuente,
             conflictoCorreos,
             correoSeleccionadoPorTecnico,
+            seleccionManualPersistida,
             emailsDetectados,
 
             macAddress,

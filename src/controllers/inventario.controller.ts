@@ -1112,6 +1112,31 @@ function buildInventarioExcel(
                         e.detalle?.teamViewer ??
                         "",
 
+                    "ESTADO BATERÍA":
+                        e.detalle?.bateriaEstado === "BUENA"
+                            ? "Buena"
+                            : e.detalle?.bateriaEstado === "DESGASTADA"
+                                ? "Desgastada"
+                                : e.detalle?.bateriaEstado === "CRITICA"
+                                    ? "Crítica"
+                                    : e.detalle?.bateriaEstado === "SIN_BATERIA"
+                                        ? "Sin batería"
+                                        : e.detalle?.bateriaEstado === "SIN_DATOS"
+                                            ? "Sin datos"
+                                            : "",
+
+                    "SALUD BATERÍA":
+                        e.detalle?.bateriaSaludPorcentaje !== null &&
+                            e.detalle?.bateriaSaludPorcentaje !== undefined
+                            ? `${e.detalle.bateriaSaludPorcentaje}%`
+                            : "",
+
+                    "DESGASTE BATERÍA":
+                        e.detalle?.bateriaDesgastePorcentaje !== null &&
+                            e.detalle?.bateriaDesgastePorcentaje !== undefined
+                            ? `${e.detalle.bateriaDesgastePorcentaje}%`
+                            : "",
+
                     /*
                      * ==========================================
                      * ADICIONALES
@@ -1162,6 +1187,10 @@ function buildInventarioExcel(
             "DISCO",
             "SISTEMA OPERATIVO",
             "TEAMVIEWER",
+
+            "ESTADO BATERÍA",
+            "SALUD BATERÍA",
+            "DESGASTE BATERÍA",
 
             /*
              * Adicionales.

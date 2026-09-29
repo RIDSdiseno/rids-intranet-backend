@@ -888,6 +888,9 @@ export async function getInventarioByEmpresa(
             passwordEmpresa: true,
             passwordPersonal: true,
             usuarioPersonal: true,
+            bateriaEstado: true,
+            bateriaSaludPorcentaje: true,
+            bateriaDesgastePorcentaje: true,
           },
         },
 
