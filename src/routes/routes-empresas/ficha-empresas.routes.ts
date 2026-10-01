@@ -43,7 +43,53 @@ import {
   deleteUsuarioServidor,
 } from "../../controllers/controllers-empresas/servidor-usuarios.controller.js";
 
+import {
+  actualizarSuscripcion,
+  crearSuscripcion,
+  eliminarContrato,
+  eliminarSuscripcion,
+  listarSuscripciones,
+  obtenerContrato,
+  obtenerSuscripcion,
+  subirContrato,
+} from "../../controllers/controllers-empresas/suscripciones-contratos.controller.js";
+
+import multer from "multer";
+
 export const fichaEmpresasRouter = Router();
+
+const uploadContrato =
+  multer({
+    storage:
+      multer.memoryStorage(),
+
+    limits: {
+      fileSize:
+        10 * 1024 * 1024,
+    },
+
+    fileFilter: (
+      _req,
+      file,
+      cb
+    ) => {
+      if (
+        file.mimetype !==
+        "application/pdf"
+      ) {
+        return cb(
+          new Error(
+            "Solo se permiten archivos PDF."
+          )
+        );
+      }
+
+      cb(
+        null,
+        true
+      );
+    },
+  });
 
 /* ===================== FICHA ===================== */
 fichaEmpresasRouter.get("/:empresaId/ficha", obtenerFichaEmpresa);
@@ -71,10 +117,10 @@ fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);
 fichaEmpresasRouter.delete("/servidores/:id", deleteServidor);
 
 /* ===================== SERVIDOR USUARIOS ===================== */
-fichaEmpresasRouter.get("/servidores/:servidorId/usuarios",getUsuariosByServidor);
-fichaEmpresasRouter.post("/servidores/:servidorId/usuarios",createUsuarioServidor);
-fichaEmpresasRouter.put(  "/servidor-usuarios/:id",updateUsuarioServidor);
-fichaEmpresasRouter.delete( "/servidor-usuarios/:id",deleteUsuarioServidor);
+fichaEmpresasRouter.get("/servidores/:servidorId/usuarios", getUsuariosByServidor);
+fichaEmpresasRouter.post("/servidores/:servidorId/usuarios", createUsuarioServidor);
+fichaEmpresasRouter.put("/servidor-usuarios/:id", updateUsuarioServidor);
+fichaEmpresasRouter.delete("/servidor-usuarios/:id", deleteUsuarioServidor);
 
 /* ===================== SUCURSALES ===================== */
 fichaEmpresasRouter.get("/sucursales/:sucursalId", obtenerFichaSucursal);
@@ -82,6 +128,20 @@ fichaEmpresasRouter.put("/sucursales/:sucursalId", actualizarFichaSucursal);
 fichaEmpresasRouter.get("/:empresaId/sucursales", listarSucursalesEmpresa);
 fichaEmpresasRouter.post("/:empresaId/sucursales", crearSucursal);
 fichaEmpresasRouter.delete("/sucursales/:sucursalId", eliminarSucursal);
+
+/* ===================== SUSCRIPCIONES Y CONTRATOS ===================== */
+
+fichaEmpresasRouter.get("/:empresaId/suscripciones", listarSuscripciones);
+fichaEmpresasRouter.get("/:empresaId/suscripciones/:suscripcionId", obtenerSuscripcion);
+fichaEmpresasRouter.post("/:empresaId/suscripciones", crearSuscripcion);
+fichaEmpresasRouter.patch("/:empresaId/suscripciones/:suscripcionId", actualizarSuscripcion);
+fichaEmpresasRouter.delete("/:empresaId/suscripciones/:suscripcionId", eliminarSuscripcion);
+
+/* ===================== CONTRATOS PDF ===================== */
+
+fichaEmpresasRouter.post("/:empresaId/suscripciones/:suscripcionId/contrato", uploadContrato.single("contrato"), subirContrato);
+fichaEmpresasRouter.get("/:empresaId/suscripciones/:suscripcionId/contrato", obtenerContrato);
+fichaEmpresasRouter.delete("/:empresaId/suscripciones/:suscripcionId/contrato", eliminarContrato);
 
 fichaEmpresasRouter.put("/:empresaId/checklist", upsertChecklistEmpresa);
 

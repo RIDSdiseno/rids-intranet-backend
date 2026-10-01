@@ -31,19 +31,65 @@ export async function setOverride(
   folio: string,
   fechaIso: string | null
 ) {
-  const key = makeKey(empresaKey, tipoDoc, folio);
+  const key =
+    makeKey(
+      empresaKey,
+      tipoDoc,
+      folio
+    );
+
   try {
-    if (fechaIso === null || fechaIso === "") {
-      await prisma.rcvVencimiento.deleteMany({ where: key });
-    } else {
-      await prisma.rcvVencimiento.upsert({
-        where: { empresaKey_tipoDoc_folio: key },
-        create: { ...key, fechaVencimiento: new Date(fechaIso) },
-        update: { fechaVencimiento: new Date(fechaIso) },
-      });
+    if (
+      fechaIso === null ||
+      fechaIso === ""
+    ) {
+      await prisma
+        .rcvVencimiento
+        .deleteMany({
+          where:
+            key,
+        });
+
+      return;
     }
-  } catch (e) {
-    console.error("setOverride error:", e);
+
+    const fechaVencimiento =
+      new Date(
+        fechaIso
+      );
+
+    await prisma
+      .rcvVencimiento
+      .upsert({
+        where: {
+          empresaKey_tipoDoc_folio:
+            key,
+        },
+
+        create: {
+          ...key,
+
+          fechaVencimiento,
+
+          origenVencimiento:
+            "MANUAL",
+        },
+
+        update: {
+          fechaVencimiento,
+
+          origenVencimiento:
+            "MANUAL",
+        },
+      });
+  } catch (
+  e
+  ) {
+    console.error(
+      "setOverride error:",
+      e
+    );
+
     throw e;
   }
 }

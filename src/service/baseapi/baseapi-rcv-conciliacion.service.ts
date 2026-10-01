@@ -11,6 +11,15 @@ import {
 } from "./rcv-concilacion.mapper.js";
 import { enviarCorreoConciliacionRcv } from "./baseapi-rcv-conciliacion-mail.service.js";
 
+import {
+    calcularResumenPuntualidad,
+    evaluarDocumentoPuntualidad,
+} from "./finanzas/puntualidad-cliente.service.js";
+
+import type {
+    EstadoPuntualidadCliente,
+} from "./finanzas/puntualidad-cliente.service.js";
+
 type TipoRcv = "ventas" | "compras";
 
 export async function listarConciliacionRcv(params: {
@@ -384,111 +393,299 @@ export async function observarDocumentoRcv(params: {
     });
 }
 
-const MS_POR_DIA = 24 * 60 * 60 * 1000;
+export type PuntualidadEstado =
+    EstadoPuntualidadCliente;
 
-export type PuntualidadEstado = "SIN_HISTORIAL" | "BUEN_PAGADOR" | "IRREGULAR" | "RIESGO_MORA";
+export async function getPuntualidadCliente(
+    params: {
+        empresa:
+        EmpresaBaseApiKey;
 
-export async function getPuntualidadCliente(params: {
-    empresa: EmpresaBaseApiKey;
-    rutContraparte: string;
-}): Promise<{
-    estado: PuntualidadEstado;
-    score: number | null;
-    totalConciliadas: number;
-    conVencimientoRegistrado: number;
-    aTiempo: number;
-    atrasadas: number;
-    promedioDiasAtraso: number;
+        rutContraparte:
+        string;
+    }
+): Promise<{
+    estado:
+    PuntualidadEstado;
+
+    score:
+    number | null;
+
+    totalConciliadas:
+    number;
+
+    conVencimientoRegistrado:
+    number;
+
+    aTiempo:
+    number;
+
+    atrasadas:
+    number;
+
+    porcentajeATiempo:
+    number;
+
+    promedioDiasAtraso:
+    number;
+
+    documentosInvalidos:
+    number;
 }> {
-    const { empresa, rutContraparte } = params;
+    const {
+        empresa,
+        rutContraparte,
+    } = params;
+
     const rutNormalizado =
         normalizarRutRcv(
             rutContraparte
         );
 
     const vacio = {
-        estado: "SIN_HISTORIAL" as PuntualidadEstado,
-        score: null,
-        totalConciliadas: 0,
-        conVencimientoRegistrado: 0,
-        aTiempo: 0,
-        atrasadas: 0,
-        promedioDiasAtraso: 0,
+        estado:
+            "SIN_HISTORIAL" as PuntualidadEstado,
+
+        score:
+            null,
+
+        totalConciliadas:
+            0,
+
+        conVencimientoRegistrado:
+            0,
+
+        aTiempo:
+            0,
+
+        atrasadas:
+            0,
+
+        promedioDiasAtraso:
+            0,
+
+        porcentajeATiempo:
+            0,
+
+        documentosInvalidos:
+            0,
     };
 
-    if (!rutNormalizado) return vacio;
+    if (
+        !rutNormalizado
+    ) {
+        return vacio;
+    }
 
-    const conciliaciones = await prisma.rcvConciliacion.findMany({
-        where: { empresaKey: empresa, tipoRcv: "ventas", estadoConciliacion: "CONCILIADA" },
-    });
-
+    /*
+     * Ahora filtramos directamente por RUT
+     * en PostgreSQL.
+     */
     const delCliente =
-        conciliaciones.filter(
-            (
-                c
-            ) =>
-                normalizarRutRcv(
-                    c.rutContraparte
-                ) ===
-                rutNormalizado &&
-                c.conciliadoAt
+        await prisma
+            .rcvConciliacion
+            .findMany({
+                where: {
+                    empresaKey:
+                        empresa,
+
+                    tipoRcv:
+                        "ventas",
+
+                    estadoConciliacion:
+                        "CONCILIADA",
+
+                    rutContraparte:
+                        rutNormalizado,
+
+                    conciliadoAt: {
+                        not:
+                            null,
+                    },
+                },
+
+                select: {
+                    tipoDoc:
+                        true,
+
+                    folio:
+                        true,
+
+                    fechaDocto:
+                        true,
+
+                    conciliadoAt:
+                        true,
+                },
+            });
+
+    if (
+        delCliente.length ===
+        0
+    ) {
+        return vacio;
+    }
+
+    const vencimientos =
+        await prisma
+            .rcvVencimiento
+            .findMany({
+                where: {
+                    empresaKey:
+                        empresa,
+
+                    OR:
+                        delCliente.map(
+                            item => ({
+                                tipoDoc:
+                                    item.tipoDoc,
+
+                                folio:
+                                    item.folio,
+                            })
+                        ),
+                },
+
+                select: {
+                    tipoDoc:
+                        true,
+
+                    folio:
+                        true,
+
+                    fechaVencimiento:
+                        true,
+                },
+            });
+
+    const vencimientoMap =
+        new Map(
+            vencimientos.map(
+                item => [
+                    `${item.tipoDoc}|${item.folio}`,
+                    item.fechaVencimiento,
+                ]
+            )
         );
 
-    if (delCliente.length === 0) return vacio;
+    let totalEvaluados =
+        0;
 
-    const overrides = await prisma.rcvVencimiento.findMany({
-        where: {
-            empresaKey: empresa,
-            OR: delCliente.map((c) => ({ tipoDoc: c.tipoDoc, folio: c.folio })),
-        },
-    });
-    const overrideMap = new Map(overrides.map((o) => [`${o.tipoDoc}|${o.folio}`, o.fechaVencimiento]));
+    let aTiempo =
+        0;
 
-    let aTiempo = 0;
-    let atrasadas = 0;
-    let sumaDiasAtraso = 0;
+    let atrasadas =
+        0;
 
-    for (const c of delCliente) {
-        const vencimiento = overrideMap.get(`${c.tipoDoc}|${c.folio}`);
-        if (!vencimiento || !c.conciliadoAt) continue;
+    let sumaDiasAtraso =
+        0;
 
-        const diasAtraso = Math.round((c.conciliadoAt.getTime() - vencimiento.getTime()) / MS_POR_DIA);
-        if (diasAtraso > 0) {
-            atrasadas += 1;
-            sumaDiasAtraso += diasAtraso;
+    let sumaPuntajes =
+        0;
+
+    let documentosInvalidos =
+        0;
+
+    for (
+        const conciliacion
+        of delCliente
+    ) {
+        if (
+            !conciliacion.conciliadoAt
+        ) {
+            continue;
+        }
+
+        const vencimiento =
+            vencimientoMap.get(
+                `${conciliacion.tipoDoc}|${conciliacion.folio}`
+            );
+
+        if (
+            !vencimiento
+        ) {
+            continue;
+        }
+
+        const evaluacion =
+            evaluarDocumentoPuntualidad({
+                fechaDocto:
+                    conciliacion.fechaDocto,
+
+                fechaVencimiento:
+                    vencimiento,
+
+                fechaPago:
+                    conciliacion.conciliadoAt,
+            });
+
+        if (
+            !evaluacion.valido
+        ) {
+            documentosInvalidos++;
+
+            continue;
+        }
+
+        totalEvaluados++;
+
+        sumaPuntajes +=
+            evaluacion.puntaje;
+
+        if (
+            evaluacion.diasAtraso >
+            0
+        ) {
+            atrasadas++;
+
+            sumaDiasAtraso +=
+                evaluacion.diasAtraso;
         } else {
-            aTiempo += 1;
+            aTiempo++;
         }
     }
 
-    const conVencimientoRegistrado = aTiempo + atrasadas;
+    const resultado =
+        calcularResumenPuntualidad({
+            totalEvaluados,
 
-    if (conVencimientoRegistrado < 3) {
-        return {
-            ...vacio,
-            totalConciliadas: delCliente.length,
-            conVencimientoRegistrado,
             aTiempo,
+
             atrasadas,
-        };
-    }
 
-    const pctATiempo = (aTiempo / conVencimientoRegistrado) * 100;
-    const promedioDiasAtraso = atrasadas > 0 ? Math.round(sumaDiasAtraso / atrasadas) : 0;
-    const score = Math.max(0, Math.min(100, Math.round(pctATiempo - promedioDiasAtraso * 0.5)));
+            sumaDiasAtraso,
 
-    let estado: PuntualidadEstado;
-    if (score >= 80) estado = "BUEN_PAGADOR";
-    else if (score >= 50) estado = "IRREGULAR";
-    else estado = "RIESGO_MORA";
+            sumaPuntajes,
+
+            documentosInvalidos,
+        });
 
     return {
-        estado,
-        score,
-        totalConciliadas: delCliente.length,
-        conVencimientoRegistrado,
-        aTiempo,
-        atrasadas,
-        promedioDiasAtraso,
+        estado:
+            resultado.estado,
+
+        score:
+            resultado.score,
+
+        totalConciliadas:
+            delCliente.length,
+
+        conVencimientoRegistrado:
+            resultado.totalEvaluados,
+
+        aTiempo:
+            resultado.aTiempo,
+
+        atrasadas:
+            resultado.atrasadas,
+
+        porcentajeATiempo:
+            resultado.porcentajeATiempo,
+
+        promedioDiasAtraso:
+            resultado.promedioDiasAtraso,
+
+        documentosInvalidos:
+            resultado.documentosInvalidos,
     };
 }

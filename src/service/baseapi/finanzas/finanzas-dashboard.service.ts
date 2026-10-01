@@ -6,6 +6,10 @@ import {
     type EmpresaKey,
 } from "../cobranza/cobranza-estado.service.js";
 
+import {
+    obtenerAnalisisClientesFinanzas,
+} from "./finanzas-clientes.service.js";
+
 /* =========================================================
    TIPOS
 ========================================================= */
@@ -315,6 +319,12 @@ export async function obtenerDashboardFinanzas(
         empresaKey,
         ano,
     } = params;
+
+    const analisisClientes =
+        await obtenerAnalisisClientesFinanzas({
+            empresaKey,
+            ano,
+        });
 
     /*
      * =====================================================
@@ -1150,5 +1160,8 @@ export async function obtenerDashboardFinanzas(
                         item.updatedAt,
                 })
             ),
+
+        clientes:
+            analisisClientes,
     };
 }

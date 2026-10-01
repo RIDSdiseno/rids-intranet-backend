@@ -26,3 +26,6 @@ export const MANUALES_TUTORIALES_BUCKET =
 
 export const BITACORA_EVIDENCIAS_BUCKET =
   process.env.SUPABASE_BITACORA_EVIDENCIAS_BUCKET || "bitacora-evidencias";
+
+export const CONTRATOS_EMPRESAS_BUCKET =
+  process.env.SUPABASE_CONTRATOS_EMPRESAS_BUCKET || "contratos-empresas";

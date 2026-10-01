@@ -38,7 +38,9 @@ const XLSX =
  *   NO escribe en PostgreSQL.
  *
  * false:
- *   realiza realmente las conciliaciones.
+ *   realiza realmente:
+ *   - conciliaciones
+ *   - vencimientos
  */
 const DRY_RUN =
     false;
@@ -245,11 +247,12 @@ function fecha(
     }
 
     /*
-     * Duemint actualmente entrega:
+     * Duemint:
      *
      * 04/09/2026
      *
-     * También soportamos:
+     * También:
+     *
      * 04-09-2026
      */
     const match =
@@ -325,8 +328,8 @@ function mapTipoDocumento(
     }
 
     /*
-     * Si Duemint ya entregara directamente
-     * el código SII.
+     * Si Duemint entrega directamente
+     * código SII.
      */
     if (
         /^\d+$/.test(
@@ -343,8 +346,9 @@ function mapTipoDocumento(
 
     /*
      * IMPORTANTE:
-     * Factura Exenta debe evaluarse
-     * antes de Factura genérica.
+     *
+     * Factura Exenta debe evaluarse antes
+     * de Factura genérica.
      */
 
     if (
@@ -391,6 +395,76 @@ function mapTipoDocumento(
     return null;
 }
 
+async function ejecutarConReintento<T>(
+    fn: () => Promise<T>,
+    intentosMaximos =
+        4,
+    esperaMs =
+        1500
+): Promise<T> {
+    let ultimoError:
+        unknown;
+
+    for (
+        let intento =
+            1;
+        intento <=
+        intentosMaximos;
+        intento++
+    ) {
+        try {
+            return await fn();
+        } catch (
+        error
+        ) {
+            ultimoError =
+                error;
+
+            const mensaje =
+                error instanceof
+                    Error
+                    ? error.message
+                    : String(
+                        error
+                    );
+
+            const errorConexion =
+                mensaje.includes(
+                    "Server has closed the connection"
+                ) ||
+                mensaje.includes(
+                    "Can't reach database server"
+                ) ||
+                mensaje.includes(
+                    "Connection terminated"
+                );
+
+            if (
+                !errorConexion ||
+                intento ===
+                intentosMaximos
+            ) {
+                throw error;
+            }
+
+            console.warn(
+                `[DB] ⚠️ Conexión interrumpida. Reintento ${intento}/${intentosMaximos}...`
+            );
+
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        esperaMs *
+                        intento
+                    )
+            );
+        }
+    }
+
+    throw ultimoError;
+}
+
 /* =========================================================
    MAIN
 ========================================================= */
@@ -398,7 +472,7 @@ function mapTipoDocumento(
 async function main() {
     /*
      * Se vuelve a validar dentro de main()
-     * para que TypeScript conserve el narrowing.
+     * para que TypeScript conserve narrowing.
      */
     if (
         !ARCHIVO
@@ -523,6 +597,12 @@ async function main() {
                 Estado:
                     row.Estado,
 
+                Emision:
+                    row["Emisión"],
+
+                Vencimiento:
+                    row.Vencimiento,
+
                 Total:
                     row.Total,
 
@@ -570,6 +650,9 @@ async function main() {
     let yaConciliadas =
         0;
 
+    let tiposVacios =
+        0;
+
     let omitidas =
         0;
 
@@ -589,6 +672,19 @@ async function main() {
         0;
 
     let tiposNoReconocidos =
+        0;
+
+    /*
+     * NUEVO:
+     * métricas de vencimientos.
+     */
+    let vencimientosDetectados =
+        0;
+
+    let vencimientosGuardados =
+        0;
+
+    let sinVencimiento =
         0;
 
     /* =====================================================
@@ -671,7 +767,7 @@ async function main() {
              *
              * Documento Pagado
              *
-             * Después de normalizar:
+             * Normalizado:
              *
              * DOCUMENTO PAGADO
              */
@@ -704,8 +800,7 @@ async function main() {
                 );
 
             /*
-             * Tolerancia de $1 por posibles
-             * redondeos.
+             * Tolerancia $1 por redondeos.
              */
             const montoCubierto =
                 pagado +
@@ -853,12 +948,246 @@ async function main() {
             if (
                 !tipoDoc
             ) {
+                const tipoOriginal =
+                    texto(
+                        row.Tipo
+                    );
+
+                if (
+                    !tipoOriginal
+                ) {
+                    tiposVacios++;
+                    omitidas++;
+
+                    console.log(
+                        `[FILA ${numeroFila}] ⚠️ OMITIDA POR TIPO VACÍO`,
+                        {
+                            cliente:
+                                texto(
+                                    row.Cliente
+                                ),
+
+                            rut:
+                                texto(
+                                    row.Rut
+                                ),
+
+                            folio:
+                                texto(
+                                    row.Folio
+                                ),
+
+                            estado:
+                                texto(
+                                    row.Estado
+                                ),
+
+                            total:
+                                row.Total,
+                        }
+                    );
+
+                    continue;
+                }
+
                 tiposNoReconocidos++;
 
+                console.log(
+                    `[FILA ${numeroFila}] ⚠️ TIPO NO RECONOCIDO`,
+                    {
+                        tipoOriginal,
+
+                        cliente:
+                            texto(
+                                row.Cliente
+                            ),
+
+                        rut:
+                            texto(
+                                row.Rut
+                            ),
+
+                        folio:
+                            texto(
+                                row.Folio
+                            ),
+
+                        estado:
+                            texto(
+                                row.Estado
+                            ),
+
+                        total:
+                            row.Total,
+                    }
+                );
+
                 throw new Error(
-                    `Tipo no reconocido: ${texto(
-                        row.Tipo
-                    )}`
+                    `Tipo no reconocido: ${tipoOriginal}`
+                );
+            }
+
+            /* =============================================
+               VENCIMIENTO DUEMINT
+            ============================================= */
+
+            /*
+             * IMPORTANTE:
+             *
+             * Este bloque debe ejecutarse ANTES de comprobar
+             * si la conciliación ya existe.
+             *
+             * De esa manera podemos volver a ejecutar el
+             * importador sobre las conciliaciones históricas
+             * ya cargadas y completar RcvVencimiento.
+             */
+
+            const fechaVencimiento =
+                fecha(
+                    row.Vencimiento
+                );
+
+            if (
+                fechaVencimiento
+            ) {
+                vencimientosDetectados++;
+
+                if (
+                    DRY_RUN
+                ) {
+                    console.log(
+                        `[DRY RUN FILA ${numeroFila}] 📅 Guardaría vencimiento`,
+                        {
+                            empresa:
+                                EMPRESA,
+
+                            tipoDoc,
+
+                            folio,
+
+                            rut,
+
+                            cliente:
+                                texto(
+                                    row.Cliente
+                                ),
+
+                            vencimientoOriginal:
+                                row.Vencimiento,
+
+                            fechaVencimiento,
+                        }
+                    );
+                } else {
+                    const vencimientoExistente =
+                        !DRY_RUN
+                            ? await ejecutarConReintento(
+                                () =>
+                                    prisma
+                                        .rcvVencimiento
+                                        .findUnique({
+                                            where: {
+                                                empresaKey_tipoDoc_folio: {
+                                                    empresaKey:
+                                                        EMPRESA,
+
+                                                    tipoDoc,
+
+                                                    folio,
+                                                },
+                                            },
+
+                                            select: {
+                                                origenVencimiento:
+                                                    true,
+                                            },
+                                        })
+                            )
+                            : null;
+                    if (
+                        vencimientoExistente
+                            ?.origenVencimiento ===
+                        "MANUAL"
+                    ) {
+                        console.log(
+                            `[FILA ${numeroFila}] 🔒 Vencimiento manual conservado`,
+                            {
+                                empresa:
+                                    EMPRESA,
+
+                                tipoDoc,
+
+                                folio,
+                            }
+                        );
+                    } else {
+                        await ejecutarConReintento(
+                            () =>
+                                prisma
+                                    .rcvVencimiento
+                                    .upsert({
+                                        where: {
+                                            empresaKey_tipoDoc_folio: {
+                                                empresaKey:
+                                                    EMPRESA,
+
+                                                tipoDoc,
+
+                                                folio,
+                                            },
+                                        },
+
+                                        create: {
+                                            empresaKey:
+                                                EMPRESA,
+
+                                            tipoDoc,
+
+                                            folio,
+
+                                            fechaVencimiento,
+
+                                            origenVencimiento:
+                                                "DUEMINT",
+                                        },
+
+                                        update: {
+                                            fechaVencimiento,
+
+                                            origenVencimiento:
+                                                "DUEMINT",
+                                        },
+                                    })
+                        );
+
+                        vencimientosGuardados++;
+                    }
+
+                    vencimientosGuardados++;
+                }
+            } else {
+                sinVencimiento++;
+
+                console.log(
+                    `[FILA ${numeroFila}] ⚠️ SIN VENCIMIENTO`,
+                    {
+                        empresa:
+                            EMPRESA,
+
+                        tipoDoc,
+
+                        folio,
+
+                        rut,
+
+                        cliente:
+                            texto(
+                                row.Cliente
+                            ),
+
+                        vencimientoOriginal:
+                            row.Vencimiento,
+                    }
                 );
             }
 
@@ -867,30 +1196,38 @@ async function main() {
             ============================================= */
 
             const existente =
-                await prisma
-                    .rcvConciliacion
-                    .findUnique({
-                        where: {
-                            empresaKey_tipoRcv_tipoDoc_rutContraparte_folio: {
-                                empresaKey:
-                                    EMPRESA,
+                await ejecutarConReintento(
+                    () =>
+                        prisma
+                            .rcvConciliacion
+                            .findUnique({
+                                where: {
+                                    empresaKey_tipoRcv_tipoDoc_rutContraparte_folio: {
+                                        empresaKey:
+                                            EMPRESA,
 
-                                tipoRcv:
-                                    "ventas",
+                                        tipoRcv:
+                                            "ventas",
 
-                                tipoDoc,
+                                        tipoDoc,
 
-                                rutContraparte:
-                                    rut,
+                                        rutContraparte:
+                                            rut,
 
-                                folio,
-                            },
-                        },
-                    });
+                                        folio,
+                                    },
+                                },
+                            })
+                );
 
             /*
-             * Si ya está conciliada no hacemos
-             * ningún cambio.
+             * IMPORTANTE:
+             *
+             * El vencimiento ya fue procesado ARRIBA.
+             *
+             * Por eso ahora sí podemos saltarnos una
+             * conciliación existente sin perder
+             * fechaVencimiento.
              */
             if (
                 existente
@@ -910,6 +1247,9 @@ async function main() {
 
                         conciliacionId:
                             existente.id,
+
+                        vencimiento:
+                            fechaVencimiento,
                     }
                 );
 
@@ -922,17 +1262,18 @@ async function main() {
 
             const fechaDocto =
                 fecha(
-                    row.Emisión
+                    row["Emisión"]
                 );
 
             /*
-             * Ya comprobamos con el archivo real
-             * que Duemint entrega "Pago" como:
+             * Duemint entrega "Pago" como la fecha
+             * efectiva de pago:
              *
              * 04/09/2026
              *
-             * Por lo tanto utilizamos esa fecha como
-             * fecha real de conciliación.
+             * Por lo tanto esta fecha queda almacenada
+             * como conciliadoAt para conservar el
+             * histórico real.
              */
             const fechaPago =
                 fecha(
@@ -988,6 +1329,8 @@ async function main() {
                             ),
 
                         fechaDocto,
+
+                        fechaVencimiento,
 
                         fechaPago,
 
@@ -1153,6 +1496,8 @@ async function main() {
 
                     total,
 
+                    fechaVencimiento,
+
                     fechaPago,
                 }
             );
@@ -1183,6 +1528,12 @@ async function main() {
                         texto(
                             row.Estado
                         ),
+
+                    vencimiento:
+                        row.Vencimiento,
+
+                    pago:
+                        row.Pago,
 
                     error:
                         error instanceof
@@ -1251,6 +1602,17 @@ async function main() {
 
         tiposNoReconocidos,
 
+        tiposVacios,
+
+        /*
+         * NUEVO
+         */
+        vencimientosDetectados,
+
+        vencimientosGuardados,
+
+        sinVencimiento,
+
         errores,
 
         totalClasificado,
@@ -1274,9 +1636,17 @@ async function main() {
         console.log(
             "No se realizaron modificaciones en la base de datos."
         );
+
+        console.log(
+            "Los vencimientos mostrados tampoco fueron almacenados."
+        );
     } else {
         console.log(
             "✅ IMPORTACIÓN REAL FINALIZADA."
+        );
+
+        console.log(
+            "Las conciliaciones existentes fueron respetadas y los vencimientos fueron actualizados mediante upsert."
         );
     }
 }

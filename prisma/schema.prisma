@@ -10,41 +10,42 @@ datasource db {
 }
 
 model Empresa {
-  id_empresa            Int                    @id @default(autoincrement())
-  nombre                String                 @unique
-  tieneSucursales       Boolean                @default(false)
-  razonSocial           String?
-  dominios              String[]               @default([])
-  deactivatedAt         DateTime?
-  isActive              Boolean                @default(true)
-  recibeCobranza        Boolean                @default(false)
-  recibeFacturas        Boolean                @default(false)
-  solicitantes          Solicitante[]
-  visitas               Visita[]               @relation("Empresa_Visita")
-  tickets               FreshdeskTicket[]
-  companyMaps           FreshdeskCompanyMap[]
-  detalleEmpresa        DetalleEmpresa?
-  sucursales            Sucursal[]
-  contactoEmpresas      ContactoEmpresa[]
-  fichaEmpresa          FichaEmpresa?
-  fichaTecnicaEmpresa   FichaTecnicaEmpresa?
-  historials            Historial[]
-  ticketsRids           Ticket[]
-  empresaISP            EmpresaISP[]
-  servidors             Servidor[]
-  tecnicos              Tecnico[]
-  equipos               Equipo[]
-  mantencionesRemotas   MantencionRemota[]     @relation("EmpresaMantencionesRemotas")
-  teamViewerDeviceMaps  TeamViewerDeviceMap[]
-  agendasVisita         AgendaVisita[]         @relation("Empresa_AgendaVisita")
-  entidadGestioos       EntidadGestioo[]
-  analisisInventarioIAs AnalisisInventarioIA[]
-  manualTutoriales      ManualTutorial[]
-  bitacoras             BitacoraTecnico[]
-  equipoMantencions     EquipoMantencion[]
-  aliasesOutlook        EmpresaAliasOutlook[]
-  receptoresFacturacion ReceptorFacturacion[]
-  receptoresCobranza    ReceptorCobranza[]
+  id_empresa             Int                    @id @default(autoincrement())
+  nombre                 String                 @unique
+  tieneSucursales        Boolean                @default(false)
+  razonSocial            String?
+  dominios               String[]               @default([])
+  deactivatedAt          DateTime?
+  isActive               Boolean                @default(true)
+  recibeCobranza         Boolean                @default(false)
+  recibeFacturas         Boolean                @default(false)
+  solicitantes           Solicitante[]
+  visitas                Visita[]               @relation("Empresa_Visita")
+  tickets                FreshdeskTicket[]
+  companyMaps            FreshdeskCompanyMap[]
+  detalleEmpresa         DetalleEmpresa?
+  sucursales             Sucursal[]
+  contactoEmpresas       ContactoEmpresa[]
+  fichaEmpresa           FichaEmpresa?
+  fichaTecnicaEmpresa    FichaTecnicaEmpresa?
+  historials             Historial[]
+  ticketsRids            Ticket[]
+  empresaISP             EmpresaISP[]
+  servidors              Servidor[]
+  tecnicos               Tecnico[]
+  equipos                Equipo[]
+  mantencionesRemotas    MantencionRemota[]     @relation("EmpresaMantencionesRemotas")
+  teamViewerDeviceMaps   TeamViewerDeviceMap[]
+  agendasVisita          AgendaVisita[]         @relation("Empresa_AgendaVisita")
+  entidadGestioos        EntidadGestioo[]
+  analisisInventarioIAs  AnalisisInventarioIA[]
+  manualTutoriales       ManualTutorial[]
+  bitacoras              BitacoraTecnico[]
+  equipoMantencions      EquipoMantencion[]
+  aliasesOutlook         EmpresaAliasOutlook[]
+  receptoresFacturacion  ReceptorFacturacion[]
+  receptoresCobranza     ReceptorCobranza[]
+  suscripcionesContratos SuscripcionContrato[]
 
   @@index([isActive])
   @@index([deactivatedAt])
@@ -279,6 +280,56 @@ model AccesoRouterSucursal {
   sucursal   Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
 
   @@index([sucursalId])
+}
+
+model SuscripcionContrato {
+  id Int @id @default(autoincrement())
+
+  empresaId Int
+
+  proveedor    String
+  fabricante   String
+  productoPlan String
+
+  cantidadLicencias Int @default(1)
+
+  costoMensual Decimal? @db.Decimal(18, 2)
+  moneda       String   @default("CLP")
+
+  fechaInicio     DateTime?
+  fechaTermino    DateTime?
+  fechaRenovacion DateTime?
+
+  numeroContrato String?
+  numeroOferta   String?
+
+  ejecutivoNombre   String?
+  ejecutivoEmail    String?
+  ejecutivoTelefono String?
+
+  soporteTelefono String?
+  soporteEmail    String?
+
+  observaciones String?
+
+  activo Boolean @default(true)
+
+  // PDF del contrato
+  contratoNombre      String?
+  contratoMimeType    String?
+  contratoBytes       Int?
+  contratoStoragePath String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@index([empresaId])
+  @@index([fabricante])
+  @@index([proveedor])
+  @@index([fechaRenovacion])
+  @@index([activo])
 }
 
 model Solicitante {
@@ -1582,14 +1633,19 @@ model RcvVencimiento {
   tipoDoc          String
   folio            String
   fechaVencimiento DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+
+  /// MANUAL | RCV | DTE_CACHE | DTE | DIAS_CREDITO | DUEMINT | LEGACY
+  origenVencimiento String @default("LEGACY")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([empresaKey, tipoDoc, folio])
   @@index([empresaKey])
   @@index([tipoDoc])
   @@index([folio])
   @@index([fechaVencimiento])
+  @@index([origenVencimiento])
 }
 
 model RcvCobranzaConfig {
