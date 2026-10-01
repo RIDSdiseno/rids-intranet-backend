@@ -1,32 +1,62 @@
 // src/service/suscripciones-contratos/suscripciones-contratos.types.ts
+
+export type ActualizarSuscripcionContratoInput =
+    Partial<CrearSuscripcionContratoInput>;
+
+export type SuscripcionEjecutivoInput = {
+    id?: number;
+
+    nombre: string;
+
+    email?: string | null;
+
+    telefono?: string | null;
+
+    principal?: boolean;
+};
+
+export type SuscripcionContactoSoporteInput = {
+    id?: number;
+
+    nombre?: string | null;
+
+    email?: string | null;
+
+    telefono?: string | null;
+
+    principal?: boolean;
+};
+
 export type CrearSuscripcionContratoInput = {
     proveedor: string;
+
     fabricante: string;
+
     productoPlan: string;
 
     cantidadLicencias?: number;
 
     costoMensual?: number | null;
+
     moneda?: string;
 
     fechaInicio?: string | null;
+
     fechaTermino?: string | null;
+
     fechaRenovacion?: string | null;
 
     numeroContrato?: string | null;
+
     numeroOferta?: string | null;
-
-    ejecutivoNombre?: string | null;
-    ejecutivoEmail?: string | null;
-    ejecutivoTelefono?: string | null;
-
-    soporteTelefono?: string | null;
-    soporteEmail?: string | null;
 
     observaciones?: string | null;
 
     activo?: boolean;
-};
 
-export type ActualizarSuscripcionContratoInput =
-    Partial<CrearSuscripcionContratoInput>;
+    ejecutivosComerciales?:
+    SuscripcionEjecutivoInput[];
+
+    contactosSoporte?:
+    SuscripcionContactoSoporteInput[];
+};

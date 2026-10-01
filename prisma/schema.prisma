@@ -283,53 +283,78 @@ model AccesoRouterSucursal {
 }
 
 model SuscripcionContrato {
-  id Int @id @default(autoincrement())
-
-  empresaId Int
-
-  proveedor    String
-  fabricante   String
-  productoPlan String
-
-  cantidadLicencias Int @default(1)
-
-  costoMensual Decimal? @db.Decimal(18, 2)
-  moneda       String   @default("CLP")
-
-  fechaInicio     DateTime?
-  fechaTermino    DateTime?
-  fechaRenovacion DateTime?
-
-  numeroContrato String?
-  numeroOferta   String?
-
-  ejecutivoNombre   String?
-  ejecutivoEmail    String?
-  ejecutivoTelefono String?
-
-  soporteTelefono String?
-  soporteEmail    String?
-
-  observaciones String?
-
-  activo Boolean @default(true)
-
-  // PDF del contrato
+  id                  Int       @id @default(autoincrement())
+  empresaId           Int
+  proveedor           String
+  fabricante          String
+  productoPlan        String
+  cantidadLicencias   Int       @default(1)
+  costoMensual        Decimal?  @db.Decimal(18, 2)
+  moneda              String    @default("CLP")
+  fechaInicio         DateTime?
+  fechaTermino        DateTime?
+  fechaRenovacion     DateTime?
+  numeroContrato      String?
+  numeroOferta        String?
+  ejecutivoNombre     String?
+  ejecutivoEmail      String?
+  ejecutivoTelefono   String?
+  soporteTelefono     String?
+  soporteEmail        String?
+  observaciones       String?
+  activo              Boolean   @default(true)
   contratoNombre      String?
   contratoMimeType    String?
   contratoBytes       Int?
   contratoStoragePath String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  empresa             Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  ejecutivosComerciales SuscripcionContratoEjecutivo[]
+  contactosSoporte      SuscripcionContratoSoporte[]
 
   @@index([empresaId])
   @@index([fabricante])
   @@index([proveedor])
   @@index([fechaRenovacion])
   @@index([activo])
+}
+
+model SuscripcionContratoEjecutivo {
+  id            Int @id @default(autoincrement())
+  suscripcionId Int
+
+  nombre   String
+  email    String?
+  telefono String?
+
+  principal Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  suscripcion SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+
+  @@index([suscripcionId])
+}
+
+model SuscripcionContratoSoporte {
+  id            Int @id @default(autoincrement())
+  suscripcionId Int
+
+  nombre   String?
+  email    String?
+  telefono String?
+
+  principal Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  suscripcion SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+
+  @@index([suscripcionId])
 }
 
 model Solicitante {
@@ -1628,17 +1653,15 @@ model RcvConciliacion {
 }
 
 model RcvVencimiento {
-  id               Int      @id @default(autoincrement())
-  empresaKey       String
-  tipoDoc          String
-  folio            String
-  fechaVencimiento DateTime
-
+  id                Int      @id @default(autoincrement())
+  empresaKey        String
+  tipoDoc           String
+  folio             String
+  fechaVencimiento  DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
   /// MANUAL | RCV | DTE_CACHE | DTE | DIAS_CREDITO | DUEMINT | LEGACY
-  origenVencimiento String @default("LEGACY")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  origenVencimiento String   @default("LEGACY")
 
   @@unique([empresaKey, tipoDoc, folio])
   @@index([empresaKey])

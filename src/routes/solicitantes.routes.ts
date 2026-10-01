@@ -12,7 +12,8 @@ import {
   deleteSolicitante,
   getSolicitantesDashboardMensual,
   getSolicitantesEliminadosDetalle,
-  getSolicitantesNuevosDetalle
+  getSolicitantesNuevosDetalle,
+  exportSolicitantes
 } from "../controllers/solicitantes.controller.js";
 import { auth } from "../middlewares/auth.js";
 
@@ -25,6 +26,7 @@ const asyncHandler =
 solicitantesRouter.use(auth());
 
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
+solicitantesRouter.get("/export", asyncHandler(exportSolicitantes));
 solicitantesRouter.get("/mailer", asyncHandler(listSolicitantesMailer));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));

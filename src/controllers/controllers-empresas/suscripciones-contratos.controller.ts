@@ -358,10 +358,14 @@ export async function actualizarSuscripcion(
     } catch (
     error
     ) {
-        if (
+        const message =
             error instanceof
-            Error &&
-            error.message ===
+                Error
+                ? error.message
+                : "";
+
+        if (
+            message ===
             "SUSCRIPCION_NO_ENCONTRADA"
         ) {
             return res
@@ -377,7 +381,25 @@ export async function actualizarSuscripcion(
                 });
         }
 
+        if (
+            message ===
+            "DATOS_OBLIGATORIOS"
+        ) {
+            return res
+                .status(
+                    400
+                )
+                .json({
+                    ok:
+                        false,
+
+                    error:
+                        "Proveedor, fabricante y producto/plan son obligatorios.",
+                });
+        }
+
         console.error(
+            "Error actualizando suscripción:",
             error
         );
 

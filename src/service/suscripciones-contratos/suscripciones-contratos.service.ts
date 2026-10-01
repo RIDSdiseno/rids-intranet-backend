@@ -17,6 +17,10 @@ import {
     supabaseAdmin,
 } from "../../lib/supabase/supabase.js";
 
+import {
+    Prisma,
+} from "@prisma/client";
+
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -429,6 +433,34 @@ export async function listarSuscripcionesEmpresa(
                 empresaId,
             },
 
+            include: {
+                ejecutivosComerciales: {
+                    orderBy: [
+                        {
+                            principal:
+                                "desc",
+                        },
+                        {
+                            id:
+                                "asc",
+                        },
+                    ],
+                },
+
+                contactosSoporte: {
+                    orderBy: [
+                        {
+                            principal:
+                                "desc",
+                        },
+                        {
+                            id:
+                                "asc",
+                        },
+                    ],
+                },
+            },
+
             orderBy: [
                 {
                     activo:
@@ -465,6 +497,34 @@ export async function obtenerSuscripcionEmpresa(
                     suscripcionId,
 
                 empresaId,
+            },
+
+            include: {
+                ejecutivosComerciales: {
+                    orderBy: [
+                        {
+                            principal:
+                                "desc",
+                        },
+                        {
+                            id:
+                                "asc",
+                        },
+                    ],
+                },
+
+                contactosSoporte: {
+                    orderBy: [
+                        {
+                            principal:
+                                "desc",
+                        },
+                        {
+                            id:
+                                "asc",
+                        },
+                    ],
+                },
             },
         });
 }
@@ -540,90 +600,224 @@ export async function crearSuscripcionEmpresa(
             )
         );
 
-    return prisma
-        .suscripcionContrato
-        .create({
-            data: {
-                empresaId,
+    const ejecutivos =
+        input
+            .ejecutivosComerciales ??
+        [];
 
-                proveedor,
+    const contactosSoporte =
+        input
+            .contactosSoporte ??
+        [];
 
-                fabricante,
-
-                productoPlan,
-
-                cantidadLicencias,
-
-                costoMensual:
-                    input.costoMensual ??
-                    null,
-
-                moneda:
+    /*
+     * Normalizamos principal para evitar
+     * varios principales simultáneamente.
+     */
+    const ejecutivosNormalizados =
+        ejecutivos.map(
+            (
+                ejecutivo,
+                index
+            ) => ({
+                nombre:
                     normalizarTexto(
-                        input.moneda
+                        ejecutivo.nombre
                     ) ??
-                    "CLP",
+                    "",
 
-                fechaInicio:
-                    normalizarFecha(
-                        input.fechaInicio
-                    ),
-
-                fechaTermino:
-                    normalizarFecha(
-                        input.fechaTermino
-                    ),
-
-                fechaRenovacion:
-                    normalizarFecha(
-                        input.fechaRenovacion
-                    ),
-
-                numeroContrato:
+                email:
                     normalizarTexto(
-                        input.numeroContrato
+                        ejecutivo.email
                     ),
 
-                numeroOferta:
+                telefono:
                     normalizarTexto(
-                        input.numeroOferta
+                        ejecutivo.telefono
                     ),
 
-                ejecutivoNombre:
-                    normalizarTexto(
-                        input.ejecutivoNombre
-                    ),
+                principal:
+                    ejecutivos.some(
+                        item =>
+                            item.principal
+                    )
+                        ? Boolean(
+                            ejecutivo.principal
+                        )
+                        : index ===
+                        0,
+            })
+        )
+            .filter(
+                ejecutivo =>
+                    Boolean(
+                        ejecutivo.nombre
+                    )
+            );
 
-                ejecutivoEmail:
-                    normalizarTexto(
-                        input.ejecutivoEmail
-                    ),
+    const soporteNormalizado =
+        contactosSoporte
+            .map(
+                (
+                    contacto,
+                    index
+                ) => ({
+                    nombre:
+                        normalizarTexto(
+                            contacto.nombre
+                        ),
 
-                ejecutivoTelefono:
-                    normalizarTexto(
-                        input.ejecutivoTelefono
-                    ),
+                    email:
+                        normalizarTexto(
+                            contacto.email
+                        ),
 
-                soporteTelefono:
-                    normalizarTexto(
-                        input.soporteTelefono
-                    ),
+                    telefono:
+                        normalizarTexto(
+                            contacto.telefono
+                        ),
 
-                soporteEmail:
-                    normalizarTexto(
-                        input.soporteEmail
-                    ),
+                    principal:
+                        contactosSoporte.some(
+                            item =>
+                                item.principal
+                        )
+                            ? Boolean(
+                                contacto.principal
+                            )
+                            : index ===
+                            0,
+                })
+            )
+            .filter(
+                contacto =>
+                    Boolean(
+                        contacto.nombre ||
+                        contacto.email ||
+                        contacto.telefono
+                    )
+            );
 
-                observaciones:
-                    normalizarTexto(
-                        input.observaciones
-                    ),
+    return prisma
+        .$transaction(
+            async tx => {
+                const suscripcion =
+                    await tx
+                        .suscripcionContrato
+                        .create({
+                            data: {
+                                empresaId,
 
-                activo:
-                    input.activo ??
-                    true,
-            },
-        });
+                                proveedor,
+
+                                fabricante,
+
+                                productoPlan,
+
+                                cantidadLicencias,
+
+                                costoMensual:
+                                    input.costoMensual ??
+                                    null,
+
+                                moneda:
+                                    normalizarTexto(
+                                        input.moneda
+                                    ) ??
+                                    "CLP",
+
+                                fechaInicio:
+                                    normalizarFecha(
+                                        input.fechaInicio
+                                    ),
+
+                                fechaTermino:
+                                    normalizarFecha(
+                                        input.fechaTermino
+                                    ),
+
+                                fechaRenovacion:
+                                    normalizarFecha(
+                                        input.fechaRenovacion
+                                    ),
+
+                                numeroContrato:
+                                    normalizarTexto(
+                                        input.numeroContrato
+                                    ),
+
+                                numeroOferta:
+                                    normalizarTexto(
+                                        input.numeroOferta
+                                    ),
+
+                                observaciones:
+                                    normalizarTexto(
+                                        input.observaciones
+                                    ),
+
+                                activo:
+                                    input.activo ??
+                                    true,
+                            },
+                        });
+
+                if (
+                    ejecutivosNormalizados.length >
+                    0
+                ) {
+                    await tx
+                        .suscripcionContratoEjecutivo
+                        .createMany({
+                            data:
+                                ejecutivosNormalizados.map(
+                                    ejecutivo => ({
+                                        suscripcionId:
+                                            suscripcion.id,
+
+                                        ...ejecutivo,
+                                    })
+                                ),
+                        });
+                }
+
+                if (
+                    soporteNormalizado.length >
+                    0
+                ) {
+                    await tx
+                        .suscripcionContratoSoporte
+                        .createMany({
+                            data:
+                                soporteNormalizado.map(
+                                    contacto => ({
+                                        suscripcionId:
+                                            suscripcion.id,
+
+                                        ...contacto,
+                                    })
+                                ),
+                        });
+                }
+
+                return tx
+                    .suscripcionContrato
+                    .findUnique({
+                        where: {
+                            id:
+                                suscripcion.id,
+                        },
+
+                        include: {
+                            ejecutivosComerciales:
+                                true,
+
+                            contactosSoporte:
+                                true,
+                        },
+                    });
+            }
+        );
 }
 
 /* =========================================================
@@ -654,203 +848,531 @@ export async function actualizarSuscripcionEmpresa(
         );
     }
 
-    return prisma
-        .suscripcionContrato
-        .update({
-            where: {
-                id:
-                    suscripcionId,
-            },
+    /* =====================================================
+       DATA PRINCIPAL
+    ===================================================== */
 
-            data: {
-                ...(input.proveedor !==
-                    undefined
-                    ? {
-                        proveedor:
-                            normalizarTexto(
-                                input.proveedor
-                            ) ??
-                            actual.proveedor,
-                    }
-                    : {}),
+    const data:
+        Prisma.SuscripcionContratoUpdateInput =
+        {};
 
-                ...(input.fabricante !==
-                    undefined
-                    ? {
-                        fabricante:
-                            normalizarTexto(
-                                input.fabricante
-                            ) ??
-                            actual.fabricante,
-                    }
-                    : {}),
+    /* =====================================================
+       CAMPOS OBLIGATORIOS
+    ===================================================== */
 
-                ...(input.productoPlan !==
-                    undefined
-                    ? {
-                        productoPlan:
-                            normalizarTexto(
-                                input.productoPlan
-                            ) ??
-                            actual.productoPlan,
-                    }
-                    : {}),
+    if (
+        input.proveedor !==
+        undefined
+    ) {
+        const proveedor =
+            normalizarTexto(
+                input.proveedor
+            );
 
-                ...(input.cantidadLicencias !==
-                    undefined
-                    ? {
-                        cantidadLicencias:
-                            Math.max(
-                                1,
-                                Number(
-                                    input
-                                        .cantidadLicencias
+        if (
+            !proveedor
+        ) {
+            throw new Error(
+                "DATOS_OBLIGATORIOS"
+            );
+        }
+
+        data.proveedor =
+            proveedor;
+    }
+
+    if (
+        input.fabricante !==
+        undefined
+    ) {
+        const fabricante =
+            normalizarTexto(
+                input.fabricante
+            );
+
+        if (
+            !fabricante
+        ) {
+            throw new Error(
+                "DATOS_OBLIGATORIOS"
+            );
+        }
+
+        data.fabricante =
+            fabricante;
+    }
+
+    if (
+        input.productoPlan !==
+        undefined
+    ) {
+        const productoPlan =
+            normalizarTexto(
+                input.productoPlan
+            );
+
+        if (
+            !productoPlan
+        ) {
+            throw new Error(
+                "DATOS_OBLIGATORIOS"
+            );
+        }
+
+        data.productoPlan =
+            productoPlan;
+    }
+
+    /* =====================================================
+       LICENCIAS
+    ===================================================== */
+
+    if (
+        input.cantidadLicencias !==
+        undefined
+    ) {
+        data.cantidadLicencias =
+            Math.max(
+                1,
+                Number(
+                    input.cantidadLicencias
+                )
+            );
+    }
+
+    /* =====================================================
+       COSTO
+    ===================================================== */
+
+    if (
+        input.costoMensual !==
+        undefined
+    ) {
+        data.costoMensual =
+            input.costoMensual;
+    }
+
+    /* =====================================================
+       MONEDA
+    ===================================================== */
+
+    if (
+        input.moneda !==
+        undefined
+    ) {
+        const moneda =
+            normalizarTexto(
+                input.moneda
+            );
+
+        if (
+            moneda
+        ) {
+            data.moneda =
+                moneda;
+        }
+    }
+
+    /* =====================================================
+       FECHAS
+    ===================================================== */
+
+    if (
+        input.fechaInicio !==
+        undefined
+    ) {
+        data.fechaInicio =
+            normalizarFecha(
+                input.fechaInicio
+            );
+    }
+
+    if (
+        input.fechaTermino !==
+        undefined
+    ) {
+        data.fechaTermino =
+            normalizarFecha(
+                input.fechaTermino
+            );
+    }
+
+    if (
+        input.fechaRenovacion !==
+        undefined
+    ) {
+        data.fechaRenovacion =
+            normalizarFecha(
+                input.fechaRenovacion
+            );
+    }
+
+    /* =====================================================
+       CONTRATO / OFERTA
+    ===================================================== */
+
+    if (
+        input.numeroContrato !==
+        undefined
+    ) {
+        data.numeroContrato =
+            normalizarTexto(
+                input.numeroContrato
+            );
+    }
+
+    if (
+        input.numeroOferta !==
+        undefined
+    ) {
+        data.numeroOferta =
+            normalizarTexto(
+                input.numeroOferta
+            );
+    }
+
+    /* =====================================================
+       OBSERVACIONES
+    ===================================================== */
+
+    if (
+        input.observaciones !==
+        undefined
+    ) {
+        data.observaciones =
+            normalizarTexto(
+                input.observaciones
+            );
+    }
+
+    /* =====================================================
+       ESTADO
+    ===================================================== */
+
+    if (
+        input.activo !==
+        undefined
+    ) {
+        data.activo =
+            input.activo;
+    }
+
+    /* =====================================================
+       TRANSACCIÓN
+    ===================================================== */
+
+    return prisma.$transaction(
+        async tx => {
+            /* =============================================
+               ACTUALIZAR SUSCRIPCIÓN
+            ============================================= */
+
+            await tx
+                .suscripcionContrato
+                .update({
+                    where: {
+                        id:
+                            suscripcionId,
+                    },
+
+                    data,
+                });
+
+            /* =============================================
+               EJECUTIVOS COMERCIALES
+            ============================================= */
+
+            if (
+                input.ejecutivosComerciales !==
+                undefined
+            ) {
+                await tx
+                    .suscripcionContratoEjecutivo
+                    .deleteMany({
+                        where: {
+                            suscripcionId,
+                        },
+                    });
+
+                const ejecutivos =
+                    input
+                        .ejecutivosComerciales
+                        .map(
+                            ejecutivo => ({
+                                nombre:
+                                    normalizarTexto(
+                                        ejecutivo.nombre
+                                    ) ??
+                                    "",
+
+                                email:
+                                    normalizarTexto(
+                                        ejecutivo.email
+                                    ),
+
+                                telefono:
+                                    normalizarTexto(
+                                        ejecutivo.telefono
+                                    ),
+
+                                principal:
+                                    Boolean(
+                                        ejecutivo.principal
+                                    ),
+                            })
+                        )
+                        .filter(
+                            ejecutivo =>
+                                Boolean(
+                                    ejecutivo.nombre
                                 )
-                            ),
-                    }
-                    : {}),
+                        );
 
-                ...(input.costoMensual !==
-                    undefined
-                    ? {
-                        costoMensual:
-                            input
-                                .costoMensual,
-                    }
-                    : {}),
+                /*
+                 * Si ninguno viene marcado principal,
+                 * dejamos el primero.
+                 */
+                if (
+                    ejecutivos.length >
+                    0 &&
+                    !ejecutivos.some(
+                        ejecutivo =>
+                            ejecutivo.principal
+                    )
+                ) {
+                    const primerEjecutivo =
+                        ejecutivos[0];
 
-                ...(input.moneda !==
-                    undefined
-                    ? {
-                        moneda:
-                            normalizarTexto(
-                                input.moneda
-                            ) ??
-                            actual.moneda,
+                    if (
+                        primerEjecutivo
+                    ) {
+                        primerEjecutivo.principal =
+                            true;
                     }
-                    : {}),
+                }
 
-                ...(input.fechaInicio !==
-                    undefined
-                    ? {
-                        fechaInicio:
-                            normalizarFecha(
-                                input.fechaInicio
-                            ),
-                    }
-                    : {}),
+                /*
+                 * Dejamos como máximo un principal.
+                 */
+                let principalEncontrado =
+                    false;
 
-                ...(input.fechaTermino !==
-                    undefined
-                    ? {
-                        fechaTermino:
-                            normalizarFecha(
-                                input.fechaTermino
-                            ),
-                    }
-                    : {}),
+                const ejecutivosNormalizados =
+                    ejecutivos.map(
+                        ejecutivo => {
+                            let principal =
+                                false;
 
-                ...(input.fechaRenovacion !==
-                    undefined
-                    ? {
-                        fechaRenovacion:
-                            normalizarFecha(
-                                input.fechaRenovacion
-                            ),
-                    }
-                    : {}),
+                            if (
+                                ejecutivo.principal &&
+                                !principalEncontrado
+                            ) {
+                                principal =
+                                    true;
 
-                ...(input.numeroContrato !==
-                    undefined
-                    ? {
-                        numeroContrato:
-                            normalizarTexto(
-                                input.numeroContrato
-                            ),
-                    }
-                    : {}),
+                                principalEncontrado =
+                                    true;
+                            }
 
-                ...(input.numeroOferta !==
-                    undefined
-                    ? {
-                        numeroOferta:
-                            normalizarTexto(
-                                input.numeroOferta
-                            ),
-                    }
-                    : {}),
+                            return {
+                                suscripcionId,
 
-                ...(input.ejecutivoNombre !==
-                    undefined
-                    ? {
-                        ejecutivoNombre:
-                            normalizarTexto(
-                                input.ejecutivoNombre
-                            ),
-                    }
-                    : {}),
+                                nombre:
+                                    ejecutivo.nombre,
 
-                ...(input.ejecutivoEmail !==
-                    undefined
-                    ? {
-                        ejecutivoEmail:
-                            normalizarTexto(
-                                input.ejecutivoEmail
-                            ),
-                    }
-                    : {}),
+                                email:
+                                    ejecutivo.email,
 
-                ...(input.ejecutivoTelefono !==
-                    undefined
-                    ? {
-                        ejecutivoTelefono:
-                            normalizarTexto(
-                                input.ejecutivoTelefono
-                            ),
-                    }
-                    : {}),
+                                telefono:
+                                    ejecutivo.telefono,
 
-                ...(input.soporteTelefono !==
-                    undefined
-                    ? {
-                        soporteTelefono:
-                            normalizarTexto(
-                                input.soporteTelefono
-                            ),
-                    }
-                    : {}),
+                                principal,
+                            };
+                        }
+                    );
 
-                ...(input.soporteEmail !==
-                    undefined
-                    ? {
-                        soporteEmail:
-                            normalizarTexto(
-                                input.soporteEmail
-                            ),
-                    }
-                    : {}),
+                if (
+                    ejecutivosNormalizados.length >
+                    0
+                ) {
+                    await tx
+                        .suscripcionContratoEjecutivo
+                        .createMany({
+                            data:
+                                ejecutivosNormalizados,
+                        });
+                }
+            }
 
-                ...(input.observaciones !==
-                    undefined
-                    ? {
-                        observaciones:
-                            normalizarTexto(
-                                input.observaciones
-                            ),
-                    }
-                    : {}),
+            /* =============================================
+               CONTACTOS SOPORTE
+            ============================================= */
 
-                ...(input.activo !==
-                    undefined
-                    ? {
-                        activo:
-                            Boolean(
-                                input.activo
-                            ),
+            if (
+                input.contactosSoporte !==
+                undefined
+            ) {
+                await tx
+                    .suscripcionContratoSoporte
+                    .deleteMany({
+                        where: {
+                            suscripcionId,
+                        },
+                    });
+
+                const contactos =
+                    input
+                        .contactosSoporte
+                        .map(
+                            contacto => ({
+                                nombre:
+                                    normalizarTexto(
+                                        contacto.nombre
+                                    ),
+
+                                email:
+                                    normalizarTexto(
+                                        contacto.email
+                                    ),
+
+                                telefono:
+                                    normalizarTexto(
+                                        contacto.telefono
+                                    ),
+
+                                principal:
+                                    Boolean(
+                                        contacto.principal
+                                    ),
+                            })
+                        )
+                        .filter(
+                            contacto =>
+                                Boolean(
+                                    contacto.nombre ||
+                                    contacto.email ||
+                                    contacto.telefono
+                                )
+                        );
+
+                /*
+                 * Si ninguno viene marcado principal,
+                 * dejamos el primero.
+                 */
+                if (
+                    contactos.length >
+                    0 &&
+                    !contactos.some(
+                        contacto =>
+                            contacto.principal
+                    )
+                ) {
+                    const primerContacto =
+                        contactos[0];
+
+                    if (
+                        primerContacto
+                    ) {
+                        primerContacto.principal =
+                            true;
                     }
-                    : {}),
-            },
-        });
+                }
+
+                /*
+                 * Dejamos como máximo uno principal.
+                 */
+                let principalEncontrado =
+                    false;
+
+                const contactosNormalizados =
+                    contactos.map(
+                        contacto => {
+                            let principal =
+                                false;
+
+                            if (
+                                contacto.principal &&
+                                !principalEncontrado
+                            ) {
+                                principal =
+                                    true;
+
+                                principalEncontrado =
+                                    true;
+                            }
+
+                            return {
+                                suscripcionId,
+
+                                nombre:
+                                    contacto.nombre,
+
+                                email:
+                                    contacto.email,
+
+                                telefono:
+                                    contacto.telefono,
+
+                                principal,
+                            };
+                        }
+                    );
+
+                if (
+                    contactosNormalizados.length >
+                    0
+                ) {
+                    await tx
+                        .suscripcionContratoSoporte
+                        .createMany({
+                            data:
+                                contactosNormalizados,
+                        });
+                }
+            }
+
+            /* =============================================
+               DEVOLVER REGISTRO FINAL
+            ============================================= */
+
+            return tx
+                .suscripcionContrato
+                .findUnique({
+                    where: {
+                        id:
+                            suscripcionId,
+                    },
+
+                    include: {
+                        ejecutivosComerciales: {
+                            orderBy: [
+                                {
+                                    principal:
+                                        "desc",
+                                },
+                                {
+                                    id:
+                                        "asc",
+                                },
+                            ],
+                        },
+
+                        contactosSoporte: {
+                            orderBy: [
+                                {
+                                    principal:
+                                        "desc",
+                                },
+                                {
+                                    id:
+                                        "asc",
+                                },
+                            ],
+                        },
+                    },
+                });
+        }
+    );
 }
 
 /* =========================================================

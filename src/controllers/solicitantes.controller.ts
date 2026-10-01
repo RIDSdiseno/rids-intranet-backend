@@ -15,6 +15,41 @@ type OrderDir = "asc" | "desc";
 
 type EstadoSolicitanteFiltro = "activos" | "inactivos" | "todos";
 
+type LicenciaSolicitanteFiltro =
+  "todos" |
+  "con" |
+  "sin";
+
+const parseLicenciaSolicitante =
+  (
+    value:
+      unknown
+  ): LicenciaSolicitanteFiltro => {
+    const filtro =
+      String(
+        value ??
+        "todos"
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      filtro ===
+      "con"
+    ) {
+      return "con";
+    }
+
+    if (
+      filtro ===
+      "sin"
+    ) {
+      return "sin";
+    }
+
+    return "todos";
+  };
+
 const SOLICITANTES_CARGA_INICIAL_HASTA =
   process.env.SOLICITANTES_CARGA_INICIAL_HASTA ??
   "2026-05-19 15:30:52.844";
@@ -205,6 +240,36 @@ const buildSolicitanteSearchWhere = (
   };
 };
 
+const buildLicenciaWhere =
+  (
+    filtro:
+      LicenciaSolicitanteFiltro
+  ): Prisma.SolicitanteWhereInput => {
+    if (
+      filtro ===
+      "con"
+    ) {
+      return {
+        msLicenses: {
+          some: {},
+        },
+      };
+    }
+
+    if (
+      filtro ===
+      "sin"
+    ) {
+      return {
+        msLicenses: {
+          none: {},
+        },
+      };
+    }
+
+    return {};
+  };
+
 /* ============================================================
  * GET /solicitantes
  * ============================================================ */
@@ -215,6 +280,11 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     const page = clamp(toInt(req.query.page, 1), 1, 1_000_000);
     const pageSize = clamp(toInt(req.query.pageSize, 10), 1, 100);
     const estado = parseEstadoSolicitante(req.query.estado);
+
+    const licencia =
+      parseLicenciaSolicitante(
+        req.query.licencia
+      );
 
     const onlyGMS =
       String(req.query.onlyGMS ?? "").toLowerCase() === "1" ||
@@ -265,6 +335,10 @@ export const listSolicitantes = async (req: Request, res: Response) => {
         buildSolicitanteSearchWhere(
           q,
           true
+        ),
+
+        buildLicenciaWhere(
+          licencia
         ),
 
         onlyGMS
@@ -705,6 +779,11 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
 
     const estado = parseEstadoSolicitante(req.query.estado);
 
+    const licencia =
+      parseLicenciaSolicitante(
+        req.query.licencia
+      );
+
     const user = (req as any).user;
 
     const onlyWithAccountRaw =
@@ -752,6 +831,10 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
           onlyWithAccount
           ? buildWhereOnlyWithAccount()
           : {},
+
+        buildLicenciaWhere(
+          licencia
+        ),
       ],
     };
     const solicitantes = await prisma.solicitante.count({ where });
@@ -850,16 +933,77 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
       where: equiposWhere,
     });
 
+    const conLicencia =
+      await prisma
+        .solicitante
+        .count({
+          where: {
+            AND: [
+              buildEstadoSolicitanteWhere(
+                "activos"
+              ),
+
+              {
+                empresa: {
+                  is: {
+                    isActive:
+                      true,
+                  },
+                },
+              },
+
+              userEmpresaId
+                ? {
+                  empresaId:
+                    userEmpresaId,
+                }
+                : empresaId >
+                  0
+                  ? {
+                    empresaId,
+                  }
+                  : {},
+
+              buildSolicitanteSearchWhere(
+                q,
+                true
+              ),
+
+              {
+                msLicenses: {
+                  some: {},
+                },
+              },
+            ],
+          },
+        });
+
     return res.json({
       solicitantes,
       empresas,
       equipos,
       inactivos,
+      conLicencia,
+
       filters: {
-        empresaId: userEmpresaId ?? (empresaId > 0 ? empresaId : null),
-        q: q ?? null,
+        empresaId:
+          userEmpresaId ??
+          (
+            empresaId >
+              0
+              ? empresaId
+              : null
+          ),
+
+        q:
+          q ??
+          null,
+
         estado,
+
         onlyWithAccount,
+
+        licencia,
       },
     });
   } catch (err: unknown) {
@@ -1732,3 +1876,327 @@ export async function getSolicitantesNuevosDetalle(req: Request, res: Response) 
     });
   }
 }
+
+/* ============================================================
+ * GET /solicitantes/export
+ * Exporta TODOS los registros que coinciden con los filtros.
+ * Sin paginación.
+ * ============================================================ */
+
+export const exportSolicitantes =
+  async (
+    req: Request,
+    res: Response
+  ) => {
+    try {
+      const q =
+        String(
+          req.query.q ??
+          req.query.search ??
+          ""
+        ).trim();
+
+      const empresaId =
+        toInt(
+          req.query.empresaId
+        );
+
+      const estado =
+        parseEstadoSolicitante(
+          req.query.estado
+        );
+
+      const licencia =
+        parseLicenciaSolicitante(
+          req.query.licencia
+        );
+
+      const orderByKey =
+        parseOrderBy(
+          req.query.orderBy
+        );
+
+      const orderDir =
+        parseOrderDir(
+          req.query.orderDir
+        );
+
+      const user =
+        (req as any).user;
+
+      /* =========================================
+         MISMA LÓGICA DE CUENTAS QUE LISTADO
+      ========================================= */
+
+      const onlyWithAccountRaw =
+        req.query.onlyWithAccount !==
+          undefined
+          ? parseOnlyWithAccount(
+            req.query.onlyWithAccount
+          )
+          : user?.rol ===
+          "CLIENTE";
+
+      const onlyWithAccount =
+        applyClinicOverrideOnlyWithAccount(
+          empresaId,
+          onlyWithAccountRaw
+        );
+
+      /* =========================================
+         WHERE = MISMO FILTRO DEL LISTADO
+      ========================================= */
+
+      const where:
+        Prisma.SolicitanteWhereInput =
+      {
+        AND: [
+          buildEstadoSolicitanteWhere(
+            estado
+          ),
+
+          buildEmpresaActivaWhere(),
+
+          user?.rol ===
+            "CLIENTE"
+            ? {
+              empresaId:
+                Number(
+                  user.empresaId
+                ),
+            }
+            : empresaId >
+              0
+              ? {
+                empresaId,
+              }
+              : {},
+
+          buildSolicitanteSearchWhere(
+            q,
+            true
+          ),
+
+          estado ===
+            "activos" &&
+            onlyWithAccount
+            ? buildWhereOnlyWithAccount()
+            : {},
+
+          buildLicenciaWhere(
+            licencia
+          ),
+        ],
+      };
+
+      /* =========================================
+         CONSULTA SIN PAGINACIÓN
+      ========================================= */
+
+      const rows =
+        await prisma
+          .solicitante
+          .findMany({
+            where,
+
+            orderBy:
+              buildSolicitanteOrderBy(
+                orderByKey,
+                orderDir
+              ),
+
+            select: {
+              id_solicitante:
+                true,
+
+              nombre:
+                true,
+
+              rut:
+                true,
+
+              email:
+                true,
+
+              telefono:
+                true,
+
+              empresaId:
+                true,
+
+              accountType:
+                true,
+
+              googleUserId:
+                true,
+
+              microsoftUserId:
+                true,
+
+              empresa: {
+                select: {
+                  id_empresa:
+                    true,
+
+                  nombre:
+                    true,
+                },
+              },
+
+              equipos: {
+                where: {
+                  deletedAt:
+                    null,
+                },
+
+                select: {
+                  id_equipo:
+                    true,
+                },
+              },
+
+              msLicenses: {
+                select: {
+                  skuId:
+                    true,
+
+                  sku: {
+                    select: {
+                      skuPartNumber:
+                        true,
+
+                      displayName:
+                        true,
+                    },
+                  },
+                },
+
+                orderBy: {
+                  skuId:
+                    "asc",
+                },
+              },
+            },
+          });
+
+      /* =========================================
+         NORMALIZAR RESPUESTA
+      ========================================= */
+
+      const items =
+        rows.map(
+          row => ({
+            id_solicitante:
+              row.id_solicitante,
+
+            nombre:
+              row.nombre,
+
+            rut:
+              row.rut,
+
+            email:
+              row.email,
+
+            telefono:
+              row.telefono,
+
+            empresa:
+              row.empresa
+                ?.nombre ??
+              null,
+
+            empresaId:
+              row.empresaId,
+
+            accountType:
+              row.accountType,
+
+            equiposCount:
+              row.equipos
+                .length,
+
+            msLicensesCount:
+              row.msLicenses
+                .length,
+
+            msLicenses:
+              row.msLicenses.map(
+                licencia => ({
+                  skuId:
+                    licencia
+                      .skuId,
+
+                  skuPartNumber:
+                    licencia
+                      .sku
+                      ?.skuPartNumber ??
+                    licencia
+                      .skuId,
+
+                  displayName:
+                    licencia
+                      .sku
+                      ?.displayName ??
+                    null,
+                })
+              ),
+          })
+        );
+
+      return res.json({
+        ok:
+          true,
+
+        total:
+          items.length,
+
+        filters: {
+          q:
+            q ||
+            null,
+
+          empresaId:
+            user?.rol ===
+              "CLIENTE"
+              ? Number(
+                user.empresaId
+              )
+              : empresaId >
+                0
+                ? empresaId
+                : null,
+
+          estado,
+
+          licencia,
+
+          orderBy:
+            orderByKey,
+
+          orderDir,
+        },
+
+        items,
+      });
+    } catch (
+    error
+    ) {
+      console.error(
+        "[solicitantes.export] error:",
+        error
+      );
+
+      return res
+        .status(
+          500
+        )
+        .json({
+          ok:
+            false,
+
+          error:
+            "No se pudo preparar la exportación de solicitantes.",
+        });
+    }
+  };
