@@ -104,13 +104,13 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: null;
     visitaId: null;
@@ -158,13 +158,13 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: {
         id_visita: number;
@@ -232,13 +232,13 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: null;
     visitaId: null;
@@ -278,13 +278,13 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: {
         id_visita: number;
@@ -352,13 +352,13 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: null;
     visitaId: null;
@@ -403,13 +403,13 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: {
         id_visita: number;
@@ -452,13 +452,13 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 }>;
 /**
  * Elimina varias visitas de una sola vez (selección múltiple desde el
@@ -534,13 +534,13 @@ export declare function crearAgendaVisitaManual(data: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: null;
     visitaId: null;
@@ -585,13 +585,13 @@ export declare function crearAgendaVisitaManual(data: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
-    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
     destinoDireccion: string | null;
     destinoLatitud: number | null;
     destinoLongitud: number | null;
+    finalidad: string | null;
 } & {
     visita: {
         id_visita: number;
@@ -666,13 +666,13 @@ export declare function crearAgendaVisitasEnLote(data: {
         recordatorioEnviado: boolean | null;
         outlookEventId: string | null;
         empresaExternaNombre: string | null;
-        finalidad: string | null;
         fechaInicioRuta: Date | null;
         fechaInicioVisita: Date | null;
         destinoNombre: string | null;
         destinoDireccion: string | null;
         destinoLatitud: number | null;
         destinoLongitud: number | null;
+        finalidad: string | null;
     } & {
         visita: null;
         visitaId: null;
@@ -717,13 +717,13 @@ export declare function crearAgendaVisitasEnLote(data: {
         recordatorioEnviado: boolean | null;
         outlookEventId: string | null;
         empresaExternaNombre: string | null;
-        finalidad: string | null;
         fechaInicioRuta: Date | null;
         fechaInicioVisita: Date | null;
         destinoNombre: string | null;
         destinoDireccion: string | null;
         destinoLatitud: number | null;
         destinoLongitud: number | null;
+        finalidad: string | null;
     } & {
         visita: {
             id_visita: number;

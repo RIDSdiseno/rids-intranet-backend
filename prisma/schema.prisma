@@ -1445,7 +1445,6 @@ model AgendaVisita {
   recordatorioEnviado  Boolean?
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
-  finalidad            String?
   fechaInicioRuta      DateTime?
   fechaInicioVisita    DateTime?
   sucursalId           Int?
@@ -1453,6 +1452,7 @@ model AgendaVisita {
   destinoDireccion     String?
   destinoLatitud       Float?
   destinoLongitud      Float?
+  finalidad            String?
   empresa              Empresa?        @relation("Empresa_AgendaVisita", fields: [empresaId], references: [id_empresa])
   sucursal             Sucursal?       @relation(fields: [sucursalId], references: [id_sucursal])
   tecnicos             AgendaTecnico[]
