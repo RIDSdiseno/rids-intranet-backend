@@ -572,6 +572,9 @@ export async function getInventarioByEmpresa(params) {
                     passwordEmpresa: true,
                     passwordPersonal: true,
                     usuarioPersonal: true,
+                    bateriaEstado: true,
+                    bateriaSaludPorcentaje: true,
+                    bateriaDesgastePorcentaje: true,
                 },
             },
             /*

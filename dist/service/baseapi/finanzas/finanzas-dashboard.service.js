@@ -1,6 +1,7 @@
 // src/service/baseapi/finanzas/finanzas-dashboard.service.ts
 import { prisma } from "../../../lib/prisma.js";
 import { anotarDocumentosCobranza, } from "../cobranza/cobranza-estado.service.js";
+import { obtenerAnalisisClientesFinanzas, } from "./finanzas-clientes.service.js";
 function seleccionarCachesMensuales(caches, tipoPreferido, tipoRcv) {
     const cachePorMes = new Map();
     for (const cache of caches) {
@@ -116,6 +117,10 @@ function getMontoNeto(doc) {
 ========================================================= */
 export async function obtenerDashboardFinanzas(params) {
     const { empresaKey, ano, } = params;
+    const analisisClientes = await obtenerAnalisisClientesFinanzas({
+        empresaKey,
+        ano,
+    });
     /*
      * =====================================================
      * 1. Leer cache RCV del año
@@ -516,6 +521,7 @@ export async function obtenerDashboardFinanzas(params) {
             tipo: item.tipo,
             updatedAt: item.updatedAt,
         })),
+        clientes: analisisClientes,
     };
 }
 //# sourceMappingURL=finanzas-dashboard.service.js.map

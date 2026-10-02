@@ -1,4 +1,5 @@
 import type { EmpresaBaseApiKey } from "./baseapi.empresas.js";
+import type { EstadoPuntualidadCliente } from "./finanzas/puntualidad-cliente.service.js";
 type TipoRcv = "ventas" | "compras";
 export declare function listarConciliacionRcv(params: {
     empresa: EmpresaBaseApiKey;
@@ -116,7 +117,7 @@ export declare function observarDocumentoRcv(params: {
     responsable: string | null;
     conciliadoAt: Date | null;
 }>;
-export type PuntualidadEstado = "SIN_HISTORIAL" | "BUEN_PAGADOR" | "IRREGULAR" | "RIESGO_MORA";
+export type PuntualidadEstado = EstadoPuntualidadCliente;
 export declare function getPuntualidadCliente(params: {
     empresa: EmpresaBaseApiKey;
     rutContraparte: string;
@@ -127,7 +128,9 @@ export declare function getPuntualidadCliente(params: {
     conVencimientoRegistrado: number;
     aTiempo: number;
     atrasadas: number;
+    porcentajeATiempo: number;
     promedioDiasAtraso: number;
+    documentosInvalidos: number;
 }>;
 export {};
 //# sourceMappingURL=baseapi-rcv-conciliacion.service.d.ts.map

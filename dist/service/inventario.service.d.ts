@@ -72,6 +72,9 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
         usuarioEmpresa: string | null;
         usuarioPersonal: string | null;
         redEthernet: string | null;
+        bateriaDesgastePorcentaje: number | null;
+        bateriaEstado: string | null;
+        bateriaSaludPorcentaje: number | null;
     } | null;
     adicionalesRelacion: {
         origen: import("@prisma/client").$Enums.OrigenEquipoAdicional;

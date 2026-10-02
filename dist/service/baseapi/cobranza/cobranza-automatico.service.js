@@ -4,6 +4,29 @@ import { consultarVentasRcvBaseApi, } from "../baseapi-rcv.service.js";
 import { consultarDtePorFolioBaseApi, } from "../baseapi-dte.service.js";
 import { obtenerEstadosDocumentosCobranza, } from "./cobranza-estado.service.js";
 import { obtenerAplicacionesNotasCredito, } from "./cobranza-notas-credito.service.js";
+function normalizarOrigenVencimiento(origen) {
+    const valor = String(origen ??
+        "")
+        .trim()
+        .toUpperCase();
+    switch (valor) {
+        case "MANUAL":
+        case "OVERRIDE":
+            return "MANUAL";
+        case "DTE_CACHE":
+            return "DTE_CACHE";
+        case "DTE":
+            return "DTE";
+        case "DIAS_CREDITO":
+        case "RECEPTOR_COBRANZA":
+        case "DETALLE_EMPRESA":
+            return "DIAS_CREDITO";
+        case "DOCUMENTO":
+        case "RCV":
+        default:
+            return "RCV";
+    }
+}
 /* =========================================================
    LOGS / TIMING
 ========================================================= */
@@ -939,6 +962,121 @@ async function completarVencimientosCobranza(empresa, evaluadosIniciales, consul
     }
     logTiempo(`Completar vencimientos ${empresa.toUpperCase()}`, inicio);
 }
+async function persistirVencimientosResueltos(empresa, evaluados) {
+    const detectados = new Map();
+    /*
+     * =====================================================
+     * 1. Construir conjunto de vencimientos válidos
+     * =====================================================
+     */
+    for (const { documento, estado, } of evaluados) {
+        if (!estado.fechaVencimiento) {
+            continue;
+        }
+        const tipoDoc = getTipoDoc(documento);
+        const folio = getFolio(documento);
+        if (!tipoDoc ||
+            !folio) {
+            continue;
+        }
+        /*
+         * completarVencimientosCobranza deja el origen
+         * más preciso directamente en el documento.
+         *
+         * Si no existe, utilizamos el origen determinado
+         * por cobranza-estado.service.ts.
+         */
+        const origen = normalizarOrigenVencimiento(documento
+            ?.origenVencimientoCobranza ??
+            estado.origenVencimiento);
+        const key = [
+            empresa,
+            tipoDoc,
+            folio,
+        ].join("|");
+        detectados.set(key, {
+            empresaKey: empresa,
+            tipoDoc,
+            folio,
+            fechaVencimiento: estado
+                .fechaVencimiento,
+            origenVencimiento: origen,
+        });
+    }
+    if (detectados.size ===
+        0) {
+        console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} sin vencimientos nuevos para persistir`);
+        return;
+    }
+    /*
+     * =====================================================
+     * 2. Buscar los vencimientos ya registrados
+     * =====================================================
+     */
+    const valores = Array.from(detectados
+        .values());
+    const existentes = await prisma
+        .rcvVencimiento
+        .findMany({
+        where: {
+            empresaKey: empresa,
+            OR: valores.map(item => ({
+                tipoDoc: item.tipoDoc,
+                folio: item.folio,
+            })),
+        },
+        select: {
+            tipoDoc: true,
+            folio: true,
+            origenVencimiento: true,
+        },
+    });
+    const clavesExistentes = new Set(existentes.map(item => [
+        empresa,
+        item.tipoDoc,
+        item.folio,
+    ].join("|")));
+    /*
+     * =====================================================
+     * 3. Crear solamente los que todavía no existen
+     * =====================================================
+     *
+     * Nunca reemplazamos automáticamente una fecha
+     * ya almacenada.
+     *
+     * Esto protege:
+     *
+     * - MANUAL
+     * - DUEMINT
+     * - LEGACY
+     * - cualquier vencimiento previamente persistido
+     * =====================================================
+     */
+    const nuevos = Array.from(detectados.entries())
+        .filter(([key,]) => !clavesExistentes.has(key))
+        .map(([, item,]) => item);
+    if (nuevos.length ===
+        0) {
+        console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} vencimientos ya persistidos`, {
+            detectados: detectados.size,
+            existentes: clavesExistentes.size,
+            creados: 0,
+        });
+        return;
+    }
+    const resultado = await prisma
+        .rcvVencimiento
+        .createMany({
+        data: nuevos,
+        skipDuplicates: true,
+    });
+    console.log(`[COBRANZA AUTO] 💾 ${empresa.toUpperCase()} vencimientos persistidos`, {
+        detectados: detectados.size,
+        existentes: clavesExistentes.size,
+        nuevos: nuevos.length,
+        creados: resultado.count,
+    });
+}
 /* =========================================================
    RESOLVER DESTINATARIOS DE COBRANZA
 ========================================================= */
@@ -1738,6 +1876,15 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendient
     evaluados =
         await obtenerEstadosDocumentosCobranza(documentos, "ventas", empresa);
     logTiempo(`Reevaluación estados ${empresa.toUpperCase()}`, inicioReevaluacion);
+    /*
+ * 3.3 Persistir vencimientos resueltos.
+ *
+ * IMPORTANTE:
+ * /simular debe continuar siendo 100% lectura.
+ */
+    if (registrarPendientes) {
+        await persistirVencimientosResueltos(empresa, evaluados);
+    }
     console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} documentos evaluados`, {
         total: evaluados.length,
     });

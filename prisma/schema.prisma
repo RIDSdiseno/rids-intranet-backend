@@ -283,34 +283,33 @@ model AccesoRouterSucursal {
 }
 
 model SuscripcionContrato {
-  id                  Int       @id @default(autoincrement())
-  empresaId           Int
-  proveedor           String
-  fabricante          String
-  productoPlan        String
-  cantidadLicencias   Int       @default(1)
-  costoMensual        Decimal?  @db.Decimal(18, 2)
-  moneda              String    @default("CLP")
-  fechaInicio         DateTime?
-  fechaTermino        DateTime?
-  fechaRenovacion     DateTime?
-  numeroContrato      String?
-  numeroOferta        String?
-  ejecutivoNombre     String?
-  ejecutivoEmail      String?
-  ejecutivoTelefono   String?
-  soporteTelefono     String?
-  soporteEmail        String?
-  observaciones       String?
-  activo              Boolean   @default(true)
-  contratoNombre      String?
-  contratoMimeType    String?
-  contratoBytes       Int?
-  contratoStoragePath String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  empresa             Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-
+  id                    Int                            @id @default(autoincrement())
+  empresaId             Int
+  proveedor             String
+  fabricante            String
+  productoPlan          String
+  cantidadLicencias     Int                            @default(1)
+  costoMensual          Decimal?                       @db.Decimal(18, 2)
+  moneda                String                         @default("CLP")
+  fechaInicio           DateTime?
+  fechaTermino          DateTime?
+  fechaRenovacion       DateTime?
+  numeroContrato        String?
+  numeroOferta          String?
+  ejecutivoNombre       String?
+  ejecutivoEmail        String?
+  ejecutivoTelefono     String?
+  soporteTelefono       String?
+  soporteEmail          String?
+  observaciones         String?
+  activo                Boolean                        @default(true)
+  contratoNombre        String?
+  contratoMimeType      String?
+  contratoBytes         Int?
+  contratoStoragePath   String?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  empresa               Empresa                        @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   ejecutivosComerciales SuscripcionContratoEjecutivo[]
   contactosSoporte      SuscripcionContratoSoporte[]
 
@@ -322,37 +321,29 @@ model SuscripcionContrato {
 }
 
 model SuscripcionContratoEjecutivo {
-  id            Int @id @default(autoincrement())
+  id            Int                 @id @default(autoincrement())
   suscripcionId Int
-
-  nombre   String
-  email    String?
-  telefono String?
-
-  principal Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  suscripcion SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+  nombre        String
+  email         String?
+  telefono      String?
+  principal     Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  suscripcion   SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
   @@index([suscripcionId])
 }
 
 model SuscripcionContratoSoporte {
-  id            Int @id @default(autoincrement())
+  id            Int                 @id @default(autoincrement())
   suscripcionId Int
-
-  nombre   String?
-  email    String?
-  telefono String?
-
-  principal Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  suscripcion SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+  nombre        String?
+  email         String?
+  telefono      String?
+  principal     Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  suscripcion   SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
   @@index([suscripcionId])
 }
@@ -1454,6 +1445,7 @@ model AgendaVisita {
   recordatorioEnviado  Boolean?
   outlookEventId       String?         @map("outlook_event_id")
   empresaExternaNombre String?
+  finalidad            String?
   fechaInicioRuta      DateTime?
   fechaInicioVisita    DateTime?
   sucursalId           Int?

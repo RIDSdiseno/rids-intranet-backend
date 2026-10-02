@@ -14,6 +14,9 @@ export declare class AgendaStateTransitionError extends Error {
 export declare class AgendaSucursalInvalidaError extends Error {
     constructor(message?: string);
 }
+export declare class AgendaEmpresaInvalidaError extends Error {
+    constructor(message?: string);
+}
 export declare class AgendaVisitaVinculadaError extends Error {
     constructor(message?: string);
 }
@@ -101,6 +104,7 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -154,6 +158,7 @@ export declare function getAgendaMensual(year: number, month: number, filtros?: 
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -227,6 +232,7 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -272,6 +278,7 @@ export declare function getAgendaPorDia(fecha: Date): Promise<(Omit<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -302,9 +309,11 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     estado?: EstadoAgenda | undefined;
     notas?: string | undefined;
     mensaje?: string | undefined;
+    finalidad?: string | null | undefined;
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
     empresaId?: number | null | undefined;
+    empresaExternaNombre?: string | null | undefined;
     sucursalId?: number | null | undefined;
 }): Promise<(Omit<{
     empresa: {
@@ -343,6 +352,7 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -393,6 +403,7 @@ export declare function actualizarAgendaVisita(id: number, datos: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -441,6 +452,7 @@ export declare function eliminarAgendaVisita(id: number): Promise<{
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -477,10 +489,12 @@ export declare function eliminarMallaMensual(year: number, month: number): Promi
 export declare function crearAgendaVisitaManual(data: {
     fecha: string;
     empresaId: number | null;
+    empresaExternaNombre?: string | null | undefined;
     sucursalId?: number | null | undefined;
     tecnicoId: number;
     horaInicio?: string | undefined;
     horaFin?: string | undefined;
+    finalidad?: string | null | undefined;
     mensaje?: string | undefined;
     notas?: string | undefined;
 }): Promise<(Omit<{
@@ -520,6 +534,7 @@ export declare function crearAgendaVisitaManual(data: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -570,6 +585,7 @@ export declare function crearAgendaVisitaManual(data: {
     recordatorioEnviado: boolean | null;
     outlookEventId: string | null;
     empresaExternaNombre: string | null;
+    finalidad: string | null;
     fechaInicioRuta: Date | null;
     fechaInicioVisita: Date | null;
     destinoNombre: string | null;
@@ -601,15 +617,17 @@ export declare function crearAgendaVisitaManual(data: {
  */
 export declare function crearAgendaVisitasEnLote(data: {
     empresaId: number | null;
+    empresaExternaNombre?: string | null | undefined;
     sucursalId?: number | null | undefined;
     tecnicoId: number;
+    finalidad?: string | null | undefined;
     mensaje?: string | undefined;
     notas?: string | undefined;
-    fechas: {
+    fechas: Array<{
         fecha: string;
         horaInicio?: string | undefined;
         horaFin?: string | undefined;
-    }[];
+    }>;
 }): Promise<{
     creadas: ((Omit<{
         empresa: {
@@ -648,6 +666,7 @@ export declare function crearAgendaVisitasEnLote(data: {
         recordatorioEnviado: boolean | null;
         outlookEventId: string | null;
         empresaExternaNombre: string | null;
+        finalidad: string | null;
         fechaInicioRuta: Date | null;
         fechaInicioVisita: Date | null;
         destinoNombre: string | null;
@@ -698,6 +717,7 @@ export declare function crearAgendaVisitasEnLote(data: {
         recordatorioEnviado: boolean | null;
         outlookEventId: string | null;
         empresaExternaNombre: string | null;
+        finalidad: string | null;
         fechaInicioRuta: Date | null;
         fechaInicioVisita: Date | null;
         destinoNombre: string | null;

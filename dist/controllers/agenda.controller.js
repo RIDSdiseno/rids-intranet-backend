@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EstadoAgenda } from "@prisma/client";
-import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, eliminarAgendaVisitasEnLote, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, crearAgendaVisitasEnLote, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, AgendaSucursalInvalidaError, AgendaVisitaVinculadaError, } from "../service/agenda.service.js";
+import { generarMallaMensual, getAgendaMensual, getAgendaDesdeOutlook, sincronizarAgendaDesdeOutlook, getEmpresasAgenda, actualizarAgendaVisita, eliminarAgendaVisita, eliminarAgendaVisitasEnLote, reasignarTecnicos, eliminarMallaMensual, crearAgendaVisitaManual, crearAgendaVisitasEnLote, enviarNotaAgendaPorCorreo, AgendaConflictError, AgendaNotFoundError, AgendaPastDateError, AgendaStateTransitionError, AgendaSucursalInvalidaError, AgendaVisitaVinculadaError, AgendaEmpresaInvalidaError, } from "../service/agenda.service.js";
 /* ================== Schemas ================== */
 const generarMallaSchema = z.object({
     year: z.number().int().min(2020).max(2100),
@@ -27,8 +27,25 @@ const updateVisitaSchema = z.object({
         .string()
         .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora fin inválida, use HH:mm")
         .optional(),
-    empresaId: z.number().nullable().optional(),
+    empresaId: z
+        .number()
+        .int()
+        .positive()
+        .nullable()
+        .optional(),
     sucursalId: z.number().int().positive().nullable().optional(),
+    empresaExternaNombre: z
+        .string()
+        .trim()
+        .max(150)
+        .nullable()
+        .optional(),
+    finalidad: z
+        .string()
+        .trim()
+        .max(300)
+        .nullable()
+        .optional(),
 });
 const reprogramarTecnicosSchema = z.object({
     nuevosTecnicoIds: z.array(z.number().int().positive()).min(1),
@@ -37,11 +54,32 @@ const eliminarMallaSchema = z.object({
     year: z.coerce.number().int().min(2020).max(2100),
     month: z.coerce.number().int().min(1).max(12),
 });
-const crearVisitaManualSchema = z.object({
-    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
-    empresaId: z.number().int().positive().nullable(),
-    sucursalId: z.number().int().positive().nullable().optional(),
-    tecnicoId: z.number().int().positive(),
+const crearVisitaManualSchema = z
+    .object({
+    fecha: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
+    empresaId: z
+        .number()
+        .int()
+        .positive()
+        .nullable(),
+    empresaExternaNombre: z
+        .string()
+        .trim()
+        .max(150, "El nombre de la empresa externa es demasiado largo.")
+        .nullable()
+        .optional(),
+    sucursalId: z
+        .number()
+        .int()
+        .positive()
+        .nullable()
+        .optional(),
+    tecnicoId: z
+        .number()
+        .int()
+        .positive(),
     horaInicio: z
         .string()
         .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora inicio inválida, use HH:mm")
@@ -50,18 +88,84 @@ const crearVisitaManualSchema = z.object({
         .string()
         .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora fin inválida, use HH:mm")
         .optional(),
-    mensaje: z.string().optional(),
-    notas: z.string().optional(),
+    finalidad: z
+        .string()
+        .trim()
+        .max(300, "La finalidad no puede superar los 300 caracteres.")
+        .nullable()
+        .optional(),
+    mensaje: z
+        .string()
+        .optional(),
+    notas: z
+        .string()
+        .optional(),
+})
+    .superRefine((data, ctx) => {
+    const empresaExterna = data
+        .empresaExternaNombre
+        ?.trim();
+    if (!data.empresaId &&
+        !empresaExterna) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+                "empresaId",
+            ],
+            message: "Debe seleccionar una empresa del sistema o ingresar una empresa externa.",
+        });
+    }
+    if (data.empresaId &&
+        empresaExterna) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+                "empresaExternaNombre",
+            ],
+            message: "No puede seleccionar una empresa del sistema e ingresar una empresa externa al mismo tiempo.",
+        });
+    }
 });
-const crearVisitasLoteSchema = z.object({
-    empresaId: z.number().int().positive().nullable(),
-    sucursalId: z.number().int().positive().nullable().optional(),
-    tecnicoId: z.number().int().positive(),
-    mensaje: z.string().optional(),
-    notas: z.string().optional(),
+const crearVisitasLoteSchema = z
+    .object({
+    empresaId: z
+        .number()
+        .int()
+        .positive()
+        .nullable(),
+    empresaExternaNombre: z
+        .string()
+        .trim()
+        .max(150)
+        .nullable()
+        .optional(),
+    sucursalId: z
+        .number()
+        .int()
+        .positive()
+        .nullable()
+        .optional(),
+    tecnicoId: z
+        .number()
+        .int()
+        .positive(),
+    finalidad: z
+        .string()
+        .trim()
+        .max(300)
+        .nullable()
+        .optional(),
+    mensaje: z
+        .string()
+        .optional(),
+    notas: z
+        .string()
+        .optional(),
     fechas: z
         .array(z.object({
-        fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
+        fecha: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de fecha inválido, use YYYY-MM-DD"),
         horaInicio: z
             .string()
             .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Hora inicio inválida, use HH:mm")
@@ -73,6 +177,31 @@ const crearVisitasLoteSchema = z.object({
     }))
         .min(1, "Debe seleccionar al menos una fecha")
         .max(60, "No se pueden crear más de 60 visitas a la vez"),
+})
+    .superRefine((data, ctx) => {
+    const empresaExterna = data
+        .empresaExternaNombre
+        ?.trim();
+    if (!data.empresaId &&
+        !empresaExterna) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+                "empresaId",
+            ],
+            message: "Debe seleccionar una empresa del sistema o ingresar una empresa externa.",
+        });
+    }
+    if (data.empresaId &&
+        empresaExterna) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+                "empresaExternaNombre",
+            ],
+            message: "No puede usar empresa interna y externa al mismo tiempo.",
+        });
+    }
 });
 const eliminarVisitasLoteSchema = z.object({
     ids: z
@@ -181,32 +310,104 @@ export async function updateVisita(req, res) {
         if (!parsed.success) {
             return res.status(400).json({ error: "Datos inválidos", detalles: parsed.error.flatten() });
         }
-        const { fecha, estado, notas, mensaje, horaInicio, horaFin, empresaId, sucursalId } = parsed.data;
+        const { fecha, estado, notas, mensaje, finalidad, horaInicio, horaFin, empresaId, empresaExternaNombre, sucursalId, } = parsed.data;
         const actualizado = await actualizarAgendaVisita(id, {
-            ...(fecha !== undefined && { fecha }),
-            ...(estado !== undefined && { estado }),
-            ...(notas !== undefined && { notas }),
-            ...(mensaje !== undefined && { mensaje }),
-            ...(horaInicio !== undefined && { horaInicio }),
-            ...(horaFin !== undefined && { horaFin }),
-            ...(empresaId !== undefined && { empresaId }),
-            ...(sucursalId !== undefined && { sucursalId }),
+            ...(fecha !==
+                undefined && {
+                fecha,
+            }),
+            ...(estado !==
+                undefined && {
+                estado,
+            }),
+            ...(notas !==
+                undefined && {
+                notas,
+            }),
+            ...(mensaje !==
+                undefined && {
+                mensaje,
+            }),
+            ...(finalidad !==
+                undefined && {
+                finalidad,
+            }),
+            ...(horaInicio !==
+                undefined && {
+                horaInicio,
+            }),
+            ...(horaFin !==
+                undefined && {
+                horaFin,
+            }),
+            ...(empresaId !==
+                undefined && {
+                empresaId,
+            }),
+            ...(empresaExternaNombre !==
+                undefined && {
+                empresaExternaNombre,
+            }),
+            ...(sucursalId !==
+                undefined && {
+                sucursalId,
+            }),
         });
         return res.status(200).json(actualizado);
     }
     catch (err) {
-        if (err instanceof AgendaSucursalInvalidaError) {
-            return res.status(400).json({ error: err.message });
+        if (err instanceof
+            AgendaNotFoundError) {
+            return res
+                .status(404)
+                .json({
+                error: err.message,
+            });
         }
-        if (err instanceof AgendaConflictError ||
-            err instanceof AgendaPastDateError ||
-            err instanceof AgendaStateTransitionError) {
-            return res.status(409).json({ error: err.message });
+        if (err instanceof
+            AgendaSucursalInvalidaError ||
+            err instanceof
+                AgendaEmpresaInvalidaError) {
+            return res
+                .status(400)
+                .json({
+                error: err.message,
+            });
+        }
+        if (err instanceof
+            AgendaSucursalInvalidaError) {
+            return res
+                .status(400)
+                .json({
+                error: err.message,
+            });
+        }
+        if (err instanceof
+            AgendaConflictError ||
+            err instanceof
+                AgendaPastDateError ||
+            err instanceof
+                AgendaStateTransitionError) {
+            return res
+                .status(409)
+                .json({
+                error: err.message,
+            });
         }
         console.error("Error al actualizar visita de agenda:", err);
-        if (err.code === "P2025")
-            return res.status(404).json({ error: "Visita no encontrada" });
-        return res.status(500).json({ error: "Error al actualizar visita de agenda" });
+        if (err.code ===
+            "P2025") {
+            return res
+                .status(404)
+                .json({
+                error: "Visita no encontrada",
+            });
+        }
+        return res
+            .status(500)
+            .json({
+            error: "Error al actualizar visita de agenda",
+        });
     }
 }
 // DELETE /agenda/:id
@@ -277,12 +478,30 @@ export async function crearVisitaManual(req, res) {
         return res.status(201).json(visita);
     }
     catch (err) {
-        if (err instanceof AgendaSucursalInvalidaError)
-            return res.status(400).json({ error: err.message });
-        if (err instanceof AgendaConflictError)
-            return res.status(409).json({ error: err.message });
+        if (err instanceof
+            AgendaSucursalInvalidaError ||
+            err instanceof
+                AgendaEmpresaInvalidaError) {
+            return res
+                .status(400)
+                .json({
+                error: err.message,
+            });
+        }
+        if (err instanceof
+            AgendaConflictError) {
+            return res
+                .status(409)
+                .json({
+                error: err.message,
+            });
+        }
         console.error("Error al crear visita manual:", err);
-        return res.status(500).json({ error: "Error al crear visita manual" });
+        return res
+            .status(500)
+            .json({
+            error: "Error al crear visita manual",
+        });
     }
 }
 // POST /agenda/manual/lote — crea varias visitas manuales (una por fecha elegida en el calendario del front).

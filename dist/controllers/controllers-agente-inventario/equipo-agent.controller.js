@@ -864,6 +864,7 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteEmailFuente = cleanString(body.solicitanteEmailFuente) ?? null;
         const conflictoCorreos = boolFromUnknown(body.conflictoCorreos);
         const correoSeleccionadoPorTecnico = boolFromUnknown(body.correoSeleccionadoPorTecnico);
+        const seleccionManualPersistida = boolFromUnknown(body.seleccionManualPersistida);
         const requiereRevisionSolicitanteAgente = boolFromUnknown(body.requiereRevisionSolicitante);
         const emailsDetectados = Array.isArray(body.emailsDetectados)
             ? body.emailsDetectados
@@ -969,17 +970,18 @@ export async function receiveEquipoAgentInventory(req, res) {
         const solicitanteDetectadoId = solicitanteDetectado?.id_solicitante ?? null;
         const solicitanteDetectadoEmailFinal = solicitanteEmail ?? equipo?.solicitanteDetectadoEmail ?? null;
         const solicitanteDetectadoIdFinal = solicitanteDetectadoId ?? equipo?.solicitanteDetectadoId ?? null;
+        const fuenteConfiable = solicitanteEmailFuente ===
+            "OutlookProfile" ||
+            solicitanteEmailFuente ===
+                "OfficeIdentity" ||
+            solicitanteEmailFuente ===
+                "UPN" ||
+            solicitanteEmailFuente ===
+                "MacInstallerConfig";
         const fuenteConfiableParaAsignar = !requiereRevisionSolicitanteAgente &&
             (correoSeleccionadoPorTecnico ||
-                !conflictoCorreos ||
-                solicitanteEmailFuente ===
-                    "OutlookProfile" ||
-                solicitanteEmailFuente ===
-                    "OfficeIdentity" ||
-                solicitanteEmailFuente ===
-                    "UPN" ||
-                solicitanteEmailFuente ===
-                    "MacInstallerConfig");
+                seleccionManualPersistida ||
+                fuenteConfiable);
         const solicitanteDetectadoBaseValido = Boolean(solicitanteDetectadoId &&
             solicitanteDetectado &&
             solicitanteDetectado.deletedAt ===
@@ -1053,13 +1055,10 @@ export async function receiveEquipoAgentInventory(req, res) {
             solicitanteDetectadoId) {
             idSolicitanteFinal =
                 solicitanteDetectadoId;
-            if (solicitanteActualId &&
-                solicitanteActualId !==
-                    solicitanteDetectadoId) {
-                motivoRevisionSolicitante =
-                    "El agente actualizó automáticamente el solicitante " +
-                        "porque detectó un email real distinto al asignado.";
-            }
+            requiereRevisionSolicitante =
+                false;
+            motivoRevisionSolicitante =
+                null;
         }
         /*
          * =====================================================
@@ -1635,6 +1634,7 @@ export async function receiveEquipoAgentInventory(req, res) {
                     solicitanteEmailFuente,
                     conflictoCorreos,
                     correoSeleccionadoPorTecnico,
+                    seleccionManualPersistida,
                     requiereRevisionSolicitanteAgente,
                     emailsDetectados,
                     dominioEmpresa,
@@ -1709,6 +1709,7 @@ export async function receiveEquipoAgentInventory(req, res) {
             solicitanteEmailFuente,
             conflictoCorreos,
             correoSeleccionadoPorTecnico,
+            seleccionManualPersistida,
             emailsDetectados,
             macAddress,
             macWifi,

@@ -45,6 +45,19 @@ export declare function obtenerDashboardFinanzas(params: {
         tipo: string;
         updatedAt: Date;
     }[];
+    clientes: {
+        totalClientes: number;
+        resumen: {
+            excelente: number;
+            buenPagador: number;
+            irregular: number;
+            riesgoMora: number;
+            sinHistorial: number;
+        };
+        mejoresPagadores: import("./finanzas-clientes.service.js").FinanzasClientePago[];
+        mayorRiesgo: import("./finanzas-clientes.service.js").FinanzasClientePago[];
+        clientes: import("./finanzas-clientes.service.js").FinanzasClientePago[];
+    };
 }>;
 export {};
 //# sourceMappingURL=finanzas-dashboard.service.d.ts.map

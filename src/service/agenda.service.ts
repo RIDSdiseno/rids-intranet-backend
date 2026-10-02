@@ -1,6 +1,11 @@
 // src/service/agenda.service.ts
 import { prisma } from "../lib/prisma.js";
-import { TipoAgenda, EstadoAgenda, EstadoVisita } from "@prisma/client";
+import {
+    Prisma,
+    TipoAgenda,
+    EstadoAgenda,
+    EstadoVisita,
+} from "@prisma/client";
 import { graphReaderService } from "./email/graph-reader.service.js";
 import { string } from "zod";
 
@@ -40,6 +45,22 @@ export class AgendaSucursalInvalidaError extends Error {
     constructor(message = "La sucursal seleccionada no es válida para esta agenda.") {
         super(message);
         this.name = "AgendaSucursalInvalidaError";
+    }
+}
+
+export class AgendaEmpresaInvalidaError
+    extends Error {
+
+    constructor(
+        message =
+            "La empresa indicada para la agenda no es válida."
+    ) {
+        super(
+            message
+        );
+
+        this.name =
+            "AgendaEmpresaInvalidaError";
     }
 }
 
@@ -197,8 +218,8 @@ async function adjuntarFormularioVisita<T extends AgendaConIdFecha>(visitas: T[]
             visitaOrigen: formulario?.origen ?? null,
             inconsistenciaEstado:
                 formulario?.status === EstadoVisita.COMPLETADA &&
-                "estado" in visita &&
-                visita.estado !== EstadoAgenda.COMPLETADA
+                    "estado" in visita &&
+                    visita.estado !== EstadoAgenda.COMPLETADA
                     ? "VISITA_COMPLETADA_AGENDA_NO_COMPLETADA"
                     : null,
         });
@@ -309,22 +330,66 @@ function filtrarCorreosTecnicosValidos(
 
 type AgendaOutlookVisita = {
     id: number;
+
     fecha: Date;
+
     tipo: TipoAgenda;
-    estado: EstadoAgenda | string;
-    horaInicio?: string | null;
-    horaFin?: string | null;
-    notas?: string | null;
-    mensaje?: string | null;
-    empresa?: { nombre: string } | null;
-    empresaExternaNombre?: string | null;
-    destinoNombre?: string | null;
-    destinoDireccion?: string | null;
-    tecnicos?: Array<{
+
+    estado:
+    EstadoAgenda |
+    string;
+
+    horaInicio?:
+    string |
+    null;
+
+    horaFin?:
+    string |
+    null;
+
+    notas?:
+    string |
+    null;
+
+    mensaje?:
+    string |
+    null;
+
+    finalidad?:
+    string |
+    null;
+
+    empresa?:
+    {
+        nombre:
+        string;
+    } |
+    null;
+
+    empresaExternaNombre?:
+    string |
+    null;
+
+    destinoNombre?:
+    string |
+    null;
+
+    destinoDireccion?:
+    string |
+    null;
+
+    tecnicos?:
+    Array<{
         tecnico?: {
-            nombre?: string | null;
-            email?: string | null;
-        } | null;
+            nombre?:
+            string |
+            null;
+
+            email?:
+            string |
+            null;
+        } |
+        null;
     }>;
 };
 
@@ -610,6 +675,22 @@ function buildAgendaOutlookBody(visita: AgendaOutlookVisita): string {
       <td style="padding: 8px 12px; border: 1px solid #eee;">${escapeHtml(visita.horaFin?.trim()) || "Sin hora registrada"}</td>
     </tr>
   </table>
+
+  ${visita.finalidad?.trim()
+            ? `
+  <div style="margin-top: 24px;">
+    <h3 style="color: #333; margin-bottom: 12px;">
+      Finalidad de la visita
+    </h3>
+
+    <p style="color: #555; margin: 0; line-height: 1.5;">
+      ${escapeHtml(
+                visita.finalidad.trim()
+            )}
+    </p>
+  </div>
+`
+            : ""}
 
   <div style="margin-top: 24px;">
     <h3 style="color: #333; margin-bottom: 12px;">Técnicos asignados</h3>
@@ -1835,164 +1916,771 @@ async function validarConflictoHorario(params: {
  */
 export async function actualizarAgendaVisita(
     id: number,
+
     datos: {
-        fecha?: string | undefined;
-        estado?: EstadoAgenda | undefined;
-        notas?: string | undefined;
-        mensaje?: string | undefined;
-        horaInicio?: string | undefined;
-        horaFin?: string | undefined;
-        empresaId?: number | null | undefined;
-        sucursalId?: number | null | undefined;
+        fecha?:
+        string |
+        undefined;
+
+        estado?:
+        EstadoAgenda |
+        undefined;
+
+        notas?:
+        string |
+        undefined;
+
+        mensaje?:
+        string |
+        undefined;
+
+        finalidad?:
+        string |
+        null |
+        undefined;
+
+        horaInicio?:
+        string |
+        undefined;
+
+        horaFin?:
+        string |
+        undefined;
+
+        empresaId?:
+        number |
+        null |
+        undefined;
+
+        empresaExternaNombre?:
+        string |
+        null |
+        undefined;
+
+        sucursalId?:
+        number |
+        null |
+        undefined;
     }
 ) {
     const {
-        fecha: fechaStr,
+        fecha:
+        fechaStr,
+
         estado,
+
         notas,
+
         mensaje,
+
+        finalidad,
+
         horaInicio,
+
         horaFin,
+
         empresaId,
+
+        empresaExternaNombre,
+
         sucursalId,
-    } = datos;
+    } =
+        datos;
 
-    // Fetch previo: necesario para validación de fecha pasada, conflicto horario
-    // y para saber el empresaId/sucursalId vigentes si solo cambia uno de los dos.
-    const actual = await prisma.agendaVisita.findUnique({
-        where: { id },
-        select: {
-            fecha: true,
-            estado: true,
-            horaInicio: true,
-            horaFin: true,
-            outlookEventId: true,
-            empresaId: true,
-            sucursalId: true,
-            visita: { select: { status: true } },
-            tecnicos: { select: { tecnicoId: true } },
-        },
-    });
-
-    if (actual) {
-        // Bloquear modificación de visitas pasadas
-        if (esFechaPasada(actual.fecha)) {
-            throw new AgendaPastDateError();
-        }
-
-        // Validar conflicto horario si se modifica fecha u horario
-        if (fechaStr !== undefined || horaInicio !== undefined || horaFin !== undefined) {
-            const fechaFinal = fechaStr ? normalizarFechaDesdeString(fechaStr) : actual.fecha;
-            const inicioFinal = horaInicio ?? actual.horaInicio;
-            const finFinal = horaFin ?? actual.horaFin;
-            const tecnicoIds = actual.tecnicos.map((t) => t.tecnicoId);
-            if (inicioFinal && finFinal && tecnicoIds.length > 0) {
-                await validarConflictoHorario({ fecha: fechaFinal, horaInicio: inicioFinal, horaFin: finFinal, tecnicoIds, excluirVisitaId: id });
-            }
-        }
-
-        if (estado !== undefined) {
-            validarTransicionEstadoAgenda(actual.estado, estado, actual.visita?.status);
-        }
-    }
-
-    // El snapshot de destino solo se recalcula si empresa o sucursal cambian;
-    // el resto de las ediciones (fecha, hora, notas, estado) lo dejan intacto.
-    let destinoUpdate: Partial<DestinoSnapshot> = {};
-    if (empresaId !== undefined || sucursalId !== undefined) {
-        const empresaIdFinal = empresaId !== undefined ? empresaId : actual?.empresaId ?? null;
-        const sucursalIdFinal = sucursalId !== undefined ? sucursalId : actual?.sucursalId ?? null;
-        destinoUpdate = await resolverDestinoSnapshot({
-            empresaId: empresaIdFinal,
-            sucursalId: sucursalIdFinal,
-        });
-    }
-
-    const visita = await prisma.agendaVisita.update({
-        where: { id },
-        data: {
-            ...(fechaStr !== undefined && { fecha: normalizarFechaDesdeString(fechaStr) }),
-            ...(estado !== undefined && { estado }),
-            ...(notas !== undefined && { notas }),
-            ...(mensaje !== undefined && { mensaje }),
-            ...(horaInicio !== undefined && { horaInicio }),
-            ...(horaFin !== undefined && { horaFin }),
-            ...(empresaId !== undefined && { empresaId }),
-            ...destinoUpdate,
-        },
-        include: {
-            empresa: { select: { id_empresa: true, nombre: true } },
-            sucursal: { select: { id_sucursal: true, nombre: true } },
-            tecnicos: {
-                include: {
-                    tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
+    const actual =
+        await prisma
+            .agendaVisita
+            .findUnique({
+                where: {
+                    id,
                 },
-            },
-        },
-    });
 
-    const startDateTime = buildAgendaDateTime(visita.fecha, visita.horaInicio);
-    const endDateTime = buildAgendaDateTime(visita.fecha, visita.horaFin);
+                select: {
+                    fecha:
+                        true,
 
-    if (startDateTime && endDateTime) {
-        const categoriaOutlook = buildAgendaOutlookCategory(visita);
-        const destinoLocation = buildAgendaOutlookLocation(visita);
+                    estado:
+                        true,
+
+                    horaInicio:
+                        true,
+
+                    horaFin:
+                        true,
+
+                    outlookEventId:
+                        true,
+
+                    empresaId:
+                        true,
+
+                    empresaExternaNombre:
+                        true,
+
+                    sucursalId:
+                        true,
+
+                    visita: {
+                        select: {
+                            status:
+                                true,
+                        },
+                    },
+
+                    tecnicos: {
+                        select: {
+                            tecnicoId:
+                                true,
+                        },
+                    },
+                },
+            });
+
+    if (!actual) {
+        throw new AgendaNotFoundError();
+    }
+
+    if (
+        esFechaPasada(
+            actual.fecha
+        )
+    ) {
+        throw new AgendaPastDateError();
+    }
+
+    if (
+        fechaStr !==
+        undefined ||
+        horaInicio !==
+        undefined ||
+        horaFin !==
+        undefined
+    ) {
+        const fechaFinal =
+            fechaStr
+                ? normalizarFechaDesdeString(
+                    fechaStr
+                )
+                : actual.fecha;
+
+        const inicioFinal =
+            horaInicio ??
+            actual.horaInicio;
+
+        const finFinal =
+            horaFin ??
+            actual.horaFin;
+
+        const tecnicoIds =
+            actual.tecnicos.map(
+                (
+                    tecnico
+                ) =>
+                    tecnico.tecnicoId
+            );
+
+        if (
+            inicioFinal &&
+            finFinal &&
+            tecnicoIds.length >
+            0
+        ) {
+            await validarConflictoHorario({
+                fecha:
+                    fechaFinal,
+
+                horaInicio:
+                    inicioFinal,
+
+                horaFin:
+                    finFinal,
+
+                tecnicoIds,
+
+                excluirVisitaId:
+                    id,
+            });
+        }
+    }
+
+    if (
+        estado !==
+        undefined
+    ) {
+        validarTransicionEstadoAgenda(
+            actual.estado,
+
+            estado,
+
+            actual.visita
+                ?.status
+        );
+    }
+
+    /*
+     * Determinamos cuál será la empresa final.
+     */
+    const empresaExternaLimpia:
+        string |
+        null =
+        empresaExternaNombre
+            ?.trim() ||
+        null;
+
+    /* =====================================================
+       RESOLVER EMPRESA FINAL
+    ===================================================== */
+
+    let empresaIdFinal:
+        number |
+        null =
+        actual.empresaId;
+
+    let empresaExternaFinal:
+        string |
+        null =
+        actual.empresaExternaNombre;
+
+    /*
+     * Si se selecciona explícitamente una empresa interna,
+     * automáticamente deja de ser externa.
+     */
+    if (
+        empresaId !==
+        undefined &&
+        empresaId !==
+        null
+    ) {
+        empresaIdFinal =
+            empresaId;
+
+        empresaExternaFinal =
+            null;
+    }
+
+    /*
+     * Si se ingresa explícitamente una empresa externa,
+     * automáticamente deja de estar asociada a empresa CRM.
+     */
+    else if (
+        empresaExternaNombre !==
+        undefined &&
+        empresaExternaLimpia
+    ) {
+        empresaIdFinal =
+            null;
+
+        empresaExternaFinal =
+            empresaExternaLimpia;
+    }
+
+    /*
+     * Si empresaId viene explícitamente null,
+     * respetamos el cambio.
+     */
+    else if (
+        empresaId !==
+        undefined
+    ) {
+        empresaIdFinal =
+            empresaId;
+    }
+
+    /*
+     * Si empresaExternaNombre viene explícitamente vacío/null,
+     * respetamos su limpieza.
+     */
+    if (
+        empresaExternaNombre !==
+        undefined &&
+        !empresaExternaLimpia
+    ) {
+        empresaExternaFinal =
+            null;
+    }
+
+    /* =====================================================
+       VALIDACIÓN
+    ===================================================== */
+
+    if (
+        empresaIdFinal !==
+        null &&
+        empresaExternaFinal
+    ) {
+        throw new AgendaEmpresaInvalidaError(
+            "La agenda no puede tener una empresa del sistema y una empresa externa al mismo tiempo."
+        );
+    }
+
+    if (
+        (
+            empresaId !==
+            undefined ||
+            empresaExternaNombre !==
+            undefined
+        ) &&
+        empresaIdFinal ===
+        null &&
+        !empresaExternaFinal
+    ) {
+        throw new AgendaEmpresaInvalidaError(
+            "Debe seleccionar una empresa del sistema o ingresar una empresa externa."
+        );
+    }
+
+    /*
+     * Sucursal final.
+     *
+     * Una empresa externa nunca puede tener sucursal del CRM.
+     */
+    let sucursalIdFinal:
+        number |
+        null =
+        sucursalId !==
+            undefined
+            ? sucursalId
+            : actual.sucursalId;
+
+    if (
+        empresaIdFinal ===
+        null
+    ) {
+        sucursalIdFinal =
+            null;
+    }
+
+    let destinoUpdate:
+        DestinoSnapshot |
+        null =
+        null;
+
+    if (
+        empresaId !==
+        undefined ||
+        empresaExternaNombre !==
+        undefined ||
+        sucursalId !==
+        undefined
+    ) {
+        destinoUpdate =
+            await resolverDestinoSnapshot({
+                empresaId:
+                    empresaIdFinal,
+
+                sucursalId:
+                    sucursalIdFinal,
+            });
+    }
+
+    if (
+        empresaId !==
+        undefined ||
+        empresaExternaNombre !==
+        undefined ||
+        sucursalId !==
+        undefined
+    ) {
+        destinoUpdate =
+            await resolverDestinoSnapshot({
+                empresaId:
+                    empresaIdFinal,
+
+                sucursalId:
+                    sucursalIdFinal,
+            });
+    }
+
+    /* =====================================================
+   DATA DE ACTUALIZACIÓN
+===================================================== */
+
+    const updateData:
+        Prisma.AgendaVisitaUncheckedUpdateInput =
+        {};
+
+    /* =====================================================
+       FECHA
+    ===================================================== */
+
+    if (
+        fechaStr !==
+        undefined
+    ) {
+        updateData.fecha =
+            normalizarFechaDesdeString(
+                fechaStr
+            );
+    }
+
+    /* =====================================================
+       ESTADO
+    ===================================================== */
+
+    if (
+        estado !==
+        undefined
+    ) {
+        updateData.estado =
+            estado;
+    }
+
+    /* =====================================================
+       NOTAS
+    ===================================================== */
+
+    if (
+        notas !==
+        undefined
+    ) {
+        updateData.notas =
+            notas;
+    }
+
+    /* =====================================================
+       MENSAJE
+    ===================================================== */
+
+    if (
+        mensaje !==
+        undefined
+    ) {
+        updateData.mensaje =
+            mensaje;
+    }
+
+    /* =====================================================
+       FINALIDAD
+    ===================================================== */
+
+    if (
+        finalidad !==
+        undefined
+    ) {
+        updateData.finalidad =
+            finalidad
+                ?.trim() ||
+            null;
+    }
+
+    /* =====================================================
+       HORARIO
+    ===================================================== */
+
+    if (
+        horaInicio !==
+        undefined
+    ) {
+        updateData.horaInicio =
+            horaInicio;
+    }
+
+    if (
+        horaFin !==
+        undefined
+    ) {
+        updateData.horaFin =
+            horaFin;
+    }
+
+    /* =====================================================
+       EMPRESA / EMPRESA EXTERNA
+    ===================================================== */
+
+    if (
+        empresaId !==
+        undefined
+    ) {
+        updateData.empresaId =
+            empresaId;
+    }
+
+    if (
+        empresaExternaNombre !==
+        undefined
+    ) {
+        updateData.empresaExternaNombre =
+            empresaExternaLimpia;
+    }
+
+    /*
+     * Si seleccionamos empresa interna,
+     * eliminamos empresa externa previa.
+     */
+    if (
+        empresaId !==
+        undefined &&
+        empresaId !==
+        null
+    ) {
+        updateData.empresaExternaNombre =
+            null;
+    }
+
+    /*
+     * Si ingresamos empresa externa,
+     * eliminamos empresa interna y sucursal CRM.
+     */
+    if (
+        empresaExternaNombre !==
+        undefined &&
+        empresaExternaLimpia
+    ) {
+        updateData.empresaId =
+            null;
+
+        updateData.sucursalId =
+            null;
+    }
+
+    /* =====================================================
+       SUCURSAL
+    ===================================================== */
+
+    if (
+        sucursalId !==
+        undefined &&
+        empresaIdFinal !==
+        null
+    ) {
+        updateData.sucursalId =
+            sucursalIdFinal;
+    }
+
+    /* =====================================================
+       SNAPSHOT DESTINO
+    ===================================================== */
+
+    if (
+        destinoUpdate
+    ) {
+        updateData.sucursalId =
+            destinoUpdate.sucursalId;
+
+        updateData.destinoNombre =
+            destinoUpdate.destinoNombre;
+
+        updateData.destinoDireccion =
+            destinoUpdate.destinoDireccion;
+
+        updateData.destinoLatitud =
+            destinoUpdate.destinoLatitud;
+
+        updateData.destinoLongitud =
+            destinoUpdate.destinoLongitud;
+    }
+
+    /* =====================================================
+       UPDATE
+    ===================================================== */
+
+    const visita =
+        await prisma
+            .agendaVisita
+            .update({
+                where: {
+                    id,
+                },
+
+                data:
+                    updateData,
+
+                include: {
+                    empresa: {
+                        select: {
+                            id_empresa:
+                                true,
+
+                            nombre:
+                                true,
+                        },
+                    },
+
+                    sucursal: {
+                        select: {
+                            id_sucursal:
+                                true,
+
+                            nombre:
+                                true,
+                        },
+                    },
+
+                    tecnicos: {
+                        include: {
+                            tecnico: {
+                                select: {
+                                    id_tecnico:
+                                        true,
+
+                                    nombre:
+                                        true,
+
+                                    email:
+                                        true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+    const startDateTime =
+        buildAgendaDateTime(
+            visita.fecha,
+
+            visita.horaInicio
+        );
+
+    const endDateTime =
+        buildAgendaDateTime(
+            visita.fecha,
+
+            visita.horaFin
+        );
+
+    if (
+        startDateTime &&
+        endDateTime
+    ) {
+        const categoriaOutlook =
+            buildAgendaOutlookCategory(
+                visita
+            );
+
+        const destinoLocation =
+            buildAgendaOutlookLocation(
+                visita
+            );
 
         try {
-            if (actual?.outlookEventId) {
-                const eventData = {
-                    subject: buildAgendaOutlookSubject(visita),
-                    bodyHtml: buildAgendaOutlookBody(visita),
-                    startDateTime,
-                    endDateTime,
-                    categories: [categoriaOutlook],
-                    attendees: buildAgendaOutlookAttendees(visita),
-                    ...(destinoLocation !== undefined && { location: destinoLocation }),
-                };
+            const eventData = {
+                subject:
+                    buildAgendaOutlookSubject(
+                        visita
+                    ),
 
-                await graphReaderService.updateCalendarEvent(actual.outlookEventId, eventData);
-                visita.outlookEventId = actual.outlookEventId;
+                bodyHtml:
+                    buildAgendaOutlookBody(
+                        visita
+                    ),
+
+                startDateTime,
+
+                endDateTime,
+
+                categories: [
+                    categoriaOutlook,
+                ],
+
+                attendees:
+                    buildAgendaOutlookAttendees(
+                        visita
+                    ),
+
+                ...(destinoLocation !==
+                    undefined && {
+                    location:
+                        destinoLocation,
+                }),
+            };
+
+            if (
+                actual
+                    .outlookEventId
+            ) {
+                await graphReaderService
+                    .updateCalendarEvent(
+                        actual.outlookEventId,
+
+                        eventData
+                    );
+
+                visita.outlookEventId =
+                    actual.outlookEventId;
             } else {
-                const eventData = {
-                    subject: buildAgendaOutlookSubject(visita),
-                    bodyHtml: buildAgendaOutlookBody(visita),
-                    startDateTime,
-                    endDateTime,
-                    categories: [categoriaOutlook],
-                    attendees: buildAgendaOutlookAttendees(visita),
-                    ...(destinoLocation !== undefined && { location: destinoLocation }),
-                };
+                const outlookEvent =
+                    await graphReaderService
+                        .createCalendarEvent(
+                            eventData
+                        );
 
-                const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
+                if (
+                    outlookEvent?.id
+                ) {
+                    await prisma
+                        .agendaVisita
+                        .update({
+                            where: {
+                                id:
+                                    visita.id,
+                            },
 
-                if (outlookEvent?.id) {
-                    await prisma.agendaVisita.update({
-                        where: { id: visita.id },
-                        data: { outlookEventId: outlookEvent.id },
-                    });
-                    visita.outlookEventId = outlookEvent.id;
+                            data: {
+                                outlookEventId:
+                                    outlookEvent.id,
+                            },
+                        });
+
+                    visita.outlookEventId =
+                        outlookEvent.id;
                 }
             }
-        } catch (error) {
-            ////console.error(`[AGENDA OUTLOOK] Error sincronizando agenda #${visita.id}:`, error);
+        } catch (
+        error
+        ) {
+            // console.error(
+            //     `[AGENDA OUTLOOK] Error sincronizando agenda #${visita.id}:`,
+            //     error
+            // );
         }
-    } else if (actual?.outlookEventId) {
+    } else if (
+        actual
+            .outlookEventId
+    ) {
         try {
-            await graphReaderService.deleteCalendarEvent(actual.outlookEventId);
-            await prisma.agendaVisita.update({
-                where: { id: visita.id },
-                data: { outlookEventId: null },
-            });
-            visita.outlookEventId = null;
-        } catch (error) {
-            // console.error(`[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`, error);
+            await graphReaderService
+                .deleteCalendarEvent(
+                    actual.outlookEventId
+                );
+
+            await prisma
+                .agendaVisita
+                .update({
+                    where: {
+                        id:
+                            visita.id,
+                    },
+
+                    data: {
+                        outlookEventId:
+                            null,
+                    },
+                });
+
+            visita.outlookEventId =
+                null;
+        } catch (
+        error
+        ) {
+            // console.error(
+            //     `[AGENDA OUTLOOK] Error eliminando evento de agenda #${visita.id}:`,
+            //     error
+            // );
         }
     }
 
-    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    const [
+        visitaConFormulario,
+    ] =
+        await adjuntarFormularioVisita(
+            [
+                visita,
+            ]
+        );
+
     return visitaConFormulario;
 }
-
 export async function cerrarAgendasPendientesDelDia(): Promise<number> {
     const hoy = new Date();
     const hoyUTC = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()));
@@ -2212,107 +2900,404 @@ export async function eliminarMallaMensual(
  * La fecha se normaliza a UTC (solo día, sin hora).
  * El tipo se infiere automáticamente: SABADO si cae en sábado, SEMANA en cualquier otro caso.
  */
-export async function crearAgendaVisitaManual(data: {
-    fecha: string;
-    empresaId: number | null;
-    sucursalId?: number | null | undefined;
-    tecnicoId: number;
-    horaInicio?: string | undefined;
-    horaFin?: string | undefined;
-    mensaje?: string | undefined;
-    notas?: string | undefined;
-}) {
-    const fechaUTC = normalizarFechaDesdeString(data.fecha);
+export async function crearAgendaVisitaManual(
+    data: {
+        fecha:
+        string;
 
-    if (data.horaInicio && data.horaFin) {
+        empresaId:
+        number |
+        null;
+
+        empresaExternaNombre?:
+        string |
+        null |
+        undefined;
+
+        sucursalId?:
+        number |
+        null |
+        undefined;
+
+        tecnicoId:
+        number;
+
+        horaInicio?:
+        string |
+        undefined;
+
+        horaFin?:
+        string |
+        undefined;
+
+        finalidad?:
+        string |
+        null |
+        undefined;
+
+        mensaje?:
+        string |
+        undefined;
+
+        notas?:
+        string |
+        undefined;
+    }
+) {
+    const fechaUTC =
+        normalizarFechaDesdeString(
+            data.fecha
+        );
+
+    const empresaExternaNombre =
+        data
+            .empresaExternaNombre
+            ?.trim() ||
+        null;
+
+    /*
+     * Debe existir empresa interna o externa.
+     */
+    if (
+        data.empresaId ===
+        null &&
+        !empresaExternaNombre
+    ) {
+        throw new Error(
+            "Debe seleccionar una empresa del sistema o ingresar una empresa externa."
+        );
+    }
+
+    /*
+     * No pueden existir ambas.
+     */
+    if (
+        data.empresaId !==
+        null &&
+        empresaExternaNombre
+    ) {
+        throw new Error(
+            "La agenda no puede tener una empresa del sistema y una empresa externa simultáneamente."
+        );
+    }
+
+    if (
+        data.horaInicio &&
+        data.horaFin
+    ) {
         await validarConflictoHorario({
-            fecha: fechaUTC,
-            horaInicio: data.horaInicio,
-            horaFin: data.horaFin,
-            tecnicoIds: [data.tecnicoId],
+            fecha:
+                fechaUTC,
+
+            horaInicio:
+                data.horaInicio,
+
+            horaFin:
+                data.horaFin,
+
+            tecnicoIds: [
+                data.tecnicoId,
+            ],
         });
     }
 
-    const tipo = esSabado(fechaUTC) ? TipoAgenda.SABADO : TipoAgenda.SEMANA;
-    const destino = await resolverDestinoSnapshot({
-        empresaId: data.empresaId,
-        sucursalId: data.sucursalId ?? null,
-    });
+    const tipo =
+        esSabado(
+            fechaUTC
+        )
+            ? TipoAgenda.SABADO
+            : TipoAgenda.SEMANA;
 
-    const visita = await prisma.agendaVisita.create({
-        data: {
-            fecha: fechaUTC,
-            empresaId: data.empresaId,
-            tipo,
-            estado: EstadoAgenda.PROGRAMADA,
-            sucursalId: destino.sucursalId,
-            destinoNombre: destino.destinoNombre,
-            destinoDireccion: destino.destinoDireccion,
-            destinoLatitud: destino.destinoLatitud,
-            destinoLongitud: destino.destinoLongitud,
-            ...(data.horaInicio !== undefined && { horaInicio: data.horaInicio }),
-            ...(data.horaFin !== undefined && { horaFin: data.horaFin }),
-            ...(data.mensaje !== undefined && { mensaje: data.mensaje }),
-            ...(data.notas !== undefined && { notas: data.notas }),
-            tecnicos: {
-                create: { tecnicoId: data.tecnicoId },
-            },
-        },
-        include: {
-            empresa: { select: { id_empresa: true, nombre: true } },
-            sucursal: { select: { id_sucursal: true, nombre: true } },
-            tecnicos: {
-                include: {
-                    tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
+    /*
+     * Empresas externas no tienen sucursal CRM.
+     */
+    const sucursalId =
+        data.empresaId !==
+            null
+            ? data.sucursalId ??
+            null
+            : null;
+
+    const destino =
+        await resolverDestinoSnapshot({
+            empresaId:
+                data.empresaId,
+
+            sucursalId,
+        });
+
+    const visita =
+        await prisma
+            .agendaVisita
+            .create({
+                data: {
+                    fecha:
+                        fechaUTC,
+
+                    empresaId:
+                        data.empresaId,
+
+                    empresaExternaNombre:
+                        data.empresaId !==
+                            null
+                            ? null
+                            : empresaExternaNombre,
+
+                    finalidad:
+                        data.finalidad
+                            ?.trim() ||
+                        null,
+
+                    tipo,
+
+                    estado:
+                        EstadoAgenda.PROGRAMADA,
+
+                    sucursalId:
+                        destino
+                            .sucursalId,
+
+                    destinoNombre:
+                        destino
+                            .destinoNombre,
+
+                    destinoDireccion:
+                        destino
+                            .destinoDireccion,
+
+                    destinoLatitud:
+                        destino
+                            .destinoLatitud,
+
+                    destinoLongitud:
+                        destino
+                            .destinoLongitud,
+
+                    ...(data.horaInicio !==
+                        undefined && {
+                        horaInicio:
+                            data.horaInicio,
+                    }),
+
+                    ...(data.horaFin !==
+                        undefined && {
+                        horaFin:
+                            data.horaFin,
+                    }),
+
+                    ...(data.mensaje !==
+                        undefined && {
+                        mensaje:
+                            data.mensaje,
+                    }),
+
+                    ...(data.notas !==
+                        undefined && {
+                        notas:
+                            data.notas,
+                    }),
+
+                    tecnicos: {
+                        create: {
+                            tecnicoId:
+                                data.tecnicoId,
+                        },
+                    },
                 },
-            },
-        },
-    });
 
-    const startDateTime = buildAgendaDateTime(visita.fecha, visita.horaInicio);
-    const endDateTime = buildAgendaDateTime(visita.fecha, visita.horaFin);
+                include: {
+                    empresa: {
+                        select: {
+                            id_empresa:
+                                true,
 
-    if (startDateTime && endDateTime) {
-        const categoriaOutlook = buildAgendaOutlookCategory(visita);
+                            nombre:
+                                true,
+                        },
+                    },
 
-        try {
-            const destinoLocation = buildAgendaOutlookLocation(visita);
-            const eventData = {
-                subject: buildAgendaOutlookSubject(visita),
-                bodyHtml: buildAgendaOutlookBody(visita),
-                startDateTime,
-                endDateTime,
-                categories: [categoriaOutlook],
-                attendees: buildAgendaOutlookAttendees(visita),
-                ...(destinoLocation !== undefined && { location: destinoLocation }),
-            };
+                    sucursal: {
+                        select: {
+                            id_sucursal:
+                                true,
 
-            const outlookEvent = await graphReaderService.createCalendarEvent(eventData);
+                            nombre:
+                                true,
+                        },
+                    },
 
-            if (outlookEvent?.id) {
-                const visitaActualizada = await prisma.agendaVisita.update({
-                    where: { id: visita.id },
-                    data: { outlookEventId: outlookEvent.id },
-                    include: {
-                        empresa: { select: { id_empresa: true, nombre: true } },
-                        sucursal: { select: { id_sucursal: true, nombre: true } },
-                        tecnicos: {
-                            include: {
-                                tecnico: { select: { id_tecnico: true, nombre: true, email: true } },
+                    tecnicos: {
+                        include: {
+                            tecnico: {
+                                select: {
+                                    id_tecnico:
+                                        true,
+
+                                    nombre:
+                                        true,
+
+                                    email:
+                                        true,
+                                },
                             },
                         },
                     },
-                });
+                },
+            });
 
-                const [visitaConFormulario] = await adjuntarFormularioVisita([visitaActualizada]);
+    const startDateTime =
+        buildAgendaDateTime(
+            visita.fecha,
+
+            visita.horaInicio
+        );
+
+    const endDateTime =
+        buildAgendaDateTime(
+            visita.fecha,
+
+            visita.horaFin
+        );
+
+    if (
+        startDateTime &&
+        endDateTime
+    ) {
+        const categoriaOutlook =
+            buildAgendaOutlookCategory(
+                visita
+            );
+
+        try {
+            const destinoLocation =
+                buildAgendaOutlookLocation(
+                    visita
+                );
+
+            const eventData = {
+                subject:
+                    buildAgendaOutlookSubject(
+                        visita
+                    ),
+
+                bodyHtml:
+                    buildAgendaOutlookBody(
+                        visita
+                    ),
+
+                startDateTime,
+
+                endDateTime,
+
+                categories: [
+                    categoriaOutlook,
+                ],
+
+                attendees:
+                    buildAgendaOutlookAttendees(
+                        visita
+                    ),
+
+                ...(destinoLocation !==
+                    undefined && {
+                    location:
+                        destinoLocation,
+                }),
+            };
+
+            const outlookEvent =
+                await graphReaderService
+                    .createCalendarEvent(
+                        eventData
+                    );
+
+            if (
+                outlookEvent?.id
+            ) {
+                const visitaActualizada =
+                    await prisma
+                        .agendaVisita
+                        .update({
+                            where: {
+                                id:
+                                    visita.id,
+                            },
+
+                            data: {
+                                outlookEventId:
+                                    outlookEvent.id,
+                            },
+
+                            include: {
+                                empresa: {
+                                    select: {
+                                        id_empresa:
+                                            true,
+
+                                        nombre:
+                                            true,
+                                    },
+                                },
+
+                                sucursal: {
+                                    select: {
+                                        id_sucursal:
+                                            true,
+
+                                        nombre:
+                                            true,
+                                    },
+                                },
+
+                                tecnicos: {
+                                    include: {
+                                        tecnico: {
+                                            select: {
+                                                id_tecnico:
+                                                    true,
+
+                                                nombre:
+                                                    true,
+
+                                                email:
+                                                    true,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        });
+
+                const [
+                    visitaConFormulario,
+                ] =
+                    await adjuntarFormularioVisita(
+                        [
+                            visitaActualizada,
+                        ]
+                    );
+
                 return visitaConFormulario;
             }
-        } catch (error) {
-            //console.error(`[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`, error);
+        } catch (
+        error
+        ) {
+            // console.error(
+            //     `[AGENDA OUTLOOK] Error creando evento para agenda #${visita.id}:`,
+            //     error
+            // );
         }
     }
 
-    const [visitaConFormulario] = await adjuntarFormularioVisita([visita]);
+    const [
+        visitaConFormulario,
+    ] =
+        await adjuntarFormularioVisita(
+            [
+                visita,
+            ]
+        );
+
     return visitaConFormulario;
 }
 
@@ -2323,41 +3308,139 @@ export async function crearAgendaVisitaManual(data: {
  * conflictos ni la integración con Outlook. Si una fecha falla (ej. conflicto
  * de horario), las demás igual se crean — se informan los errores por fecha.
  */
-export async function crearAgendaVisitasEnLote(data: {
-    empresaId: number | null;
-    sucursalId?: number | null | undefined;
-    tecnicoId: number;
-    mensaje?: string | undefined;
-    notas?: string | undefined;
-    fechas: { fecha: string; horaInicio?: string | undefined; horaFin?: string | undefined }[];
-}) {
-    const creadas: Awaited<ReturnType<typeof crearAgendaVisitaManual>>[] = [];
-    const errores: { fecha: string; error: string }[] = [];
+export async function crearAgendaVisitasEnLote(
+    data: {
+        empresaId:
+        number |
+        null;
 
-    for (const item of data.fechas) {
+        empresaExternaNombre?:
+        string |
+        null |
+        undefined;
+
+        sucursalId?:
+        number |
+        null |
+        undefined;
+
+        tecnicoId:
+        number;
+
+        finalidad?:
+        string |
+        null |
+        undefined;
+
+        mensaje?:
+        string |
+        undefined;
+
+        notas?:
+        string |
+        undefined;
+
+        fechas: Array<{
+            fecha:
+            string;
+
+            horaInicio?:
+            string |
+            undefined;
+
+            horaFin?:
+            string |
+            undefined;
+        }>;
+    }
+) {
+    const creadas:
+        Awaited<
+            ReturnType<
+                typeof crearAgendaVisitaManual
+            >
+        >[] =
+        [];
+
+    const errores: Array<{
+        fecha:
+        string;
+
+        error:
+        string;
+    }> =
+        [];
+
+    for (
+        const item
+        of data.fechas
+    ) {
         try {
-            const visita = await crearAgendaVisitaManual({
-                fecha: item.fecha,
-                empresaId: data.empresaId,
-                sucursalId: data.sucursalId,
-                tecnicoId: data.tecnicoId,
-                horaInicio: item.horaInicio,
-                horaFin: item.horaFin,
-                mensaje: data.mensaje,
-                notas: data.notas,
-            });
-            creadas.push(visita);
-        } catch (err) {
+            const visita =
+                await crearAgendaVisitaManual({
+                    fecha:
+                        item.fecha,
+
+                    empresaId:
+                        data.empresaId,
+
+                    empresaExternaNombre:
+                        data
+                            .empresaExternaNombre,
+
+                    sucursalId:
+                        data
+                            .sucursalId,
+
+                    tecnicoId:
+                        data
+                            .tecnicoId,
+
+                    finalidad:
+                        data
+                            .finalidad,
+
+                    horaInicio:
+                        item
+                            .horaInicio,
+
+                    horaFin:
+                        item
+                            .horaFin,
+
+                    mensaje:
+                        data
+                            .mensaje,
+
+                    notas:
+                        data
+                            .notas,
+                });
+
+            creadas.push(
+                visita
+            );
+        } catch (
+        err
+        ) {
             errores.push({
-                fecha: item.fecha,
-                error: err instanceof Error ? err.message : "Error al crear la visita",
+                fecha:
+                    item.fecha,
+
+                error:
+                    err instanceof
+                        Error
+                        ? err.message
+                        : "Error al crear la visita",
             });
         }
     }
 
-    return { creadas, errores };
+    return {
+        creadas,
+        errores,
+    };
 }
-
 /* ======================================================
    🔔 NOTIFICACIONES REALES POR CORREO
 ====================================================== */
