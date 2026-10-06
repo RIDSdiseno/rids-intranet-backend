@@ -122,6 +122,7 @@ import recordatoriosRouter from "./routes/recordatorios.routes.js";
 
 /* ===================== RUTAS INTERNAS ===================== */
 import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
+import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.routes.js";
 
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
@@ -240,7 +241,8 @@ api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
 
 /* ===================== RUTAS INTERNAS ===================== */
 
-api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes,);
+api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
+api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
 
 /* ===================== Export ===================== */
 export default api;
