@@ -1,3 +1,4 @@
+// src/routes/internal-routes/mobile-bitacora.routes.ts
 import type {
     NextFunction,
     Request,
@@ -128,42 +129,6 @@ function obtenerTecnicoMovilId(
     }
 
     return tecnicoId;
-}
-
-/**
- * Fuerza el filtro tecnicoId del listado.
- *
- * Evita que desde la app móvil alguien pueda enviar:
- *
- * ?tecnicoId=OTRO_ID
- *
- * y consultar bitácoras de otro técnico.
- */
-function forzarTecnicoActualQuery(
-    req: Request,
-    res: Response,
-    next: NextFunction
-) {
-    const tecnicoId =
-        obtenerTecnicoMovilId(
-            req
-        );
-
-    if (!tecnicoId) {
-        return res
-            .status(401)
-            .json({
-                error:
-                    "Técnico móvil no identificado",
-            });
-    }
-
-    req.query.tecnicoId =
-        String(
-            tecnicoId
-        );
-
-    next();
 }
 
 /**
@@ -300,6 +265,80 @@ async function verificarBitacoraPropia(
     }
 }
 
+/**
+ * Verifica únicamente que la bitácora exista.
+ *
+ * Se utiliza en operaciones de lectura para permitir
+ * que cualquier técnico autenticado pueda consultar
+ * bitácoras creadas por otros técnicos.
+ *
+ * NO valida propiedad.
+ */
+async function verificarBitacoraExiste(
+    req: Request,
+    res: Response,
+    next: NextFunction
+) {
+    try {
+        const bitacoraId =
+            Number(
+                req.params.id
+            );
+
+        if (
+            !Number.isInteger(
+                bitacoraId
+            ) ||
+            bitacoraId <= 0
+        ) {
+            return res
+                .status(400)
+                .json({
+                    error:
+                        "ID de bitácora inválido",
+                });
+        }
+
+        const bitacora =
+            await prisma
+                .bitacoraTecnico
+                .findUnique({
+                    where: {
+                        id:
+                            bitacoraId,
+                    },
+
+                    select: {
+                        id:
+                            true,
+                    },
+                });
+
+        if (!bitacora) {
+            return res
+                .status(404)
+                .json({
+                    error:
+                        "Bitácora no encontrada",
+                });
+        }
+
+        next();
+    } catch (error) {
+        console.error(
+            "[MOBILE BITACORA] Error verificando existencia de bitácora:",
+            error
+        );
+
+        return res
+            .status(500)
+            .json({
+                error:
+                    "No fue posible verificar la bitácora",
+            });
+    }
+}
+
 /* =========================================================
    IDENTIDAD TÉCNICO MÓVIL
 ========================================================= */
@@ -407,6 +446,56 @@ router.get(
     }
 );
 
+router.get(
+    "/empresas",
+    async (
+        req,
+        res
+    ) => {
+        try {
+            const empresas =
+                await prisma.empresa.findMany({
+                    where: {
+                        isActive:
+                            true,
+                    },
+
+                    select: {
+                        id_empresa:
+                            true,
+
+                        nombre:
+                            true,
+                    },
+
+                    orderBy: {
+                        nombre:
+                            "asc",
+                    },
+                });
+
+            return res.json({
+                data:
+                    empresas,
+            });
+        } catch (
+        error
+        ) {
+            console.error(
+                "[MOBILE BITACORA] Error obteniendo empresas:",
+                error
+            );
+
+            return res
+                .status(500)
+                .json({
+                    error:
+                        "No fue posible obtener las empresas",
+                });
+        }
+    }
+);
+
 /**
  * GET /
  *
@@ -415,7 +504,6 @@ router.get(
  */
 router.get(
     "/",
-    forzarTecnicoActualQuery,
     obtenerBitacorasTecnico
 );
 
@@ -451,17 +539,6 @@ router.post(
 router.get(
     "/opciones-relacion",
     obtenerOpcionesRelacionBitacora
-);
-
-/**
- * GET /:id
- *
- * Obtiene el detalle de una bitácora propia.
- */
-router.get(
-    "/:id",
-    verificarBitacoraPropia,
-    obtenerBitacoraTecnicoPorId
 );
 
 /**
@@ -511,7 +588,7 @@ router.patch(
  */
 router.get(
     "/:id/etapas",
-    verificarBitacoraPropia,
+    verificarBitacoraExiste,
     obtenerEtapasBitacora
 );
 
@@ -572,6 +649,122 @@ router.post(
     responderRevisionEtapa
 );
 
+router.get(
+    "/:id",
+    verificarBitacoraExiste,
+    obtenerBitacoraTecnicoPorId
+);
+
+/**
+ * GET /:id/permisos
+ *
+ * Indica qué puede hacer el técnico autenticado
+ * sobre una bitácora.
+ */
+router.get(
+    "/:id/permisos",
+    async (
+        req,
+        res,
+    ) => {
+        try {
+            const tecnicoId =
+                obtenerTecnicoMovilId(
+                    req,
+                );
+
+            if (!tecnicoId) {
+                return res
+                    .status(401)
+                    .json({
+                        error:
+                            "Técnico móvil no identificado",
+                    });
+            }
+
+            const bitacoraId =
+                Number(
+                    req.params.id,
+                );
+
+            if (
+                !Number.isInteger(
+                    bitacoraId,
+                ) ||
+                bitacoraId <= 0
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        error:
+                            "ID de bitácora inválido",
+                    });
+            }
+
+            const bitacora =
+                await prisma.bitacoraTecnico.findUnique({
+                    where: {
+                        id:
+                            bitacoraId,
+                    },
+
+                    select: {
+                        id:
+                            true,
+
+                        tecnicoId:
+                            true,
+                    },
+                });
+
+            if (!bitacora) {
+                return res
+                    .status(404)
+                    .json({
+                        error:
+                            "Bitácora no encontrada",
+                    });
+            }
+
+            const esPropietario =
+                Number(
+                    bitacora.tecnicoId,
+                ) ===
+                tecnicoId;
+
+            return res.json({
+                data: {
+                    esPropietario,
+
+                    puedeEditar:
+                        esPropietario,
+
+                    puedeGestionarEvidencias:
+                        esPropietario,
+
+                    puedeCompletarEtapa:
+                        esPropietario,
+
+                    puedeSolicitarRevision:
+                        esPropietario,
+                },
+            });
+        } catch (error) {
+            console.error(
+                "[MOBILE BITACORA] Error obteniendo permisos:",
+                error,
+            );
+
+            return res
+                .status(500)
+                .json({
+                    error:
+                        "No fue posible obtener los permisos de la bitácora",
+                });
+        }
+    },
+);
+
 /* =========================================================
    EVIDENCIAS
 ========================================================= */
@@ -581,7 +774,7 @@ router.post(
  */
 router.get(
     "/:id/evidencias",
-    verificarBitacoraPropia,
+    verificarBitacoraExiste,
     obtenerEvidenciasBitacora
 );
 

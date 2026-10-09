@@ -91,7 +91,17 @@ async function getToken(auth: MsAuth): Promise<string> {
     body,
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
-  if (!r.ok) throw new Error(`Token HTTP ${r.status}`);
+  
+  if (!r.ok) {
+    const text =
+      await r
+        .text()
+        .catch(() => "");
+
+    throw new Error(
+      `Token HTTP ${r.status} - ${text}`
+    );
+  }
 
   const j = (await r.json()) as TokenResp;
   cached = {
@@ -216,10 +226,10 @@ async function listUsersForSingleDomain(domain?: string): Promise<MsUser[]> {
 
   const filtered = domain
     ? all.filter(u => {
-        const d = `@${domain}`.toLowerCase().trim();
-        const emailish = (u.mail ?? u.userPrincipalName ?? "").toLowerCase().trim();
-        return emailish.endsWith(d);
-      })
+      const d = `@${domain}`.toLowerCase().trim();
+      const emailish = (u.mail ?? u.userPrincipalName ?? "").toLowerCase().trim();
+      return emailish.endsWith(d);
+    })
     : all;
 
   const licenseMap = await fetchLicenseDetailsBatch(auth, filtered.map(u => u.id));
