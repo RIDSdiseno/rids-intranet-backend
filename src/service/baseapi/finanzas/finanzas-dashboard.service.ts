@@ -305,6 +305,36 @@ function getMontoNeto(
     );
 }
 
+function getTipoDte(
+    doc: any
+): number {
+    return toNumber(
+        doc?.tipoDTE ??
+        doc?.tipoDte ??
+        doc?.["Tipo DTE"] ??
+        doc?.["Tipo Doc"] ??
+        0
+    );
+}
+
+function esNotaCredito(
+    doc: any
+): boolean {
+    return getTipoDte(
+        doc
+    ) === 61;
+}
+
+function getSignoContableDte(
+    doc: any
+): 1 | -1 {
+    return esNotaCredito(
+        doc
+    )
+        ? -1
+        : 1;
+}
+
 /* =========================================================
    DASHBOARD
 ========================================================= */
@@ -780,11 +810,16 @@ export async function obtenerDashboardFinanzas(
                     doc
                 );
 
+            const signo =
+                getSignoContableDte(
+                    doc
+                );
+
             bucket.facturadoBruto +=
-                total;
+                total * signo;
 
             bucket.facturadoNeto +=
-                neto;
+                neto * signo;
 
             bucket.documentosVentas +=
                 1;
@@ -797,6 +832,12 @@ export async function obtenerDashboardFinanzas(
                 )
                     .trim()
                     .toUpperCase();
+
+            if (
+                esNotaCredito(doc)
+            ) {
+                continue;
+            }
 
             if (
                 estado ===
@@ -874,15 +915,26 @@ export async function obtenerDashboardFinanzas(
             const doc
             of documentos
         ) {
-            bucket.comprasBruto +=
+            const total =
                 getMontoTotal(
                     doc
                 );
 
-            bucket.comprasNeto +=
+            const neto =
                 getMontoNeto(
                     doc
                 );
+
+            const signo =
+                getSignoContableDte(
+                    doc
+                );
+
+            bucket.comprasBruto +=
+                total * signo;
+
+            bucket.comprasNeto +=
+                neto * signo;
 
             bucket.documentosCompras +=
                 1;

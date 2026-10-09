@@ -78,7 +78,7 @@ import iaRecomendacionesRouter from "./routes/ia-intranet-routes/ia-recomendacio
 import { agendaRouter } from "./routes/agenda.routes.js";
 
 /* ===================== CORREO ===================== */
-import correoRouter from "./routes/correo.routes.js";
+import correosMasivosRouter from "./routes/correos-masivos.routes.js";
 
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
@@ -223,7 +223,7 @@ api.use("/ia-reportes", iaReportesRouter);
 api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 
 /* ===================== CORREO ===================== */
-api.use("/correo", correoRouter);
+api.use("/correo", correosMasivosRouter);
 
 /* ===================== Clientes ===================== */
 api.use("/clientes-ext", clientesExtRouter);

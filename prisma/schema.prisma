@@ -909,6 +909,7 @@ model Tecnico {
   aprobacionesBitacoraSolicitadas BitacoraAprobacion[]             @relation("BitacoraAprobacionSolicitante")
   aprobacionesBitacoraAsignadas   BitacoraAprobacion[]             @relation("BitacoraAprobacionAprobador")
   eventosBitacora                 BitacoraEvento[]                 @relation("BitacoraEventoActor")
+  plantillasCorreo                PlantillaCorreo[]
 
   @@index([empresaId])
 }
@@ -2403,6 +2404,35 @@ model SeguimientoOportunidadVenta {
   @@index([createdAt])
 }
 
+model PlantillaCorreo {
+  id          Int                 @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  tipo        TipoPlantillaCorreo
+
+  /// Archivo original guardado en Supabase.
+  storagePath   String?
+  nombreArchivo String?
+  mimeType      String?
+  bytes         Int?
+
+  /// HTML que realmente utilizará el Mailer.
+  htmlProcesado String?
+
+  activo Boolean @default(true)
+
+  creadoPorId Int?
+  creadoPor   Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tipo])
+  @@index([activo])
+  @@index([creadoPorId])
+  @@index([createdAt])
+}
+
 model EmpresaFavoritaTecnico {
   id        Int      @id @default(autoincrement())
   tecnicoId Int
@@ -2413,6 +2443,11 @@ model EmpresaFavoritaTecnico {
   @@unique([tecnicoId, origen, empresaId])
   @@index([origen, empresaId])
   @@index([tecnicoId])
+}
+
+enum TipoPlantillaCorreo {
+  HTML
+  IMAGEN
 }
 
 enum TipoBitacoraTecnico {
