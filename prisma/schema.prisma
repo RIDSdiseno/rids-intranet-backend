@@ -2445,6 +2445,27 @@ model EmpresaFavoritaTecnico {
   @@index([tecnicoId])
 }
 
+model PlantillaCorreo {
+  id            Int                 @id @default(autoincrement())
+  nombre        String
+  descripcion   String?
+  tipo          TipoPlantillaCorreo
+  storagePath   String?
+  nombreArchivo String?
+  mimeType      String?
+  bytes         Int?
+  htmlProcesado String?
+  activo        Boolean             @default(true)
+  creadoPorId   Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime
+
+  @@index([activo])
+  @@index([creadoPorId])
+  @@index([createdAt])
+  @@index([tipo])
+}
+
 enum TipoPlantillaCorreo {
   HTML
   IMAGEN
@@ -2819,4 +2840,9 @@ enum EstadoEquipoAdicional {
   EN_STOCK
   EN_REPARACION
   DADO_DE_BAJA
+}
+
+enum TipoPlantillaCorreo {
+  HTML
+  IMAGEN
 }
