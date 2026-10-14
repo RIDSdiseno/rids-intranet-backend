@@ -18,6 +18,7 @@ const MIME_IMAGES =
         "image/png",
         "image/jpeg",
         "image/webp",
+        "image/gif",
     ]);
 
 export type PlantillaAttachmentPreparado = {
@@ -39,6 +40,25 @@ export type PlantillaPreparadaEnvio = {
 
     attachments:
     PlantillaAttachmentPreparado[];
+};
+
+type CrearPlantillaCorreoInput = {
+    nombre: string;
+
+    descripcion?:
+    string |
+    null;
+
+    uso?:
+    "CONTENIDO" |
+    "FIRMA";
+
+    file:
+    Express.Multer.File;
+
+    creadoPorId?:
+    number |
+    null;
 };
 
 
@@ -209,18 +229,53 @@ function generarHtmlImagen(
 export async function crearPlantillaCorreo({
     nombre,
     descripcion,
+    uso = "CONTENIDO",
     nombreArchivo,
     mimeType,
     buffer,
     creadoPorId,
 }: {
     nombre: string;
-    descripcion?: string | null;
-    nombreArchivo: string;
-    mimeType: string;
-    buffer: Buffer;
-    creadoPorId?: number | null;
+
+    descripcion?:
+    string |
+    null;
+
+    uso?:
+    "CONTENIDO" |
+    "FIRMA";
+
+    nombreArchivo:
+    string;
+
+    mimeType:
+    string;
+
+    buffer:
+    Buffer;
+
+    creadoPorId?:
+    number |
+    null;
 }) {
+
+    const usoNormalizado:
+        "CONTENIDO" |
+        "FIRMA" =
+        uso === "FIRMA"
+            ? "FIRMA"
+            : "CONTENIDO";
+
+    if (
+        usoNormalizado === "FIRMA" &&
+        !MIME_IMAGES.has(
+            mimeType
+        )
+    ) {
+        throw new Error(
+            "Las firmas deben ser archivos de imagen"
+        );
+    }
 
     const extension =
         nombreArchivo
@@ -233,12 +288,25 @@ export async function crearPlantillaCorreo({
         extension === "html" ||
         extension === "htm"
     ) {
+
+        if (
+            usoNormalizado ===
+            "FIRMA"
+        ) {
+            throw new Error(
+                "Las firmas no pueden ser archivos HTML"
+            );
+        }
+
         return crearPlantillaHtml({
             nombre,
 
             nombreArchivo,
 
             buffer,
+
+            uso:
+                usoNormalizado,
 
             ...(descripcion !== undefined
                 ? {
@@ -268,6 +336,9 @@ export async function crearPlantillaCorreo({
 
             buffer,
 
+            uso:
+                usoNormalizado,
+
             ...(descripcion !== undefined
                 ? {
                     descripcion,
@@ -283,7 +354,7 @@ export async function crearPlantillaCorreo({
     }
 
     throw new Error(
-        "Formato no soportado. Usa HTML, PNG, JPG o WEBP."
+        "Formato no soportado. Usa HTML, PNG, JPG, JPEG, WEBP o GIF."
     );
 }
 
@@ -295,15 +366,31 @@ export async function crearPlantillaCorreo({
 async function crearPlantillaHtml({
     nombre,
     descripcion,
+    uso,
     nombreArchivo,
     buffer,
     creadoPorId,
 }: {
-    nombre: string;
-    descripcion?: string | null;
-    nombreArchivo: string;
-    buffer: Buffer;
-    creadoPorId?: number | null;
+    nombre:
+    string;
+
+    descripcion?:
+    string |
+    null;
+
+    uso:
+    "CONTENIDO" |
+    "FIRMA";
+
+    nombreArchivo:
+    string;
+
+    buffer:
+    Buffer;
+
+    creadoPorId?:
+    number |
+    null;
 }) {
 
     const rawHtml =
@@ -332,10 +419,13 @@ async function crearPlantillaHtml({
                     nombre,
 
                     descripcion:
-                        descripcion ?? null,
+                        descripcion ??
+                        null,
 
                     tipo:
                         "HTML",
+
+                    uso,
 
                     nombreArchivo,
 
@@ -348,7 +438,8 @@ async function crearPlantillaHtml({
                     htmlProcesado,
 
                     creadoPorId:
-                        creadoPorId ?? null,
+                        creadoPorId ??
+                        null,
                 },
             });
 
@@ -407,17 +498,35 @@ async function crearPlantillaHtml({
 async function crearPlantillaImagen({
     nombre,
     descripcion,
+    uso,
     nombreArchivo,
     mimeType,
     buffer,
     creadoPorId,
 }: {
-    nombre: string;
-    descripcion?: string | null;
-    nombreArchivo: string;
-    mimeType: string;
-    buffer: Buffer;
-    creadoPorId?: number | null;
+    nombre:
+    string;
+
+    descripcion?:
+    string |
+    null;
+
+    uso:
+    "CONTENIDO" |
+    "FIRMA";
+
+    nombreArchivo:
+    string;
+
+    mimeType:
+    string;
+
+    buffer:
+    Buffer;
+
+    creadoPorId?:
+    number |
+    null;
 }) {
 
     if (
@@ -438,10 +547,13 @@ async function crearPlantillaImagen({
                     nombre,
 
                     descripcion:
-                        descripcion ?? null,
+                        descripcion ??
+                        null,
 
                     tipo:
                         "IMAGEN",
+
+                    uso,
 
                     nombreArchivo,
 
@@ -451,7 +563,8 @@ async function crearPlantillaImagen({
                         buffer.length,
 
                     creadoPorId:
-                        creadoPorId ?? null,
+                        creadoPorId ??
+                        null,
                 },
             });
 
@@ -516,7 +629,11 @@ async function crearPlantillaImagen({
 // LISTAR
 // =====================================================
 
-export async function listarPlantillasCorreo() {
+export async function listarPlantillasCorreo(
+    uso?:
+        "CONTENIDO" |
+        "FIRMA"
+) {
 
     const plantillas =
         await prisma
@@ -525,6 +642,12 @@ export async function listarPlantillasCorreo() {
                 where: {
                     activo:
                         true,
+
+                    ...(uso
+                        ? {
+                            uso,
+                        }
+                        : {}),
                 },
 
                 orderBy: {
@@ -543,6 +666,9 @@ export async function listarPlantillasCorreo() {
                         true,
 
                     tipo:
+                        true,
+
+                    uso:
                         true,
 
                     nombreArchivo:
@@ -572,7 +698,8 @@ export async function listarPlantillasCorreo() {
             ) => {
 
                 let previewUrl:
-                    string | null =
+                    string |
+                    null =
                     null;
 
                 if (
@@ -693,6 +820,15 @@ export async function prepararPlantillaParaEnvio(
     }
 
     if (
+        plantilla.uso !==
+        "CONTENIDO"
+    ) {
+        throw new Error(
+            "La plantilla seleccionada no corresponde a contenido principal"
+        );
+    }
+
+    if (
         !plantilla.htmlProcesado
     ) {
         throw new Error(
@@ -768,6 +904,144 @@ export async function prepararPlantillaParaEnvio(
     );
 }
 
+export async function prepararFirmaParaEnvio(
+    id: number
+): Promise<PlantillaPreparadaEnvio> {
+
+    const plantilla =
+        await prisma
+            .plantillaCorreo
+            .findUnique({
+                where: {
+                    id,
+                },
+            });
+
+
+    if (
+        !plantilla
+    ) {
+        throw new Error(
+            "Firma no encontrada"
+        );
+    }
+
+
+    if (
+        !plantilla.activo
+    ) {
+        throw new Error(
+            "La firma está desactivada"
+        );
+    }
+
+
+    if (
+        plantilla.uso !==
+        "FIRMA"
+    ) {
+        throw new Error(
+            "La plantilla seleccionada no corresponde a una firma"
+        );
+    }
+
+
+    if (
+        plantilla.tipo !==
+        "IMAGEN"
+    ) {
+        throw new Error(
+            "La firma debe ser una imagen"
+        );
+    }
+
+
+    if (
+        !plantilla.storagePath ||
+        !plantilla.mimeType ||
+        !plantilla.nombreArchivo
+    ) {
+        throw new Error(
+            "La firma está incompleta"
+        );
+    }
+
+
+    const buffer =
+        await descargarArchivoPlantilla(
+            plantilla.storagePath
+        );
+
+
+    const contentId =
+        `firma-${plantilla.id}-main`;
+
+
+    const bodyHtml =
+        `
+<table
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+    role="presentation"
+    style="margin-top:24px;"
+>
+    <tr>
+        <td
+            align="left"
+            style="
+                padding-top:16px;
+                border-top:1px solid #e5e7eb;
+            "
+        >
+            <img
+                src="cid:${contentId}"
+                alt="${plantilla.nombre}"
+                style="
+                    display:block;
+                    max-width:420px;
+                    width:auto;
+                    height:auto;
+                    border:0;
+                    outline:none;
+                    text-decoration:none;
+                "
+            />
+        </td>
+    </tr>
+</table>
+`.trim();
+
+
+    return {
+        bodyHtml,
+
+        attachments: [
+            {
+                name:
+                    plantilla.nombreArchivo,
+
+                contentType:
+                    plantilla.mimeType,
+
+                contentBytes:
+                    buffer.toString(
+                        "base64"
+                    ),
+
+                size:
+                    buffer.length,
+
+                isInline:
+                    true,
+
+                contentId,
+            },
+        ],
+    };
+}
+
 
 // =====================================================
 // ELIMINAR
@@ -816,52 +1090,90 @@ export async function eliminarPlantillaCorreo(
 
 export async function actualizarPlantillaCorreo(
     id: number,
+
     data: {
-        nombre?: string;
-        descripcion?: string | null;
-        activo?: boolean;
+        nombre?:
+        string;
+
+        descripcion?:
+        string |
+        null;
+
+        uso?:
+        "CONTENIDO" |
+        "FIRMA";
+
+        activo?:
+        boolean;
     }
 ) {
 
     const actual =
-        await prisma.plantillaCorreo.findUnique({
-            where: {
-                id,
-            },
-        });
+        await prisma
+            .plantillaCorreo
+            .findUnique({
+                where: {
+                    id,
+                },
+            });
 
-    if (!actual) {
+
+    if (
+        !actual
+    ) {
         throw new Error(
             "Plantilla no encontrada"
         );
     }
 
-    return prisma.plantillaCorreo.update({
-        where: {
-            id,
-        },
 
-        data: {
-            ...(data.nombre !== undefined
-                ? {
-                    nombre:
-                        data.nombre.trim(),
-                }
-                : {}),
+    if (
+        data.uso ===
+        "FIRMA" &&
+        actual.tipo !==
+        "IMAGEN"
+    ) {
+        throw new Error(
+            "Solo las plantillas de imagen pueden utilizarse como firma"
+        );
+    }
 
-            ...(data.descripcion !== undefined
-                ? {
-                    descripcion:
-                        data.descripcion,
-                }
-                : {}),
 
-            ...(data.activo !== undefined
-                ? {
-                    activo:
-                        data.activo,
-                }
-                : {}),
-        },
-    });
+    return prisma
+        .plantillaCorreo
+        .update({
+            where: {
+                id,
+            },
+
+            data: {
+                ...(data.nombre !== undefined
+                    ? {
+                        nombre:
+                            data.nombre.trim(),
+                    }
+                    : {}),
+
+                ...(data.descripcion !== undefined
+                    ? {
+                        descripcion:
+                            data.descripcion,
+                    }
+                    : {}),
+
+                ...(data.uso !== undefined
+                    ? {
+                        uso:
+                            data.uso,
+                    }
+                    : {}),
+
+                ...(data.activo !== undefined
+                    ? {
+                        activo:
+                            data.activo,
+                    }
+                    : {}),
+            },
+        });
 }

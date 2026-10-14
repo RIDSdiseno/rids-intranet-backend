@@ -6,6 +6,7 @@ import type {
 
 import {
     iniciarEnvioMasivo,
+    obtenerFirmaMailer,
     obtenerMailerJob,
 } from "../service/correos-masivos/correos-masivos.service.js";
 
@@ -34,6 +35,8 @@ export async function enviarMasivo(
             subject,
             bodyHtml,
             plantillaId,
+            usarFirmaTecnico,
+            firmaTecnicoId,
             attachments,
         } =
             req.body;
@@ -96,6 +99,37 @@ export async function enviarMasivo(
                 });
         }
 
+        const parsedFirmaTecnicoId =
+            firmaTecnicoId !== undefined &&
+                firmaTecnicoId !== null &&
+                firmaTecnicoId !== ""
+                ? Number(
+                    firmaTecnicoId
+                )
+                : undefined;
+
+
+        if (
+            parsedFirmaTecnicoId !== undefined &&
+            (
+                !Number.isInteger(
+                    parsedFirmaTecnicoId
+                ) ||
+                parsedFirmaTecnicoId <= 0
+            )
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    ok:
+                        false,
+
+                    message:
+                        "firmaTecnicoId inválido",
+                });
+        }
+
         const result =
             await iniciarEnvioMasivo({
                 targets,
@@ -104,6 +138,10 @@ export async function enviarMasivo(
                     String(
                         subject
                     ).trim(),
+
+                usarFirmaTecnico:
+                    usarFirmaTecnico !==
+                    false,
 
                 attachments:
                     Array.isArray(
@@ -125,6 +163,13 @@ export async function enviarMasivo(
                     ? {
                         plantillaId:
                             parsedPlantillaId,
+                    }
+                    : {}),
+
+                ...(parsedFirmaTecnicoId !== undefined
+                    ? {
+                        firmaTecnicoId:
+                            parsedFirmaTecnicoId,
                     }
                     : {}),
             });
@@ -289,6 +334,14 @@ export async function crearPlantilla(
             ).trim() ||
             null;
 
+        const rawUso =
+            String(
+                req.body?.uso ??
+                "CONTENIDO"
+            )
+                .trim()
+                .toUpperCase();
+
         const user =
             (req as any).user;
 
@@ -318,11 +371,34 @@ export async function crearPlantilla(
             }
         }
 
+        if (
+            rawUso !== "CONTENIDO" &&
+            rawUso !== "FIRMA"
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    ok:
+                        false,
+
+                    message:
+                        "Uso de plantilla inválido",
+                });
+        }
+
+        const uso:
+            "CONTENIDO" |
+            "FIRMA" =
+            rawUso;
+
         const plantilla =
             await crearPlantillaCorreo({
                 nombre,
 
                 descripcion,
+
+                uso,
 
                 nombreArchivo:
                     file.originalname,
@@ -373,14 +449,67 @@ export async function crearPlantilla(
 // =====================================================
 
 export async function listarPlantillas(
-    _req: Request,
+    req: Request,
     res: Response
 ) {
 
     try {
 
+        const rawUso =
+            typeof req.query.uso ===
+                "string"
+                ? req.query.uso
+                    .trim()
+                    .toUpperCase()
+                : undefined;
+
+
+        let uso:
+            "CONTENIDO" |
+            "FIRMA" |
+            undefined;
+
+
+        if (
+            rawUso ===
+            "CONTENIDO"
+        ) {
+            uso =
+                "CONTENIDO";
+        }
+
+
+        if (
+            rawUso ===
+            "FIRMA"
+        ) {
+            uso =
+                "FIRMA";
+        }
+
+
+        if (
+            rawUso &&
+            !uso
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    ok:
+                        false,
+
+                    message:
+                        "Uso de plantilla inválido",
+                });
+        }
+
+
         const plantillas =
-            await listarPlantillasCorreo();
+            await listarPlantillasCorreo(
+                uso
+            );
+
 
         return res.json({
             ok:
@@ -397,6 +526,7 @@ export async function listarPlantillas(
             "[Mailer] Error listando plantillas:",
             error
         );
+
 
         return res
             .status(500)
@@ -577,9 +707,27 @@ export async function actualizarPlantilla(
         const {
             nombre,
             descripcion,
+            uso,
             activo,
         } =
             req.body ?? {};
+
+        if (
+            uso !== undefined &&
+            uso !== "CONTENIDO" &&
+            uso !== "FIRMA"
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    ok:
+                        false,
+
+                    message:
+                        "Uso de plantilla inválido",
+                });
+        }
 
         if (
             nombre !== undefined &&
@@ -617,6 +765,15 @@ export async function actualizarPlantilla(
                         }
                         : {}),
 
+                    ...(uso !== undefined
+                        ? {
+                            uso:
+                                uso as
+                                "CONTENIDO" |
+                                "FIRMA",
+                        }
+                        : {}),
+
                     ...(typeof activo === "boolean"
                         ? {
                             activo,
@@ -641,6 +798,98 @@ export async function actualizarPlantilla(
                 message:
                     error?.message ??
                     "No fue posible actualizar la plantilla",
+            });
+    }
+}
+
+// =====================================================
+// FIRMA MAILER
+// =====================================================
+
+export async function obtenerFirmaRemitente(
+    req: Request,
+    res: Response
+) {
+
+    try {
+
+        const rawTecnicoId =
+            typeof req.query.tecnicoId ===
+                "string"
+                ? req.query.tecnicoId
+                : undefined;
+
+
+        const tecnicoId =
+            rawTecnicoId
+                ? Number(
+                    rawTecnicoId
+                )
+                : undefined;
+
+
+        if (
+            tecnicoId !== undefined &&
+            (
+                !Number.isInteger(
+                    tecnicoId
+                ) ||
+                tecnicoId <= 0
+            )
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    ok:
+                        false,
+
+                    message:
+                        "tecnicoId inválido",
+                });
+        }
+
+
+        const firma =
+            await obtenerFirmaMailer({
+                user:
+                    (req as any).user,
+
+                ...(tecnicoId !== undefined
+                    ? {
+                        firmaTecnicoId:
+                            tecnicoId,
+                    }
+                    : {}),
+            });
+
+
+        return res.json({
+            ok:
+                true,
+
+            firma,
+        });
+
+    } catch (
+    error: any
+    ) {
+
+        console.error(
+            "[Mailer] Error obteniendo firma:",
+            error
+        );
+
+
+        return res
+            .status(400)
+            .json({
+                ok:
+                    false,
+
+                message:
+                    error?.message ??
+                    "No fue posible obtener la firma",
             });
     }
 }

@@ -10,6 +10,7 @@ import {
   obtenerPlantilla,
   eliminarPlantilla,
   actualizarPlantilla,
+  obtenerFirmaRemitente
 } from "../controllers/correos-masivos.controller.js";
 
 import {
@@ -50,6 +51,11 @@ correoMasivoRouter.delete(
 correoMasivoRouter.patch(
     "/plantillas/:id",
     actualizarPlantilla
+);
+
+correoMasivoRouter.get(
+    "/firma-remitente",
+    obtenerFirmaRemitente
 );
 
 

@@ -2,8 +2,10 @@
 import { Router } from "express";
 import {
   getComprasRcvBaseApi,
+  getVentasRcvAnualBaseApi,
   getVentasRcvBaseApi,
 } from "../../controllers/baseapi/baseapi-rcv.controller.js";
+
 import { getBaseApiRcvDashboardController } from "../../controllers/baseapi/baseapi-rcv-dashboard.controller.js";
 
 import {
@@ -25,6 +27,13 @@ router.get(
   auth(),
   onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"),
   getVentasRcvBaseApi
+);
+
+router.get(
+  "/ventas/anual",
+  auth(),
+  onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"),
+  getVentasRcvAnualBaseApi
 );
 
 router.get(

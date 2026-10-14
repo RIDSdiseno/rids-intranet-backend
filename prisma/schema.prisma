@@ -2405,24 +2405,28 @@ model SeguimientoOportunidadVenta {
 }
 
 model PlantillaCorreo {
-  id            Int                 @id @default(autoincrement())
-  nombre        String
-  descripcion   String?
-  tipo          TipoPlantillaCorreo
-  /// Archivo original guardado en Supabase.
-  storagePath   String?
+  id          Int                 @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+  tipo        TipoPlantillaCorreo
+  uso         UsoPlantillaCorreo  @default(CONTENIDO)
+
   nombreArchivo String?
   mimeType      String?
   bytes         Int?
-  /// HTML que realmente utilizará el Mailer.
+  storagePath   String?
   htmlProcesado String?
-  activo        Boolean             @default(true)
-  creadoPorId   Int?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  creadoPor     Tecnico?            @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  activo Boolean @default(true)
+
+  creadoPorId Int?
+  creadoPor   Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([tipo])
+  @@index([uso])
   @@index([activo])
   @@index([creadoPorId])
   @@index([createdAt])
@@ -2438,6 +2442,11 @@ model EmpresaFavoritaTecnico {
   @@unique([tecnicoId, origen, empresaId])
   @@index([origen, empresaId])
   @@index([tecnicoId])
+}
+
+enum UsoPlantillaCorreo {
+  CONTENIDO
+  FIRMA
 }
 
 enum TipoPlantillaCorreo {
