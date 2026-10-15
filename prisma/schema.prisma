@@ -2405,25 +2405,21 @@ model SeguimientoOportunidadVenta {
 }
 
 model PlantillaCorreo {
-  id          Int                 @id @default(autoincrement())
-  nombre      String
-  descripcion String?
-  tipo        TipoPlantillaCorreo
-  uso         UsoPlantillaCorreo  @default(CONTENIDO)
-
+  id            Int                 @id @default(autoincrement())
+  nombre        String
+  descripcion   String?
+  tipo          TipoPlantillaCorreo
+  storagePath   String?
   nombreArchivo String?
   mimeType      String?
   bytes         Int?
-  storagePath   String?
   htmlProcesado String?
-
-  activo Boolean @default(true)
-
-  creadoPorId Int?
-  creadoPor   Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  activo        Boolean             @default(true)
+  creadoPorId   Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  uso           UsoPlantillaCorreo  @default(CONTENIDO)
+  creadoPor     Tecnico?            @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
 
   @@index([tipo])
   @@index([uso])

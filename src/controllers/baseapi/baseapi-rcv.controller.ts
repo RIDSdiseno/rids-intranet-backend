@@ -412,6 +412,43 @@ function getTipoDocBaseApi(
     ).trim();
 }
 
+function getTipoDteBaseApi(
+    doc:
+        any
+): number {
+
+    const raw =
+        doc?.tipoDTE ??
+        doc?.tipoDte ??
+        doc?.["Tipo DTE"] ??
+        doc?.["Tipo Doc"] ??
+        0;
+
+
+    const numero =
+        Number(
+            raw
+        );
+
+
+    return Number.isFinite(
+        numero
+    )
+        ? numero
+        : 0;
+}
+
+
+function esNotaCredito(
+    doc:
+        any
+): boolean {
+
+    return getTipoDteBaseApi(
+        doc
+    ) === 61;
+}
+
 function getFolioBaseApi(
     doc: any
 ): string {
@@ -1522,15 +1559,53 @@ export async function getVentasRcvAnualBaseApi(
                 documentos.filter(
                     (
                         documento
-                    ) =>
-                        String(
-                            documento
-                                ?.estadoPago ??
-                            ""
-                        )
-                            .trim()
-                            .toUpperCase() ===
-                        estadoPago
+                    ) => {
+
+                        const estado =
+                            String(
+                                documento
+                                    ?.estadoPago ??
+                                ""
+                            )
+                                .trim()
+                                .toUpperCase();
+
+
+                        if (
+                            estado !==
+                            estadoPago
+                        ) {
+                            return false;
+                        }
+
+
+                        /*
+                         * El dashboard financiero no considera
+                         * las notas de crédito dentro de
+                         * Por vencer / Vencido.
+                         *
+                         * Mantener la misma regla aquí para que
+                         * el drill-down coincida 1:1 con los KPIs.
+                         */
+                        if (
+                            estadoPago ===
+                            "PENDIENTE" ||
+                            estadoPago ===
+                            "VENCIDA"
+                        ) {
+
+                            if (
+                                esNotaCredito(
+                                    documento
+                                )
+                            ) {
+                                return false;
+                            }
+                        }
+
+
+                        return true;
+                    }
                 );
         }
 
