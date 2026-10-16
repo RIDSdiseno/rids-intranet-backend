@@ -21,7 +21,7 @@ import {
 
 import {
     crearOportunidad,
-} from "../oportunidades.service.js";
+} from "../oportunidades/oportunidades.service.js";
 
 
 function toDate(

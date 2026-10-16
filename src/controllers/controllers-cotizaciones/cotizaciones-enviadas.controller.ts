@@ -1,6 +1,6 @@
-// src/controllers/cotizaciones-enviadas.controller.ts
+// src/controllers/controllers-cotizaciones/cotizaciones-enviadas.controller.ts
 import type { Request, Response } from "express";
-import { prisma } from "../lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
 
 export async function listCotizacionesEnviadas(_req: Request, res: Response) {
   try {

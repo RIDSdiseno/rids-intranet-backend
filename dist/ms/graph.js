@@ -49,8 +49,12 @@ async function getToken(auth) {
         body,
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    if (!r.ok)
-        throw new Error(`Token HTTP ${r.status}`);
+    if (!r.ok) {
+        const text = await r
+            .text()
+            .catch(() => "");
+        throw new Error(`Token HTTP ${r.status} - ${text}`);
+    }
     const j = (await r.json());
     cached = {
         token: j.access_token,

@@ -1,4 +1,4 @@
-import { consultarComprasRcvBaseApi, consultarVentasRcvBaseApi, } from "../../service/baseapi/baseapi-rcv.service.js";
+import { consultarComprasRcvBaseApi, consultarVentasRcvAnualCache, consultarVentasRcvBaseApi, } from "../../service/baseapi/baseapi-rcv.service.js";
 import { prisma } from "../../lib/prisma.js";
 import { anotarDocumentosCobranza, } from "../../service/baseapi/cobranza/cobranza-estado.service.js";
 // Función para parsear la empresa desde la query, validando que sea "econnet" o "rids", y lanzando un error descriptivo si no es así.
@@ -91,6 +91,39 @@ function parsePeriodo(req) {
         throw new Error("Mes fuera de rango. Debe estar entre 01 y 12");
     }
     return { mes, ano };
+}
+function parseAno(value) {
+    const ano = String(value ??
+        "").trim();
+    if (!/^\d{4}$/.test(ano)) {
+        throw new Error("Año inválido");
+    }
+    const numero = Number(ano);
+    if (numero <
+        2000 ||
+        numero >
+            2100) {
+        throw new Error("Año fuera de rango");
+    }
+    return ano;
+}
+function parseEstadoPagoAnual(value) {
+    const estado = String(value ??
+        "")
+        .trim()
+        .toUpperCase();
+    if (!estado) {
+        return null;
+    }
+    if (estado !==
+        "PENDIENTE" &&
+        estado !==
+            "VENCIDA" &&
+        estado !==
+            "CONFIRMADA") {
+        throw new Error("Estado de pago inválido. Usa PENDIENTE, VENCIDA o CONFIRMADA.");
+    }
+    return estado;
 }
 function getEmpresasConsulta(req) {
     const rol = String(req.user?.rol ?? "").toUpperCase().trim();
@@ -248,6 +281,20 @@ function getTipoDocBaseApi(doc) {
         doc?.tipoDoc ??
         doc?.tipoDTE ??
         "").trim();
+}
+function getTipoDteBaseApi(doc) {
+    const raw = doc?.tipoDTE ??
+        doc?.tipoDte ??
+        doc?.["Tipo DTE"] ??
+        doc?.["Tipo Doc"] ??
+        0;
+    const numero = Number(raw);
+    return Number.isFinite(numero)
+        ? numero
+        : 0;
+}
+function esNotaCredito(doc) {
+    return getTipoDteBaseApi(doc) === 61;
 }
 function getFolioBaseApi(doc) {
     return String(doc?.["Folio"] ??
@@ -727,6 +774,151 @@ export async function getComprasRcvBaseApi(req, res) {
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         res.status(500).json({
+            ok: false,
+            provider: "baseapi",
+            error: message,
+            message,
+        });
+    }
+}
+// =========================================================
+// RCV VENTAS ANUAL - CACHE
+// =========================================================
+export async function getVentasRcvAnualBaseApi(req, res) {
+    try {
+        assertClientePuedeConsultarTipo(req, "ventas");
+        const empresas = getEmpresasConsulta(req);
+        const ano = parseAno(req.query.ano);
+        const estadoPago = parseEstadoPagoAnual(req.query
+            .estadoPago);
+        const rutCliente = await getClienteRutPermitido(req);
+        const resultados = await Promise.all(empresas.map(async (empresa) => {
+            const resultado = await consultarVentasRcvAnualCache({
+                empresa,
+                ano,
+            });
+            const dataFiltrada = rutCliente
+                ? filtrarRcvPorRutCliente(resultado.data, rutCliente, "ventas")
+                : resultado.data;
+            return {
+                empresa,
+                cached: true,
+                cacheUpdatedAt: resultado.cacheUpdatedAt,
+                mesesDisponibles: resultado.mesesDisponibles,
+                data: dataFiltrada,
+            };
+        }));
+        /*
+         * Reutilizamos la misma función que
+         * ya usa el endpoint mensual para
+         * fusionar ECONNET/RIDS y agregar
+         * empresaOrigen.
+         */
+        let data = mergeRcvResponses(resultados, "ventas");
+        // =================================================
+        // ESTADO DE COBRANZA
+        // =================================================
+        let documentos = await anotarDocumentosCobranza(data.data
+            ?.datos ??
+            [], "ventas");
+        // =================================================
+        // FILTRO PENDIENTE / VENCIDA / CONFIRMADA
+        // =================================================
+        if (estadoPago) {
+            documentos =
+                documentos.filter((documento) => {
+                    const estado = String(documento
+                        ?.estadoPago ??
+                        "")
+                        .trim()
+                        .toUpperCase();
+                    if (estado !==
+                        estadoPago) {
+                        return false;
+                    }
+                    /*
+                     * El dashboard financiero no considera
+                     * las notas de crédito dentro de
+                     * Por vencer / Vencido.
+                     *
+                     * Mantener la misma regla aquí para que
+                     * el drill-down coincida 1:1 con los KPIs.
+                     */
+                    if (estadoPago ===
+                        "PENDIENTE" ||
+                        estadoPago ===
+                            "VENCIDA") {
+                        if (esNotaCredito(documento)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+        }
+        /*
+         * Lo hacemos DESPUÉS del filtro para
+         * evitar consultar información de
+         * envío de cientos de documentos que
+         * luego no serán mostrados.
+         */
+        const documentosAnotados = await anotarDocumentosEnvioFactura(documentos);
+        data = {
+            ...data,
+            detalleVentas: documentosAnotados,
+            ventas: documentosAnotados,
+            documentos: documentosAnotados,
+            total: documentosAnotados.length,
+            data: {
+                ...(data.data ||
+                    {}),
+                datos: documentosAnotados,
+                totalRegistros: documentosAnotados.length,
+            },
+        };
+        const mesesConCache = [
+            ...new Set(resultados.flatMap((resultado) => resultado
+                .mesesDisponibles)),
+        ].sort();
+        const cacheUpdatedAt = resultados
+            .map((resultado) => resultado
+            .cacheUpdatedAt)
+            .filter((value) => value instanceof
+            Date)
+            .sort((a, b) => b.getTime() -
+            a.getTime())[0] ??
+            null;
+        return res.json({
+            ok: true,
+            provider: "baseapi",
+            empresa: empresas.length ===
+                1
+                ? empresas[0]
+                : "todas",
+            empresas,
+            ano,
+            periodo: "anual",
+            tipo: "ventas",
+            estadoPago,
+            cached: true,
+            cacheUpdatedAt,
+            mesesConCache,
+            totalMesesConCache: mesesConCache.length,
+            data,
+        });
+    }
+    catch (error) {
+        const message = error instanceof
+            Error
+            ? error.message
+            : String(error);
+        console.error("[RCV VENTAS ANUAL] Error:", error);
+        const statusCode = typeof error?.statusCode ===
+            "number"
+            ? error.statusCode
+            : 500;
+        return res
+            .status(statusCode)
+            .json({
             ok: false,
             provider: "baseapi",
             error: message,

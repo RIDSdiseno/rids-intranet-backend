@@ -4,15 +4,34 @@ import { buildTicketSla } from "../tickets-rids/tickets-sla/ticketera-sla.contro
 import { getSlaConfigFromDB } from "../../config/sla.config.js";
 export async function getTicketMetricsByTecnico(req, res) {
     try {
+        /*
+         * =====================================================
+         * FILTROS
+         * =====================================================
+         */
         const empresaId = req.query.empresaId
             ? Number(req.query.empresaId)
             : undefined;
         const tecnicoId = req.query.tecnicoId
             ? Number(req.query.tecnicoId)
             : undefined;
-        const from = req.query.from ? new Date(req.query.from) : undefined;
-        const to = req.query.to ? new Date(req.query.to) : undefined;
+        const from = req.query.from
+            ? new Date(req.query.from)
+            : undefined;
+        const to = req.query.to
+            ? new Date(req.query.to)
+            : undefined;
+        /*
+         * =====================================================
+         * CONFIGURACIÓN SLA
+         * =====================================================
+         */
         const slaConfig = await getSlaConfigFromDB();
+        /*
+         * =====================================================
+         * TÉCNICOS EXCLUIDOS
+         * =====================================================
+         */
         const EXCLUDED_TECNICOS_EMAILS = [
             "hcabrera@rids.cl",
             "nrubio@rids.cl",
@@ -25,18 +44,29 @@ export async function getTicketMetricsByTecnico(req, res) {
             "ventas@rids.cl",
             "cespinoza@rids.cl",
         ];
+        /*
+         * =====================================================
+         * TÉCNICOS ACTIVOS
+         * =====================================================
+         */
         const tecnicosActivos = await prisma.tecnico.findMany({
             where: {
                 status: true,
                 rol: {
-                    in: ["ADMIN", "TECNICO", "ADMINISTRACION"],
+                    in: [
+                        "ADMIN",
+                        "TECNICO",
+                        "ADMINISTRACION",
+                    ],
                 },
                 email: {
                     notIn: EXCLUDED_TECNICOS_EMAILS,
                 },
-                ...(tecnicoId && {
-                    id_tecnico: tecnicoId,
-                }),
+                ...(tecnicoId
+                    ? {
+                        id_tecnico: tecnicoId,
+                    }
+                    : {}),
             },
             select: {
                 id_tecnico: true,
@@ -47,26 +77,51 @@ export async function getTicketMetricsByTecnico(req, res) {
                 nombre: "asc",
             },
         });
-        const tecnicoIdsPermitidos = tecnicosActivos.map((t) => t.id_tecnico);
+        const tecnicoIdsPermitidos = tecnicosActivos.map((tecnico) => tecnico.id_tecnico);
+        /*
+         * Si no hay técnicos válidos,
+         * devolvemos arreglo vacío.
+         */
         if (!tecnicoIdsPermitidos.length) {
             return res.json({
                 ok: true,
                 data: [],
             });
         }
+        /*
+         * =====================================================
+         * TICKETS CERRADOS ACTUALES
+         * =====================================================
+         *
+         * Cada Ticket representa su ciclo SLA más reciente.
+         * Los ciclos anteriores se cargan después desde
+         * TicketSlaCycle.
+         */
         const tickets = await prisma.ticket.findMany({
             where: {
                 deletedAt: null,
                 assigneeId: {
                     in: tecnicoIdsPermitidos,
                 },
-                ...(empresaId && { empresaId }),
+                ...(empresaId
+                    ? {
+                        empresaId,
+                    }
+                    : {}),
                 status: TicketStatus.CLOSED,
                 ...(from || to
                     ? {
                         closedAt: {
-                            ...(from && { gte: from }),
-                            ...(to && { lt: to }),
+                            ...(from
+                                ? {
+                                    gte: from,
+                                }
+                                : {}),
+                            ...(to
+                                ? {
+                                    lt: to,
+                                }
+                                : {}),
                         },
                     }
                     : {}),
@@ -80,6 +135,15 @@ export async function getTicketMetricsByTecnico(req, res) {
                 firstResponseAt: true,
                 resolvedAt: true,
                 closedAt: true,
+                /*
+                 * Necesario para calcular correctamente
+                 * un ciclo SLA reabierto.
+                 */
+                lastReopenedAt: true,
+                /*
+                 * Identificador del ciclo SLA actual.
+                 */
+                slaCycleNumber: true,
                 assigneeId: true,
                 events: {
                     where: {
@@ -92,8 +156,6 @@ export async function getTicketMetricsByTecnico(req, res) {
                         },
                     },
                     select: {
-                        // Necesario para que buildTicketSla detecte asignación,
-                        // pausas por PENDING y reaperturas si las usas.
                         type: true,
                         oldValue: true,
                         newValue: true,
@@ -104,20 +166,33 @@ export async function getTicketMetricsByTecnico(req, res) {
                     },
                 },
             },
-            orderBy: { closedAt: "desc" },
+            orderBy: {
+                closedAt: "desc",
+            },
         });
+        /*
+         * =====================================================
+         * MAPA DE MÉTRICAS
+         * =====================================================
+         */
         const byTecnico = new Map();
         for (const tecnico of tecnicosActivos) {
             byTecnico.set(tecnico.id_tecnico, {
                 tecnicoId: tecnico.id_tecnico,
                 nombre: tecnico.nombre,
                 email: tecnico.email,
+                /*
+                 * Métricas por ticket.
+                 */
                 assignedTickets: 0,
                 openTickets: 0,
                 pendingTickets: 0,
                 resolvedTickets: 0,
                 closedTickets: 0,
                 reopenedTickets: 0,
+                /*
+                 * Métricas SLA por ciclo.
+                 */
                 firstResponseOk: 0,
                 firstResponseBreached: 0,
                 firstResponsePending: 0,
@@ -130,40 +205,202 @@ export async function getTicketMetricsByTecnico(req, res) {
                 resolutionMinutesCount: 0,
             });
         }
+        /*
+         * =====================================================
+         * CICLO SLA ACTUAL / ÚLTIMO
+         * =====================================================
+         */
         for (const ticket of tickets) {
-            if (!ticket.assigneeId)
+            if (!ticket.assigneeId) {
                 continue;
+            }
             const row = byTecnico.get(ticket.assigneeId);
-            if (!row)
+            if (!row) {
                 continue;
+            }
             const sla = buildTicketSla(ticket, slaConfig);
+            /*
+             * =================================================
+             * MÉTRICAS DE TICKETS
+             * =================================================
+             *
+             * Aquí sí contamos tickets reales.
+             */
             row.assignedTickets++;
             row.closedTickets++;
-            if (ticket.events?.some((e) => e.type === "REOPENED")) {
-                row.reopenedTickets++;
-            }
-            if (sla.firstResponse.status === "OK")
+            /*
+             * Contamos cantidad real de reaperturas.
+             */
+            row.reopenedTickets +=
+                ticket.events
+                    ?.filter((event) => event.type ===
+                    "REOPENED")
+                    .length ??
+                    0;
+            /*
+             * =================================================
+             * MÉTRICAS SLA DEL CICLO ACTUAL
+             * =================================================
+             */
+            if (sla.firstResponse.status ===
+                "OK") {
                 row.firstResponseOk++;
-            if (sla.firstResponse.status === "BREACHED")
+            }
+            if (sla.firstResponse.status ===
+                "BREACHED") {
                 row.firstResponseBreached++;
-            if (sla.firstResponse.status === "PENDING")
+            }
+            if (sla.firstResponse.status ===
+                "PENDING") {
                 row.firstResponsePending++;
-            if (sla.resolution.status === "OK")
+            }
+            if (sla.resolution.status ===
+                "OK") {
                 row.resolutionOk++;
-            if (sla.resolution.status === "BREACHED")
+            }
+            if (sla.resolution.status ===
+                "BREACHED") {
                 row.resolutionBreached++;
-            if (sla.resolution.status === "PENDING")
+            }
+            if (sla.resolution.status ===
+                "PENDING") {
                 row.resolutionPending++;
-            if (sla.firstResponse.elapsedMinutes !== null) {
-                row.firstResponseMinutesSum += sla.firstResponse.elapsedMinutes;
+            }
+            if (sla.firstResponse
+                .elapsedMinutes !==
+                null) {
+                row.firstResponseMinutesSum +=
+                    sla.firstResponse
+                        .elapsedMinutes;
                 row.firstResponseMinutesCount++;
             }
-            if (sla.resolution.elapsedMinutes !== null) {
-                row.resolutionMinutesSum += sla.resolution.elapsedMinutes;
+            if (sla.resolution
+                .elapsedMinutes !==
+                null) {
+                row.resolutionMinutesSum +=
+                    sla.resolution
+                        .elapsedMinutes;
                 row.resolutionMinutesCount++;
             }
         }
-        const data = Array.from(byTecnico.values())
+        /*
+         * =====================================================
+         * CICLOS SLA HISTÓRICOS
+         * =====================================================
+         */
+        const historicalCycles = await prisma
+            .ticketSlaCycle
+            .findMany({
+            where: {
+                assigneeId: {
+                    in: tecnicoIdsPermitidos,
+                },
+                /*
+                 * Filtramos además por el ticket
+                 * relacionado.
+                 */
+                ticket: {
+                    deletedAt: null,
+                    ...(empresaId
+                        ? {
+                            empresaId,
+                        }
+                        : {}),
+                },
+                /*
+                 * El período histórico se evalúa
+                 * contra el cierre del ciclo.
+                 */
+                ...(from || to
+                    ? {
+                        endedAt: {
+                            ...(from
+                                ? {
+                                    gte: from,
+                                }
+                                : {}),
+                            ...(to
+                                ? {
+                                    lt: to,
+                                }
+                                : {}),
+                        },
+                    }
+                    : {}),
+            },
+        });
+        /*
+         * =====================================================
+         * AGREGAR HISTÓRICOS A LAS MÉTRICAS SLA
+         * =====================================================
+         */
+        for (const cycle of historicalCycles) {
+            if (!cycle.assigneeId) {
+                continue;
+            }
+            const row = byTecnico.get(cycle.assigneeId);
+            if (!row) {
+                continue;
+            }
+            /*
+             * IMPORTANTE:
+             *
+             * NO incrementar:
+             *
+             * assignedTickets
+             * closedTickets
+             *
+             * porque TicketSlaCycle representa
+             * otro ciclo del mismo ticket.
+             */
+            if (cycle.firstResponseStatus ===
+                "OK") {
+                row.firstResponseOk++;
+            }
+            if (cycle.firstResponseStatus ===
+                "BREACHED") {
+                row.firstResponseBreached++;
+            }
+            if (cycle.firstResponseStatus ===
+                "PENDING") {
+                row.firstResponsePending++;
+            }
+            if (cycle.resolutionStatus ===
+                "OK") {
+                row.resolutionOk++;
+            }
+            if (cycle.resolutionStatus ===
+                "BREACHED") {
+                row.resolutionBreached++;
+            }
+            if (cycle.resolutionStatus ===
+                "PENDING") {
+                row.resolutionPending++;
+            }
+            if (cycle
+                .firstResponseElapsedMinutes !==
+                null) {
+                row.firstResponseMinutesSum +=
+                    cycle
+                        .firstResponseElapsedMinutes;
+                row.firstResponseMinutesCount++;
+            }
+            if (cycle
+                .resolutionElapsedMinutes !==
+                null) {
+                row.resolutionMinutesSum +=
+                    cycle
+                        .resolutionElapsedMinutes;
+                row.resolutionMinutesCount++;
+            }
+        }
+        /*
+         * =====================================================
+         * RESPUESTA FINAL
+         * =====================================================
+         */
+        const data = Array
+            .from(byTecnico.values())
             .map((row) => {
             const firstResponseTotal = row.firstResponseOk +
                 row.firstResponseBreached +
@@ -181,19 +418,26 @@ export async function getTicketMetricsByTecnico(req, res) {
                 resolvedTickets: row.resolvedTickets,
                 closedTickets: row.closedTickets,
                 reopenedTickets: row.reopenedTickets,
-                avgFirstResponseMinutes: row.firstResponseMinutesCount > 0
-                    ? Math.round(row.firstResponseMinutesSum / row.firstResponseMinutesCount)
+                avgFirstResponseMinutes: row.firstResponseMinutesCount >
+                    0
+                    ? Math.round(row.firstResponseMinutesSum /
+                        row.firstResponseMinutesCount)
                     : null,
-                avgResolutionMinutes: row.resolutionMinutesCount > 0
-                    ? Math.round(row.resolutionMinutesSum / row.resolutionMinutesCount)
+                avgResolutionMinutes: row.resolutionMinutesCount >
+                    0
+                    ? Math.round(row.resolutionMinutesSum /
+                        row.resolutionMinutesCount)
                     : null,
                 firstResponse: {
                     ok: row.firstResponseOk,
                     breached: row.firstResponseBreached,
                     pending: row.firstResponsePending,
                     total: firstResponseTotal,
-                    compliance: firstResponseTotal > 0
-                        ? Math.round((row.firstResponseOk / firstResponseTotal) * 100)
+                    compliance: firstResponseTotal >
+                        0
+                        ? Math.round((row.firstResponseOk /
+                            firstResponseTotal) *
+                            100)
                         : 0,
                 },
                 resolution: {
@@ -201,17 +445,25 @@ export async function getTicketMetricsByTecnico(req, res) {
                     breached: row.resolutionBreached,
                     pending: row.resolutionPending,
                     total: resolutionTotal,
-                    compliance: resolutionTotal > 0
-                        ? Math.round((row.resolutionOk / resolutionTotal) * 100)
+                    compliance: resolutionTotal >
+                        0
+                        ? Math.round((row.resolutionOk /
+                            resolutionTotal) *
+                            100)
                         : 0,
                 },
             };
         });
-        return res.json({ ok: true, data });
+        return res.json({
+            ok: true,
+            data,
+        });
     }
     catch (error) {
         console.error("[helpdesk] getTicketMetricsByTecnico error:", error);
-        return res.status(500).json({
+        return res
+            .status(500)
+            .json({
             ok: false,
             message: "Error al obtener métricas por técnico",
         });
@@ -257,6 +509,7 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
                 nombre: "asc",
             },
         });
+        const tecnicoIdsPermitidos = tecnicosActivos.map((tecnico) => tecnico.id_tecnico);
         const ticketsCerrados = await prisma.ticket.findMany({
             where: {
                 deletedAt: null,
@@ -283,6 +536,8 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
                 firstResponseAt: true,
                 resolvedAt: true,
                 closedAt: true,
+                lastReopenedAt: true,
+                slaCycleNumber: true,
                 assigneeId: true,
                 events: {
                     where: {
@@ -343,9 +598,12 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
             const sla = buildTicketSla(ticket, slaConfig);
             row.assignedTickets++;
             row.closedTickets++;
-            if (ticket.events?.some((e) => e.type === "REOPENED")) {
-                row.reopenedTickets++;
-            }
+            row.reopenedTickets +=
+                ticket.events
+                    ?.filter((event) => event.type ===
+                    "REOPENED")
+                    .length ??
+                    0;
             if (sla.firstResponse.status === "OK")
                 row.firstResponseOk++;
             if (sla.firstResponse.status === "BREACHED")
@@ -364,6 +622,82 @@ export async function getWorstClosedTicketsByTecnico(req, res) {
             }
             if (sla.resolution.elapsedMinutes !== null) {
                 row.resolutionMinutesSum += sla.resolution.elapsedMinutes;
+                row.resolutionMinutesCount++;
+            }
+        }
+        const historicalCycles = await prisma.ticketSlaCycle.findMany({
+            where: {
+                assigneeId: {
+                    in: tecnicoIdsPermitidos,
+                },
+                ticket: {
+                    deletedAt: null,
+                    ...(empresaId
+                        ? {
+                            empresaId,
+                        }
+                        : {}),
+                },
+                ...(from || to
+                    ? {
+                        endedAt: {
+                            ...(from
+                                ? {
+                                    gte: from,
+                                }
+                                : {}),
+                            ...(to
+                                ? {
+                                    lt: to,
+                                }
+                                : {}),
+                        },
+                    }
+                    : {}),
+            },
+        });
+        for (const cycle of historicalCycles) {
+            if (!cycle.assigneeId) {
+                continue;
+            }
+            const row = byTecnico.get(cycle.assigneeId);
+            if (!row) {
+                continue;
+            }
+            if (cycle.firstResponseStatus ===
+                "OK") {
+                row.firstResponseOk++;
+            }
+            if (cycle.firstResponseStatus ===
+                "BREACHED") {
+                row.firstResponseBreached++;
+            }
+            if (cycle.firstResponseStatus ===
+                "PENDING") {
+                row.firstResponsePending++;
+            }
+            if (cycle.resolutionStatus ===
+                "OK") {
+                row.resolutionOk++;
+            }
+            if (cycle.resolutionStatus ===
+                "BREACHED") {
+                row.resolutionBreached++;
+            }
+            if (cycle.resolutionStatus ===
+                "PENDING") {
+                row.resolutionPending++;
+            }
+            if (cycle.firstResponseElapsedMinutes !==
+                null) {
+                row.firstResponseMinutesSum +=
+                    cycle.firstResponseElapsedMinutes;
+                row.firstResponseMinutesCount++;
+            }
+            if (cycle.resolutionElapsedMinutes !==
+                null) {
+                row.resolutionMinutesSum +=
+                    cycle.resolutionElapsedMinutes;
                 row.resolutionMinutesCount++;
             }
         }

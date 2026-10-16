@@ -18,6 +18,8 @@ export const syncAccess = (req, res, next) => {
         [
             "ADMIN",
             "ADMINISTRACION",
+            "VENTAS",
+            "TECNICO"
         ].includes(user.rol)) {
         next();
         return;

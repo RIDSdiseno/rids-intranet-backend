@@ -1,31 +1,60 @@
-// src/routes/oportunidades-routes/oportunidades.routes.ts
-import { Router } from "express";
-import { onlyRole } from "../../middlewares/roles.js";
-import { crearOportunidadController, listarOportunidadesController, obtenerFunnelController, obtenerDashboardController, obtenerOportunidadController, editarOportunidadController, cambiarEtapaController, reordenarController, eliminarOportunidadController, crearSeguimientoController, listarSeguimientosController, obtenerHistorialController, listarCotizacionesController, vincularCotizacionController, desvincularCotizacionController, } from "../../controllers/controllers-oportunidades/oportunidades.controller.js";
-// Roles internos habilitados para el funnel comercial en esta primera versión.
-// Deliberadamente NO se habilita CLIENTE ni TECNICO (ver auditoría previa).
-const ROLES_OPORTUNIDADES = ["ADMIN", "ADMINISTRACION", "VENTAS"];
+import { Router, } from "express";
+import { onlyRole, } from "../../middlewares/roles.js";
+import { crearOportunidadController, listarOportunidadesController, obtenerFunnelController, obtenerDashboardController, obtenerOportunidadController, editarOportunidadController, cambiarEtapaController, reordenarController, eliminarOportunidadController, crearSeguimientoController, listarSeguimientosController, obtenerHistorialController, listarCotizacionesController, vincularCotizacionController, desvincularCotizacionController, crearOportunidadDesdeCotizacionController, cambiarEstadoSeguimientoController, enviarInformeOportunidadController, } from "../../controllers/controllers-oportunidades/oportunidades.controller.js";
+/*
+ * Roles internos habilitados
+ * para el Funnel comercial.
+ */
+const ROLES_OPORTUNIDADES = [
+    "ADMIN",
+    "ADMINISTRACION",
+    "VENTAS",
+];
 const oportunidadesRouter = Router();
-// Autorización centralizada para todo el módulo.
+/*
+ * Autorización centralizada
+ * para todo el módulo.
+ */
 oportunidadesRouter.use(onlyRole(...ROLES_OPORTUNIDADES));
-// --- Rutas específicas antes de las dinámicas con :id ---
+/* =========================================================
+   CREACIÓN DESDE COTIZACIÓN
+========================================================= */
+oportunidadesRouter.post("/desde-cotizacion/:cotizacionId", crearOportunidadDesdeCotizacionController);
+/* =========================================================
+   RUTAS GENERALES / ESPECÍFICAS
+========================================================= */
 oportunidadesRouter.get("/funnel", obtenerFunnelController);
 oportunidadesRouter.get("/dashboard", obtenerDashboardController);
 oportunidadesRouter.get("/", listarOportunidadesController);
 oportunidadesRouter.post("/", crearOportunidadController);
-// --- Seguimientos ---
+/* =========================================================
+   SEGUIMIENTOS
+========================================================= */
 oportunidadesRouter.post("/:id/seguimientos", crearSeguimientoController);
 oportunidadesRouter.get("/:id/seguimientos", listarSeguimientosController);
-// --- Historial ---
+oportunidadesRouter.patch("/:id/seguimientos/:seguimientoId/estado", cambiarEstadoSeguimientoController);
+/* =========================================================
+   HISTORIAL
+========================================================= */
 oportunidadesRouter.get("/:id/historial", obtenerHistorialController);
-// --- Cotizaciones vinculadas ---
+/* =========================================================
+   COTIZACIONES VINCULADAS
+========================================================= */
 oportunidadesRouter.get("/:id/cotizaciones", listarCotizacionesController);
 oportunidadesRouter.post("/:id/cotizaciones/:cotizacionId", vincularCotizacionController);
 oportunidadesRouter.delete("/:id/cotizaciones/:cotizacionId", desvincularCotizacionController);
-// --- Etapa y orden ---
+/* =========================================================
+   INFORME DE RESPALDO
+========================================================= */
+oportunidadesRouter.post("/:id/informe/enviar", enviarInformeOportunidadController);
+/* =========================================================
+   ETAPA Y ORDEN
+========================================================= */
 oportunidadesRouter.patch("/:id/etapa", cambiarEtapaController);
 oportunidadesRouter.patch("/:id/orden", reordenarController);
-// --- CRUD por id ---
+/* =========================================================
+   CRUD POR ID
+========================================================= */
 oportunidadesRouter.get("/:id", obtenerOportunidadController);
 oportunidadesRouter.patch("/:id", editarOportunidadController);
 oportunidadesRouter.delete("/:id", eliminarOportunidadController);

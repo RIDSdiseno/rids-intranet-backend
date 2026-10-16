@@ -112,6 +112,21 @@ function getMontoNeto(doc) {
         doc?.montoNeto ??
         0);
 }
+function getTipoDte(doc) {
+    return toNumber(doc?.tipoDTE ??
+        doc?.tipoDte ??
+        doc?.["Tipo DTE"] ??
+        doc?.["Tipo Doc"] ??
+        0);
+}
+function esNotaCredito(doc) {
+    return getTipoDte(doc) === 61;
+}
+function getSignoContableDte(doc) {
+    return esNotaCredito(doc)
+        ? -1
+        : 1;
+}
 /* =========================================================
    DASHBOARD
 ========================================================= */
@@ -339,10 +354,11 @@ export async function obtenerDashboardFinanzas(params) {
         for (const doc of documentosAnotados) {
             const total = getMontoTotal(doc);
             const neto = getMontoNeto(doc);
+            const signo = getSignoContableDte(doc);
             bucket.facturadoBruto +=
-                total;
+                total * signo;
             bucket.facturadoNeto +=
-                neto;
+                neto * signo;
             bucket.documentosVentas +=
                 1;
             const estado = String(doc
@@ -350,6 +366,9 @@ export async function obtenerDashboardFinanzas(params) {
                 "")
                 .trim()
                 .toUpperCase();
+            if (esNotaCredito(doc)) {
+                continue;
+            }
             if (estado ===
                 "VENCIDA") {
                 bucket.vencido +=
@@ -389,10 +408,13 @@ export async function obtenerDashboardFinanzas(params) {
             continue;
         }
         for (const doc of documentos) {
+            const total = getMontoTotal(doc);
+            const neto = getMontoNeto(doc);
+            const signo = getSignoContableDte(doc);
             bucket.comprasBruto +=
-                getMontoTotal(doc);
+                total * signo;
             bucket.comprasNeto +=
-                getMontoNeto(doc);
+                neto * signo;
             bucket.documentosCompras +=
                 1;
         }

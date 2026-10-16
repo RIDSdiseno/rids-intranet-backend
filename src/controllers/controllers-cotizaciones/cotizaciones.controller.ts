@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 import { prismaBase as prisma } from "../../lib/prisma.js";
-import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades.service.js";
+import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades/oportunidades.service.js";
 
 import {
     calcularTotalesCotizacionBackend,
@@ -556,6 +556,11 @@ export async function createCotizacion(req: Request, res: Response) {
                                     : generarSKU(),
                             imagen: i.imagen ?? null,
 
+                            productoId:
+                                i.productoId != null
+                                    ? Number(i.productoId)
+                                    : null,
+
                             equipoId: i.equipoId ? Number(i.equipoId) : null,
                         };
                     }),
@@ -734,6 +739,11 @@ export async function updateCotizacion(req: Request, res: Response) {
                                     )
                                     : 0,
 
+                            productoId:
+                                i.productoId != null
+                                    ? Number(i.productoId)
+                                    : null,
+
                             tieneIVA:
                                 Boolean(
                                     i.tieneIVA
@@ -832,6 +842,11 @@ export async function updateCotizacion(req: Request, res: Response) {
 
                                 imagen:
                                     i.imagen ?? null,
+
+                                productoId:
+                                    i.productoId != null
+                                        ? Number(i.productoId)
+                                        : null,
 
                                 equipoId:
                                     i.equipoId

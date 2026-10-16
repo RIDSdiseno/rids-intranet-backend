@@ -8,7 +8,7 @@ import {
   TipoServicioOportunidad,
   RiesgoTecnicoOportunidad,
 } from "@prisma/client";
-import { prisma } from "../lib/prisma.js";
+import { prisma } from "../../lib/prisma.js";
 
 /* ======================================================
    ⚠️  Errores de negocio
@@ -36,7 +36,7 @@ export class CierreOportunidadInvalidoError extends Error {
 }
 
 export class ResponsableOportunidadInvalidoError extends Error {
-  constructor(message = "El responsable comercial indicado no es válido.") {
+  constructor(message = "El ejecutivo de venta indicado no es válido.") {
     super(message);
     this.name = "ResponsableOportunidadInvalidoError";
   }
@@ -53,15 +53,6 @@ export class OrdenOportunidadInvalidoError extends Error {
   constructor(message = "El valor de orden indicado no es válido.") {
     super(message);
     this.name = "OrdenOportunidadInvalidoError";
-  }
-}
-
-export class CotizacionOportunidadRequeridaError extends Error {
-  constructor(
-    message = "Debe preparar y enviar una cotización antes de avanzar a negociación."
-  ) {
-    super(message);
-    this.name = "CotizacionOportunidadRequeridaError";
   }
 }
 
@@ -83,15 +74,6 @@ export class CotizacionNoVinculadaError extends Error {
   constructor(message = "La cotización indicada no está vinculada a esta oportunidad.") {
     super(message);
     this.name = "CotizacionNoVinculadaError";
-  }
-}
-
-export class DesvinculacionCotizacionInvalidaError extends Error {
-  constructor(
-    message = "No se puede desvincular la cotización sin dejar la oportunidad en un estado inválido."
-  ) {
-    super(message);
-    this.name = "DesvinculacionCotizacionInvalidaError";
   }
 }
 
@@ -136,6 +118,7 @@ export interface CrearOportunidadInput {
   versionPropuesta?: string | null | undefined;
   contrapropuestas?: string | null | undefined;
   ajustesSolicitados?: string | null | undefined;
+  notas?: string | null | undefined;
 }
 
 export interface EditarOportunidadInput {
@@ -171,10 +154,12 @@ export interface EditarOportunidadInput {
   versionPropuesta?: string | null | undefined;
   contrapropuestas?: string | null | undefined;
   ajustesSolicitados?: string | null | undefined;
+  notas?: string | null | undefined;
 }
 
 export interface CambiarEtapaInput {
   etapa: EtapaOportunidadVenta;
+  nota: string;
   motivoPerdida?: string | undefined;
   motivoPostergacion?: string | undefined;
   fechaReactivacion?: Date | undefined;
@@ -222,17 +207,6 @@ const ETAPAS_SIN_COTIZACION_REQUERIDA: ReadonlySet<EtapaOportunidadVenta> = new 
   EtapaOportunidadVenta.COTIZACION_PREPARACION,
 ]);
 
-// Etapas destino que exigen al menos una cotización VINCULADA (en cualquier estado).
-// No se exige que esté "Aprobada": la intranet de RIDS no tiene ninguna acción para
-// cambiar el estado de una cotización a Aprobada, así que exigirlo bloqueaba el avance
-// sin darle al usuario forma de resolverlo. El seguimiento de reenvíos/negociación se
-// registra en el Funnel mismo (Seguimientos, campos de etapa), no en el estado de la cotización.
-const ETAPAS_QUE_REQUIEREN_COTIZACION_VINCULADA: ReadonlySet<EtapaOportunidadVenta> = new Set([
-  EtapaOportunidadVenta.COTIZACION_ENVIADA,
-  EtapaOportunidadVenta.NEGOCIACION,
-  EtapaOportunidadVenta.GANADA,
-]);
-
 // El cliente `prisma` está extendido ($extends) para auditoría automática,
 // por lo que Prisma.TransactionClient no calza con el tipo real de `tx`
 // dentro de prisma.$transaction(async (tx) => ...). Mismo patrón usado en
@@ -266,25 +240,6 @@ async function generarCodigoOportunidad(tx: TxClient): Promise<string> {
 
 function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-}
-
-/* =========================================================
-   Validación de cotización vinculada según etapa destino
-========================================================= */
-async function validarCotizacionParaEtapa(
-  tx: TxClient,
-  oportunidadId: number,
-  etapaDestino: EtapaOportunidadVenta
-) {
-  if (!ETAPAS_QUE_REQUIEREN_COTIZACION_VINCULADA.has(etapaDestino)) return;
-
-  const cantidad = await tx.cotizacionGestioo.count({
-    where: { oportunidadVentaId: oportunidadId },
-  });
-
-  if (cantidad === 0) {
-    throw new CotizacionOportunidadRequeridaError();
-  }
 }
 
 /* =========================================================
@@ -335,7 +290,7 @@ export async function crearOportunidad(actorId: number, payload: CrearOportunida
   });
   if (!responsable) throw new ResponsableOportunidadInvalidoError();
   if (!responsable.status) {
-    throw new ResponsableOportunidadInvalidoError("El responsable comercial indicado está inactivo.");
+    throw new ResponsableOportunidadInvalidoError("El ejecutivo de venta indicado está inactivo.");
   }
 
   if (payload.entidadId) {
@@ -377,6 +332,9 @@ export async function crearOportunidad(actorId: number, payload: CrearOportunida
             ...(payload.estadoDesarrolloPropuesta !== undefined && {
               estadoDesarrolloPropuesta: payload.estadoDesarrolloPropuesta,
             }),
+            notas:
+              payload.notas ??
+              null,
             ...(payload.tipoServicio !== undefined && { tipoServicio: payload.tipoServicio }),
             tipoServicioOtro: payload.tipoServicioOtro ?? null,
             informacionPendiente: payload.informacionPendiente ?? null,
@@ -557,8 +515,8 @@ export async function obtenerDashboardFunnel(filtros: FiltrosDashboardInput) {
       filtros.tipoFecha === "cierre"
         ? "fechaCierre"
         : filtros.tipoFecha === "probableCierre"
-        ? "fechaProbableCierre"
-        : "createdAt";
+          ? "fechaProbableCierre"
+          : "createdAt";
     where[campo] = {
       ...(filtros.fechaDesde && { gte: inicioDeDia(filtros.fechaDesde) }),
       ...(filtros.fechaHasta && { lte: finDeDia(filtros.fechaHasta) }),
@@ -638,12 +596,12 @@ export async function obtenerDashboardFunnel(filtros: FiltrosDashboardInput) {
   const clientesReactivados =
     idsFiltrados.length > 0
       ? await prisma.historialEtapaOportunidadVenta.count({
-          where: {
-            oportunidadId: { in: idsFiltrados },
-            etapaAnterior: { in: ["PERDIDA", "POSTERGADA"] },
-            etapaNueva: { notIn: ["PERDIDA", "POSTERGADA"] },
-          },
-        })
+        where: {
+          oportunidadId: { in: idsFiltrados },
+          etapaAnterior: { in: ["PERDIDA", "POSTERGADA"] },
+          etapaNueva: { notIn: ["PERDIDA", "POSTERGADA"] },
+        },
+      })
       : 0;
 
   const porEtapaMap = new Map<EtapaOportunidadVenta, { cantidad: number; monto: number }>();
@@ -1067,7 +1025,7 @@ export async function editarOportunidad(id: number, payload: EditarOportunidadIn
       });
       if (!responsable) throw new ResponsableOportunidadInvalidoError();
       if (!responsable.status) {
-        throw new ResponsableOportunidadInvalidoError("El responsable comercial indicado está inactivo.");
+        throw new ResponsableOportunidadInvalidoError("El ejecutivo de venta indicado está inactivo.");
       }
     }
 
@@ -1098,6 +1056,10 @@ export async function editarOportunidad(id: number, payload: EditarOportunidadIn
         ...(payload.fechaProximaAccion !== undefined && { fechaProximaAccion: payload.fechaProximaAccion }),
         ...(payload.fechaUltimoContacto !== undefined && { fechaUltimoContacto: payload.fechaUltimoContacto }),
         ...(payload.observaciones !== undefined && { observaciones: payload.observaciones }),
+        ...(payload.notas !== undefined && {
+          notas:
+            payload.notas,
+        }),
         ...(payload.estadoDesarrolloPropuesta !== undefined && {
           estadoDesarrolloPropuesta: payload.estadoDesarrolloPropuesta,
         }),
@@ -1138,9 +1100,6 @@ export async function cambiarEtapaOportunidad(
     const etapaAnterior = oportunidad.etapa;
     const etapaNueva = payload.etapa;
 
-    // Validar cotización vinculada, incluso si se "salta" columnas.
-    await validarCotizacionParaEtapa(tx, id, etapaNueva);
-
     const data: Prisma.OportunidadVentaUpdateInput = { etapa: etapaNueva };
 
     if (etapaNueva === EtapaOportunidadVenta.GANADA) {
@@ -1178,13 +1137,23 @@ export async function cambiarEtapaOportunidad(
 
     const actualizado = await tx.oportunidadVenta.update({ where: { id }, data });
 
-    if (etapaNueva !== etapaAnterior) {
+    if (
+      etapaNueva !==
+      etapaAnterior
+    ) {
       await tx.historialEtapaOportunidadVenta.create({
         data: {
-          oportunidadId: id,
+          oportunidadId:
+            id,
+
           etapaAnterior,
+
           etapaNueva,
+
           actorId,
+
+          nota:
+            payload.nota,
         },
       });
     }
@@ -1209,14 +1178,77 @@ export async function reordenarOportunidad(id: number, nuevoOrden: number) {
 /* =========================================================
    Soft delete
 ========================================================= */
-export async function desactivarOportunidad(id: number) {
-  return prisma.$transaction(async (tx) => {
-    await obtenerOportunidadActivaOrThrow(tx, id);
-    return tx.oportunidadVenta.update({
-      where: { id },
-      data: { activo: false, desactivadoAt: new Date() },
-    });
-  });
+export async function desactivarOportunidad(
+  id: number
+) {
+  return prisma.$transaction(
+    async (tx) => {
+      /* =====================================================
+         1. VALIDAR OPORTUNIDAD
+      ===================================================== */
+
+      const oportunidad =
+        await obtenerOportunidadActivaOrThrow(
+          tx,
+          id
+        );
+
+
+      /* =====================================================
+         2. DESVINCULAR TODAS LAS COTIZACIONES
+
+         Cuando la oportunidad deja de estar activa,
+         las cotizaciones deben quedar disponibles
+         nuevamente para el Funnel.
+      ===================================================== */
+
+      const desvinculadas =
+        await tx.cotizacionGestioo.updateMany({
+          where: {
+            oportunidadVentaId:
+              id,
+          },
+
+          data: {
+            oportunidadVentaId:
+              null,
+          },
+        });
+
+
+      /* =====================================================
+         3. DESACTIVAR OPORTUNIDAD
+      ===================================================== */
+
+      const oportunidadDesactivada =
+        await tx.oportunidadVenta.update({
+          where: {
+            id,
+          },
+
+          data: {
+            activo:
+              false,
+
+            desactivadoAt:
+              new Date(),
+          },
+        });
+
+
+      /* =====================================================
+         4. RESPONSE
+      ===================================================== */
+
+      return {
+        oportunidad:
+          oportunidadDesactivada,
+
+        cotizacionesDesvinculadas:
+          desvinculadas.count,
+      };
+    }
+  );
 }
 
 /* =========================================================
@@ -1329,34 +1361,355 @@ export async function vincularCotizacion(oportunidadId: number, cotizacionId: nu
   });
 }
 
-export async function desvincularCotizacion(oportunidadId: number, cotizacionId: number) {
-  return prisma.$transaction(async (tx) => {
-    const oportunidad = await obtenerOportunidadActivaOrThrow(tx, oportunidadId);
+export async function desvincularCotizacion(
+  oportunidadId:
+    number,
 
-    const cotizacion = await tx.cotizacionGestioo.findUnique({
-      where: { id: cotizacionId },
-      select: { id: true, oportunidadVentaId: true },
-    });
-    if (!cotizacion || cotizacion.oportunidadVentaId !== oportunidadId) {
-      throw new CotizacionNoVinculadaError();
+  cotizacionId:
+    number
+) {
+
+  return prisma.$transaction(
+    async (
+      tx
+    ) => {
+
+      await obtenerOportunidadActivaOrThrow(
+        tx,
+        oportunidadId
+      );
+
+
+      const cotizacion =
+        await tx.cotizacionGestioo.findUnique({
+          where: {
+            id:
+              cotizacionId,
+          },
+
+          select: {
+            id:
+              true,
+
+            oportunidadVentaId:
+              true,
+          },
+        });
+
+
+      if (
+        !cotizacion ||
+        cotizacion
+          .oportunidadVentaId !==
+        oportunidadId
+      ) {
+        throw new CotizacionNoVinculadaError();
+      }
+
+
+      return tx.cotizacionGestioo.update({
+        where: {
+          id:
+            cotizacionId,
+        },
+
+        data: {
+          oportunidadVentaId:
+            null,
+        },
+      });
     }
+  );
+}
 
-    // COTIZACION_ENVIADA/NEGOCIACION/GANADA no pueden quedar sin ninguna cotización
-    // vinculada después de la desvinculación.
-    if (ETAPAS_QUE_REQUIEREN_COTIZACION_VINCULADA.has(oportunidad.etapa)) {
-      const restantes = await tx.cotizacionGestioo.count({
-        where: { oportunidadVentaId: oportunidadId, id: { not: cotizacionId } },
+/* =========================================================
+   Crear oportunidad automáticamente desde una cotización
+========================================================= */
+
+export async function crearOportunidadDesdeCotizacion(
+  cotizacionId: number,
+  actorId: number
+) {
+  return prisma.$transaction(async (tx) => {
+
+    /* =====================================================
+       1. BUSCAR COTIZACIÓN
+    ===================================================== */
+
+    const cotizacion =
+      await tx.cotizacionGestioo.findUnique({
+        where: {
+          id: cotizacionId,
+        },
+
+        include: {
+          entidad: true,
+
+          tecnico: {
+            select: {
+              id_tecnico: true,
+              nombre: true,
+              email: true,
+              status: true,
+            },
+          },
+        },
       });
 
-      if (restantes === 0) {
-        throw new DesvinculacionCotizacionInvalidaError();
+    if (!cotizacion) {
+      throw new CotizacionNoEncontradaError();
+    }
+
+
+    /* =====================================================
+       2. SI YA ESTÁ VINCULADA, DEVOLVER OPORTUNIDAD
+       Operación idempotente
+    ===================================================== */
+
+    if (
+      cotizacion.oportunidadVentaId
+    ) {
+      const existente =
+        await tx.oportunidadVenta.findUnique({
+          where: {
+            id:
+              cotizacion.oportunidadVentaId,
+          },
+        });
+
+      if (existente) {
+        return {
+          oportunidad:
+            existente,
+
+          cotizacion,
+
+          yaVinculada:
+            true,
+        };
       }
     }
 
-    return tx.cotizacionGestioo.update({
-      where: { id: cotizacionId },
-      data: { oportunidadVentaId: null },
+
+    /* =====================================================
+       3. VALIDAR RESPONSABLE
+    ===================================================== */
+
+    const responsableId =
+      cotizacion.tecnicoId ??
+      actorId;
+
+    let responsable =
+      await tx.tecnico.findUnique({
+        where: {
+          id_tecnico:
+            responsableId,
+        },
+
+        select: {
+          id_tecnico: true,
+          status: true,
+        },
+      });
+
+
+    /*
+     * Si el técnico creador de la cotización ya no está
+     * disponible/inactivo, el usuario que ejecuta la acción
+     * queda como responsable.
+     */
+    if (
+      !responsable ||
+      !responsable.status
+    ) {
+      responsable =
+        await tx.tecnico.findUnique({
+          where: {
+            id_tecnico:
+              actorId,
+          },
+
+          select: {
+            id_tecnico: true,
+            status: true,
+          },
+        });
+
+      if (
+        !responsable ||
+        !responsable.status
+      ) {
+        throw new ResponsableOportunidadInvalidoError();
+      }
+    }
+
+
+    /* =====================================================
+       4. GENERAR CÓDIGO Y ORDEN
+    ===================================================== */
+
+    const codigo =
+      await generarCodigoOportunidad(
+        tx
+      );
+
+    const etapa =
+      EtapaOportunidadVenta
+        .COTIZACION_PREPARACION;
+
+    const orden =
+      await siguienteOrdenEtapa(
+        tx,
+        etapa
+      );
+
+
+    /* =====================================================
+       5. DATOS DESDE COTIZACIÓN
+    ===================================================== */
+
+    const numeroCotizacion =
+      `COT-${String(
+        cotizacion.id
+      ).padStart(
+        6,
+        "0"
+      )}`;
+
+    const cliente =
+      cotizacion.entidad?.nombre ??
+      "Cliente";
+
+    const moneda =
+      cotizacion.moneda === "USD"
+        ? MonedaGestioo.USD
+        : MonedaGestioo.CLP;
+
+
+    /* =====================================================
+       6. CREAR OPORTUNIDAD
+    ===================================================== */
+
+    const oportunidad =
+      await tx.oportunidadVenta.create({
+        data: {
+          codigo,
+
+          titulo:
+            `${numeroCotizacion} - ${cliente}`,
+
+          etapa,
+
+          orden,
+
+          entidadId:
+            cotizacion.entidadId ??
+            null,
+
+          responsableId:
+            responsable.id_tecnico,
+
+          contactoNombre:
+            cotizacion
+              .personaResponsable ??
+            cotizacion
+              .entidad?.nombre ??
+            null,
+
+          contactoEmail:
+            cotizacion
+              .entidad?.correo ??
+            null,
+
+          contactoTelefono:
+            cotizacion
+              .entidad?.telefono ??
+            null,
+
+          montoEstimado:
+            cotizacion.total,
+
+          moneda,
+
+          prioridad:
+            PrioridadOportunidadVenta
+              .MEDIA,
+
+          probabilidadCierre:
+            50,
+
+          proximaAccion:
+            "Dar seguimiento a la cotización",
+
+          observaciones:
+            [
+              "Oportunidad creada automáticamente desde cotizaciones.",
+              `Cotización: ${numeroCotizacion}`,
+              `Cliente: ${cliente}`,
+              cotizacion.comentariosCotizacion
+                ? `Comentarios: ${cotizacion.comentariosCotizacion}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+        },
+      });
+
+
+    /* =====================================================
+       7. VINCULAR COTIZACIÓN
+    ===================================================== */
+
+    const cotizacionActualizada =
+      await tx.cotizacionGestioo.update({
+        where: {
+          id:
+            cotizacion.id,
+        },
+
+        data: {
+          oportunidadVentaId:
+            oportunidad.id,
+        },
+      });
+
+
+    /* =====================================================
+       8. REGISTRAR HISTORIAL DE ETAPA
+    ===================================================== */
+
+    await tx.historialEtapaOportunidadVenta.create({
+      data: {
+        oportunidadId:
+          oportunidad.id,
+
+        etapaAnterior:
+          null,
+
+        etapaNueva:
+          etapa,
+
+        actorId,
+
+        nota:
+          "Oportunidad creada automáticamente desde una cotización.",
+      },
     });
+
+
+    /* =====================================================
+       9. RESPONSE
+    ===================================================== */
+
+    return {
+      oportunidad,
+
+      cotizacion:
+        cotizacionActualizada,
+
+      yaVinculada:
+        false,
+    };
   });
 }
 
@@ -1402,10 +1755,20 @@ export async function sincronizarOportunidadPorCotizacionAprobada(
 
       await tx.historialEtapaOportunidadVenta.create({
         data: {
-          oportunidadId: oportunidad.id,
-          etapaAnterior: oportunidad.etapa,
-          etapaNueva: EtapaOportunidadVenta.COTIZACION_ENVIADA,
+          oportunidadId:
+            oportunidad.id,
+
+          etapaAnterior:
+            oportunidad.etapa,
+
+          etapaNueva:
+            EtapaOportunidadVenta
+              .COTIZACION_ENVIADA,
+
           actorId,
+
+          nota:
+            "Cambio automático: la cotización vinculada fue aprobada o facturada.",
         },
       });
     });
@@ -1415,4 +1778,73 @@ export async function sincronizarOportunidadPorCotizacionAprobada(
       err
     );
   }
+}
+
+export async function cambiarEstadoSeguimiento(
+  oportunidadId:
+    number,
+
+  seguimientoId:
+    number,
+
+  estado:
+    "PENDIENTE" |
+    "COMPLETADA" |
+    "CANCELADA",
+
+  notaEstado:
+    string |
+    null
+) {
+  return prisma.$transaction(
+    async (
+      tx
+    ) => {
+
+      await obtenerOportunidadActivaOrThrow(
+        tx,
+        oportunidadId
+      );
+
+
+      const seguimiento =
+        await tx.seguimientoOportunidadVenta.findFirst({
+          where: {
+            id:
+              seguimientoId,
+
+            oportunidadId,
+          },
+        });
+
+
+      if (
+        !seguimiento
+      ) {
+        throw new Error(
+          "Seguimiento no encontrado."
+        );
+      }
+
+
+      return tx.seguimientoOportunidadVenta.update({
+        where: {
+          id:
+            seguimientoId,
+        },
+
+        data: {
+          estado,
+
+          notaEstado,
+
+          completadoAt:
+            estado ===
+              "COMPLETADA"
+              ? new Date()
+              : null,
+        },
+      });
+    }
+  );
 }

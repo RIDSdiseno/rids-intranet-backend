@@ -1,6 +1,11 @@
-// src/routes/oportunidades-routes/oportunidades.routes.ts
-import { Router } from "express";
-import { onlyRole } from "../../middlewares/roles.js";
+import {
+  Router,
+} from "express";
+
+import {
+  onlyRole,
+} from "../../middlewares/roles.js";
+
 import {
   crearOportunidadController,
   listarOportunidadesController,
@@ -17,42 +22,166 @@ import {
   listarCotizacionesController,
   vincularCotizacionController,
   desvincularCotizacionController,
+  crearOportunidadDesdeCotizacionController,
+  cambiarEstadoSeguimientoController,
+  enviarInformeOportunidadController,
 } from "../../controllers/controllers-oportunidades/oportunidades.controller.js";
 
-// Roles internos habilitados para el funnel comercial en esta primera versión.
-// Deliberadamente NO se habilita CLIENTE ni TECNICO (ver auditoría previa).
-const ROLES_OPORTUNIDADES = ["ADMIN", "ADMINISTRACION", "VENTAS"] as const;
 
-const oportunidadesRouter = Router();
+/*
+ * Roles internos habilitados
+ * para el Funnel comercial.
+ */
+const ROLES_OPORTUNIDADES = [
+  "ADMIN",
+  "ADMINISTRACION",
+  "VENTAS",
+] as const;
 
-// Autorización centralizada para todo el módulo.
-oportunidadesRouter.use(onlyRole(...ROLES_OPORTUNIDADES));
 
-// --- Rutas específicas antes de las dinámicas con :id ---
-oportunidadesRouter.get("/funnel", obtenerFunnelController);
-oportunidadesRouter.get("/dashboard", obtenerDashboardController);
-oportunidadesRouter.get("/", listarOportunidadesController);
-oportunidadesRouter.post("/", crearOportunidadController);
+const oportunidadesRouter =
+  Router();
 
-// --- Seguimientos ---
-oportunidadesRouter.post("/:id/seguimientos", crearSeguimientoController);
-oportunidadesRouter.get("/:id/seguimientos", listarSeguimientosController);
 
-// --- Historial ---
-oportunidadesRouter.get("/:id/historial", obtenerHistorialController);
+/*
+ * Autorización centralizada
+ * para todo el módulo.
+ */
+oportunidadesRouter.use(
+  onlyRole(
+    ...ROLES_OPORTUNIDADES
+  )
+);
 
-// --- Cotizaciones vinculadas ---
-oportunidadesRouter.get("/:id/cotizaciones", listarCotizacionesController);
-oportunidadesRouter.post("/:id/cotizaciones/:cotizacionId", vincularCotizacionController);
-oportunidadesRouter.delete("/:id/cotizaciones/:cotizacionId", desvincularCotizacionController);
 
-// --- Etapa y orden ---
-oportunidadesRouter.patch("/:id/etapa", cambiarEtapaController);
-oportunidadesRouter.patch("/:id/orden", reordenarController);
+/* =========================================================
+   CREACIÓN DESDE COTIZACIÓN
+========================================================= */
 
-// --- CRUD por id ---
-oportunidadesRouter.get("/:id", obtenerOportunidadController);
-oportunidadesRouter.patch("/:id", editarOportunidadController);
-oportunidadesRouter.delete("/:id", eliminarOportunidadController);
+oportunidadesRouter.post(
+  "/desde-cotizacion/:cotizacionId",
+  crearOportunidadDesdeCotizacionController
+);
+
+
+/* =========================================================
+   RUTAS GENERALES / ESPECÍFICAS
+========================================================= */
+
+oportunidadesRouter.get(
+  "/funnel",
+  obtenerFunnelController
+);
+
+oportunidadesRouter.get(
+  "/dashboard",
+  obtenerDashboardController
+);
+
+oportunidadesRouter.get(
+  "/",
+  listarOportunidadesController
+);
+
+oportunidadesRouter.post(
+  "/",
+  crearOportunidadController
+);
+
+
+/* =========================================================
+   SEGUIMIENTOS
+========================================================= */
+
+oportunidadesRouter.post(
+  "/:id/seguimientos",
+  crearSeguimientoController
+);
+
+oportunidadesRouter.get(
+  "/:id/seguimientos",
+  listarSeguimientosController
+);
+
+oportunidadesRouter.patch(
+  "/:id/seguimientos/:seguimientoId/estado",
+  cambiarEstadoSeguimientoController
+);
+
+
+/* =========================================================
+   HISTORIAL
+========================================================= */
+
+oportunidadesRouter.get(
+  "/:id/historial",
+  obtenerHistorialController
+);
+
+
+/* =========================================================
+   COTIZACIONES VINCULADAS
+========================================================= */
+
+oportunidadesRouter.get(
+  "/:id/cotizaciones",
+  listarCotizacionesController
+);
+
+oportunidadesRouter.post(
+  "/:id/cotizaciones/:cotizacionId",
+  vincularCotizacionController
+);
+
+oportunidadesRouter.delete(
+  "/:id/cotizaciones/:cotizacionId",
+  desvincularCotizacionController
+);
+
+
+/* =========================================================
+   INFORME DE RESPALDO
+========================================================= */
+
+oportunidadesRouter.post(
+  "/:id/informe/enviar",
+  enviarInformeOportunidadController
+);
+
+
+/* =========================================================
+   ETAPA Y ORDEN
+========================================================= */
+
+oportunidadesRouter.patch(
+  "/:id/etapa",
+  cambiarEtapaController
+);
+
+oportunidadesRouter.patch(
+  "/:id/orden",
+  reordenarController
+);
+
+
+/* =========================================================
+   CRUD POR ID
+========================================================= */
+
+oportunidadesRouter.get(
+  "/:id",
+  obtenerOportunidadController
+);
+
+oportunidadesRouter.patch(
+  "/:id",
+  editarOportunidadController
+);
+
+oportunidadesRouter.delete(
+  "/:id",
+  eliminarOportunidadController
+);
+
 
 export default oportunidadesRouter;

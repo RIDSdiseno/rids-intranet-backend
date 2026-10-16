@@ -1,7 +1,11 @@
 // src/routes/baseapi-routes/cobranza/cobranza-receptores.routes.ts
 import { Router, } from "express";
 import { deleteContactoCobranza, deleteReceptorCobranza, getReceptorCobranza, getReceptorCobranzaPorRut, getReceptoresCobranza, patchContactoCobranza, patchReceptorCobranza, postContactoCobranza, postCopiarContactosFacturacion, postReceptorCobranza, } from "../../../controllers/baseapi/cobranza/cobranza-receptores.controller.js";
+import { auth, } from "../../../middlewares/auth.js";
+import { onlyRole, } from "../../../middlewares/roles.js";
 const router = Router();
+router.use(auth());
+router.use(onlyRole("ADMINISTRACION", "VENTAS"));
 /*
  * IMPORTANTE:
  * /rut/:rut debe ir ANTES de /:id.

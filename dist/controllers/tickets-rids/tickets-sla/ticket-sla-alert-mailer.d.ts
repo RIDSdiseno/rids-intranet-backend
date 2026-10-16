@@ -2,6 +2,7 @@ type TicketSlaAlertEmailParams = {
     to: string;
     tecnicoNombre?: string | null;
     ticketId: number;
+    cycleNumber: number;
     subject: string;
     priority: string;
     status: string;

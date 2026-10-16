@@ -17,7 +17,7 @@ import {
     cambiarEstadoFactura,
     vincularEquipoAItem,
 } from "../../controllers/controllers-cotizaciones/cotizaciones.controller.js";
-import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../../controllers/cotizaciones-enviadas.controller.js";
+import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../../controllers/controllers-cotizaciones/cotizaciones-enviadas.controller.js";
 
 const cotizacionesRouter = Router();
 

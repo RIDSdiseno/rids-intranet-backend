@@ -384,4 +384,84 @@ export async function consultarComprasRcvBaseApi(params) {
         incluirPendientes: params.incluirPendientes ?? true,
     });
 }
+// =====================================================
+// RCV VENTAS ANUAL DESDE CACHE
+// =====================================================
+export async function consultarVentasRcvAnualCache(params) {
+    const { empresa, ano, } = params;
+    const anoNormalizado = normalizarAno(ano);
+    const cacheTipo = getCacheTipo("ventas");
+    const mesesValidos = Array.from({
+        length: 12,
+    }, (_, index) => String(index +
+        1).padStart(2, "0"));
+    const caches = await prisma
+        .siiApiCache
+        .findMany({
+        where: {
+            empresaKey: empresa,
+            tipo: cacheTipo,
+            ano: anoNormalizado,
+            mes: {
+                in: mesesValidos,
+            },
+        },
+        orderBy: {
+            mes: "asc",
+        },
+    });
+    const documentos = [];
+    for (const cache of caches) {
+        /*
+         * El cache contiene la respuesta
+         * original de BaseAPI.
+         *
+         * La normalizamos igual que en
+         * consultarRcvBaseApi().
+         */
+        const dataNormalizada = normalizarRcvSinPendientes({
+            dataNormal: cache.data,
+            tipo: "ventas",
+        });
+        const documentosMes = getDatosRcv(dataNormalizada);
+        for (const documento of documentosMes) {
+            documentos.push({
+                ...documento,
+                periodoMes: Number(cache.mes),
+                periodoMesCodigo: String(cache.mes).padStart(2, "0"),
+                periodoAno: Number(cache.ano),
+                periodo: `${cache.ano}-${String(cache.mes).padStart(2, "0")}`,
+            });
+        }
+    }
+    const ultimaActualizacion = caches.length >
+        0
+        ? caches
+            .map((cache) => cache.updatedAt)
+            .sort((a, b) => b.getTime() -
+            a.getTime())[0] ??
+            null
+        : null;
+    const mesesDisponibles = caches.map((cache) => String(cache.mes).padStart(2, "0"));
+    return {
+        cached: true,
+        cacheUpdatedAt: ultimaActualizacion,
+        mesesDisponibles,
+        data: {
+            detalleVentas: documentos,
+            ventas: documentos,
+            documentos,
+            total: documentos.length,
+            data: {
+                datos: documentos,
+                totalRegistros: documentos.length,
+                metaRcv: {
+                    anual: true,
+                    ano: anoNormalizado,
+                    mesesDisponibles,
+                },
+            },
+        },
+    };
+}
 //# sourceMappingURL=baseapi-rcv.service.js.map

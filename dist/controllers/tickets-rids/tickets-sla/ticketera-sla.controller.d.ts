@@ -32,21 +32,21 @@ export declare function buildTicketSla(ticket: {
     };
     startsAt: null;
     waitingAssignment: boolean;
+    paused: boolean;
     firstResponse: {
         dueAt: null;
-        at: Date | null;
+        at: null;
         elapsedMinutes: null;
         status: "PENDING";
         remainingMinutes: null;
     };
     resolution: {
         dueAt: null;
-        at: Date | null;
+        at: null;
         elapsedMinutes: null;
         status: "PENDING";
         remainingMinutes: null;
     };
-    paused?: never;
 } | {
     targets: {
         firstResponseMinutes: number;

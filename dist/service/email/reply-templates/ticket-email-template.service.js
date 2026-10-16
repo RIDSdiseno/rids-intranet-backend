@@ -2,7 +2,7 @@
 import { prisma } from "../../../lib/prisma.js";
 import { DEFAULT_TICKET_EMAIL_TEMPLATES, } from "./ticket-email-template.defaults.js";
 // Servicio para gestionar templates de correo relacionados con tickets (creación, actualización, respuestas, etc.)
-class TicketEmailTemplateService {
+export class TicketEmailTemplateService {
     // Logo por defecto para la firma, si no se configura otro en DB o input del técnico
     defaultLogo = "https://res.cloudinary.com/dvqpmttci/image/upload/v1774008233/Logo_Firma_bcm1bs.gif";
     // Asegura que los templates por defecto existan en DB, para evitar errores si se intenta acceder a un template que no se ha creado aún.

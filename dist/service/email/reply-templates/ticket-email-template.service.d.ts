@@ -7,7 +7,7 @@ type TecnicoFirmaInput = {
     area?: string | null;
     firmaPath?: string | null;
 };
-declare class TicketEmailTemplateService {
+export declare class TicketEmailTemplateService {
     private defaultLogo;
     ensureDefaults(): Promise<void>;
     getTemplate(key: TemplateKey): Promise<import("./ticket-email-template.defaults.js").TicketEmailTemplateDefault | {

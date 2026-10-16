@@ -45,21 +45,23 @@ function redondearDinero(value) {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 /**
- * Normaliza porcentajes de ganancia.
+ * Normaliza el margen sobre precio de venta.
  *
- * No se limita a 100 porque un producto
- * puede tener una ganancia superior al 100%.
+ * Debe estar entre 0% y 99.99%.
  */
 function normalizarPorcentajeGanancia(value) {
     const parsed = parseDecimalInput(value, null);
     if (parsed === null) {
         return null;
     }
-    return Math.max(0, redondearDinero(parsed));
+    return Math.min(99.99, Math.max(0, redondearDinero(parsed)));
 }
 /**
- * Calcula el precio final conservando
- * hasta dos decimales.
+ * Calcula el precio de venta utilizando
+ * margen sobre precio de venta.
+ *
+ * Fórmula:
+ * Precio Venta = Costo / (1 - Margen / 100)
  */
 function calcularPrecioTotal(precioCosto, porcGanancia) {
     if (precioCosto === null) {
@@ -68,9 +70,17 @@ function calcularPrecioTotal(precioCosto, porcGanancia) {
     if (porcGanancia === null) {
         return redondearDinero(precioCosto);
     }
-    return redondearDinero(precioCosto *
-        (1 +
-            porcGanancia / 100));
+    if (precioCosto <= 0) {
+        return 0;
+    }
+    if (porcGanancia <= 0) {
+        return redondearDinero(precioCosto);
+    }
+    const margenSeguro = Math.min(porcGanancia, 99.99);
+    const precioVenta = precioCosto /
+        (1 -
+            margenSeguro / 100);
+    return redondearDinero(precioVenta);
 }
 /**
  * Mantiene el stock como entero no negativo.

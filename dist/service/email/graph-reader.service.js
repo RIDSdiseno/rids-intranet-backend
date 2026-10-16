@@ -11,6 +11,7 @@ import cloudinary from "../../config/cloudinary.js";
 import { Readable } from "stream";
 import { ticketEmailTemplateService } from "../email/reply-templates/ticket-email-template.service.js";
 import { sincronizarRecordatorioTicket, sincronizarRecordatorioTicketParaTodos } from "../recordatorios.service.js";
+import { archiveCurrentSlaCycle, } from "./ticket-sla-cycle.service.js";
 /* ======================================================
    Configuración adjuntos Graph
 ====================================================== */
@@ -1043,7 +1044,11 @@ class GraphReaderService {
        Agregar mensaje a ticket
     ====================================================== */
     async addMessageToTicket(ticketId, data) {
-        // Validar que el ticket aún existe y no está cerrado antes de agregar el mensaje
+        /*
+         * =====================================================
+         * DATOS BASE DEL TICKET
+         * =====================================================
+         */
         const ticketBase = await prisma.ticket.findUnique({
             where: {
                 id: ticketId,
@@ -1053,18 +1058,28 @@ class GraphReaderService {
                 subject: true,
                 empresaId: true,
                 requesterId: true,
-                // Necesario para saber a qué técnico enviar el recordatorio.
                 assigneeId: true,
-                // Necesario para saber si se debe cancelar/reemplazar un recordatorio previo.
                 status: true,
             },
         });
-        // Si el ticket ya tiene requester asignado, lo respetamos. Sino, intentamos asignar por email.
-        let requester = await prisma.solicitante.findFirst({
+        if (!ticketBase) {
+            console.warn(`⚠️ Ticket #${ticketId} no existe`);
+            return;
+        }
+        /*
+         * Si ya tiene requester lo respetamos.
+         * Si no, intentamos resolverlo mediante
+         * el email entrante.
+         */
+        const requester = await prisma.solicitante.findFirst({
             where: {
                 email: data.fromEmail,
                 isActive: true,
-                ...(ticketBase?.empresaId && { empresaId: ticketBase.empresaId }),
+                ...(ticketBase
+                    .empresaId && {
+                    empresaId: ticketBase
+                        .empresaId,
+                }),
             },
             select: {
                 id_solicitante: true,
@@ -1072,21 +1087,116 @@ class GraphReaderService {
                 email: true,
             },
         });
-        // 1) DB rápido (sin adjuntos)
+        /*
+         * =====================================================
+         * OPERACIÓN DB ATÓMICA
+         * =====================================================
+         */
         const msg = await prisma.$transaction(async (tx) => {
-            // DEDUPE primero para que no duplique nada
-            const existsProcessed = await tx.processedInboundEmail.findUnique({
-                where: { sourceMessageId: data.messageId },
-                select: { id: true },
+            /*
+             * =============================================
+             * DEDUPE
+             * =============================================
+             */
+            const existsProcessed = await tx
+                .processedInboundEmail
+                .findUnique({
+                where: {
+                    sourceMessageId: data.messageId,
+                },
+                select: {
+                    id: true,
+                },
             });
-            if (existsProcessed)
+            if (existsProcessed) {
                 return null;
-            const exists = await tx.ticketMessage.findUnique({
-                where: { sourceMessageId: data.messageId },
-                select: { id: true },
+            }
+            const exists = await tx
+                .ticketMessage
+                .findUnique({
+                where: {
+                    sourceMessageId: data.messageId,
+                },
+                select: {
+                    id: true,
+                },
             });
-            if (exists)
+            if (exists) {
                 return null;
+            }
+            /*
+             * =============================================
+             * OBTENER ESTADO SLA ACTUAL
+             * =============================================
+             */
+            const ticketActual = await tx.ticket.findUnique({
+                where: {
+                    id: ticketId,
+                },
+                select: {
+                    id: true,
+                    status: true,
+                    priority: true,
+                    assigneeId: true,
+                    createdAt: true,
+                    firstResponseAt: true,
+                    resolvedAt: true,
+                    closedAt: true,
+                    lastReopenedAt: true,
+                    slaCycleNumber: true,
+                    events: {
+                        where: {
+                            type: {
+                                in: [
+                                    TicketEventType.ASSIGNED,
+                                    TicketEventType.STATUS_CHANGED,
+                                    TicketEventType.REOPENED,
+                                ],
+                            },
+                        },
+                        select: {
+                            type: true,
+                            oldValue: true,
+                            newValue: true,
+                            createdAt: true,
+                        },
+                        orderBy: {
+                            createdAt: "asc",
+                        },
+                    },
+                },
+            });
+            if (!ticketActual) {
+                throw new Error(`Ticket #${ticketId} no encontrado`);
+            }
+            const now = new Date();
+            /*
+             * CLOSED / RESOLVED:
+             * verdadero nuevo ciclo.
+             */
+            const estabaFinalizado = ticketActual.status ===
+                TicketStatus.CLOSED ||
+                ticketActual.status ===
+                    TicketStatus.RESOLVED;
+            /*
+             * PENDING:
+             * simplemente reanudar.
+             */
+            const estabaPendiente = ticketActual.status ===
+                TicketStatus.PENDING;
+            /*
+             * =============================================
+             * ARCHIVAR SLA ANTERIOR
+             * =============================================
+             */
+            if (estabaFinalizado) {
+                await archiveCurrentSlaCycle(tx, ticketActual);
+            }
+            /*
+             * =============================================
+             * CREAR MENSAJE INBOUND
+             * =============================================
+             */
             const created = await tx.ticketMessage.create({
                 data: {
                     ticketId,
@@ -1095,124 +1205,233 @@ class GraphReaderService {
                     bodyHtml: data.bodyHtml,
                     isInternal: false,
                     fromEmail: data.fromEmail,
-                    toEmail: data.to.length ? data.to.join(",") : this.supportEmail,
-                    cc: data.cc.length ? data.cc.join(",") : null,
+                    toEmail: data.to.length
+                        ? data.to.join(",")
+                        : this
+                            .supportEmail,
+                    cc: data.cc.length
+                        ? data.cc.join(",")
+                        : null,
                     sourceMessageId: data.messageId,
-                    sourceInReplyTo: data.inReplyTo || null,
-                    sourceReferences: data.references || null,
+                    sourceInReplyTo: data.inReplyTo ||
+                        null,
+                    sourceReferences: data.references ||
+                        null,
                 },
             });
-            await tx.processedInboundEmail.create({
+            /*
+             * =============================================
+             * REGISTRAR EMAIL PROCESADO
+             * =============================================
+             */
+            await tx
+                .processedInboundEmail
+                .create({
                 data: {
                     sourceMessageId: data.messageId,
                     graphMessageId: data.graphMessageId,
-                    conversationId: data.conversationId || null,
+                    conversationId: data
+                        .conversationId ||
+                        null,
                     fromEmail: data.fromEmail,
                     subject: data.subject,
                     ticketId,
                 },
             });
-            // Actualizar ticket (última actividad, posible requester, etc.)
-            await tx.ticket.update({
-                where: { id: ticketId },
-                data: {
-                    lastActivityAt: new Date(),
-                    fromEmail: data.fromEmail,
-                    ...(requester?.id_solicitante && {
-                        requesterId: requester.id_solicitante,
-                    }),
-                },
-            });
-            // Verificar estado actual del ticket dentro de la transacción para evitar condiciones de carrera
-            const ticketActual = await tx.ticket.findUnique({
-                where: { id: ticketId },
-                select: { status: true }
-            });
-            // Si el ticket estaba cerrado, lo reabrimos automáticamente al recibir una respuesta del cliente
-            const debeReabrirTicket = ticketActual?.status === TicketStatus.CLOSED ||
-                ticketActual?.status === TicketStatus.PENDING;
-            if (debeReabrirTicket) {
-                console.log(`🔄 Ticket #${ticketId} cambia de ${ticketActual.status} a OPEN por respuesta del solicitante`);
-                const updateData = {
-                    status: TicketStatus.OPEN,
-                    resolvedAt: null,
-                    closedAt: null,
+            /*
+             * =============================================
+             * ACTUALIZAR TICKET
+             * =============================================
+             */
+            const updateData = {
+                lastActivityAt: now,
+                fromEmail: data.fromEmail,
+                ...(requester
+                    ?.id_solicitante
+                    ? {
+                        requesterId: requester
+                            .id_solicitante,
+                    }
+                    : {}),
+            };
+            /*
+             * =================================================
+             * NUEVO CICLO SLA
+             *
+             * CLOSED/RESOLVED -> OPEN
+             * =================================================
+             */
+            if (estabaFinalizado) {
+                updateData.status =
+                    TicketStatus.OPEN;
+                updateData.lastReopenedAt =
+                    now;
+                updateData.slaCycleNumber = {
+                    increment: 1,
                 };
-                if (ticketActual.status === TicketStatus.CLOSED) {
-                    updateData.lastReopenedAt = new Date();
-                }
-                await tx.ticket.update({
-                    where: { id: ticketId },
-                    data: updateData,
-                });
+                /*
+                 * Se reinician exclusivamente
+                 * las fechas del ciclo ACTUAL.
+                 *
+                 * El ciclo anterior ya quedó
+                 * guardado en TicketSlaCycle.
+                 */
+                updateData.firstResponseAt =
+                    null;
+                updateData.resolvedAt =
+                    null;
+                updateData.closedAt =
+                    null;
+            }
+            /*
+             * =================================================
+             * REANUDAR SLA
+             *
+             * PENDING -> OPEN
+             * =================================================
+             */
+            if (estabaPendiente) {
+                updateData.status =
+                    TicketStatus.OPEN;
+                /*
+                 * NO:
+                 *
+                 * lastReopenedAt = now
+                 * slaCycleNumber++
+                 * firstResponseAt = null
+                 *
+                 * Sigue siendo el MISMO ciclo.
+                 */
+            }
+            await tx.ticket.update({
+                where: {
+                    id: ticketId,
+                },
+                data: updateData,
+            });
+            /*
+             * =============================================
+             * EVENTOS DE ESTADO
+             * =============================================
+             */
+            if (estabaFinalizado ||
+                estabaPendiente) {
                 await tx.ticketEvent.create({
                     data: {
                         ticketId,
-                        type: TicketEventType.STATUS_CHANGED,
+                        type: TicketEventType
+                            .STATUS_CHANGED,
                         oldValue: ticketActual.status,
                         newValue: TicketStatus.OPEN,
-                        actorType: TicketActorType.REQUESTER,
+                        actorType: TicketActorType
+                            .REQUESTER,
                         actorId: null,
                     },
                 });
             }
+            /*
+             * REOPENED solo significa:
+             *
+             * CLOSED/RESOLVED -> OPEN.
+             *
+             * PENDING -> OPEN NO es reapertura.
+             */
+            if (estabaFinalizado) {
+                await tx.ticketEvent.create({
+                    data: {
+                        ticketId,
+                        type: TicketEventType
+                            .REOPENED,
+                        oldValue: ticketActual.status,
+                        newValue: TicketStatus.OPEN,
+                        actorType: TicketActorType
+                            .REQUESTER,
+                        actorId: null,
+                    },
+                });
+            }
+            /*
+             * =============================================
+             * EVENTO MENSAJE
+             * =============================================
+             */
             await tx.ticketEvent.create({
                 data: {
                     ticketId,
-                    type: TicketEventType.MESSAGE_SENT,
-                    actorType: TicketActorType.REQUESTER,
+                    type: TicketEventType
+                        .MESSAGE_SENT,
+                    actorType: TicketActorType
+                        .REQUESTER,
+                    actorId: null,
                 },
             });
             return created;
         });
-        // si ya estaba procesado, no seguimos
-        if (!msg)
-            return;
         /*
- * Cuando el solicitante responde un ticket existente,
- * creamos/actualizamos un recordatorio automático para el técnico asignado.
- *
- * Se programa para "ahora" para que aparezca inmediatamente
- * en el badge de la campana.
- */
-        const recordatorioAt = new Date(Date.now() - 1000);
+         * Email ya procesado.
+         */
+        if (!msg) {
+            return;
+        }
+        /*
+         * =====================================================
+         * RECORDATORIO PARA TODOS LOS TÉCNICOS
+         * =====================================================
+         */
+        const recordatorioAt = new Date(Date.now() -
+            1000);
         try {
             await sincronizarRecordatorioTicketParaTodos({
                 ticketId,
                 titulo: `Solicitante respondió ticket #${ticketId}`,
-                descripcion: data.bodyText?.slice(0, 180)?.trim() ||
-                    `El solicitante ${data.fromEmail} respondió el ticket: ${ticketBase?.subject ?? ""}`,
+                descripcion: data.bodyText
+                    ?.slice(0, 180)
+                    ?.trim() ||
+                    `El solicitante ${data.fromEmail} respondió el ticket: ${ticketBase.subject ?? ""}`,
                 recordatorioAt,
             });
         }
         catch (error) {
             console.error(`⚠️ Error creando recordatorios globales por respuesta del solicitante para ticket #${ticketId}:`, error);
         }
-        // 2) Adjuntos FUERA de la transacción (lento)
+        /*
+         * =====================================================
+         * ADJUNTOS
+         * =====================================================
+         */
         try {
             await this.saveAttachments(ticketId, msg.id, data);
             if (data.bodyHtml) {
                 const normalizedHtml = await this.persistRemoteImages(ticketId, msg.id, data.bodyHtml);
-                if (normalizedHtml !== data.bodyHtml) {
-                    await prisma.ticketMessage.update({
-                        where: { id: msg.id },
-                        data: { bodyHtml: normalizedHtml },
+                if (normalizedHtml !==
+                    data.bodyHtml) {
+                    await prisma
+                        .ticketMessage
+                        .update({
+                        where: {
+                            id: msg.id,
+                        },
+                        data: {
+                            bodyHtml: normalizedHtml,
+                        },
                     });
                 }
             }
         }
-        catch (e) {
-            console.error("⚠️ Error guardando adjuntos:", e);
-            // opcional: registrar evento/flag para reintentar luego
+        catch (error) {
+            console.error("⚠️ Error guardando adjuntos:", error);
         }
-        // 3) Emitir eventos
+        /*
+         * =====================================================
+         * SOCKETS
+         * =====================================================
+         */
         bus.emit("ticket.message", {
             ticketId,
             direction: "INBOUND",
             from: data.fromEmail,
             subject: data.subject,
         });
-        // Si el ticket estaba cerrado, el evento de re-apertura ya se emitió en la transacción. No es necesario emitirlo de nuevo aquí.
         bus.emit("ticket.customer_replied", {
             ticketId,
             subject: data.subject,
@@ -1221,7 +1440,6 @@ class GraphReaderService {
             direction: "INBOUND",
             lastActivityAt: new Date(),
         });
-        // Emitir evento general de actualización para que se refresque el ticket en el frontend, etc.
         bus.emit("ticket.updated", {
             ticketId,
             source: "customer_reply",

@@ -63,6 +63,7 @@ async function crearRecordatorioInternoSla(params) {
     const title = getAlertTitle(params.alertType);
     const descripcion = [
         `Ticket #${params.ticketId}: ${params.subject}`,
+        `Ciclo SLA: #${params.cycleNumber}`,
         `Prioridad: ${params.priority}`,
         `Estado: ${params.status}`,
         `Alerta: ${title}`,
@@ -85,6 +86,7 @@ async function crearRecordatorioInternoSla(params) {
      */
     bus.emit("ticket.sla_alert", {
         ticketId: params.ticketId,
+        cycleNumber: params.cycleNumber,
         alertType: params.alertType,
     });
 }
@@ -100,6 +102,7 @@ export async function sendTicketSlaAlertEmail(params) {
 
             <div style="margin: 16px 0; padding: 16px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb;">
                 <p style="margin: 0 0 8px;"><strong>Ticket:</strong> #${params.ticketId}</p>
+                <p style="margin: 0 0 8px;"> <strong>Ciclo SLA:</strong>  #${params.cycleNumber}</p>
                 <p style="margin: 0 0 8px;"><strong>Asunto:</strong> ${escapeHtml(params.subject)}</p>
                 <p style="margin: 0 0 8px;"><strong>Prioridad:</strong> ${escapeHtml(params.priority)}</p>
                 <p style="margin: 0 0 8px;"><strong>Estado:</strong> ${escapeHtml(params.status)}</p>

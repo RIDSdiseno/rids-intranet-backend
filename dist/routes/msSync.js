@@ -1,24 +1,38 @@
 // src/routes/msSync.ts
-import { Router } from "express";
+import { Router, } from "express";
 import pLimit from "p-limit";
-import { listUsersWithLicenses } from "../ms/graph.js";
+import { listUsersWithLicenses, } from "../ms/graph.js";
 import { upsertSolicitanteFromMicrosoft, deactivateMissingMicrosoftSolicitantes, } from "../service/solicitanteSyncMs.js";
-import { prisma } from "../lib/prisma.js";
+import { prisma, } from "../lib/prisma.js";
 export const msSyncRouter = Router();
-/* =================== Utils =================== */
-/** MsUser[] -> MsUserInput[] */
+/* =========================================================
+   UTILS
+========================================================= */
+/**
+ * MsUser[] -> MsUserInput[]
+ */
 function normalizeForUpsert(target) {
     return target.map((u) => {
-        const nameStr = (u.name ?? "").trim() || "Usuario";
-        const emailStr = u.email ?? null;
+        const nameStr = (u.name ??
+            "").trim() ||
+            "Usuario";
+        const emailStr = u.email ??
+            null;
         const suspended = !!u.suspended;
-        const licenses = (u.licenses ?? []).map(l => ({
+        const licenses = (u.licenses ??
+            []).map((l) => ({
             skuId: l.skuId,
             skuPartNumber: l.skuPartNumber,
-            ...(l.displayName !== undefined ? { displayName: l.displayName } : {}),
+            ...(l.displayName !==
+                undefined
+                ? {
+                    displayName: l.displayName,
+                }
+                : {}),
         }));
         return {
-            id: (u.id ?? "").trim(),
+            id: (u.id ??
+                "").trim(),
             email: emailStr,
             name: nameStr,
             suspended,
@@ -27,65 +41,147 @@ function normalizeForUpsert(target) {
     });
 }
 function isMicrosoftUserActivo(u) {
-    return !(u.suspended ?? false);
+    return !(u.suspended ??
+        false);
 }
-/** Pre-crea catálogo de SKUs */
+/**
+ * Obtiene todos los dominios configurados
+ * para una empresa.
+ *
+ * Fuente:
+ * Empresa.dominios String[]
+ */
+async function getEmpresaMicrosoftDomains(empresaId) {
+    const empresa = await prisma.empresa.findUnique({
+        where: {
+            id_empresa: empresaId,
+        },
+        select: {
+            id_empresa: true,
+            nombre: true,
+            dominios: true,
+            isActive: true,
+        },
+    });
+    if (!empresa) {
+        throw new Error("Empresa no encontrada");
+    }
+    if (!empresa.isActive) {
+        throw new Error("La empresa está inactiva");
+    }
+    const domains = Array.from(new Set((empresa.dominios ??
+        [])
+        .map((domain) => domain
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, ""))
+        .filter(Boolean)));
+    if (domains.length ===
+        0) {
+        throw new Error(`La empresa ${empresa.nombre} no tiene dominios configurados`);
+    }
+    return domains;
+}
+/**
+ * Pre-crea catálogo de SKUs
+ */
 async function precreateSkus(msUsers) {
     const uniq = new Map();
     for (const u of msUsers) {
-        for (const l of (u.licenses ?? [])) {
-            if (!uniq.has(l.skuId))
+        for (const l of (u.licenses ??
+            [])) {
+            if (!uniq.has(l.skuId)) {
                 uniq.set(l.skuId, l);
+            }
         }
     }
-    const data = [...uniq.values()].map(x => ({
+    const data = [
+        ...uniq.values(),
+    ].map((x) => ({
         skuId: x.skuId,
         skuPartNumber: x.skuPartNumber,
-        displayName: x.displayName ?? x.skuPartNumber,
+        displayName: x.displayName ??
+            x.skuPartNumber,
     }));
-    if (data.length === 0)
-        return { createdOrSkipped: 0 };
-    await prisma.msSku.createMany({ data, skipDuplicates: true });
-    return { createdOrSkipped: data.length };
+    if (data.length ===
+        0) {
+        return {
+            createdOrSkipped: 0,
+        };
+    }
+    await prisma.msSku.createMany({
+        data,
+        skipDuplicates: true,
+    });
+    return {
+        createdOrSkipped: data.length,
+    };
 }
-/** Divide un array en chunks */
+/**
+ * Divide un array en chunks
+ */
 function chunk(arr, size) {
-    if (size <= 0)
-        return [arr];
+    if (size <=
+        0) {
+        return [
+            arr,
+        ];
+    }
     const out = [];
-    for (let i = 0; i < arr.length; i += size)
-        out.push(arr.slice(i, i + size));
+    for (let i = 0; i <
+        arr.length; i +=
+        size) {
+        out.push(arr.slice(i, i +
+            size));
+    }
     return out;
 }
-/** Upsert paralelo (limitado) */
+/**
+ * Upsert paralelo limitado.
+ */
 async function syncMsUsersBatch(msUsers, empresaId, opts) {
-    let created = 0, updated = 0, skipped = 0;
-    // 1) Catálogo de SKUs
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    /* ---------------------------------------------------------
+       1. Catálogo SKUs
+    --------------------------------------------------------- */
     const tSku0 = Date.now();
     const skuInfo = await precreateSkus(msUsers);
-    const skuMs = Date.now() - tSku0;
-    // 2) Upsert paralelo
-    const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 2, 4));
+    const skuMs = Date.now() -
+        tSku0;
+    /* ---------------------------------------------------------
+       2. Upsert paralelo
+    --------------------------------------------------------- */
+    const concurrency = Math.max(1, Math.min(opts?.concurrency ??
+        2, 4));
     const limit = pLimit(concurrency);
-    const chunkSize = Math.max(1, opts?.chunkSize ?? 25);
+    const chunkSize = Math.max(1, opts?.chunkSize ??
+        25);
     const chunks = chunk(msUsers, chunkSize);
     const tDb0 = Date.now();
     for (const part of chunks) {
-        if (!part || part.length === 0)
+        if (!part ||
+            part.length ===
+                0) {
             continue;
-        await Promise.all(part.map(u => limit(async () => {
+        }
+        await Promise.all(part.map((u) => limit(async () => {
             if (!u.id) {
                 skipped++;
                 return;
             }
-            const { created: wasCreated } = await upsertSolicitanteFromMicrosoft(u, empresaId);
-            if (wasCreated)
+            const { created: wasCreated, } = await upsertSolicitanteFromMicrosoft(u, empresaId);
+            if (wasCreated) {
                 created++;
-            else
+            }
+            else {
                 updated++;
+            }
         })));
     }
-    const dbMs = Date.now() - tDb0;
+    const dbMs = Date.now() -
+        tDb0;
     return {
         total: msUsers.length,
         created,
@@ -100,169 +196,434 @@ async function syncMsUsersBatch(msUsers, empresaId, opts) {
         },
     };
 }
-/** Selector centralizado (Graph) */
-async function selectMsUsers(domain, email) {
+/* =========================================================
+   SELECTOR CENTRALIZADO MICROSOFT GRAPH
+========================================================= */
+/**
+ * Consulta Microsoft para todos los dominios configurados
+ * de una empresa.
+ *
+ * Después:
+ * - une los resultados
+ * - deduplica por Microsoft user id
+ * - usa email como fallback
+ * - opcionalmente filtra por email
+ */
+async function selectMsUsers(domains, email) {
     const t0 = Date.now();
-    const all = await listUsersWithLicenses({ filterDomain: domain });
-    const graphMs = Date.now() - t0;
-    const target = email
-        ? all.filter(u => (u.email || "").toLowerCase() === email.trim().toLowerCase())
+    const cleanDomains = Array.from(new Set(domains
+        .map((domain) => domain
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, ""))
+        .filter(Boolean)));
+    if (cleanDomains.length ===
+        0) {
+        return {
+            target: [],
+            allCount: 0,
+            domains: [],
+            timings: {
+                graphMs: Date.now() -
+                    t0,
+            },
+        };
+    }
+    /*
+     * Se consultan todos los dominios.
+     */
+    const resultados = await Promise.all(cleanDomains.map((domain) => listUsersWithLicenses({
+        filterDomain: domain,
+    })));
+    /*
+     * Un mismo usuario podría aparecer más
+     * de una vez si tiene aliases/dominos relacionados.
+     *
+     * Microsoft ID es la clave primaria lógica.
+     * Email es fallback.
+     */
+    const usuariosUnicos = new Map();
+    for (const user of resultados.flat()) {
+        const microsoftId = user.id
+            ?.trim()
+            .toLowerCase();
+        const emailUsuario = user.email
+            ?.trim()
+            .toLowerCase();
+        const key = microsoftId ||
+            emailUsuario;
+        if (!key) {
+            continue;
+        }
+        usuariosUnicos.set(key, user);
+    }
+    const all = Array.from(usuariosUnicos.values());
+    const cleanEmail = email
+        ?.trim()
+        .toLowerCase();
+    const target = cleanEmail
+        ? all.filter((user) => (user.email ||
+            "")
+            .trim()
+            .toLowerCase() ===
+            cleanEmail)
         : all;
-    return { target, allCount: all.length, timings: { graphMs } };
+    const graphMs = Date.now() -
+        t0;
+    return {
+        target,
+        allCount: all.length,
+        domains: cleanDomains,
+        timings: {
+            graphMs,
+        },
+    };
 }
-/* =================== Debug =================== */
+/* =========================================================
+   DEBUG
+========================================================= */
+/**
+ * GET /api/ms/debug/users?empresaId=123&limit=5
+ *
+ * Obtiene usuarios Microsoft utilizando TODOS
+ * los dominios configurados en Empresa.dominios.
+ */
 msSyncRouter.get("/ms/debug/users", async (req, res) => {
     try {
-        const domainRaw = req.query.domain?.trim();
-        if (!domainRaw) {
-            res.status(400).json({ ok: false, error: "domain es obligatorio" });
+        const empresaId = Number(req.query
+            .empresaId);
+        const limit = Number(req.query.limit ??
+            0);
+        if (!empresaId ||
+            isNaN(empresaId)) {
+            res
+                .status(400)
+                .json({
+                ok: false,
+                error: "empresaId es obligatorio",
+            });
             return;
         }
-        const domain = domainRaw.toLowerCase();
-        const limit = Number(req.query.limit ?? 0);
-        const sel = await selectMsUsers(domain, undefined);
+        const domains = await getEmpresaMicrosoftDomains(empresaId);
+        const sel = await selectMsUsers(domains);
         res.json({
             ok: true,
+            empresaId,
+            domains: sel.domains,
             timings: sel.timings,
             total: sel.allCount,
-            sample: limit > 0 ? sel.target.slice(0, limit) : sel.target.slice(0, 5),
+            sample: limit >
+                0
+                ? sel.target.slice(0, limit)
+                : sel.target.slice(0, 5),
         });
     }
     catch (e) {
         console.error("[GET /ms/debug/users] ERROR:", e);
-        res.status(500).json({ ok: false, error: e?.message || "internal" });
+        res
+            .status(500)
+            .json({
+            ok: false,
+            error: e?.message ||
+                "internal",
+        });
     }
 });
-/* =================== Rutas de sync =================== */
+/* =========================================================
+   POST — SINCRONIZACIÓN COMPLETA
+========================================================= */
 /**
  * POST /api/sync/microsoft/users
- * body: { empresaId, domain, concurrency?, chunkSize? }
+ *
+ * body:
+ * {
+ *   empresaId,
+ *   concurrency?,
+ *   chunkSize?
+ * }
+ *
+ * Los dominios se obtienen directamente
+ * desde Empresa.dominios.
  */
 msSyncRouter.post("/sync/microsoft/users", async (req, res) => {
     try {
-        const { empresaId, domain, concurrency, chunkSize } = req.body;
-        if (!empresaId || isNaN(Number(empresaId))) {
-            res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
-            return;
-        }
-        if (!domain || !domain.trim()) {
-            res.status(400).json({
+        const { empresaId, concurrency, chunkSize, } = req.body;
+        if (!empresaId ||
+            isNaN(Number(empresaId))) {
+            res
+                .status(400)
+                .json({
                 ok: false,
-                error: "domain es obligatorio para sincronizar una empresa",
+                error: "empresaId requerido (number)",
             });
             return;
         }
-        const cleanDomain = domain.trim().toLowerCase();
-        const sel = await selectMsUsers(cleanDomain, undefined);
+        const empresaIdNumber = Number(empresaId);
+        /*
+         * 1. Leer TODOS los dominios configurados.
+         */
+        const domains = await getEmpresaMicrosoftDomains(empresaIdNumber);
+        /*
+         * 2. Consultar Graph por todos los dominios,
+         *    unir y deduplicar usuarios.
+         */
+        const sel = await selectMsUsers(domains);
         const normalized = normalizeForUpsert(sel.target);
+        /*
+         * Seguridad:
+         *
+         * Si Microsoft devuelve 0 usuarios para todos
+         * los dominios, NO desactivamos usuarios locales.
+         */
         if (!normalized.length) {
-            res.status(502).json({
+            res
+                .status(502)
+                .json({
                 ok: false,
-                error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+                error: "Microsoft devolvió 0 usuarios para todos los dominios configurados. Se cancela la desactivación por seguridad.",
+                empresaId: empresaIdNumber,
+                domains,
             });
             return;
         }
-        const r = await syncMsUsersBatch(normalized, Number(empresaId), {
-            ...(typeof concurrency === "number" ? { concurrency } : {}),
-            ...(typeof chunkSize === "number" ? { chunkSize } : {}),
+        /*
+         * 3. Upsert.
+         */
+        const r = await syncMsUsersBatch(normalized, empresaIdNumber, {
+            ...(typeof concurrency ===
+                "number"
+                ? {
+                    concurrency,
+                }
+                : {}),
+            ...(typeof chunkSize ===
+                "number"
+                ? {
+                    chunkSize,
+                }
+                : {}),
         });
+        /*
+         * 4. IDs Microsoft activos obtenidos
+         *    desde TODOS los dominios.
+         */
         const microsoftIdsActivos = normalized
             .filter(isMicrosoftUserActivo)
-            .map((u) => u.id?.trim())
+            .map((u) => u.id
+            ?.trim())
             .filter((id) => Boolean(id));
-        const deactivated = await deactivateMissingMicrosoftSolicitantes(Number(empresaId), microsoftIdsActivos);
+        /*
+         * IMPORTANTE:
+         *
+         * La desactivación ocurre UNA SOLA VEZ,
+         * después de haber unido todos los dominios.
+         */
+        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaIdNumber, microsoftIdsActivos);
         res.json({
-            ok: true, domain: cleanDomain, empresaId, ...r, deactivated: deactivated.count,
-            deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+            ok: true,
+            empresaId: empresaIdNumber,
+            domains: sel.domains,
+            ...r,
+            deactivated: deactivated.count,
+            deactivatedUsers: deactivated.users,
+            timings: {
+                ...sel.timings,
+                ...r.timings,
+            },
         });
     }
     catch (e) {
         console.error("[POST /sync/microsoft/users] ERROR:", e);
-        res.status(500).json({ ok: false, error: e?.message || "internal" });
+        res
+            .status(500)
+            .json({
+            ok: false,
+            error: e?.message ||
+                "internal",
+        });
     }
 });
+/* =========================================================
+   GET — SINCRONIZACIÓN COMPLETA
+========================================================= */
 /**
- * GET /api/sync/microsoft/users?empresaId=123&domain=example.cl
+ * GET /api/sync/microsoft/users?empresaId=123
+ *
+ * Mantiene compatibilidad con el endpoint GET
+ * pero ya no recibe domain.
  */
 msSyncRouter.get("/sync/microsoft/users", async (req, res) => {
     try {
-        const empresaId = Number(req.query.empresaId);
-        const domainRaw = req.query.domain?.trim();
-        if (!empresaId || isNaN(empresaId)) {
-            res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
-            return;
-        }
-        if (!domainRaw) {
-            res.status(400).json({ ok: false, error: "domain es obligatorio" });
-            return;
-        }
-        const domain = domainRaw.toLowerCase();
-        const sel = await selectMsUsers(domain, undefined);
-        const normalized = normalizeForUpsert(sel.target);
-        if (!normalized.length) {
-            res.status(502).json({
+        const empresaId = Number(req.query
+            .empresaId);
+        if (!empresaId ||
+            isNaN(empresaId)) {
+            res
+                .status(400)
+                .json({
                 ok: false,
-                error: "Microsoft devolvió 0 usuarios. Se cancela la desactivación por seguridad.",
+                error: "empresaId requerido (number)",
             });
             return;
         }
+        /*
+         * 1. Obtener dominios desde Empresa.
+         */
+        const domains = await getEmpresaMicrosoftDomains(empresaId);
+        /*
+         * 2. Consultar todos los dominios.
+         */
+        const sel = await selectMsUsers(domains);
+        const normalized = normalizeForUpsert(sel.target);
+        if (!normalized.length) {
+            res
+                .status(502)
+                .json({
+                ok: false,
+                error: "Microsoft devolvió 0 usuarios para todos los dominios configurados. Se cancela la desactivación por seguridad.",
+                empresaId,
+                domains,
+            });
+            return;
+        }
+        /*
+         * 3. Upsert.
+         */
         const r = await syncMsUsersBatch(normalized, empresaId);
-        const microsoftIdsVigentes = normalized
-            .map((u) => u.id?.trim())
-            .filter(Boolean);
-        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsVigentes);
+        /*
+         * Para sincronización general usamos
+         * solamente IDs Microsoft activos.
+         */
+        const microsoftIdsActivos = normalized
+            .filter(isMicrosoftUserActivo)
+            .map((u) => u.id
+            ?.trim())
+            .filter((id) => Boolean(id));
+        /*
+         * 4. Desactivar faltantes una sola vez.
+         */
+        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsActivos);
         res.json({
-            ok: true, domain, empresaId, ...r, deactivated: deactivated.count,
-            deactivatedUsers: deactivated.users, timings: { ...sel.timings, ...r.timings }
+            ok: true,
+            empresaId,
+            domains: sel.domains,
+            ...r,
+            deactivated: deactivated.count,
+            deactivatedUsers: deactivated.users,
+            timings: {
+                ...sel.timings,
+                ...r.timings,
+            },
         });
     }
     catch (e) {
         console.error("[GET /sync/microsoft/users] ERROR:", e);
-        res.status(500).json({ ok: false, error: e?.message || "internal" });
+        res
+            .status(500)
+            .json({
+            ok: false,
+            error: e?.message ||
+                "internal",
+        });
     }
 });
+/* =========================================================
+   PUT — SINCRONIZACIÓN INDIVIDUAL POR EMAIL
+========================================================= */
 /**
  * PUT /api/sync/microsoft/users
- * body: { empresaId, domain, email, concurrency? }
+ *
+ * body:
+ * {
+ *   empresaId,
+ *   email,
+ *   concurrency?
+ * }
+ *
+ * Ya no necesita domain.
  */
 msSyncRouter.put("/sync/microsoft/users", async (req, res) => {
     try {
-        const { empresaId, domain, email, concurrency } = req.body;
-        if (!empresaId || isNaN(Number(empresaId))) {
-            res.status(400).json({ ok: false, error: "empresaId requerido (number)" });
-            return;
-        }
-        if (!domain || !domain.trim()) {
-            res.status(400).json({
+        const { empresaId, email, concurrency, } = req.body;
+        if (!empresaId ||
+            isNaN(Number(empresaId))) {
+            res
+                .status(400)
+                .json({
                 ok: false,
-                error: "domain es obligatorio incluso para sync por email",
+                error: "empresaId requerido (number)",
             });
             return;
         }
-        const cleanDomain = domain.trim().toLowerCase();
-        const cleanEmail = email?.trim().toLowerCase();
-        const sel = await selectMsUsers(cleanDomain, cleanEmail);
-        if (cleanEmail && sel.target.length === 0) {
-            res.status(404).json({
+        if (!email ||
+            !email.trim()) {
+            res
+                .status(400)
+                .json({
                 ok: false,
-                error: `No se encontró ${cleanEmail} en Microsoft (${cleanDomain})`,
+                error: "email es obligatorio",
+            });
+            return;
+        }
+        const empresaIdNumber = Number(empresaId);
+        const cleanEmail = email
+            .trim()
+            .toLowerCase();
+        /*
+         * 1. Obtener dominios configurados.
+         */
+        const domains = await getEmpresaMicrosoftDomains(empresaIdNumber);
+        /*
+         * 2. Buscar el usuario en todos los dominios.
+         */
+        const sel = await selectMsUsers(domains, cleanEmail);
+        if (sel.target.length ===
+            0) {
+            res
+                .status(404)
+                .json({
+                ok: false,
+                error: `No se encontró ${cleanEmail} en Microsoft para ninguno de los dominios configurados`,
+                domains: sel.domains,
             });
             return;
         }
         const normalized = normalizeForUpsert(sel.target);
-        const r = await syncMsUsersBatch(normalized, Number(empresaId), { ...(typeof concurrency === "number" ? { concurrency } : {}) });
+        /*
+         * Sincronización individual:
+         *
+         * NO se ejecuta deactivateMissingMicrosoftSolicitantes()
+         * porque estamos sincronizando solamente un usuario.
+         */
+        const r = await syncMsUsersBatch(normalized, empresaIdNumber, {
+            ...(typeof concurrency ===
+                "number"
+                ? {
+                    concurrency,
+                }
+                : {}),
+        });
         res.json({
             ok: true,
-            domain: cleanDomain,
-            empresaId,
-            filter: cleanEmail ?? null,
+            empresaId: empresaIdNumber,
+            domains: sel.domains,
+            filter: cleanEmail,
             ...r,
-            timings: { ...sel.timings, ...r.timings },
+            timings: {
+                ...sel.timings,
+                ...r.timings,
+            },
         });
     }
     catch (e) {
         console.error("[PUT /sync/microsoft/users] ERROR:", e);
-        res.status(500).json({ ok: false, error: e?.message || "internal" });
+        res
+            .status(500)
+            .json({
+            ok: false,
+            error: e?.message ||
+                "internal",
+        });
     }
 });
 export default msSyncRouter;

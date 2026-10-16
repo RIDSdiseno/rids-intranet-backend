@@ -14,4 +14,7 @@ export declare function obtenerHistorialController(req: Request, res: Response):
 export declare function listarCotizacionesController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function vincularCotizacionController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function desvincularCotizacionController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function crearOportunidadDesdeCotizacionController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cambiarEstadoSeguimientoController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function enviarInformeOportunidadController(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=oportunidades.controller.d.ts.map

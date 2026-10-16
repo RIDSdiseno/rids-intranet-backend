@@ -3,6 +3,6 @@ import { getFinanzasClientes, } from "../../controllers/baseapi/baseapi-finanzas
 import { auth, } from "../../middlewares/auth.js";
 import { onlyRole, } from "../../middlewares/roles.js";
 const router = Router();
-router.get("/clientes", auth(), onlyRole("ADMINISTRACION"), getFinanzasClientes);
+router.get("/clientes", auth(), onlyRole("ADMINISTRACION", "VENTAS"), getFinanzasClientes);
 export default router;
 //# sourceMappingURL=baseapi-finanzas-clientes.routes.js.map

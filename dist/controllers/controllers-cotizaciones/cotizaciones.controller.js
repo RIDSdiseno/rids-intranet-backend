@@ -1,6 +1,6 @@
 import { EstadoCotizacionGestioo, EstadoDTE } from "@prisma/client";
 import { prismaBase as prisma } from "../../lib/prisma.js";
-import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades.service.js";
+import { sincronizarOportunidadPorCotizacionAprobada } from "../../service/oportunidades/oportunidades.service.js";
 import { calcularTotalesCotizacionBackend, normalizarCantidad, normalizarDescuento, normalizarGanancia, parseDecimalInput, redondearDinero, } from "./cotizaciones-numeros.js";
 // UTILIDADES
 export function generarSKU() {
@@ -403,6 +403,9 @@ export async function createCotizacion(req, res) {
                                 ? i.sku
                                 : generarSKU(),
                             imagen: i.imagen ?? null,
+                            productoId: i.productoId != null
+                                ? Number(i.productoId)
+                                : null,
                             equipoId: i.equipoId ? Number(i.equipoId) : null,
                         };
                     }),
@@ -516,6 +519,9 @@ export async function updateCotizacion(req, res) {
                             porcentaje: i.tieneDescuento
                                 ? normalizarDescuento(i.porcentaje)
                                 : 0,
+                            productoId: i.productoId != null
+                                ? Number(i.productoId)
+                                : null,
                             tieneIVA: Boolean(i.tieneIVA),
                             sku: i.sku?.trim() || generarSKU(),
                             imagen: i.imagen ?? null,
@@ -558,6 +564,9 @@ export async function updateCotizacion(req, res) {
                                 sku: i.sku?.trim() ||
                                     generarSKU(),
                                 imagen: i.imagen ?? null,
+                                productoId: i.productoId != null
+                                    ? Number(i.productoId)
+                                    : null,
                                 equipoId: i.equipoId
                                     ? Number(i.equipoId)
                                     : null,

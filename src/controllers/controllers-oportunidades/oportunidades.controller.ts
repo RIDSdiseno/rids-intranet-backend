@@ -31,12 +31,16 @@ import {
   ResponsableOportunidadInvalidoError,
   EntidadOportunidadInvalidaError,
   OrdenOportunidadInvalidoError,
-  CotizacionOportunidadRequeridaError,
   CotizacionYaVinculadaError,
   CotizacionNoEncontradaError,
   CotizacionNoVinculadaError,
-  DesvinculacionCotizacionInvalidaError,
-} from "../../service/oportunidades.service.js";
+  crearOportunidadDesdeCotizacion,
+  cambiarEstadoSeguimiento
+} from "../../service/oportunidades/oportunidades.service.js";
+
+import {
+  enviarInformeOportunidad,
+} from "../../service/oportunidades/oportunidades-informe.service.js";
 
 /* =========================================================
    Validaciones Zod (mismo patrón que agenda.controller.ts:
@@ -65,6 +69,7 @@ const crearOportunidadSchema = z.object({
   proximaAccion: z.string().trim().max(255).optional().nullable(),
   fechaProximaAccion: z.coerce.date().optional().nullable(),
   observaciones: z.string().trim().optional().nullable(),
+  notas: z.string().trim().max(3000).optional().nullable(),
   estadoDesarrolloPropuesta: z.nativeEnum(EstadoDesarrolloPropuesta).optional().nullable(),
   tipoServicio: z.nativeEnum(TipoServicioOportunidad).optional().nullable(),
   tipoServicioOtro: z.string().trim().max(255).optional().nullable(),
@@ -95,6 +100,8 @@ const editarOportunidadSchema = crearOportunidadSchema
 const cambiarEtapaSchema = z
   .object({
     etapa: z.nativeEnum(EtapaOportunidadVenta),
+    nota: z.string().trim().min(3, "La nota del cambio de etapa es obligatoria.")
+      .max(1000),
     motivoPerdida: z.string().trim().min(1).max(500).optional(),
     motivoPostergacion: z.string().trim().min(1).max(500).optional(),
     fechaReactivacion: z.coerce.date().optional(),
@@ -168,6 +175,67 @@ const idOportunidadCotizacionParamSchema = z.object({
   cotizacionId: z.coerce.number().int().positive(),
 });
 
+const cotizacionIdParamSchema =
+  z.object({
+    cotizacionId:
+      z.coerce
+        .number()
+        .int()
+        .positive(),
+  });
+
+const cambiarEstadoSeguimientoSchema =
+  z.object({
+    estado:
+      z.enum([
+        "PENDIENTE",
+        "COMPLETADA",
+        "CANCELADA",
+      ]),
+
+    notaEstado:
+      z.string()
+        .trim()
+        .min(
+          3,
+          "La nota del cambio de estado es obligatoria."
+        )
+        .max(
+          1000
+        ),
+  });
+
+const enviarInformeOportunidadSchema =
+  z.object({
+
+    destinatarios:
+      z.array(
+        z.string()
+          .trim()
+          .email(
+            "Correo destinatario inválido."
+          )
+      )
+        .min(
+          1,
+          "Debe indicar al menos un destinatario."
+        )
+        .max(
+          20,
+          "No se pueden indicar más de 20 destinatarios."
+        ),
+
+
+    mensaje:
+      z.string()
+        .trim()
+        .max(
+          2000,
+          "El mensaje no puede superar los 2000 caracteres."
+        )
+        .optional(),
+  });
+
 function getActorId(req: Request): number | null {
   const user = (req as any).user;
   return user?.id ? Number(user.id) : null;
@@ -192,9 +260,6 @@ function manejarErrorOportunidad(err: unknown, res: Response) {
   if (err instanceof OrdenOportunidadInvalidoError) {
     return res.status(400).json({ success: false, code: "ORDEN_INVALIDO", message: err.message });
   }
-  if (err instanceof CotizacionOportunidadRequeridaError) {
-    return res.status(409).json({ success: false, code: "COTIZACION_REQUERIDA", message: err.message });
-  }
   if (err instanceof CotizacionYaVinculadaError) {
     return res.status(409).json({ success: false, code: "COTIZACION_YA_VINCULADA", message: err.message });
   }
@@ -203,9 +268,6 @@ function manejarErrorOportunidad(err: unknown, res: Response) {
   }
   if (err instanceof CotizacionNoVinculadaError) {
     return res.status(404).json({ success: false, code: "COTIZACION_NO_VINCULADA", message: err.message });
-  }
-  if (err instanceof DesvinculacionCotizacionInvalidaError) {
-    return res.status(409).json({ success: false, code: "DESVINCULACION_INVALIDA", message: err.message });
   }
 
   console.error("[oportunidades]", err);
@@ -420,5 +482,309 @@ export async function desvincularCotizacionController(req: Request, res: Respons
     return res.status(200).json({ success: true, data });
   } catch (err) {
     return manejarErrorOportunidad(err, res);
+  }
+}
+
+/* =========================================================
+   Crear oportunidad desde cotización
+========================================================= */
+
+export async function crearOportunidadDesdeCotizacionController(
+  req: Request,
+  res: Response
+) {
+  const params =
+    cotizacionIdParamSchema.safeParse(
+      req.params
+    );
+
+  if (!params.success) {
+    return res
+      .status(400)
+      .json({
+        success:
+          false,
+
+        code:
+          "ID_COTIZACION_INVALIDO",
+
+        message:
+          "El ID de la cotización no es válido.",
+      });
+  }
+
+
+  const actorId =
+    getActorId(req);
+
+  if (!actorId) {
+    return res
+      .status(401)
+      .json({
+        success:
+          false,
+
+        code:
+          "NO_AUTENTICADO",
+
+        message:
+          "Usuario no autenticado.",
+      });
+  }
+
+
+  try {
+    const data =
+      await crearOportunidadDesdeCotizacion(
+        params.data.cotizacionId,
+        actorId
+      );
+
+    return res
+      .status(
+        data.yaVinculada
+          ? 200
+          : 201
+      )
+      .json({
+        success:
+          true,
+
+        data,
+      });
+
+  } catch (err) {
+    return manejarErrorOportunidad(
+      err,
+      res
+    );
+  }
+}
+
+export async function cambiarEstadoSeguimientoController(
+  req:
+    Request,
+
+  res:
+    Response
+) {
+  try {
+
+    const oportunidadId =
+      Number(
+        req.params.id
+      );
+
+    const seguimientoId =
+      Number(
+        req.params.seguimientoId
+      );
+
+
+    if (
+      !Number.isInteger(
+        oportunidadId
+      ) ||
+      !Number.isInteger(
+        seguimientoId
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "ID inválido.",
+      });
+    }
+
+
+    const payload =
+      cambiarEstadoSeguimientoSchema.parse(
+        req.body
+      );
+
+
+    const seguimiento =
+      await cambiarEstadoSeguimiento(
+        oportunidadId,
+        seguimientoId,
+        payload.estado,
+        payload.notaEstado
+      );
+
+
+    return res.json({
+      data:
+        seguimiento,
+    });
+
+  } catch (
+  error
+  ) {
+
+    console.error(
+      error
+    );
+
+
+    return res.status(500).json({
+      error:
+        "No se pudo actualizar el seguimiento.",
+    });
+  }
+}
+
+/* =========================================================
+   INFORME DE RESPALDO DEL FUNNEL
+========================================================= */
+
+export async function enviarInformeOportunidadController(
+  req:
+    Request,
+
+  res:
+    Response
+) {
+
+  /*
+   * =====================================================
+   * 1. VALIDAR ID
+   * =====================================================
+   */
+
+  const params =
+    idParamSchema.safeParse(
+      req.params
+    );
+
+
+  if (
+    !params.success
+  ) {
+
+    return res
+      .status(
+        400
+      )
+      .json({
+        success:
+          false,
+
+        code:
+          "ID_INVALIDO",
+
+        message:
+          "El ID de la oportunidad no es válido.",
+      });
+  }
+
+
+  /*
+   * =====================================================
+   * 2. VALIDAR BODY
+   * =====================================================
+   */
+
+  const body =
+    enviarInformeOportunidadSchema.safeParse(
+      req.body
+    );
+
+
+  if (
+    !body.success
+  ) {
+
+    return res
+      .status(
+        400
+      )
+      .json({
+        success:
+          false,
+
+        code:
+          "DATOS_INVALIDOS",
+
+        message:
+          "Los datos para enviar el informe no son válidos.",
+
+        errors:
+          body.error.flatten(),
+      });
+  }
+
+
+  /*
+   * =====================================================
+   * 3. GENERAR Y ENVIAR
+   * =====================================================
+   */
+
+  try {
+
+    const resultado =
+      await enviarInformeOportunidad({
+        oportunidadId:
+          params.data.id,
+
+        destinatarios:
+          body.data.destinatarios,
+
+        mensaje:
+          body.data.mensaje,
+      });
+
+
+    return res
+      .status(
+        200
+      )
+      .json({
+        success:
+          true,
+
+        data:
+          resultado,
+      });
+
+  } catch (
+  err
+  ) {
+
+    /*
+     * Conservamos el tratamiento estándar
+     * de oportunidad inexistente.
+     */
+
+    if (
+      err instanceof
+      OportunidadNoEncontradaError
+    ) {
+      return manejarErrorOportunidad(
+        err,
+        res
+      );
+    }
+
+
+    console.error(
+      "[oportunidades][informe] Error generando/enviando informe:",
+      err
+    );
+
+
+    return res
+      .status(
+        500
+      )
+      .json({
+        success:
+          false,
+
+        code:
+          "INFORME_ENVIO_ERROR",
+
+        message:
+          "No fue posible generar o enviar el informe de la oportunidad.",
+      });
   }
 }

@@ -29,6 +29,7 @@ import cotizacionesRouter from "./routes/cotizaciones-routes/cotizaciones.routes
 import cotizacionesMasivasRouter from "./routes/cotizaciones-routes/cotizaciones-masivas.routes.js";
 /* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
 import oportunidadesRouter from "./routes/oportunidades-routes/oportunidades.routes.js";
+import mercadoPublicoRouter from "./routes/oportunidades-routes/mercado-publico.routes.js";
 import tecnicosRouter from "./routes/tecnicos.routes.js";
 /* ===================== Freshdesk ===================== */
 import { fdRouter } from "./routes/fd.js";
@@ -58,7 +59,7 @@ import iaRecomendacionesRouter from "./routes/ia-intranet-routes/ia-recomendacio
 /* ===================== AGENDA AUTOMATIZADA ===================== */
 import { agendaRouter } from "./routes/agenda.routes.js";
 /* ===================== CORREO ===================== */
-import correoRouter from "./routes/correo.routes.js";
+import correosMasivosRouter from "./routes/correos-masivos.routes.js";
 /* ===================== Clientes ===================== */
 import clientesExtRouter from "./routes/clientes-routes/clientes.routes.js";
 /* ===================== BaseAPI RCV ===================== */
@@ -85,6 +86,7 @@ import equiposMantencionRoutes from "./routes/equipos-mantencion-routes/equipo-m
 import recordatoriosRouter from "./routes/recordatorios.routes.js";
 /* ===================== RUTAS INTERNAS ===================== */
 import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
+import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
@@ -140,6 +142,7 @@ api.use("/cotizaciones", cotizacionesRouter);
 api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
 /* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
 api.use("/oportunidades", oportunidadesRouter);
+api.use("/mercado-publico", mercadoPublicoRouter);
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)
 api.use(syncAccess, syncGoogleRouter);
@@ -160,7 +163,7 @@ api.use("/ia-inventario", iaInventarioRouter);
 api.use("/ia-reportes", iaReportesRouter);
 api.use("/ia-recomendaciones", iaRecomendacionesRouter);
 /* ===================== CORREO ===================== */
-api.use("/correo", correoRouter);
+api.use("/correo", correosMasivosRouter);
 /* ===================== Clientes ===================== */
 api.use("/clientes-ext", clientesExtRouter);
 /* ===================== BaseAPI RCV ===================== */
@@ -173,6 +176,7 @@ api.use("/baseapi/cobranza/receptores", receptoresCobranzaRoutes);
 api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
 /* ===================== RUTAS INTERNAS ===================== */
 api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
+api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

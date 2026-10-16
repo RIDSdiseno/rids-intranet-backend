@@ -1,0 +1,406 @@
+// src/service/correos-masivos/correos-masivos.service.ts
+import { sendEmail, } from "./masivos-email-sender.service.js";
+import { prisma, } from "../../lib/prisma.js";
+import { createMailerJob, getMailerJob, } from "./correos-masivos-job.service.js";
+import { prepararFirmaParaEnvio, prepararPlantillaParaEnvio, } from "./correos-masivos-template.service.js";
+import { ticketEmailTemplateService, } from "../email/reply-templates/ticket-email-template.service.js";
+// =====================================================
+// CONSTANTS
+// =====================================================
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// =====================================================
+// MAIN
+// =====================================================
+export async function iniciarEnvioMasivo({ targets, subject, bodyHtml, usarFirmaTecnico = true, firmaTecnicoId, plantillaId, attachments = [], user, }) {
+    const validTargets = targets
+        .map((target) => ({
+        ...target,
+        email: target.email
+            ?.trim() ??
+            "",
+    }))
+        .filter((target) => EMAIL_RE.test(target.email));
+    if (validTargets.length === 0) {
+        throw new Error("No existen destinatarios válidos");
+    }
+    // =================================================
+    // CONTENIDO
+    // =================================================
+    let finalBodyHtml = bodyHtml?.trim() ??
+        "";
+    let templateAttachments = [];
+    // =================================================
+    // PLANTILLA PRINCIPAL
+    // =================================================
+    if (plantillaId !== undefined &&
+        plantillaId !== null) {
+        const preparada = await prepararPlantillaParaEnvio(plantillaId);
+        finalBodyHtml =
+            preparada.bodyHtml;
+        templateAttachments =
+            preparada.attachments;
+    }
+    // =================================================
+    // VALIDAR CONTENIDO
+    // =================================================
+    if (!finalBodyHtml) {
+        throw new Error("El correo debe incluir contenido HTML o una plantilla válida");
+    }
+    // =================================================
+    // USUARIO QUE REALIZA EL ENVÍO
+    // =================================================
+    const usuarioAutenticado = await resolverUsuarioAutenticado(user);
+    const sentBy = usuarioAutenticado?.nombre ??
+        usuarioAutenticado?.email ??
+        user?.email ??
+        null;
+    // =================================================
+    // FIRMA DEL CORREO
+    // =================================================
+    if (usarFirmaTecnico) {
+        const firma = await obtenerFirmaMailer({
+            ...(user !== undefined
+                ? {
+                    user,
+                }
+                : {}),
+            ...(firmaTecnicoId !== undefined
+                ? {
+                    firmaTecnicoId,
+                }
+                : {}),
+        });
+        if (firma.html) {
+            finalBodyHtml =
+                `
+${finalBodyHtml}
+
+${firma.html}
+`.trim();
+        }
+    }
+    // =================================================
+    // ADJUNTOS
+    // =================================================
+    const finalAttachments = [
+        ...templateAttachments,
+        ...attachments,
+    ];
+    // =================================================
+    // JOB
+    // =================================================
+    const job = createMailerJob(validTargets.length);
+    // =================================================
+    // PRE-REGISTRO
+    // =================================================
+    await registrarEnviosIniciales({
+        jobId: job.id,
+        targets: validTargets,
+        subject,
+        attachments: finalAttachments,
+        sentBy,
+    });
+    // =================================================
+    // ENVÍO ASÍNCRONO
+    // =================================================
+    void procesarEnvioMasivo({
+        job,
+        targets: validTargets,
+        subject,
+        bodyHtml: finalBodyHtml,
+        globalAttachments: finalAttachments,
+    });
+    return {
+        queued: true,
+        jobId: job.id,
+        requested: targets.length,
+        queuedCount: validTargets.length,
+        ratePerMin: 0,
+        estimatedCompletionMs: 0,
+    };
+}
+// =====================================================
+// JOB STATUS
+// =====================================================
+export function obtenerMailerJob(id) {
+    return getMailerJob(id);
+}
+// =====================================================
+// RESOLVER REMITENTE
+// =====================================================
+async function resolverTecnico(tecnicoId) {
+    try {
+        if (!Number.isInteger(tecnicoId) ||
+            tecnicoId <= 0) {
+            return null;
+        }
+        const tecnico = await prisma
+            .tecnico
+            .findUnique({
+            where: {
+                id_tecnico: tecnicoId,
+            },
+            select: {
+                id_tecnico: true,
+                nombre: true,
+                email: true,
+                cargo: true,
+                area: true,
+                firmaTexto: true,
+                firma: {
+                    select: {
+                        path: true,
+                    },
+                },
+            },
+        });
+        if (!tecnico) {
+            return null;
+        }
+        return {
+            id: tecnico.id_tecnico,
+            nombre: tecnico.nombre,
+            email: tecnico.email,
+            cargo: tecnico.cargo,
+            area: tecnico.area,
+            firmaTexto: tecnico.firmaTexto,
+            firmaPath: tecnico.firma?.path ??
+                null,
+        };
+    }
+    catch (error) {
+        console.warn("[Mailer] No se pudo resolver técnico:", error);
+        return null;
+    }
+}
+async function resolverUsuarioAutenticado(user) {
+    if (!user?.id) {
+        return null;
+    }
+    const tecnicoId = Number(user.id);
+    if (!Number.isInteger(tecnicoId) ||
+        tecnicoId <= 0) {
+        return null;
+    }
+    return resolverTecnico(tecnicoId);
+}
+export async function obtenerFirmaMailer({ user, firmaTecnicoId, }) {
+    const usuarioAutenticado = await resolverUsuarioAutenticado(user);
+    const tecnicoFirma = firmaTecnicoId !== undefined
+        ? await resolverTecnico(firmaTecnicoId)
+        : usuarioAutenticado;
+    if (firmaTecnicoId !== undefined &&
+        !tecnicoFirma) {
+        throw new Error("El técnico seleccionado para la firma no existe");
+    }
+    const firmaHtml = await ticketEmailTemplateService
+        .buildFirmaHtml(tecnicoFirma
+        ? {
+            nombre: tecnicoFirma.nombre,
+            email: tecnicoFirma.email,
+            cargo: tecnicoFirma.cargo,
+            area: tecnicoFirma.area,
+            firmaPath: tecnicoFirma.firmaPath,
+        }
+        : null);
+    return {
+        tecnico: tecnicoFirma
+            ? {
+                id: tecnicoFirma.id,
+                nombre: tecnicoFirma.nombre,
+                email: tecnicoFirma.email,
+                cargo: tecnicoFirma.cargo,
+                area: tecnicoFirma.area,
+                firmaPath: tecnicoFirma.firmaPath,
+            }
+            : null,
+        html: firmaHtml,
+    };
+}
+// =====================================================
+// PRE-REGISTRO
+// =====================================================
+async function registrarEnviosIniciales({ jobId, targets, subject, attachments, sentBy, }) {
+    for (const target of targets) {
+        try {
+            const targetAttachments = Array.isArray(target.attachments)
+                ? target.attachments
+                : [];
+            const combined = [
+                ...attachments,
+                ...targetAttachments,
+            ];
+            // ==========================================
+            // DETECTAR COTIZACIÓN
+            // ==========================================
+            let cotizacionId = null;
+            for (const attachment of combined) {
+                const match = String(attachment?.name ??
+                    "").match(/Cotizacion_(\d+)\.pdf/i);
+                if (match?.[1]) {
+                    cotizacionId =
+                        Number(match[1]);
+                    break;
+                }
+            }
+            // ==========================================
+            // DATOS COTIZACIÓN
+            // ==========================================
+            let clienteNombre = null;
+            let creadoPor = null;
+            let fechaCreacion = null;
+            if (cotizacionId) {
+                try {
+                    const cotizacion = await prisma
+                        .cotizacionGestioo
+                        .findUnique({
+                        where: {
+                            id: cotizacionId,
+                        },
+                        include: {
+                            entidad: true,
+                            tecnico: true,
+                        },
+                    });
+                    if (cotizacion) {
+                        clienteNombre =
+                            cotizacion
+                                .entidad
+                                ?.nombre ??
+                                null;
+                        creadoPor =
+                            cotizacion
+                                .tecnico
+                                ?.nombre ??
+                                null;
+                        fechaCreacion =
+                            cotizacion.fecha ??
+                                cotizacion.createdAt ??
+                                null;
+                    }
+                }
+                catch (error) {
+                    console.warn("[Mailer] No se pudo enriquecer cotización:", cotizacionId, error);
+                }
+            }
+            // ==========================================
+            // EVITAR DUPLICADOS
+            // ==========================================
+            const existing = await prisma
+                .cotizacionEnviada
+                .findFirst({
+                where: {
+                    jobId,
+                    to: target.email ??
+                        null,
+                    cotizacionId,
+                },
+            });
+            if (existing) {
+                continue;
+            }
+            // ==========================================
+            // REGISTRAR
+            // ==========================================
+            await prisma
+                .cotizacionEnviada
+                .create({
+                data: {
+                    cotizacionId,
+                    to: target.email ??
+                        null,
+                    subject,
+                    sentBy,
+                    jobId,
+                    meta: {
+                        attachments: combined.length,
+                    },
+                    clienteNombre,
+                    creadoPor,
+                    fechaCreacion,
+                },
+            });
+        }
+        catch (error) {
+            console.warn("[Mailer] Error pre-registrando envío:", target.email, error);
+        }
+    }
+}
+// =====================================================
+// PROCESAR ENVÍO
+// =====================================================
+async function procesarEnvioMasivo({ job, targets, subject, bodyHtml, globalAttachments, }) {
+    job.status =
+        "processing";
+    try {
+        const results = await Promise.allSettled(targets.map(async (target) => {
+            const perTargetAttachments = Array.isArray(target.attachments)
+                ? target.attachments
+                : [];
+            const attachments = [
+                ...globalAttachments,
+                ...perTargetAttachments,
+            ].map((attachment) => ({
+                name: attachment.name,
+                contentType: attachment.contentType,
+                contentBytes: attachment.contentBytes,
+                ...(attachment.isInline !== undefined
+                    ? {
+                        isInline: attachment.isInline,
+                    }
+                    : {}),
+                ...(attachment.contentId !== undefined
+                    ? {
+                        contentId: attachment.contentId,
+                    }
+                    : {}),
+            }));
+            await sendEmail({
+                to: target.email,
+                subject,
+                bodyHtml,
+                attachments,
+            });
+            job.successes.push(target.email);
+        }));
+        results.forEach((result, index) => {
+            if (result.status !==
+                "rejected") {
+                return;
+            }
+            const error = result.reason;
+            const targetEmail = targets[index]
+                ?.email;
+            job.failures.push({
+                ...(targetEmail
+                    ? {
+                        to: targetEmail,
+                    }
+                    : {}),
+                error: error instanceof Error
+                    ? error.message
+                    : String(error),
+            });
+        });
+        job.completed =
+            targets.length;
+        job.status =
+            "done";
+        console.log(`[Mailer] Job ${job.id} completado: ` +
+            `${job.successes.length} ok, ` +
+            `${job.failures.length} errores`);
+    }
+    catch (error) {
+        console.error(`[Mailer] Error inesperado en job ${job.id}:`, error);
+        job.failures.push({
+            error: error instanceof Error
+                ? error.message
+                : String(error),
+        });
+        job.completed =
+            targets.length;
+        job.status =
+            "done";
+    }
+}
+//# sourceMappingURL=correos-masivos.service.js.map
