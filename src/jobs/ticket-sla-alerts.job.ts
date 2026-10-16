@@ -1,143 +1,507 @@
-import { prisma } from "../lib/prisma.js";
-import { TicketStatus } from "@prisma/client";
-import { getSlaConfigFromDB } from "../config/sla.config.js";
-import { buildTicketSla } from "../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
-import { sendTicketSlaAlertEmail } from "../controllers/tickets-rids/tickets-sla/ticket-sla-alert-mailer.js";
-import { bus } from "../lib/events.js";
+import {
+    Prisma,
+    TicketEventType,
+    TicketStatus,
+} from "@prisma/client";
 
-const ALERT_BEFORE_MINUTES = 15;
+import {
+    prisma,
+} from "../lib/prisma.js";
+
+import {
+    getSlaConfigFromDB,
+} from "../config/sla.config.js";
+
+import {
+    buildTicketSla,
+} from "../controllers/tickets-rids/tickets-sla/ticketera-sla.controller.js";
+
+import {
+    sendTicketSlaAlertEmail,
+} from "../controllers/tickets-rids/tickets-sla/ticket-sla-alert-mailer.js";
+
+const ALERT_BEFORE_MINUTES =
+    15;
+
+type SlaAlertType =
+    | "FIRST_RESPONSE_SOON"
+    | "FIRST_RESPONSE_BREACHED"
+    | "RESOLUTION_SOON"
+    | "RESOLUTION_BREACHED";
 
 export async function runTicketSlaAlertsJob() {
     try {
-        const slaConfig = await getSlaConfigFromDB();
+        const slaConfig =
+            await getSlaConfigFromDB();
 
-        const tickets = await prisma.ticket.findMany({
-            where: {
-                assigneeId: { not: null },
-                status: {
-                    in: [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.PENDING, TicketStatus.ON_HOLD],
-                },
-            },
-            select: {
-                id: true,
-                subject: true,
-                status: true,
-                priority: true,
-                createdAt: true,
-                firstResponseAt: true,
-                resolvedAt: true,
-                closedAt: true,
-                assigneeId: true,
-                assignee: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+        const tickets =
+            await prisma.ticket.findMany({
+                where: {
+                    deletedAt:
+                        null,
+
+                    assigneeId: {
+                        not:
+                            null,
+                    },
+
+                    status: {
+                        in: [
+                            TicketStatus.NEW,
+                            TicketStatus.OPEN,
+                            TicketStatus.PENDING,
+                            TicketStatus.ON_HOLD,
+                        ],
                     },
                 },
-            },
-        });
 
-        for (const ticket of tickets) {
-            if (!ticket.assigneeId || !ticket.assignee) continue;
+                select: {
+                    id:
+                        true,
 
-            const sla = buildTicketSla(ticket, slaConfig);
+                    subject:
+                        true,
 
-            const firstResponseRemaining = sla.firstResponse.remainingMinutes ?? 0;
-            const resolutionRemaining = sla.resolution.remainingMinutes ?? 0;
+                    status:
+                        true,
 
-            const firstResponseBreached = sla.firstResponse.status === "BREACHED";
-            const resolutionBreached = sla.resolution.status === "BREACHED";
+                    priority:
+                        true,
 
-            const firstResponseSoon =
-                sla.firstResponse.status === "PENDING" &&
-                Math.abs(firstResponseRemaining) <= ALERT_BEFORE_MINUTES &&
-                firstResponseRemaining < 0;
+                    createdAt:
+                        true,
 
-            const resolutionSoon =
-                sla.resolution.status === "PENDING" &&
-                Math.abs(resolutionRemaining) <= ALERT_BEFORE_MINUTES &&
-                resolutionRemaining < 0;
+                    firstResponseAt:
+                        true,
 
-            const alertsToSend: Array<{
-                alertType: "FIRST_RESPONSE_SOON" | "FIRST_RESPONSE_BREACHED" | "RESOLUTION_SOON" | "RESOLUTION_BREACHED";
-            }> = [];
+                    resolvedAt:
+                        true,
 
-            if (firstResponseBreached) {
-                alertsToSend.push({ alertType: "FIRST_RESPONSE_BREACHED" });
-            } else if (firstResponseSoon) {
-                alertsToSend.push({ alertType: "FIRST_RESPONSE_SOON" });
-            }
+                    closedAt:
+                        true,
 
-            if (resolutionBreached) {
-                alertsToSend.push({ alertType: "RESOLUTION_BREACHED" });
-            } else if (resolutionSoon) {
-                alertsToSend.push({ alertType: "RESOLUTION_SOON" });
-            }
+                    lastReopenedAt:
+                        true,
 
-            for (const alert of alertsToSend) {
-                const alreadySent = await prisma.ticketSlaAlertLog.findUnique({
-                    where: {
-                        ticketId_alertType: {
-                            ticketId: ticket.id,
-                            alertType: alert.alertType,
+                    /*
+                     * Necesario para que cada reapertura
+                     * pueda generar nuevamente sus alertas.
+                     */
+                    slaCycleNumber:
+                        true,
+
+                    assigneeId:
+                        true,
+
+                    assignee: {
+                        select: {
+                            id_tecnico:
+                                true,
+
+                            nombre:
+                                true,
+
+                            email:
+                                true,
                         },
                     },
-                });
 
-                if (alreadySent) continue;
+                    /*
+                     * buildTicketSla necesita estos eventos:
+                     *
+                     * ASSIGNED:
+                     * determina cuándo comienza el SLA.
+                     *
+                     * STATUS_CHANGED:
+                     * permite calcular las pausas PENDING.
+                     *
+                     * REOPENED:
+                     * se mantiene disponible para reconstrucción
+                     * y auditoría del ciclo.
+                     */
+                    events: {
+                        where: {
+                            type: {
+                                in: [
+                                    TicketEventType.ASSIGNED,
+                                    TicketEventType.STATUS_CHANGED,
+                                    TicketEventType.REOPENED,
+                                ],
+                            },
+                        },
 
-                bus.emit("ticket.sla_alert", {
-                    ticketId: ticket.id,
-                    subject: ticket.subject,
-                    assigneeId: ticket.assignee.id_tecnico,
-                    assigneeName: ticket.assignee.nombre,
-                    firstResponseStatus: sla.firstResponse.status,
-                    resolutionStatus: sla.resolution.status,
-                    firstResponseRemaining,
-                    resolutionRemaining,
-                    alertType: alert.alertType,
+                        select: {
+                            type:
+                                true,
+
+                            oldValue:
+                                true,
+
+                            newValue:
+                                true,
+
+                            createdAt:
+                                true,
+                        },
+
+                        orderBy: {
+                            createdAt:
+                                "asc",
+                        },
+                    },
+                },
+            });
+
+        for (
+            const ticket
+            of tickets
+        ) {
+            /*
+             * En teoría Prisma ya garantiza assigneeId
+             * por el WHERE, pero mantenemos esta protección.
+             */
+            if (
+                !ticket.assigneeId ||
+                !ticket.assignee
+            ) {
+                continue;
+            }
+
+            const sla =
+                buildTicketSla(
+                    ticket,
+                    slaConfig,
+                );
+
+            /*
+             * Un ticket sin una asignación SLA válida
+             * todavía no genera alertas.
+             */
+            if (
+                sla.waitingAssignment
+            ) {
+                continue;
+            }
+
+            /*
+             * Mientras está PENDING el SLA está pausado.
+             *
+             * No queremos generar alertas nuevas mientras
+             * permanece pausado.
+             */
+            if (
+                sla.paused
+            ) {
+                continue;
+            }
+
+            const firstResponseRemaining =
+                sla.firstResponse
+                    .remainingMinutes;
+
+            const resolutionRemaining =
+                sla.resolution
+                    .remainingMinutes;
+
+            /*
+             * =================================================
+             * PRIMERA RESPUESTA
+             * =================================================
+             */
+
+            const firstResponseBreached =
+                sla.firstResponse.status ===
+                "BREACHED";
+
+            /*
+             * remainingMinutes:
+             *
+             * 15  → quedan 15 minutos.
+             * 5   → quedan 5 minutos.
+             * 0   → vence ahora.
+             * -5  → venció hace 5 minutos.
+             *
+             * Por eso la alerta SOON debe usar >= 0.
+             */
+            const firstResponseSoon =
+                sla.firstResponse.status ===
+                "PENDING" &&
+                firstResponseRemaining !==
+                null &&
+                firstResponseRemaining >=
+                0 &&
+                firstResponseRemaining <=
+                ALERT_BEFORE_MINUTES;
+
+            /*
+             * =================================================
+             * RESOLUCIÓN
+             * =================================================
+             */
+
+            const resolutionBreached =
+                sla.resolution.status ===
+                "BREACHED";
+
+            const resolutionSoon =
+                sla.resolution.status ===
+                "PENDING" &&
+                resolutionRemaining !==
+                null &&
+                resolutionRemaining >=
+                0 &&
+                resolutionRemaining <=
+                ALERT_BEFORE_MINUTES;
+
+            const alertsToSend:
+                Array<{
+                    alertType:
+                    SlaAlertType;
+                }> = [];
+
+            /*
+             * =================================================
+             * ALERTA PRIMERA RESPUESTA
+             * =================================================
+             */
+
+            if (
+                firstResponseBreached
+            ) {
+                alertsToSend.push({
+                    alertType:
+                        "FIRST_RESPONSE_BREACHED",
                 });
+            } else if (
+                firstResponseSoon
+            ) {
+                alertsToSend.push({
+                    alertType:
+                        "FIRST_RESPONSE_SOON",
+                });
+            }
+
+            /*
+             * =================================================
+             * ALERTA RESOLUCIÓN
+             * =================================================
+             */
+
+            if (
+                resolutionBreached
+            ) {
+                alertsToSend.push({
+                    alertType:
+                        "RESOLUTION_BREACHED",
+                });
+            } else if (
+                resolutionSoon
+            ) {
+                alertsToSend.push({
+                    alertType:
+                        "RESOLUTION_SOON",
+                });
+            }
+
+            /*
+             * =================================================
+             * PROCESAR ALERTAS
+             * =================================================
+             */
+
+            for (
+                const alert
+                of alertsToSend
+            ) {
+                /*
+                 * =================================================
+                 * DEDUPE POR CICLO SLA
+                 * =================================================
+                 *
+                 * Ticket #100:
+                 *
+                 * ciclo 1 / FIRST_RESPONSE_SOON
+                 * ciclo 2 / FIRST_RESPONSE_SOON
+                 *
+                 * son alertas distintas.
+                 */
+
+                const alreadySent =
+                    await prisma
+                        .ticketSlaAlertLog
+                        .findUnique({
+                            where: {
+                                ticketId_cycleNumber_alertType: {
+                                    ticketId:
+                                        ticket.id,
+
+                                    cycleNumber:
+                                        ticket
+                                            .slaCycleNumber,
+
+                                    alertType:
+                                        alert
+                                            .alertType,
+                                },
+                            },
+                        });
 
                 if (
-                    ticket.assignee.email &&
-                    (
-                        alert.alertType === "FIRST_RESPONSE_BREACHED" ||
-                        alert.alertType === "RESOLUTION_BREACHED" ||
-                        alert.alertType === "FIRST_RESPONSE_SOON" ||
-                        alert.alertType === "RESOLUTION_SOON"
-                    )
+                    alreadySent
                 ) {
+                    continue;
+                }
+
+                /*
+                 * =================================================
+                 * RESERVAR ALERTA
+                 * =================================================
+                 *
+                 * La guardamos antes de enviarla para evitar
+                 * que dos ejecuciones simultáneas del job
+                 * envíen dos veces la misma alerta.
+                 */
+
+                try {
+                    await prisma
+                        .ticketSlaAlertLog
+                        .create({
+                            data: {
+                                ticketId:
+                                    ticket.id,
+
+                                cycleNumber:
+                                    ticket
+                                        .slaCycleNumber,
+
+                                alertType:
+                                    alert
+                                        .alertType,
+                            },
+                        });
+                } catch (
+                error
+                ) {
+                    /*
+                     * Si otra instancia del job creó
+                     * exactamente la misma alerta,
+                     * la restricción UNIQUE genera P2002.
+                     *
+                     * En ese caso simplemente continuamos.
+                     */
+                    if (
+                        error instanceof
+                        Prisma
+                            .PrismaClientKnownRequestError &&
+                        error.code ===
+                        "P2002"
+                    ) {
+                        continue;
+                    }
+
+                    throw error;
+                }
+
+                try {
                     console.log(
-                        `[ticket-sla-alerts] enviando correo ${alert.alertType} para ticket #${ticket.id} a ${ticket.assignee.email}`
+                        `[ticket-sla-alerts] procesando ${alert.alertType} para ticket #${ticket.id}, ciclo SLA #${ticket.slaCycleNumber}`
                     );
 
+                    /*
+                     * IMPORTANTE:
+                     *
+                     * Llamamos siempre al mailer aunque no exista
+                     * correo del técnico.
+                     *
+                     * sendTicketSlaAlertEmail primero genera el
+                     * recordatorio interno para TODOS los técnicos
+                     * y luego comprueba si puede enviar el correo.
+                     */
                     await sendTicketSlaAlertEmail({
-                        to: ticket.assignee.email,
-                        tecnicoNombre: ticket.assignee.nombre,
-                        ticketId: ticket.id,
-                        subject: ticket.subject,
-                        priority: String(ticket.priority),
-                        status: String(ticket.status),
-                        alertType: alert.alertType,
-                        firstResponseRemaining,
-                        resolutionRemaining,
+                        to:
+                            ticket.assignee
+                                .email ??
+                            "",
+
+                        tecnicoNombre:
+                            ticket.assignee
+                                .nombre,
+
+                        ticketId:
+                            ticket.id,
+
+                        cycleNumber:
+                            ticket
+                                .slaCycleNumber,
+
+                        subject:
+                            ticket.subject,
+
+                        priority:
+                            String(
+                                ticket.priority
+                            ),
+
+                        status:
+                            String(
+                                ticket.status
+                            ),
+
+                        alertType:
+                            alert.alertType,
+
+                        firstResponseRemaining:
+                            firstResponseRemaining,
+
+                        resolutionRemaining:
+                            resolutionRemaining,
                     });
 
                     console.log(
-                        `[ticket-sla-alerts] correo enviado ${alert.alertType} para ticket #${ticket.id}`
+                        `[ticket-sla-alerts] alerta procesada ${alert.alertType} para ticket #${ticket.id}, ciclo SLA #${ticket.slaCycleNumber}`
                     );
-                }
+                } catch (
+                error
+                ) {
+                    console.error(
+                        `[ticket-sla-alerts] error enviando ${alert.alertType} para ticket #${ticket.id}, ciclo #${ticket.slaCycleNumber}:`,
+                        error
+                    );
 
-                await prisma.ticketSlaAlertLog.create({
-                    data: {
-                        ticketId: ticket.id,
-                        alertType: alert.alertType,
-                    },
-                });
+                    /*
+                     * Si falló completamente el procesamiento,
+                     * eliminamos la reserva para permitir que
+                     * el próximo ciclo del job vuelva a intentar.
+                     */
+                    await prisma
+                        .ticketSlaAlertLog
+                        .deleteMany({
+                            where: {
+                                ticketId:
+                                    ticket.id,
+
+                                cycleNumber:
+                                    ticket
+                                        .slaCycleNumber,
+
+                                alertType:
+                                    alert
+                                        .alertType,
+                            },
+                        });
+
+                    /*
+                     * No detenemos el job completo.
+                     * Seguimos con los demás tickets.
+                     */
+                    continue;
+                }
             }
         }
     } catch (error) {
-        console.error("[ticket-sla-alerts] error:", error);
+        console.error(
+            "[ticket-sla-alerts] error:",
+            error
+        );
     }
 }

@@ -14,16 +14,23 @@ import {
     onlyRole,
 } from "../../middlewares/roles.js";
 
+
 const router =
     Router();
 
+
 router.get(
     "/dashboard",
+
     auth(),
+
     onlyRole(
-        "ADMINISTRACION"
+        "ADMINISTRACION",
+        "VENTAS"
     ),
+
     getFinanzasDashboard
 );
+
 
 export default router;

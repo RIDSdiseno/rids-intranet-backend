@@ -164,6 +164,8 @@ function forzarTecnicoActualBody(
         tecnicoId;
 
     next();
+
+    return;
 }
 
 /**
@@ -263,6 +265,8 @@ async function verificarBitacoraPropia(
                     "No fue posible verificar la bitácora",
             });
     }
+
+    return;
 }
 
 /**
@@ -337,6 +341,8 @@ async function verificarBitacoraExiste(
                     "No fue posible verificar la bitácora",
             });
     }
+
+    return;
 }
 
 /* =========================================================
@@ -443,6 +449,8 @@ router.get(
                         "No fue posible obtener los técnicos revisores",
                 });
         }
+
+        return;
     }
 );
 
@@ -493,6 +501,7 @@ router.get(
                         "No fue posible obtener las empresas",
                 });
         }
+        
     }
 );
 

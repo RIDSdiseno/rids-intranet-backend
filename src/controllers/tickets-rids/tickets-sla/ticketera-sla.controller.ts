@@ -121,54 +121,175 @@ function diffMinutes(a: Date, b: Date) {
 
 function getAssignedAt(ticket: {
     createdAt: Date;
-    assigneeId?: number | null;
+
+    assigneeId?:
+    number | null;
+
+    lastReopenedAt?:
+    Date | null;
+
     events?: Array<{
-        type?: string | null;
-        oldValue?: string | null;
-        newValue?: string | null;
-        createdAt?: Date | string | null;
+        type?:
+        string | null;
+
+        oldValue?:
+        string | null;
+
+        newValue?:
+        string | null;
+
+        createdAt?:
+        Date |
+        string |
+        null;
     }>;
 }): Date | null {
     /*
-     * Si actualmente no tiene técnico, se considera sin asignar.
-     * El SLA queda pausado.
+     * Si actualmente no tiene técnico,
+     * el SLA queda esperando asignación.
      */
     if (!ticket.assigneeId) {
         return null;
     }
 
-    const events = Array.isArray(ticket.events)
-        ? ticket.events
-        : [];
+    const events =
+        Array.isArray(
+            ticket.events
+        )
+            ? ticket.events
+            : [];
+
+    const assignmentEvents =
+        events
+            .filter(
+                (event) =>
+                    event.type ===
+                    TicketEventType.ASSIGNED &&
+                    event.createdAt
+            )
+            .map(
+                (event) => ({
+                    ...event,
+
+                    createdAtDate:
+                        new Date(
+                            event.createdAt!,
+                        ),
+                })
+            )
+            .filter(
+                (event) =>
+                    !Number.isNaN(
+                        event.createdAtDate
+                            .getTime(),
+                    )
+            )
+            .sort(
+                (a, b) =>
+                    a.createdAtDate
+                        .getTime() -
+                    b.createdAtDate
+                        .getTime()
+            );
 
     /*
-     * El SLA debe comenzar en la primera asignación del ticket,
-     * no en la asignación más reciente ni en la reasignación
-     * al técnico actual.
+     * =====================================================
+     * CICLO REABIERTO
+     * =====================================================
      */
-    const firstAssignment = events
-        .filter(
-            (event) =>
-                event.type === TicketEventType.ASSIGNED &&
-                event.newValue &&
-                event.createdAt
-        )
-        .sort(
-            (a, b) =>
-                new Date(a.createdAt!).getTime() -
-                new Date(b.createdAt!).getTime()
-        )[0];
 
-    if (firstAssignment?.createdAt) {
-        return new Date(firstAssignment.createdAt);
+    const reopenedAt =
+        ticket.lastReopenedAt
+            ? new Date(
+                ticket.lastReopenedAt,
+            )
+            : null;
+
+    if (
+        reopenedAt &&
+        !Number.isNaN(
+            reopenedAt.getTime(),
+        )
+    ) {
+        /*
+         * Averiguamos si en el momento de la
+         * reapertura el ticket ya estaba asignado.
+         */
+        const lastAssignmentBeforeReopen =
+            [...assignmentEvents]
+                .filter(
+                    (event) =>
+                        event.createdAtDate <=
+                        reopenedAt
+                )
+                .reverse()[0];
+
+        /*
+         * Si había técnico al momento de reabrir,
+         * el SLA empieza exactamente en la reapertura.
+         */
+        if (
+            lastAssignmentBeforeReopen
+                ?.newValue
+        ) {
+            return reopenedAt;
+        }
+
+        /*
+         * Si estaba sin técnico al reabrirse,
+         * buscamos la primera asignación posterior.
+         */
+        const firstAssignmentAfterReopen =
+            assignmentEvents.find(
+                (event) =>
+                    event.createdAtDate >
+                    reopenedAt &&
+                    Boolean(
+                        event.newValue,
+                    )
+            );
+
+        if (
+            firstAssignmentAfterReopen
+                ?.createdAtDate
+        ) {
+            return firstAssignmentAfterReopen
+                .createdAtDate;
+        }
+
+        /*
+         * Fallback para registros antiguos:
+         * sabemos que actualmente sí tiene técnico,
+         * pero puede faltar el evento ASSIGNED.
+         */
+        return reopenedAt;
     }
 
     /*
-     * No usar createdAt como fallback, porque eso haría que
-     * el SLA comenzara desde la creación.
-     *
-     * Los tickets antiguos sin evento ASSIGNED deberán corregirse
-     * mediante una migración o quedarán temporalmente sin SLA.
+     * =====================================================
+     * CICLO ORIGINAL
+     * =====================================================
+     */
+
+    const firstAssignment =
+        assignmentEvents.find(
+            (event) =>
+                Boolean(
+                    event.newValue,
+                )
+        );
+
+    if (
+        firstAssignment
+            ?.createdAtDate
+    ) {
+        return firstAssignment
+            .createdAtDate;
+    }
+
+    /*
+     * Igual que en tu implementación actual:
+     * no usamos createdAt del ticket como fallback.
      */
     return null;
 }
@@ -179,368 +300,1216 @@ function signedDiffMinutes(from: Date, to: Date) {
 
 export function buildTicketSla(
     ticket: {
-        createdAt: Date;
-        assigneeId?: number | null;
-        firstResponseAt?: Date | null;
-        resolvedAt?: Date | null;
-        closedAt?: Date | null;
-        lastReopenedAt?: Date | null;
-        status?: TicketStatus | string | null;
-        priority?: TicketPriority | string | null;
+        createdAt:
+        Date;
+
+        assigneeId?:
+        number | null;
+
+        firstResponseAt?:
+        Date | null;
+
+        resolvedAt?:
+        Date | null;
+
+        closedAt?:
+        Date | null;
+
+        lastReopenedAt?:
+        Date | null;
+
+        status?:
+        TicketStatus |
+        string |
+        null;
+
+        priority?:
+        TicketPriority |
+        string |
+        null;
+
         events?: Array<{
-            type?: string | null;
-            oldValue?: string | null;
-            newValue?: string | null;
-            createdAt?: Date | string | null;
+            type?:
+            string | null;
+
+            oldValue?:
+            string | null;
+
+            newValue?:
+            string | null;
+
+            createdAt?:
+            Date |
+            string |
+            null;
         }>;
     },
-    slaConfig: Record<string, { firstResponseMinutes: number; resolutionMinutes: number }>
+
+    slaConfig:
+        Record<
+            string,
+            {
+                firstResponseMinutes:
+                number;
+
+                resolutionMinutes:
+                number;
+            }
+        >
 ) {
-    const now = new Date();
-    const targets = getSlaTargets(ticket.priority, slaConfig);
+    const now =
+        new Date();
 
-    const assignedAt = getAssignedAt(ticket);
+    const targets =
+        getSlaTargets(
+            ticket.priority,
+            slaConfig,
+        );
 
-    if (!assignedAt) {
+    /*
+     * getAssignedAt ya entiende tanto:
+     *
+     * - ciclo original;
+     * - ciclo reabierto;
+     * - asignación posterior a reapertura.
+     */
+    const slaStartAt =
+        getAssignedAt(
+            ticket,
+        );
+
+    if (!slaStartAt) {
         return {
             targets,
-            startsAt: null,
-            waitingAssignment: true,
+
+            startsAt:
+                null,
+
+            waitingAssignment:
+                true,
+
+            paused:
+                false,
+
             firstResponse: {
-                dueAt: null,
-                at: ticket.firstResponseAt ? new Date(ticket.firstResponseAt) : null,
-                elapsedMinutes: null,
-                status: "PENDING" as const,
-                remainingMinutes: null,
+                dueAt:
+                    null,
+
+                at:
+                    null,
+
+                elapsedMinutes:
+                    null,
+
+                status:
+                    "PENDING" as const,
+
+                remainingMinutes:
+                    null,
             },
+
             resolution: {
-                dueAt: null,
-                at: ticket.closedAt
-                    ? new Date(ticket.closedAt)
-                    : ticket.resolvedAt
-                        ? new Date(ticket.resolvedAt)
-                        : null,
-                elapsedMinutes: null,
-                status: "PENDING" as const,
-                remainingMinutes: null,
+                dueAt:
+                    null,
+
+                at:
+                    null,
+
+                elapsedMinutes:
+                    null,
+
+                status:
+                    "PENDING" as const,
+
+                remainingMinutes:
+                    null,
             },
         };
     }
 
-    const firstResponseStartAt = assignedAt;
+    const firstResponseStartAt =
+        slaStartAt;
 
-    const resolutionStartAt = assignedAt;
+    const resolutionStartAt =
+        slaStartAt;
 
-    const firstResponseAt = ticket.firstResponseAt
-        ? new Date(ticket.firstResponseAt)
-        : null;
+    /*
+     * Solo usamos firstResponseAt si pertenece
+     * al ciclo SLA actual.
+     */
+    const rawFirstResponseAt =
+        ticket.firstResponseAt
+            ? new Date(
+                ticket.firstResponseAt,
+            )
+            : null;
 
-    const resolutionEndAt = ticket.closedAt
-        ? new Date(ticket.closedAt)
-        : ticket.resolvedAt
-            ? new Date(ticket.resolvedAt)
+    const firstResponseAt =
+        rawFirstResponseAt &&
+            !Number.isNaN(
+                rawFirstResponseAt.getTime(),
+            ) &&
+            rawFirstResponseAt >=
+            slaStartAt
+            ? rawFirstResponseAt
+            : null;
+
+    /*
+     * Igual con la resolución/cierre.
+     */
+    const rawResolutionEndAt =
+        ticket.closedAt
+            ? new Date(
+                ticket.closedAt,
+            )
+            : ticket.resolvedAt
+                ? new Date(
+                    ticket.resolvedAt,
+                )
+                : null;
+
+    const resolutionEndAt =
+        rawResolutionEndAt &&
+            !Number.isNaN(
+                rawResolutionEndAt.getTime(),
+            ) &&
+            rawResolutionEndAt >=
+            slaStartAt
+            ? rawResolutionEndAt
             : null;
 
     const isTerminated =
-        ticket.status === TicketStatus.CLOSED ||
-        ticket.status === TicketStatus.RESOLVED;
+        ticket.status ===
+        TicketStatus.CLOSED ||
+        ticket.status ===
+        TicketStatus.RESOLVED;
 
-    /**
-     * Si el ticket fue cerrado/resuelto sin primera respuesta real,
-     * usamos closedAt/resolvedAt como fecha administrativa de término
-     * de la medición de primera respuesta.
+    /*
+     * Mantiene tu comportamiento actual:
+     *
+     * Si se cerró sin una respuesta explícita,
+     * el cierre administrativo finaliza también
+     * la medición de primera respuesta.
      */
     const administrativeFirstResponseAt =
-        !firstResponseAt && isTerminated && resolutionEndAt
+        !firstResponseAt &&
+            isTerminated &&
+            resolutionEndAt
             ? resolutionEndAt
             : null;
 
     const firstResponseEndAt =
-        firstResponseAt ?? administrativeFirstResponseAt;
+        firstResponseAt ??
+        administrativeFirstResponseAt;
 
     const firstResponseMeasureUntil =
-        firstResponseEndAt ?? new Date();
+        firstResponseEndAt ??
+        now;
 
     const resolutionMeasureUntil =
-        resolutionEndAt ?? new Date();
+        resolutionEndAt ??
+        now;
 
-    const firstResponsePauseMs = getPendingPauseMs(
-        ticket,
-        firstResponseStartAt,
-        firstResponseMeasureUntil
-    );
+    /*
+     * PENDING sigue pausando el SLA.
+     *
+     * Al usar slaStartAt, solamente se contabilizan
+     * las pausas pertenecientes al ciclo actual.
+     */
+    const firstResponsePauseMs =
+        getPendingPauseMs(
+            ticket,
+            firstResponseStartAt,
+            firstResponseMeasureUntil,
+        );
 
-    const resolutionPauseMs = getPendingPauseMs(
-        ticket,
-        resolutionStartAt,
-        resolutionMeasureUntil
-    );
+    const resolutionPauseMs =
+        getPendingPauseMs(
+            ticket,
+            resolutionStartAt,
+            resolutionMeasureUntil,
+        );
 
-    const firstResponseDueAt = addMilliseconds(
-        addMinutes(firstResponseStartAt, targets.firstResponseMinutes),
-        firstResponsePauseMs
-    );
+    const firstResponseDueAt =
+        addMilliseconds(
+            addMinutes(
+                firstResponseStartAt,
+                targets
+                    .firstResponseMinutes,
+            ),
+            firstResponsePauseMs,
+        );
 
-    const resolutionDueAt = addMilliseconds(
-        addMinutes(resolutionStartAt, targets.resolutionMinutes),
-        resolutionPauseMs
-    );
+    const resolutionDueAt =
+        addMilliseconds(
+            addMinutes(
+                resolutionStartAt,
+                targets
+                    .resolutionMinutes,
+            ),
+            resolutionPauseMs,
+        );
 
-    const slaPaused = ticket.status === TicketStatus.PENDING;
+    const slaPaused =
+        ticket.status ===
+        TicketStatus.PENDING;
 
-    let firstResponseStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
+    let firstResponseStatus:
+        | "PENDING"
+        | "OK"
+        | "BREACHED" =
+        "PENDING";
 
     if (firstResponseEndAt) {
         firstResponseStatus =
-            firstResponseEndAt <= firstResponseDueAt ? "OK" : "BREACHED";
-    } else if (now > firstResponseDueAt) {
-        firstResponseStatus = "BREACHED";
+            firstResponseEndAt <=
+                firstResponseDueAt
+                ? "OK"
+                : "BREACHED";
+    } else if (
+        now >
+        firstResponseDueAt
+    ) {
+        firstResponseStatus =
+            "BREACHED";
     }
 
-    let resolutionStatus: "PENDING" | "OK" | "BREACHED" = "PENDING";
+    let resolutionStatus:
+        | "PENDING"
+        | "OK"
+        | "BREACHED" =
+        "PENDING";
 
     if (resolutionEndAt) {
         resolutionStatus =
-            resolutionEndAt <= resolutionDueAt ? "OK" : "BREACHED";
-    } else {
-        const isTerminated =
-            ticket.status === TicketStatus.CLOSED ||
-            ticket.status === TicketStatus.RESOLVED;
-
-        if (isTerminated) {
-            resolutionStatus = "OK";
-        } else if (now > resolutionDueAt) {
-            resolutionStatus = "BREACHED";
-        }
+            resolutionEndAt <=
+                resolutionDueAt
+                ? "OK"
+                : "BREACHED";
+    } else if (
+        now >
+        resolutionDueAt
+    ) {
+        resolutionStatus =
+            "BREACHED";
     }
 
     return {
         targets,
-        startsAt: assignedAt,
-        waitingAssignment: false,
-        paused: slaPaused,
+
+        startsAt:
+            slaStartAt,
+
+        waitingAssignment:
+            false,
+
+        paused:
+            slaPaused,
+
         firstResponse: {
-            dueAt: firstResponseDueAt,
-            at: firstResponseEndAt,
-            elapsedMinutes: firstResponseEndAt
-                ? diffMinutes(firstResponseStartAt, firstResponseEndAt)
-                : null,
-            status: firstResponseStatus,
-            remainingMinutes: firstResponseEndAt
-                ? 0
-                : signedDiffMinutes(now, firstResponseDueAt),
+            dueAt:
+                firstResponseDueAt,
+
+            at:
+                firstResponseEndAt,
+
+            elapsedMinutes:
+                firstResponseEndAt
+                    ? diffMinutes(
+                        firstResponseStartAt,
+                        firstResponseEndAt,
+                    )
+                    : null,
+
+            status:
+                firstResponseStatus,
+
+            remainingMinutes:
+                firstResponseEndAt
+                    ? 0
+                    : signedDiffMinutes(
+                        now,
+                        firstResponseDueAt,
+                    ),
         },
+
         resolution: {
-            dueAt: resolutionDueAt,
-            at: resolutionEndAt,
-            elapsedMinutes: resolutionEndAt
-                ? diffMinutes(resolutionStartAt, resolutionEndAt)
-                : null,
-            status: resolutionStatus,
-            remainingMinutes: resolutionEndAt
-                ? 0
-                : signedDiffMinutes(now, resolutionDueAt),
+            dueAt:
+                resolutionDueAt,
+
+            at:
+                resolutionEndAt,
+
+            elapsedMinutes:
+                resolutionEndAt
+                    ? diffMinutes(
+                        resolutionStartAt,
+                        resolutionEndAt,
+                    )
+                    : null,
+
+            status:
+                resolutionStatus,
+
+            remainingMinutes:
+                resolutionEndAt
+                    ? 0
+                    : signedDiffMinutes(
+                        now,
+                        resolutionDueAt,
+                    ),
         },
     };
 }
 
-export async function getTicketSla(req: Request, res: Response) {
+export async function getTicketSla(
+    req: Request,
+    res: Response
+) {
     try {
-        const slaConfig = await getSlaConfigFromDB();
+        const slaConfig =
+            await getSlaConfigFromDB();
 
-        const empresaId = req.query.empresaId
-            ? Number(req.query.empresaId)
-            : undefined;
+        const empresaId =
+            req.query.empresaId
+                ? Number(
+                    req.query.empresaId
+                )
+                : undefined;
 
-        const from = req.query.from ? new Date(req.query.from as string) : undefined;
-        const to = req.query.to ? new Date(req.query.to as string) : undefined;
+        const from =
+            req.query.from
+                ? new Date(
+                    req.query.from as string
+                )
+                : undefined;
 
-        const tickets = await prisma.ticket.findMany({
-            where: {
-                deletedAt: null,
+        const to =
+            req.query.to
+                ? new Date(
+                    req.query.to as string
+                )
+                : undefined;
 
-                ...(empresaId && { empresaId }),
+        /*
+         * =====================================================
+         * CICLOS ACTUALES
+         * =====================================================
+         */
 
-                ...(from || to
-                    ? {
-                        createdAt: {
-                            ...(from && { gte: from }),
-                            ...(to && { lte: to }),
-                        },
-                    }
-                    : {}),
-            },
-            select: {
-                id: true,
-                createdAt: true,
-                firstResponseAt: true,
-                resolvedAt: true,
-                lastReopenedAt: true,
-                closedAt: true,
-                status: true,
-                priority: true,
-                assigneeId: true,
-                assignee: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                    },
-                },
-                events: {
-                    where: {
-                        type: {
-                            in: [
-                                TicketEventType.ASSIGNED,
-                                TicketEventType.STATUS_CHANGED,
+        const tickets =
+            await prisma.ticket.findMany({
+                where: {
+                    deletedAt:
+                        null,
+
+                    ...(empresaId
+                        ? {
+                            empresaId,
+                        }
+                        : {}),
+
+                    /*
+                     * El filtro del ciclo actual usa
+                     * la fecha de inicio del ticket
+                     * para tickets originales.
+                     *
+                     * Los ciclos históricos usan
+                     * startedAt más abajo.
+                     */
+                    ...(from || to
+                        ? {
+                            OR: [
+                                {
+                                    createdAt: {
+                                        ...(from
+                                            ? {
+                                                gte:
+                                                    from,
+                                            }
+                                            : {}),
+
+                                        ...(to
+                                            ? {
+                                                lte:
+                                                    to,
+                                            }
+                                            : {}),
+                                    },
+                                },
+
+                                {
+                                    lastReopenedAt: {
+                                        ...(from
+                                            ? {
+                                                gte:
+                                                    from,
+                                            }
+                                            : {}),
+
+                                        ...(to
+                                            ? {
+                                                lte:
+                                                    to,
+                                            }
+                                            : {}),
+                                    },
+                                },
                             ],
+                        }
+                        : {}),
+                },
+
+                select: {
+                    id:
+                        true,
+
+                    createdAt:
+                        true,
+
+                    firstResponseAt:
+                        true,
+
+                    resolvedAt:
+                        true,
+
+                    lastReopenedAt:
+                        true,
+
+                    closedAt:
+                        true,
+
+                    status:
+                        true,
+
+                    priority:
+                        true,
+
+                    assigneeId:
+                        true,
+
+                    slaCycleNumber:
+                        true,
+
+                    assignee: {
+                        select: {
+                            id_tecnico:
+                                true,
+
+                            nombre:
+                                true,
                         },
                     },
-                    select: {
-                        type: true,
-                        oldValue: true,
-                        newValue: true,
-                        createdAt: true,
-                    },
-                    orderBy: {
-                        createdAt: "asc",
+
+                    events: {
+                        where: {
+                            type: {
+                                in: [
+                                    TicketEventType
+                                        .ASSIGNED,
+
+                                    TicketEventType
+                                        .STATUS_CHANGED,
+
+                                    TicketEventType
+                                        .REOPENED,
+                                ],
+                            },
+                        },
+
+                        select: {
+                            type:
+                                true,
+
+                            oldValue:
+                                true,
+
+                            newValue:
+                                true,
+
+                            createdAt:
+                                true,
+                        },
+
+                        orderBy: {
+                            createdAt:
+                                "asc",
+                        },
                     },
                 },
-            },
-        });
+            });
 
-        let frTotal = 0, frOk = 0, frBreached = 0, frPending = 0;
-        let rsTotal = 0, rsOk = 0, rsBreached = 0, rsPending = 0;
-        let frMinutesSum = 0, frMinutesCount = 0;
-        let rsMinutesSum = 0, rsMinutesCount = 0;
+        /*
+         * =====================================================
+         * CICLOS HISTÓRICOS
+         * =====================================================
+         */
 
-        const byTechnicianMap = new Map<number, any>();
+        const historicalCycles =
+            await prisma.ticketSlaCycle.findMany({
+                where: {
+                    ticket: {
+                        deletedAt:
+                            null,
 
-        for (const t of tickets) {
-            const sla = buildTicketSla(t, slaConfig);
+                        ...(empresaId
+                            ? {
+                                empresaId,
+                            }
+                            : {}),
+                    },
 
-            /*
-             * Un ticket sin asignación todavía no participa
-             * en el resumen ni en el cumplimiento del SLA.
-             */
-            if (sla.waitingAssignment) {
-                continue;
-            }
+                    ...(from || to
+                        ? {
+                            startedAt: {
+                                ...(from
+                                    ? {
+                                        gte:
+                                            from,
+                                    }
+                                    : {}),
 
-            const tieneRespuesta = t.firstResponseAt !== null;
-            const tieneCierre =
-                t.closedAt !== null ||
-                t.resolvedAt !== null;
+                                ...(to
+                                    ? {
+                                        lte:
+                                            to,
+                                    }
+                                    : {}),
+                            },
+                        }
+                        : {}),
+                },
+            });
 
-            const estaActivo =
-                t.status !== TicketStatus.CLOSED &&
-                t.status !== TicketStatus.RESOLVED;
+        let frTotal =
+            0;
 
-            // Primera respuesta
-            if (tieneRespuesta || tieneCierre || estaActivo) {
-                if (sla.firstResponse.status === "OK") frOk++;
-                if (sla.firstResponse.status === "BREACHED") frBreached++;
-                if (sla.firstResponse.status === "PENDING") frPending++;
-                frTotal++;
-            }
+        let frOk =
+            0;
 
-            // Resolución
-            if (tieneCierre || estaActivo) {
-                if (sla.resolution.status === "OK") rsOk++;
-                if (sla.resolution.status === "BREACHED") rsBreached++;
-                if (sla.resolution.status === "PENDING") rsPending++;
-                rsTotal++;
-            }
+        let frBreached =
+            0;
 
-            // Por técnico
-            if (t.assigneeId && t.assignee) {
-                if (!byTechnicianMap.has(t.assigneeId)) {
-                    byTechnicianMap.set(t.assigneeId, {
-                        tecnicoId: t.assignee.id_tecnico,
-                        tecnicoNombre: t.assignee.nombre,
-                        totalTickets: 0,
-                        firstResponseOk: 0,
-                        firstResponseBreached: 0,
-                        resolutionOk: 0,
-                        resolutionBreached: 0,
-                        firstResponseMinutesSum: 0,
-                        firstResponseMinutesCount: 0,
-                        resolutionMinutesSum: 0,
-                        resolutionMinutesCount: 0,
-                    });
+        let frPending =
+            0;
+
+        let rsTotal =
+            0;
+
+        let rsOk =
+            0;
+
+        let rsBreached =
+            0;
+
+        let rsPending =
+            0;
+
+        let frMinutesSum =
+            0;
+
+        let frMinutesCount =
+            0;
+
+        let rsMinutesSum =
+            0;
+
+        let rsMinutesCount =
+            0;
+
+        const byTechnicianMap =
+            new Map<
+                number,
+                any
+            >();
+
+        /*
+         * Función auxiliar para inicializar
+         * una fila de técnico.
+         */
+        const ensureTechnician =
+            (
+                tecnicoId: number,
+                tecnicoNombre: string,
+            ) => {
+                if (
+                    !byTechnicianMap
+                        .has(
+                            tecnicoId
+                        )
+                ) {
+                    byTechnicianMap.set(
+                        tecnicoId,
+                        {
+                            tecnicoId,
+
+                            tecnicoNombre,
+
+                            /*
+                             * Ahora representa ciclos
+                             * SLA medidos.
+                             */
+                            totalTickets:
+                                0,
+
+                            firstResponseOk:
+                                0,
+
+                            firstResponseBreached:
+                                0,
+
+                            resolutionOk:
+                                0,
+
+                            resolutionBreached:
+                                0,
+
+                            firstResponseMinutesSum:
+                                0,
+
+                            firstResponseMinutesCount:
+                                0,
+
+                            resolutionMinutesSum:
+                                0,
+
+                            resolutionMinutesCount:
+                                0,
+                        }
+                    );
                 }
 
-                const stat = byTechnicianMap.get(t.assigneeId);
-                stat.totalTickets++;
+                return byTechnicianMap
+                    .get(
+                        tecnicoId
+                    );
+            };
 
-                if (sla.firstResponse.status === "OK") stat.firstResponseOk++;
-                if (sla.firstResponse.status === "BREACHED") stat.firstResponseBreached++;
-                if (sla.resolution.status === "OK") stat.resolutionOk++;
-                if (sla.resolution.status === "BREACHED") stat.resolutionBreached++;
+        /*
+         * =====================================================
+         * HISTÓRICOS
+         * =====================================================
+         */
 
-                if (sla.firstResponse.elapsedMinutes !== null) {
-                    stat.firstResponseMinutesSum += sla.firstResponse.elapsedMinutes;
-                    stat.firstResponseMinutesCount++;
-                }
-                if (sla.resolution.elapsedMinutes !== null) {
-                    stat.resolutionMinutesSum += sla.resolution.elapsedMinutes;
-                    stat.resolutionMinutesCount++;
-                }
+        for (
+            const cycle
+            of historicalCycles
+        ) {
+            frTotal++;
+
+            if (
+                cycle.firstResponseStatus ===
+                "OK"
+            ) {
+                frOk++;
             }
 
-            if (sla.firstResponse.elapsedMinutes !== null) {
-                frMinutesSum += sla.firstResponse.elapsedMinutes;
+            if (
+                cycle.firstResponseStatus ===
+                "BREACHED"
+            ) {
+                frBreached++;
+            }
+
+            if (
+                cycle.firstResponseStatus ===
+                "PENDING"
+            ) {
+                frPending++;
+            }
+
+            rsTotal++;
+
+            if (
+                cycle.resolutionStatus ===
+                "OK"
+            ) {
+                rsOk++;
+            }
+
+            if (
+                cycle.resolutionStatus ===
+                "BREACHED"
+            ) {
+                rsBreached++;
+            }
+
+            if (
+                cycle.resolutionStatus ===
+                "PENDING"
+            ) {
+                rsPending++;
+            }
+
+            if (
+                cycle
+                    .firstResponseElapsedMinutes !==
+                null
+            ) {
+                frMinutesSum +=
+                    cycle
+                        .firstResponseElapsedMinutes;
+
                 frMinutesCount++;
             }
-            if (sla.resolution.elapsedMinutes !== null) {
-                rsMinutesSum += sla.resolution.elapsedMinutes;
+
+            if (
+                cycle
+                    .resolutionElapsedMinutes !==
+                null
+            ) {
+                rsMinutesSum +=
+                    cycle
+                        .resolutionElapsedMinutes;
+
                 rsMinutesCount++;
+            }
+
+            if (
+                cycle.assigneeId
+            ) {
+                const tecnico =
+                    await prisma.tecnico.findUnique({
+                        where: {
+                            id_tecnico:
+                                cycle.assigneeId,
+                        },
+
+                        select: {
+                            nombre:
+                                true,
+                        },
+                    });
+
+                const stat =
+                    ensureTechnician(
+                        cycle.assigneeId,
+                        tecnico
+                            ?.nombre ??
+                        `Técnico #${cycle.assigneeId}`,
+                    );
+
+                stat.totalTickets++;
+
+                if (
+                    cycle
+                        .firstResponseStatus ===
+                    "OK"
+                ) {
+                    stat
+                        .firstResponseOk++;
+                }
+
+                if (
+                    cycle
+                        .firstResponseStatus ===
+                    "BREACHED"
+                ) {
+                    stat
+                        .firstResponseBreached++;
+                }
+
+                if (
+                    cycle
+                        .resolutionStatus ===
+                    "OK"
+                ) {
+                    stat
+                        .resolutionOk++;
+                }
+
+                if (
+                    cycle
+                        .resolutionStatus ===
+                    "BREACHED"
+                ) {
+                    stat
+                        .resolutionBreached++;
+                }
+
+                if (
+                    cycle
+                        .firstResponseElapsedMinutes !==
+                    null
+                ) {
+                    stat
+                        .firstResponseMinutesSum +=
+                        cycle
+                            .firstResponseElapsedMinutes;
+
+                    stat
+                        .firstResponseMinutesCount++;
+                }
+
+                if (
+                    cycle
+                        .resolutionElapsedMinutes !==
+                    null
+                ) {
+                    stat
+                        .resolutionMinutesSum +=
+                        cycle
+                            .resolutionElapsedMinutes;
+
+                    stat
+                        .resolutionMinutesCount++;
+                }
             }
         }
 
-        const technicians = Array.from(byTechnicianMap.values()).map((t) => ({
-            ...t,
-            avgFirstResponseMinutes:
-                t.firstResponseMinutesCount > 0
-                    ? Math.round(t.firstResponseMinutesSum / t.firstResponseMinutesCount)
-                    : 0,
-            avgResolutionMinutes:
-                t.resolutionMinutesCount > 0
-                    ? Math.round(t.resolutionMinutesSum / t.resolutionMinutesCount)
-                    : 0,
-            firstResponseCompliance:
-                t.totalTickets > 0
-                    ? Math.round((t.firstResponseOk / t.totalTickets) * 100)
-                    : 0,
-            resolutionCompliance:
-                t.totalTickets > 0
-                    ? Math.round((t.resolutionOk / t.totalTickets) * 100)
-                    : 0,
-        }));
+        /*
+         * =====================================================
+         * CICLO ACTUAL DE CADA TICKET
+         * =====================================================
+         */
+
+        for (
+            const ticket
+            of tickets
+        ) {
+            const sla =
+                buildTicketSla(
+                    ticket,
+                    slaConfig,
+                );
+
+            if (
+                sla.waitingAssignment
+            ) {
+                continue;
+            }
+
+            const tieneRespuesta =
+                ticket.firstResponseAt !==
+                null;
+
+            const tieneCierre =
+                ticket.closedAt !==
+                null ||
+                ticket.resolvedAt !==
+                null;
+
+            const estaActivo =
+                ticket.status !==
+                TicketStatus.CLOSED &&
+                ticket.status !==
+                TicketStatus.RESOLVED;
+
+            if (
+                tieneRespuesta ||
+                tieneCierre ||
+                estaActivo
+            ) {
+                frTotal++;
+
+                if (
+                    sla.firstResponse
+                        .status ===
+                    "OK"
+                ) {
+                    frOk++;
+                }
+
+                if (
+                    sla.firstResponse
+                        .status ===
+                    "BREACHED"
+                ) {
+                    frBreached++;
+                }
+
+                if (
+                    sla.firstResponse
+                        .status ===
+                    "PENDING"
+                ) {
+                    frPending++;
+                }
+            }
+
+            if (
+                tieneCierre ||
+                estaActivo
+            ) {
+                rsTotal++;
+
+                if (
+                    sla.resolution
+                        .status ===
+                    "OK"
+                ) {
+                    rsOk++;
+                }
+
+                if (
+                    sla.resolution
+                        .status ===
+                    "BREACHED"
+                ) {
+                    rsBreached++;
+                }
+
+                if (
+                    sla.resolution
+                        .status ===
+                    "PENDING"
+                ) {
+                    rsPending++;
+                }
+            }
+
+            if (
+                sla.firstResponse
+                    .elapsedMinutes !==
+                null
+            ) {
+                frMinutesSum +=
+                    sla.firstResponse
+                        .elapsedMinutes;
+
+                frMinutesCount++;
+            }
+
+            if (
+                sla.resolution
+                    .elapsedMinutes !==
+                null
+            ) {
+                rsMinutesSum +=
+                    sla.resolution
+                        .elapsedMinutes;
+
+                rsMinutesCount++;
+            }
+
+            if (
+                ticket.assigneeId &&
+                ticket.assignee
+            ) {
+                const stat =
+                    ensureTechnician(
+                        ticket.assigneeId,
+                        ticket.assignee
+                            .nombre,
+                    );
+
+                stat.totalTickets++;
+
+                if (
+                    sla.firstResponse
+                        .status ===
+                    "OK"
+                ) {
+                    stat
+                        .firstResponseOk++;
+                }
+
+                if (
+                    sla.firstResponse
+                        .status ===
+                    "BREACHED"
+                ) {
+                    stat
+                        .firstResponseBreached++;
+                }
+
+                if (
+                    sla.resolution
+                        .status ===
+                    "OK"
+                ) {
+                    stat
+                        .resolutionOk++;
+                }
+
+                if (
+                    sla.resolution
+                        .status ===
+                    "BREACHED"
+                ) {
+                    stat
+                        .resolutionBreached++;
+                }
+
+                if (
+                    sla.firstResponse
+                        .elapsedMinutes !==
+                    null
+                ) {
+                    stat
+                        .firstResponseMinutesSum +=
+                        sla.firstResponse
+                            .elapsedMinutes;
+
+                    stat
+                        .firstResponseMinutesCount++;
+                }
+
+                if (
+                    sla.resolution
+                        .elapsedMinutes !==
+                    null
+                ) {
+                    stat
+                        .resolutionMinutesSum +=
+                        sla.resolution
+                            .elapsedMinutes;
+
+                    stat
+                        .resolutionMinutesCount++;
+                }
+            }
+        }
+
+        const technicians =
+            Array
+                .from(
+                    byTechnicianMap
+                        .values()
+                )
+                .map(
+                    (t) => ({
+                        ...t,
+
+                        avgFirstResponseMinutes:
+                            t.firstResponseMinutesCount >
+                                0
+                                ? Math.round(
+                                    t.firstResponseMinutesSum /
+                                    t.firstResponseMinutesCount
+                                )
+                                : 0,
+
+                        avgResolutionMinutes:
+                            t.resolutionMinutesCount >
+                                0
+                                ? Math.round(
+                                    t.resolutionMinutesSum /
+                                    t.resolutionMinutesCount
+                                )
+                                : 0,
+
+                        firstResponseCompliance:
+                            t.totalTickets >
+                                0
+                                ? Math.round(
+                                    (
+                                        t.firstResponseOk /
+                                        t.totalTickets
+                                    ) *
+                                    100
+                                )
+                                : 0,
+
+                        resolutionCompliance:
+                            t.totalTickets >
+                                0
+                                ? Math.round(
+                                    (
+                                        t.resolutionOk /
+                                        t.totalTickets
+                                    ) *
+                                    100
+                                )
+                                : 0,
+                    })
+                );
 
         return res.json({
-            ok: true,
+            ok:
+                true,
+
             sla: {
                 firstResponse: {
-                    total: frTotal,
-                    ok: frOk,
-                    breached: frBreached,
-                    pending: frPending,
-                    compliance: frTotal > 0 ? Math.round((frOk / frTotal) * 100) : 0,
-                    avgMinutes: frMinutesCount > 0 ? Math.round(frMinutesSum / frMinutesCount) : null,
+                    total:
+                        frTotal,
+
+                    ok:
+                        frOk,
+
+                    breached:
+                        frBreached,
+
+                    pending:
+                        frPending,
+
+                    compliance:
+                        frTotal >
+                            0
+                            ? Math.round(
+                                (
+                                    frOk /
+                                    frTotal
+                                ) *
+                                100
+                            )
+                            : 0,
+
+                    avgMinutes:
+                        frMinutesCount >
+                            0
+                            ? Math.round(
+                                frMinutesSum /
+                                frMinutesCount
+                            )
+                            : null,
                 },
+
                 resolution: {
-                    total: rsTotal,
-                    ok: rsOk,
-                    breached: rsBreached,
-                    pending: rsPending,
-                    compliance: rsTotal > 0 ? Math.round((rsOk / rsTotal) * 100) : 0,
-                    avgMinutes: rsMinutesCount > 0 ? Math.round(rsMinutesSum / rsMinutesCount) : null,
+                    total:
+                        rsTotal,
+
+                    ok:
+                        rsOk,
+
+                    breached:
+                        rsBreached,
+
+                    pending:
+                        rsPending,
+
+                    compliance:
+                        rsTotal >
+                            0
+                            ? Math.round(
+                                (
+                                    rsOk /
+                                    rsTotal
+                                ) *
+                                100
+                            )
+                            : 0,
+
+                    avgMinutes:
+                        rsMinutesCount >
+                            0
+                            ? Math.round(
+                                rsMinutesSum /
+                                rsMinutesCount
+                            )
+                            : null,
                 },
-                byTechnician: technicians,
+
+                byTechnician:
+                    technicians,
             },
         });
     } catch (error) {
-        console.error("[helpdesk] SLA error:", error);
-        return res.status(500).json({ ok: false, message: "Error al calcular SLA" });
+        console.error(
+            "[helpdesk] SLA error:",
+            error
+        );
+
+        return res
+            .status(
+                500
+            )
+            .json({
+                ok:
+                    false,
+
+                message:
+                    "Error al calcular SLA",
+            });
     }
 }

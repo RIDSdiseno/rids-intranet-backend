@@ -839,43 +839,212 @@ export async function obtenerDashboardFunnel(filtros: FiltrosDashboardInput) {
 /* =========================================================
    Detalle completo
 ========================================================= */
-export async function obtenerOportunidadPorId(id: number) {
-  const oportunidad = await prisma.oportunidadVenta.findUnique({
-    where: { id },
-    include: {
-      entidad: true,
-      responsable: { select: { id_tecnico: true, nombre: true, email: true, rol: true } },
-      seguimientos: {
-        orderBy: { createdAt: "desc" },
-        include: { autor: { select: { id_tecnico: true, nombre: true } } },
-      },
-      historialEtapas: {
-        orderBy: { createdAt: "desc" },
-        include: { actor: { select: { id_tecnico: true, nombre: true } } },
-      },
-      cotizaciones: {
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          estado: true,
-          total: true,
-          moneda: true,
-          createdAt: true,
-          entidad: { select: { id: true, nombre: true } },
+export async function obtenerOportunidadPorId(
+  id: number
+) {
+
+  const oportunidad =
+    await prisma
+      .oportunidadVenta
+      .findUnique({
+
+        where: {
+          id,
         },
-      },
-    },
-  });
 
-  if (!oportunidad) throw new OportunidadNoEncontradaError();
+        include: {
 
-  const auditoria = await prisma.auditLog.findMany({
-    where: { entity: "OportunidadVenta", entityId: String(id) },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+          entidad:
+            true,
 
-  return { ...oportunidad, auditoria };
+          responsable: {
+            select: {
+              id_tecnico:
+                true,
+
+              nombre:
+                true,
+
+              email:
+                true,
+
+              rol:
+                true,
+            },
+          },
+
+          seguimientos: {
+
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+
+            include: {
+              autor: {
+                select: {
+                  id_tecnico:
+                    true,
+
+                  nombre:
+                    true,
+                },
+              },
+            },
+          },
+
+          historialEtapas: {
+
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+
+            include: {
+              actor: {
+                select: {
+                  id_tecnico:
+                    true,
+
+                  nombre:
+                    true,
+                },
+              },
+            },
+          },
+
+          cotizaciones: {
+
+            orderBy: {
+              createdAt:
+                "desc",
+            },
+
+            select: {
+
+              id:
+                true,
+
+              estado:
+                true,
+
+              total:
+                true,
+
+              moneda:
+                true,
+
+              createdAt:
+                true,
+
+              entidad: {
+                select: {
+                  id:
+                    true,
+
+                  nombre:
+                    true,
+                },
+              },
+            },
+          },
+
+          // ==================================================
+          // ORIGEN MERCADO PÚBLICO
+          // ==================================================
+
+          mercadoPublicoOrigen: {
+
+            select: {
+
+              id:
+                true,
+
+              codigoExterno:
+                true,
+
+              nombre:
+                true,
+
+              descripcion:
+                true,
+
+              organismoNombre:
+                true,
+
+              organismoRut:
+                true,
+
+              unidadNombre:
+                true,
+
+              unidadRegion:
+                true,
+
+              unidadComuna:
+                true,
+
+              fechaPublicacion:
+                true,
+
+              fechaCierre:
+                true,
+
+              montoEstimado:
+                true,
+
+              score:
+                true,
+
+              nivelAfinidad:
+                true,
+
+              estado:
+                true,
+            },
+          },
+        },
+      });
+
+
+  if (
+    !oportunidad
+  ) {
+
+    throw new OportunidadNoEncontradaError();
+  }
+
+
+  const auditoria =
+    await prisma
+      .auditLog
+      .findMany({
+
+        where: {
+          entity:
+            "OportunidadVenta",
+
+          entityId:
+            String(
+              id
+            ),
+        },
+
+        orderBy: {
+          createdAt:
+            "desc",
+        },
+
+        take:
+          100,
+      });
+
+
+  return {
+    ...oportunidad,
+
+    auditoria,
+  };
 }
 
 async function obtenerOportunidadActivaOrThrow(tx: TxClient, id: number) {

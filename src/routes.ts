@@ -35,6 +35,8 @@ import cotizacionesMasivasRouter from "./routes/cotizaciones-routes/cotizaciones
 
 /* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
 import oportunidadesRouter from "./routes/oportunidades-routes/oportunidades.routes.js";
+import mercadoPublicoRouter from "./routes/oportunidades-routes/mercado-publico.routes.js";
+
 
 import tecnicosRouter from "./routes/tecnicos.routes.js";
 
@@ -194,6 +196,8 @@ api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
 
 /* ===================== FUNNEL COMERCIAL — OPORTUNIDADES ===================== */
 api.use("/oportunidades", oportunidadesRouter);
+
+api.use("/mercado-publico", mercadoPublicoRouter);
 
 /* ===================== Integraciones ===================== */
 // Google Directory sync (ej: POST /api/sync/google/users)

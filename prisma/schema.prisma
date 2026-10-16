@@ -406,22 +406,23 @@ model SolicitanteMsLicense {
 }
 
 model EntidadGestioo {
-  id                        Int                                @id @default(autoincrement())
-  nombre                    String
-  rut                       String?                            @unique
-  correo                    String?
-  telefono                  String?
-  direccion                 String?
-  tipo                      TipoEntidadGestioo                 @default(EMPRESA)
-  origen                    OrigenGestioo                      @default(RIDS)
-  empresaId                 Int?
-  empresa                   Empresa?                           @relation(fields: [empresaId], references: [id_empresa])
-  productos                 ProductoGestioo[]
-  trabajos                  DetalleTrabajoGestioo[]
-  servicioGestioos          ServicioGestioo[]
-  cotizaciones              CotizacionGestioo[]
-  cotizacionMasivaEntidades CotizacionMasivaPlantillaEntidad[]
-  oportunidadesVenta        OportunidadVenta[]
+  id                          Int                                @id @default(autoincrement())
+  nombre                      String
+  rut                         String?                            @unique
+  correo                      String?
+  telefono                    String?
+  direccion                   String?
+  tipo                        TipoEntidadGestioo                 @default(EMPRESA)
+  origen                      OrigenGestioo                      @default(RIDS)
+  empresaId                   Int?
+  empresa                     Empresa?                           @relation(fields: [empresaId], references: [id_empresa])
+  productos                   ProductoGestioo[]
+  trabajos                    DetalleTrabajoGestioo[]
+  servicioGestioos            ServicioGestioo[]
+  cotizaciones                CotizacionGestioo[]
+  cotizacionMasivaEntidades   CotizacionMasivaPlantillaEntidad[]
+  oportunidadesVenta          OportunidadVenta[]
+  oportunidadesMercadoPublico OportunidadMercadoPublico[]        @relation("MercadoPublicoEntidad")
 }
 
 model PasswordResetToken {
@@ -910,6 +911,7 @@ model Tecnico {
   aprobacionesBitacoraAsignadas   BitacoraAprobacion[]             @relation("BitacoraAprobacionAprobador")
   eventosBitacora                 BitacoraEvento[]                 @relation("BitacoraEventoActor")
   plantillasCorreo                PlantillaCorreo[]
+  conversionesMercadoPublico      OportunidadMercadoPublico[]      @relation("MercadoPublicoConvertidoPor")
 
   @@index([empresaId])
 }
@@ -1232,39 +1234,115 @@ model EvidenciaEntrega {
 }
 
 model Ticket {
-  id              Int               @id @default(autoincrement())
-  empresaId       Int
-  requesterId     Int?
-  assigneeId      Int?
-  subject         String
-  status          TicketStatus      @default(NEW)
-  priority        TicketPriority    @default(NORMAL)
-  channel         TicketChannel     @default(WEB)
-  fromEmail       String?
-  inboxEmail      String?
+  id          Int            @id @default(autoincrement())
+  empresaId   Int
+  requesterId Int?
+  assigneeId  Int?
+  subject     String
+  status      TicketStatus   @default(NEW)
+  priority    TicketPriority @default(NORMAL)
+  channel     TicketChannel  @default(WEB)
+  fromEmail   String?
+  inboxEmail  String?
+
   firstResponseAt DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  lastActivityAt  DateTime          @default(now())
-  publicId        String            @unique
-  aiSummary       String?
-  rolAsignado     String?
-  deletedAt       DateTime?
-  lastReopenedAt  DateTime?
-  empresa         Empresa           @relation(fields: [empresaId], references: [id_empresa])
-  requester       Solicitante?      @relation(fields: [requesterId], references: [id_solicitante])
-  assignee        Tecnico?          @relation(fields: [assigneeId], references: [id_tecnico])
-  messages        TicketMessage[]
-  events          TicketEvent[]
-  bitacoras       BitacoraTecnico[]
-  recordatorios   Recordatorio[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastActivityAt DateTime @default(now())
+
+  publicId    String    @unique
+  aiSummary   String?
+  rolAsignado String?
+  deletedAt   DateTime?
+
+  /**
+   * Última reapertura real:
+   * CLOSED/RESOLVED -> OPEN.
+   * PENDING -> OPEN NO modifica este campo.
+   */
+  lastReopenedAt DateTime?
+
+  /**
+   * Ciclo SLA actualmente activo.
+   * 1 = ciclo original.
+   * 2+ = reaperturas.
+   */
+  slaCycleNumber Int @default(1)
+
+  empresa   Empresa      @relation(fields: [empresaId], references: [id_empresa])
+  requester Solicitante? @relation(fields: [requesterId], references: [id_solicitante])
+  assignee  Tecnico?     @relation(fields: [assigneeId], references: [id_tecnico])
+
+  messages      TicketMessage[]
+  events        TicketEvent[]
+  bitacoras     BitacoraTecnico[]
+  recordatorios Recordatorio[]
+
+  slaCycles TicketSlaCycle[]
 
   @@index([empresaId])
   @@index([status])
   @@index([assigneeId])
   @@index([createdAt])
+  @@index([slaCycleNumber])
+}
+
+model TicketSlaCycle {
+  id Int @id @default(autoincrement())
+
+  ticketId    Int
+  cycleNumber Int
+
+  /**
+   * Snapshot del técnico responsable
+   * durante ese ciclo.
+   */
+  assigneeId Int?
+
+  /**
+   * Inicio y fin reales del ciclo.
+   */
+  startedAt DateTime
+  endedAt   DateTime?
+
+  /**
+   * Fechas efectivas.
+   */
+  firstResponseAt DateTime?
+  resolutionAt    DateTime?
+
+  /**
+   * Snapshot de la configuración SLA que
+   * estaba vigente para ese ciclo.
+   */
+  firstResponseTargetMinutes Int
+  resolutionTargetMinutes    Int
+
+  /**
+   * PENDING | OK | BREACHED
+   */
+  firstResponseStatus String?
+  resolutionStatus    String?
+
+  /**
+   * Duraciones finales calculadas.
+   */
+  firstResponseElapsedMinutes Int?
+  resolutionElapsedMinutes    Int?
+
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, cycleNumber])
+  @@index([ticketId])
+  @@index([cycleNumber])
+  @@index([assigneeId])
+  @@index([startedAt])
+  @@index([endedAt])
 }
 
 model ProcessedInboundEmail {
@@ -1370,13 +1448,15 @@ model SlaConfig {
 }
 
 model TicketSlaAlertLog {
-  id        Int      @id @default(autoincrement())
-  ticketId  Int
-  alertType String
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  ticketId    Int
+  cycleNumber Int      @default(1)
+  alertType   String
+  createdAt   DateTime @default(now())
 
-  @@unique([ticketId, alertType])
+  @@unique([ticketId, cycleNumber, alertType])
   @@index([ticketId])
+  @@index([ticketId, cycleNumber])
   @@index([alertType])
 }
 
@@ -2365,6 +2445,7 @@ model OportunidadVenta {
   historialEtapas           HistorialEtapaOportunidadVenta[]
   seguimientos              SeguimientoOportunidadVenta[]
   cotizaciones              CotizacionGestioo[]
+  mercadoPublicoOrigen      OportunidadMercadoPublico?       @relation("MercadoPublicoOportunidadVenta")
 
   @@index([etapa])
   @@index([responsableId])
@@ -2420,12 +2501,14 @@ model PlantillaCorreo {
   creadoPorId   Int?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  uso           UsoPlantillaCorreo  @default(CONTENIDO)
   creadoPor     Tecnico?            @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
 
   @@index([tipo])
   @@index([activo])
   @@index([creadoPorId])
   @@index([createdAt])
+  @@index([uso])
 }
 
 model EmpresaFavoritaTecnico {
@@ -2438,6 +2521,129 @@ model EmpresaFavoritaTecnico {
   @@unique([tecnicoId, origen, empresaId])
   @@index([origen, empresaId])
   @@index([tecnicoId])
+}
+
+model OportunidadMercadoPublico {
+  id Int @id @default(autoincrement())
+
+  // ==========================================
+  // IDENTIFICACIÓN MERCADO PÚBLICO
+  // ==========================================
+
+  codigoExterno String  @unique
+  nombre        String
+  descripcion   String?
+
+  codigoEstado         Int?
+  estadoMercadoPublico String?
+  tipoLicitacion       String?
+
+  // ==========================================
+  // FECHAS
+  // ==========================================
+
+  fechaPublicacion DateTime?
+  fechaCierre      DateTime?
+
+  // ==========================================
+  // INFORMACIÓN ECONÓMICA
+  // ==========================================
+
+  moneda        String?
+  montoEstimado Decimal? @db.Decimal(18, 2)
+
+  // ==========================================
+  // ORGANISMO COMPRADOR
+  // ==========================================
+
+  organismoCodigo String?
+  organismoNombre String
+  organismoRut    String?
+
+  unidadCodigo    String?
+  unidadNombre    String?
+  unidadDireccion String?
+  unidadComuna    String?
+  unidadRegion    String?
+
+  // ==========================================
+  // CONTACTO
+  // ==========================================
+
+  contactoNombre   String?
+  contactoCargo    String?
+  contactoEmail    String?
+  contactoTelefono String?
+
+  // ==========================================
+  // SCORING
+  // ==========================================
+
+  score         Int                         @default(0)
+  nivelAfinidad NivelAfinidadMercadoPublico @default(BAJA)
+  coincidencias String[]                    @default([])
+
+  // ==========================================
+  // ESTADO CRM
+  // ==========================================
+
+  estado EstadoOportunidadMercadoPublico @default(NUEVA)
+
+  // ==========================================
+  // CONVERSIÓN AL CRM
+  // ==========================================
+
+  entidadId Int?
+
+  oportunidadVentaId Int? @unique
+
+  convertidoPorId Int?
+  convertidoAt    DateTime?
+
+  // ==========================================
+  // SNAPSHOT ORIGINAL
+  // ==========================================
+
+  rawJson Json?
+
+  sincronizadoAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ==========================================
+  // RELACIONES
+  // ==========================================
+
+  entidad EntidadGestioo? @relation("MercadoPublicoEntidad", fields: [entidadId], references: [id], onDelete: SetNull)
+
+  oportunidadVenta OportunidadVenta? @relation("MercadoPublicoOportunidadVenta", fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
+
+  convertidoPor Tecnico? @relation("MercadoPublicoConvertidoPor", fields: [convertidoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([estado])
+  @@index([score])
+  @@index([nivelAfinidad])
+  @@index([organismoRut])
+  @@index([organismoCodigo])
+  @@index([fechaPublicacion])
+  @@index([fechaCierre])
+  @@index([entidadId])
+  @@index([convertidoPorId])
+}
+
+enum EstadoOportunidadMercadoPublico {
+  NUEVA
+  INTERESANTE
+  DESCARTADA
+  CONVERTIDA
+}
+
+enum NivelAfinidadMercadoPublico {
+  BAJA
+  MEDIA
+  ALTA
+  MUY_ALTA
 }
 
 enum TipoPlantillaCorreo {
@@ -2814,4 +3020,9 @@ enum EstadoEquipoAdicional {
   EN_STOCK
   EN_REPARACION
   DADO_DE_BAJA
+}
+
+enum UsoPlantillaCorreo {
+  CONTENIDO
+  FIRMA
 }

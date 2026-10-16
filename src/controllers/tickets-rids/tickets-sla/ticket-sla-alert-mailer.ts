@@ -9,19 +9,38 @@ import {
 import { bus } from "../../../lib/events.js";
 
 type TicketSlaAlertEmailParams = {
-    to: string;
-    tecnicoNombre?: string | null;
-    ticketId: number;
-    subject: string;
-    priority: string;
-    status: string;
+    to:
+    string;
+
+    tecnicoNombre?:
+    string | null;
+
+    ticketId:
+    number;
+
+    cycleNumber:
+    number;
+
+    subject:
+    string;
+
+    priority:
+    string;
+
+    status:
+    string;
+
     alertType:
     | "FIRST_RESPONSE_SOON"
     | "FIRST_RESPONSE_BREACHED"
     | "RESOLUTION_SOON"
     | "RESOLUTION_BREACHED";
-    firstResponseRemaining?: number | null;
-    resolutionRemaining?: number | null;
+
+    firstResponseRemaining?:
+    number | null;
+
+    resolutionRemaining?:
+    number | null;
 };
 
 function getAlertTitle(alertType: TicketSlaAlertEmailParams["alertType"]) {
@@ -95,6 +114,7 @@ async function crearRecordatorioInternoSla(
     const descripcion =
         [
             `Ticket #${params.ticketId}: ${params.subject}`,
+            `Ciclo SLA: #${params.cycleNumber}`,
             `Prioridad: ${params.priority}`,
             `Estado: ${params.status}`,
             `Alerta: ${title}`,
@@ -123,13 +143,19 @@ async function crearRecordatorioInternoSla(
      * Emitimos evento para que la campana global
      * se actualice inmediatamente y pueda sonar.
      */
-    bus.emit("ticket.sla_alert", {
-        ticketId:
-            params.ticketId,
+    bus.emit(
+        "ticket.sla_alert",
+        {
+            ticketId:
+                params.ticketId,
 
-        alertType:
-            params.alertType,
-    });
+            cycleNumber:
+                params.cycleNumber,
+
+            alertType:
+                params.alertType,
+        }
+    );
 }
 
 export async function sendTicketSlaAlertEmail(params: TicketSlaAlertEmailParams) {
@@ -145,6 +171,7 @@ export async function sendTicketSlaAlertEmail(params: TicketSlaAlertEmailParams)
 
             <div style="margin: 16px 0; padding: 16px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb;">
                 <p style="margin: 0 0 8px;"><strong>Ticket:</strong> #${params.ticketId}</p>
+                <p style="margin: 0 0 8px;"> <strong>Ciclo SLA:</strong>  #${params.cycleNumber}</p>
                 <p style="margin: 0 0 8px;"><strong>Asunto:</strong> ${escapeHtml(params.subject)}</p>
                 <p style="margin: 0 0 8px;"><strong>Prioridad:</strong> ${escapeHtml(params.priority)}</p>
                 <p style="margin: 0 0 8px;"><strong>Estado:</strong> ${escapeHtml(params.status)}</p>

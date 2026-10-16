@@ -16,8 +16,27 @@ import {
     postReceptorCobranza,
 } from "../../../controllers/baseapi/cobranza/cobranza-receptores.controller.js";
 
+import {
+    auth,
+} from "../../../middlewares/auth.js";
+
+import {
+    onlyRole,
+} from "../../../middlewares/roles.js";
+
 const router =
     Router();
+
+router.use(
+    auth()
+);
+
+router.use(
+    onlyRole(
+        "ADMINISTRACION",
+        "VENTAS"
+    )
+);
 
 /*
  * IMPORTANTE:

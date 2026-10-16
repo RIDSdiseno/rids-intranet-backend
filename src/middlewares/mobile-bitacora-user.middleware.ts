@@ -115,4 +115,6 @@ export async function mobileBitacoraUser(
                     "No fue posible identificar al técnico",
             });
     }
+
+    return;
 }

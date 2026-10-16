@@ -44,6 +44,8 @@ export const syncAccess: RequestHandler = (
     [
       "ADMIN",
       "ADMINISTRACION",
+      "VENTAS",
+      "TECNICO"
     ].includes(user.rol)
   ) {
     next();

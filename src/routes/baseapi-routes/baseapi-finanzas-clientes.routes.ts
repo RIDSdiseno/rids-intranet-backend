@@ -14,8 +14,10 @@ import {
     onlyRole,
 } from "../../middlewares/roles.js";
 
+
 const router =
     Router();
+
 
 router.get(
     "/clientes",
@@ -23,10 +25,12 @@ router.get(
     auth(),
 
     onlyRole(
-        "ADMINISTRACION"
+        "ADMINISTRACION",
+        "VENTAS"
     ),
 
     getFinanzasClientes
 );
+
 
 export default router;
