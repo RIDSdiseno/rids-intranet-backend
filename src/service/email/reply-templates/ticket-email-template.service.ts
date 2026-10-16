@@ -16,7 +16,7 @@ type TecnicoFirmaInput = {
 };
 
 // Servicio para gestionar templates de correo relacionados con tickets (creación, actualización, respuestas, etc.)
-class TicketEmailTemplateService {
+export class TicketEmailTemplateService {
     
     // Logo por defecto para la firma, si no se configura otro en DB o input del técnico
     private defaultLogo =

@@ -17,9 +17,13 @@ import type {
 } from "./correos-masivos-job.service.js";
 
 import {
+    prepararFirmaParaEnvio,
     prepararPlantillaParaEnvio,
 } from "./correos-masivos-template.service.js";
 
+import {
+    ticketEmailTemplateService,
+} from "../email/reply-templates/ticket-email-template.service.js";
 
 // =====================================================
 // TYPES
@@ -58,6 +62,35 @@ type MailerUser = {
     email?: string;
 };
 
+type MailerSender = {
+    id:
+    number;
+
+    nombre:
+    string |
+    null;
+
+    email:
+    string |
+    null;
+
+    cargo:
+    string |
+    null;
+
+    area:
+    string |
+    null;
+
+    firmaTexto:
+    string |
+    null;
+
+    firmaPath:
+    string |
+    null;
+};
+
 type EnvioMasivoInput = {
     targets:
     MailTarget[];
@@ -69,6 +102,12 @@ type EnvioMasivoInput = {
     string;
 
     plantillaId?:
+    number;
+
+    usarFirmaTecnico?:
+    boolean;
+
+    firmaTecnicoId?:
     number;
 
     attachments?:
@@ -96,6 +135,8 @@ export async function iniciarEnvioMasivo({
     targets,
     subject,
     bodyHtml,
+    usarFirmaTecnico = true,
+    firmaTecnicoId,
     plantillaId,
     attachments = [],
     user,
@@ -134,7 +175,7 @@ export async function iniciarEnvioMasivo({
 
 
     // =================================================
-    // CONTENIDO FINAL
+    // CONTENIDO
     // =================================================
 
     let finalBodyHtml =
@@ -145,21 +186,15 @@ export async function iniciarEnvioMasivo({
         MailAttachment[] =
         [];
 
+
+    // =================================================
+    // PLANTILLA PRINCIPAL
+    // =================================================
+
     if (
         plantillaId !== undefined &&
         plantillaId !== null
     ) {
-
-        if (
-            !Number.isInteger(
-                plantillaId
-            ) ||
-            plantillaId <= 0
-        ) {
-            throw new Error(
-                "ID de plantilla inválido"
-            );
-        }
 
         const preparada =
             await prepararPlantillaParaEnvio(
@@ -173,6 +208,11 @@ export async function iniciarEnvioMasivo({
             preparada.attachments;
     }
 
+
+    // =================================================
+    // VALIDAR CONTENIDO
+    // =================================================
+
     if (
         !finalBodyHtml
     ) {
@@ -180,6 +220,65 @@ export async function iniciarEnvioMasivo({
             "El correo debe incluir contenido HTML o una plantilla válida"
         );
     }
+
+
+    // =================================================
+    // USUARIO QUE REALIZA EL ENVÍO
+    // =================================================
+
+    const usuarioAutenticado =
+        await resolverUsuarioAutenticado(
+            user
+        );
+
+
+    const sentBy =
+        usuarioAutenticado?.nombre ??
+        usuarioAutenticado?.email ??
+        user?.email ??
+        null;
+
+
+    // =================================================
+    // FIRMA DEL CORREO
+    // =================================================
+
+    if (
+        usarFirmaTecnico
+    ) {
+
+        const firma =
+            await obtenerFirmaMailer({
+                ...(user !== undefined
+                    ? {
+                        user,
+                    }
+                    : {}),
+
+                ...(firmaTecnicoId !== undefined
+                    ? {
+                        firmaTecnicoId,
+                    }
+                    : {}),
+            });
+
+
+        if (
+            firma.html
+        ) {
+
+            finalBodyHtml =
+                `
+${finalBodyHtml}
+
+${firma.html}
+`.trim();
+        }
+    }
+
+    // =================================================
+    // ADJUNTOS
+    // =================================================
 
     const finalAttachments:
         MailAttachment[] = [
@@ -196,17 +295,6 @@ export async function iniciarEnvioMasivo({
         createMailerJob(
             validTargets.length
         );
-
-
-    // =================================================
-    // REMITENTE
-    // =================================================
-
-    const sentBy =
-        await resolverRemitente(
-            user
-        );
-
 
     // =================================================
     // PRE-REGISTRO
@@ -282,72 +370,236 @@ export function obtenerMailerJob(
     );
 }
 
-
 // =====================================================
 // RESOLVER REMITENTE
 // =====================================================
 
-async function resolverRemitente(
-    user?: MailerUser | null
-): Promise<string | null> {
+async function resolverTecnico(
+    tecnicoId: number
+): Promise<
+    MailerSender |
+    null
+> {
 
     try {
 
-        if (!user) {
+        if (
+            !Number.isInteger(
+                tecnicoId
+            ) ||
+            tecnicoId <= 0
+        ) {
             return null;
         }
 
+
+        const tecnico =
+            await prisma
+                .tecnico
+                .findUnique({
+                    where: {
+                        id_tecnico:
+                            tecnicoId,
+                    },
+
+                    select: {
+                        id_tecnico:
+                            true,
+
+                        nombre:
+                            true,
+
+                        email:
+                            true,
+
+                        cargo:
+                            true,
+
+                        area:
+                            true,
+
+                        firmaTexto:
+                            true,
+
+                        firma: {
+                            select: {
+                                path:
+                                    true,
+                            },
+                        },
+                    },
+                });
+
+
         if (
-            user.id
+            !tecnico
         ) {
-
-            const tecnico =
-                await prisma
-                    .tecnico
-                    .findUnique({
-                        where: {
-                            id_tecnico:
-                                Number(
-                                    user.id
-                                ),
-                        },
-
-                        select: {
-                            nombre:
-                                true,
-
-                            email:
-                                true,
-                        },
-                    });
-
-            return (
-                tecnico?.nombre ??
-                tecnico?.email ??
-                user.email ??
-                null
-            );
+            return null;
         }
 
-        return (
-            user.email ??
-            null
-        );
 
-    } catch (error) {
+        return {
+            id:
+                tecnico.id_tecnico,
+
+            nombre:
+                tecnico.nombre,
+
+            email:
+                tecnico.email,
+
+            cargo:
+                tecnico.cargo,
+
+            area:
+                tecnico.area,
+
+            firmaTexto:
+                tecnico.firmaTexto,
+
+            firmaPath:
+                tecnico.firma?.path ??
+                null,
+        };
+
+    } catch (
+    error
+    ) {
 
         console.warn(
-            "[Mailer] No se pudo resolver remitente:",
+            "[Mailer] No se pudo resolver técnico:",
             error
         );
 
-        return (
-            user?.email ??
-            null
-        );
+        return null;
     }
 }
 
+async function resolverUsuarioAutenticado(
+    user?:
+        MailerUser |
+        null
+): Promise<
+    MailerSender |
+    null
+> {
+
+    if (
+        !user?.id
+    ) {
+        return null;
+    }
+
+
+    const tecnicoId =
+        Number(
+            user.id
+        );
+
+
+    if (
+        !Number.isInteger(
+            tecnicoId
+        ) ||
+        tecnicoId <= 0
+    ) {
+        return null;
+    }
+
+
+    return resolverTecnico(
+        tecnicoId
+    );
+}
+
+export async function obtenerFirmaMailer({
+    user,
+    firmaTecnicoId,
+}: {
+    user?:
+    MailerUser |
+    null;
+
+    firmaTecnicoId?:
+    number;
+}) {
+
+    const usuarioAutenticado =
+        await resolverUsuarioAutenticado(
+            user
+        );
+
+
+    const tecnicoFirma =
+        firmaTecnicoId !== undefined
+            ? await resolverTecnico(
+                firmaTecnicoId
+            )
+            : usuarioAutenticado;
+
+
+    if (
+        firmaTecnicoId !== undefined &&
+        !tecnicoFirma
+    ) {
+        throw new Error(
+            "El técnico seleccionado para la firma no existe"
+        );
+    }
+
+
+    const firmaHtml =
+        await ticketEmailTemplateService
+            .buildFirmaHtml(
+                tecnicoFirma
+                    ? {
+                        nombre:
+                            tecnicoFirma.nombre,
+
+                        email:
+                            tecnicoFirma.email,
+
+                        cargo:
+                            tecnicoFirma.cargo,
+
+                        area:
+                            tecnicoFirma.area,
+
+                        firmaPath:
+                            tecnicoFirma.firmaPath,
+                    }
+                    : null
+            );
+
+
+    return {
+        tecnico:
+            tecnicoFirma
+                ? {
+                    id:
+                        tecnicoFirma.id,
+
+                    nombre:
+                        tecnicoFirma.nombre,
+
+                    email:
+                        tecnicoFirma.email,
+
+                    cargo:
+                        tecnicoFirma.cargo,
+
+                    area:
+                        tecnicoFirma.area,
+
+                    firmaPath:
+                        tecnicoFirma.firmaPath,
+                }
+                : null,
+
+        html:
+            firmaHtml,
+    };
+}
 
 // =====================================================
 // PRE-REGISTRO

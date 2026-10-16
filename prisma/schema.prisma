@@ -2490,12 +2490,10 @@ model PlantillaCorreo {
   nombre        String
   descripcion   String?
   tipo          TipoPlantillaCorreo
-  /// Archivo original guardado en Supabase.
   storagePath   String?
   nombreArchivo String?
   mimeType      String?
   bytes         Int?
-  /// HTML que realmente utilizará el Mailer.
   htmlProcesado String?
   activo        Boolean             @default(true)
   creadoPorId   Int?

@@ -9,6 +9,7 @@ const ALLOWED_MIME_TYPES =
         "image/png",
         "image/jpeg",
         "image/webp",
+        "image/gif",
     ]);
 
 export const uploadPlantillaCorreo =
@@ -46,7 +47,7 @@ export const uploadPlantillaCorreo =
             if (!allowed) {
                 return callback(
                     new Error(
-                        "Solo se permiten archivos HTML, PNG, JPG, JPEG y WEBP"
+                        "Solo se permiten archivos HTML, PNG, JPG, JPEG, WEBP y GIF"
                     )
                 );
             }
