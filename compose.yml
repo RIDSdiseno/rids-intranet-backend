@@ -1,0 +1,27 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-rids-intranet-backend:test}
+
+    container_name: rids-intranet-backend
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "192.168.10.247:4000:4000"
+
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+
+    init: true
+
+    stop_grace_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
