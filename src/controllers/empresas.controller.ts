@@ -4,6 +4,10 @@ import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
+import {
+  intentarVincularEmpresaAutomaticamente,
+} from "../service/empresa-entidad.service.js";
+
 // Util para normalizar dominios ingresados (string o array) a formato consistente
 function normalizeDominios(input: unknown): string[] {
   if (input === undefined || input === null) return [];
@@ -724,9 +728,48 @@ export async function createEmpresa(
       return { nueva, detalle };
     });
 
-    res.status(201).json({
-      success: true,
-      data: { ...result.nueva, detalleEmpresa: result.detalle },
+    let relacionAutomatica =
+      null;
+
+
+    if (
+      result.detalle?.rut
+    ) {
+
+      try {
+
+        relacionAutomatica =
+          await intentarVincularEmpresaAutomaticamente(
+            result
+              .nueva
+              .id_empresa
+          );
+
+      } catch (
+      error
+      ) {
+
+        console.error(
+          "[EMPRESAS] Error intentando relación automática:",
+          error
+        );
+      }
+    }
+
+    res.status(
+      201
+    ).json({
+      success:
+        true,
+
+      data: {
+        ...result.nueva,
+
+        detalleEmpresa:
+          result.detalle,
+
+        relacionAutomatica,
+      },
     });
   } catch (error: any) {
     console.error("Error al crear empresa:", error);
@@ -851,9 +894,44 @@ export async function updateEmpresa(req: Request, res: Response): Promise<void> 
       return { empresaAct, detalle };
     });
 
+    let relacionAutomatica =
+      null;
+
+
+    if (
+      result.detalle?.rut
+    ) {
+
+      try {
+
+        relacionAutomatica =
+          await intentarVincularEmpresaAutomaticamente(
+            id
+          );
+
+      } catch (
+      error
+      ) {
+
+        console.error(
+          "[EMPRESAS] Error intentando relación automática después de editar:",
+          error
+        );
+      }
+    }
+
     res.json({
-      success: true,
-      data: { ...result.empresaAct, detalleEmpresa: result.detalle },
+      success:
+        true,
+
+      data: {
+        ...result.empresaAct,
+
+        detalleEmpresa:
+          result.detalle,
+
+        relacionAutomatica,
+      },
     });
   } catch (error: any) {
     console.error("Error al actualizar empresa:", error);

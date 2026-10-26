@@ -5,6 +5,10 @@ import type { Request, Response } from "express";
 import { TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
 import { prismaBase as prisma } from "../lib/prisma.js";
 
+import {
+    intentarVincularEntidadAutomaticamente,
+} from "../service/empresa-entidad.service.js";
+
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -343,19 +347,95 @@ export async function createEntidad(req: Request, res: Response) {
             }
         }
 
-        const nuevaEntidad = await prisma.entidadGestioo.create({
-            data: {
-                nombre: nombreNormalizado,
-                rut: rutNormalizado,
-                correo: data.correo || null,
-                telefono: data.telefono || null,
-                direccion: data.direccion || null,
-                tipo: tipoNormalizado,
-                origen: origenNormalizado,
-            },
+        const nuevaEntidad =
+            await prisma.entidadGestioo.create({
+                data: {
+                    nombre:
+                        nombreNormalizado,
+
+                    rut:
+                        rutNormalizado,
+
+                    correo:
+                        data.correo ||
+                        null,
+
+                    telefono:
+                        data.telefono ||
+                        null,
+
+                    direccion:
+                        data.direccion ||
+                        null,
+
+                    tipo:
+                        tipoNormalizado,
+
+                    origen:
+                        origenNormalizado,
+                },
+            });
+
+
+        /*
+         * Intentar relacionar automáticamente
+         * solamente cuando existe coincidencia
+         * exacta de RUT.
+         *
+         * No bloqueamos la creación si no encuentra
+         * empresa.
+         */
+        let relacionAutomatica =
+            null;
+
+        try {
+
+            relacionAutomatica =
+                await intentarVincularEntidadAutomaticamente(
+                    nuevaEntidad.id
+                );
+
+        } catch (
+        error
+        ) {
+
+            console.error(
+                "[ENTIDADES] No se pudo intentar relación automática:",
+                error
+            );
+        }
+
+
+        const entidadFinal =
+            await prisma.entidadGestioo.findUnique({
+                where: {
+                    id:
+                        nuevaEntidad.id,
+                },
+
+                include: {
+                    empresa: {
+                        select: {
+                            id_empresa:
+                                true,
+
+                            nombre:
+                                true,
+                        },
+                    },
+                },
+            });
+
+
+        return res.status(
+            201
+        ).json({
+            data:
+                entidadFinal,
+
+            relacionAutomatica,
         });
 
-        return res.status(201).json({ data: nuevaEntidad });
     } catch (error: any) {
         if (error.code === "P2002") {
             return res.status(409).json({
@@ -398,7 +478,28 @@ export async function getEntidades(req: Request, res: Response) {
                 { nombre: "asc" },
             ],
             include: {
-                productos: true,
+                productos:
+                    true,
+
+                empresa: {
+                    select: {
+                        id_empresa:
+                            true,
+
+                        nombre:
+                            true,
+
+                        isActive:
+                            true,
+
+                        detalleEmpresa: {
+                            select: {
+                                rut:
+                                    true,
+                            },
+                        },
+                    },
+                },
             },
         });
 
@@ -416,7 +517,27 @@ export async function getEntidadById(req: Request, res: Response) {
 
         const entidad = await prisma.entidadGestioo.findUnique({
             where: { id },
-            include: { productos: true },
+            include: {
+                productos:
+                    true,
+
+                empresa: {
+                    select: {
+                        id_empresa:
+                            true,
+
+                        nombre:
+                            true,
+
+                        detalleEmpresa: {
+                            select: {
+                                rut:
+                                    true,
+                            },
+                        },
+                    },
+                },
+            },
         });
 
         if (!entidad) {
@@ -510,7 +631,61 @@ export async function updateEntidad(req: Request, res: Response) {
             },
         });
 
-        return res.json({ data: entidadActualizada });
+        let relacionAutomatica =
+            null;
+
+
+        if (
+            !entidadActualizada
+                .empresaId
+        ) {
+
+            try {
+
+                relacionAutomatica =
+                    await intentarVincularEntidadAutomaticamente(
+                        entidadActualizada.id
+                    );
+
+            } catch (
+            error
+            ) {
+
+                console.error(
+                    "[ENTIDADES] Error intentando relación automática:",
+                    error
+                );
+            }
+        }
+
+
+        const entidadFinal =
+            await prisma.entidadGestioo.findUnique({
+                where: {
+                    id:
+                        entidadActualizada.id,
+                },
+
+                include: {
+                    empresa: {
+                        select: {
+                            id_empresa:
+                                true,
+
+                            nombre:
+                                true,
+                        },
+                    },
+                },
+            });
+
+
+        return res.json({
+            data:
+                entidadFinal,
+
+            relacionAutomatica,
+        });
     } catch (error: any) {
         if (error.code === "P2002") {
             return res.status(409).json({

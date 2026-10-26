@@ -869,8 +869,10 @@ export const listSolicitantesByEmpresa = async (req: Request, res: Response) => 
 
     const onlyWithAccountRaw =
       req.query.onlyWithAccount !== undefined
-        ? parseOnlyWithAccount(req.query.onlyWithAccount)
-        : user?.rol === "CLIENTE";
+        ? parseOnlyWithAccount(
+          req.query.onlyWithAccount
+        )
+        : false;
 
     const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
       empresaId,
@@ -1053,8 +1055,10 @@ export const solicitantesMetrics = async (req: Request, res: Response) => {
 
     const onlyWithAccountRaw =
       req.query.onlyWithAccount !== undefined
-        ? parseOnlyWithAccount(req.query.onlyWithAccount)
-        : user?.rol === "CLIENTE";
+        ? parseOnlyWithAccount(
+          req.query.onlyWithAccount
+        )
+        : false;
 
     const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
       empresaId,

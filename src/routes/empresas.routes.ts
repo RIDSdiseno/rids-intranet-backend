@@ -23,6 +23,14 @@ import {
   getSoporteMensualPorEmpresa,
 } from "../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
 
+import {
+  getRelacionEmpresaEntidades,
+  getEntidadesDisponiblesEmpresa,
+  patchVincularEntidadEmpresa,
+  deleteVinculoEntidadEmpresa,
+  postVincularEntidadAutomaticamente,
+} from "../controllers/controllers-empresas/empresa-entidad.controller.js";
+
 import { onlyRole } from "../middlewares/roles.js";
 import { auth } from "../middlewares/auth.js";
 
@@ -95,6 +103,61 @@ empresasRouter.get(
   getEmpresaDashboard
 );
 
+/* =====================================================
+   EMPRESA ↔ ENTIDAD GESTIOO
+===================================================== */
+
+empresasRouter.get(
+  "/:id/entidades-relacion",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION",
+    "VENTAS"
+  ),
+  getRelacionEmpresaEntidades
+);
+
+
+empresasRouter.get(
+  "/:id/entidades-disponibles",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION",
+    "VENTAS"
+  ),
+  getEntidadesDisponiblesEmpresa
+);
+
+
+empresasRouter.post(
+  "/:id/entidades/auto",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION"
+  ),
+  postVincularEntidadAutomaticamente
+);
+
+
+empresasRouter.patch(
+  "/:id/entidades/:entidadId/vincular",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION"
+  ),
+  patchVincularEntidadEmpresa
+);
+
+
+empresasRouter.delete(
+  "/:id/entidades/:entidadId/desvincular",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION"
+  ),
+  deleteVinculoEntidadEmpresa
+);
+
 /*
  * CRUD principal.
  */
@@ -103,11 +166,11 @@ empresasRouter.get(
   getEmpresaById
 );
 
-empresasRouter.put("/:id",onlyRole("ADMIN","ADMINISTRACION"),updateEmpresa);
+empresasRouter.put("/:id", onlyRole("ADMIN", "ADMINISTRACION"), updateEmpresa);
 
 /*
  * DELETE ahora ejecuta una desactivación lógica.
  */
-empresasRouter.delete( "/:id",onlyRole("ADMIN","ADMINISTRACION"),deleteEmpresa);
+empresasRouter.delete("/:id", onlyRole("ADMIN", "ADMINISTRACION"), deleteEmpresa);
 
 export default empresasRouter;

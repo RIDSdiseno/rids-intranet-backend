@@ -200,11 +200,65 @@ api.use("/oportunidades", oportunidadesRouter);
 api.use("/mercado-publico", mercadoPublicoRouter);
 
 /* ===================== Integraciones ===================== */
-// Google Directory sync (ej: POST /api/sync/google/users)
-api.use(syncAccess, syncGoogleRouter);
 
-// Microsoft Graph sync
-api.use(syncAccess, msSyncRouter);
+/*
+ * syncAccess debe ejecutarse SOLAMENTE
+ * para las rutas de sincronización.
+ *
+ * No debe bloquear otras rutas del API
+ * como:
+ *
+ * /baseapi/rcv/*
+ * /cotizaciones/*
+ * /detalle-trabajo-gestioo/*
+ * etc.
+ */
+
+api.use(
+    (
+        req,
+        res,
+        next
+    ) => {
+
+        const path =
+            req.path
+                .toLowerCase();
+
+
+        const esRutaSync =
+            path.startsWith(
+                "/sync/google"
+            ) ||
+            path.startsWith(
+                "/sync/microsoft"
+            );
+
+
+        if (
+            !esRutaSync
+        ) {
+            next();
+            return;
+        }
+
+
+        syncAccess(
+            req,
+            res,
+            next
+        );
+    }
+);
+
+/*
+ * Los routers mantienen exactamente
+ * sus rutas actuales.
+ */
+
+api.use(syncGoogleRouter);
+
+api.use(msSyncRouter);
 
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
