@@ -6,6 +6,71 @@ import { Prisma, } from "@prisma/client";
 /* =========================================================
    HELPERS
 ========================================================= */
+function normalizarCostoMensual(value) {
+    if (value === null ||
+        value === undefined ||
+        value === "") {
+        return null;
+    }
+    if (typeof value ===
+        "number") {
+        if (!Number.isFinite(value) ||
+            value < 0) {
+            throw new Error("COSTO_MENSUAL_INVALIDO");
+        }
+        return value;
+    }
+    let limpio = String(value)
+        .trim()
+        .replace(/\s/g, "")
+        .replace(/[^\d.,]/g, "");
+    if (!limpio) {
+        return null;
+    }
+    const lastComma = limpio.lastIndexOf(",");
+    const lastDot = limpio.lastIndexOf(".");
+    let normalizado = limpio;
+    if (lastComma >= 0 &&
+        lastDot >= 0) {
+        if (lastComma >
+            lastDot) {
+            normalizado =
+                limpio
+                    .replace(/\./g, "")
+                    .replace(",", ".");
+        }
+        else {
+            normalizado =
+                limpio.replace(/,/g, "");
+        }
+    }
+    else if (lastComma >= 0) {
+        const decimales = limpio.length -
+            lastComma -
+            1;
+        normalizado =
+            decimales >= 1 &&
+                decimales <= 2
+                ? limpio.replace(",", ".")
+                : limpio.replace(/,/g, "");
+    }
+    else if (lastDot >= 0) {
+        const decimales = limpio.length -
+            lastDot -
+            1;
+        normalizado =
+            decimales >= 1 &&
+                decimales <= 2
+                ? limpio
+                : limpio.replace(/\./g, "");
+    }
+    const numero = Number(normalizado);
+    if (!Number.isFinite(numero) ||
+        numero < 0) {
+        throw new Error("COSTO_MENSUAL_INVALIDO");
+    }
+    return numero;
+}
 function normalizarTexto(value) {
     if (value === null ||
         value === undefined) {
@@ -324,6 +389,7 @@ export async function crearSuscripcionEmpresa(empresaId, input) {
         .filter(contacto => Boolean(contacto.nombre ||
         contacto.email ||
         contacto.telefono));
+    const costoMensual = normalizarCostoMensual(input.costoMensual);
     return prisma
         .$transaction(async (tx) => {
         const suscripcion = await tx
@@ -335,8 +401,7 @@ export async function crearSuscripcionEmpresa(empresaId, input) {
                 fabricante,
                 productoPlan,
                 cantidadLicencias,
-                costoMensual: input.costoMensual ??
-                    null,
+                costoMensual,
                 moneda: normalizarTexto(input.moneda) ??
                     "CLP",
                 fechaInicio: normalizarFecha(input.fechaInicio),
@@ -440,7 +505,7 @@ export async function actualizarSuscripcionEmpresa(empresaId, suscripcionId, inp
     if (input.costoMensual !==
         undefined) {
         data.costoMensual =
-            input.costoMensual;
+            normalizarCostoMensual(input.costoMensual);
     }
     /* =====================================================
        MONEDA

@@ -385,7 +385,13 @@ export async function createEntidad(req: Request, res: Response) {
          * No bloqueamos la creación si no encuentra
          * empresa.
          */
-        let relacionAutomatica =
+        let relacionAutomatica:
+            Awaited<
+                ReturnType<
+                    typeof intentarVincularEntidadAutomaticamente
+                >
+            > |
+            null =
             null;
 
         try {
@@ -631,9 +637,14 @@ export async function updateEntidad(req: Request, res: Response) {
             },
         });
 
-        let relacionAutomatica =
+        let relacionAutomatica:
+            Awaited<
+                ReturnType<
+                    typeof intentarVincularEntidadAutomaticamente
+                >
+            > |
+            null =
             null;
-
 
         if (
             !entidadActualizada

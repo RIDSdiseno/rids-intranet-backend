@@ -528,8 +528,10 @@ export const listSolicitantes = async (req: Request, res: Response) => {
     // Si NO viene → default depende del rol
     const onlyWithAccountRaw =
       req.query.onlyWithAccount !== undefined
-        ? parseOnlyWithAccount(req.query.onlyWithAccount)
-        : user?.rol === "CLIENTE"; // true para cliente, false para admin
+        ? parseOnlyWithAccount(
+          req.query.onlyWithAccount
+        )
+        : false;// true para cliente, false para admin
 
     const onlyWithAccount = applyClinicOverrideOnlyWithAccount(
       empresaId,

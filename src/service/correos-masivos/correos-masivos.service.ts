@@ -104,12 +104,6 @@ type EnvioMasivoInput = {
     plantillaId?:
     number;
 
-    usarFirmaTecnico?:
-    boolean;
-
-    firmaTecnicoId?:
-    number;
-
     attachments?:
     MailAttachment[];
 
@@ -126,6 +120,26 @@ type EnvioMasivoInput = {
 const EMAIL_RE =
     /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+const MAILER_FIRMA_TECNICO_ID =
+    Number(
+        process.env.MAILER_FIRMA_TECNICO_ID
+    );
+
+function getMailerFirmaTecnicoId(): number {
+
+    if (
+        !Number.isInteger(
+            MAILER_FIRMA_TECNICO_ID
+        ) ||
+        MAILER_FIRMA_TECNICO_ID <= 0
+    ) {
+        throw new Error(
+            "MAILER_FIRMA_TECNICO_ID no está configurado correctamente"
+        );
+    }
+
+    return MAILER_FIRMA_TECNICO_ID;
+}
 
 // =====================================================
 // MAIN
@@ -135,8 +149,6 @@ export async function iniciarEnvioMasivo({
     targets,
     subject,
     bodyHtml,
-    usarFirmaTecnico = true,
-    firmaTecnicoId,
     plantillaId,
     attachments = [],
     user,
@@ -238,43 +250,29 @@ export async function iniciarEnvioMasivo({
         user?.email ??
         null;
 
+    // =================================================
+    // FIRMA CORPORATIVA SOPORTE RIDS
+    // =================================================
 
-    // =================================================
-    // FIRMA DEL CORREO
-    // =================================================
+    const firma =
+        await obtenerFirmaMailer();
+
 
     if (
-        usarFirmaTecnico
+        !firma.html
     ) {
-
-        const firma =
-            await obtenerFirmaMailer({
-                ...(user !== undefined
-                    ? {
-                        user,
-                    }
-                    : {}),
-
-                ...(firmaTecnicoId !== undefined
-                    ? {
-                        firmaTecnicoId,
-                    }
-                    : {}),
-            });
+        throw new Error(
+            "No fue posible generar la firma corporativa de Soporte RIDS"
+        );
+    }
 
 
-        if (
-            firma.html
-        ) {
-
-            finalBodyHtml =
-                `
+    finalBodyHtml =
+        `
 ${finalBodyHtml}
 
 ${firma.html}
 `.trim();
-        }
-    }
 
     // =================================================
     // ADJUNTOS
@@ -512,89 +510,67 @@ async function resolverUsuarioAutenticado(
     );
 }
 
-export async function obtenerFirmaMailer({
-    user,
-    firmaTecnicoId,
-}: {
-    user?:
-    MailerUser |
-    null;
+export async function obtenerFirmaMailer() {
 
-    firmaTecnicoId?:
-    number;
-}) {
-
-    const usuarioAutenticado =
-        await resolverUsuarioAutenticado(
-            user
-        );
+    const tecnicoId =
+        getMailerFirmaTecnicoId();
 
 
     const tecnicoFirma =
-        firmaTecnicoId !== undefined
-            ? await resolverTecnico(
-                firmaTecnicoId
-            )
-            : usuarioAutenticado;
+        await resolverTecnico(
+            tecnicoId
+        );
 
 
     if (
-        firmaTecnicoId !== undefined &&
         !tecnicoFirma
     ) {
         throw new Error(
-            "El técnico seleccionado para la firma no existe"
+            "No existe el técnico configurado como firma de Soporte RIDS"
         );
     }
 
 
     const firmaHtml =
         await ticketEmailTemplateService
-            .buildFirmaHtml(
-                tecnicoFirma
-                    ? {
-                        nombre:
-                            tecnicoFirma.nombre,
+            .buildFirmaHtml({
+                nombre:
+                    tecnicoFirma.nombre,
 
-                        email:
-                            tecnicoFirma.email,
+                email:
+                    tecnicoFirma.email,
 
-                        cargo:
-                            tecnicoFirma.cargo,
+                cargo:
+                    tecnicoFirma.cargo,
 
-                        area:
-                            tecnicoFirma.area,
+                area:
+                    tecnicoFirma.area,
 
-                        firmaPath:
-                            tecnicoFirma.firmaPath,
-                    }
-                    : null
-            );
+                firmaPath:
+                    tecnicoFirma.firmaPath,
+            });
 
 
     return {
-        tecnico:
-            tecnicoFirma
-                ? {
-                    id:
-                        tecnicoFirma.id,
+        tecnico: {
+            id:
+                tecnicoFirma.id,
 
-                    nombre:
-                        tecnicoFirma.nombre,
+            nombre:
+                tecnicoFirma.nombre,
 
-                    email:
-                        tecnicoFirma.email,
+            email:
+                tecnicoFirma.email,
 
-                    cargo:
-                        tecnicoFirma.cargo,
+            cargo:
+                tecnicoFirma.cargo,
 
-                    area:
-                        tecnicoFirma.area,
+            area:
+                tecnicoFirma.area,
 
-                    firmaPath:
-                        tecnicoFirma.firmaPath,
-                }
-                : null,
+            firmaPath:
+                tecnicoFirma.firmaPath,
+        },
 
         html:
             firmaHtml,

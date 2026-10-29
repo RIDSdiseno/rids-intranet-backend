@@ -2,7 +2,7 @@
 import { Router } from "express";
 // Ficha
 import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, upsertChecklistEmpresa } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
-import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedSucursal, upsertRedSucursal, eliminarSucursal, } from "../../controllers/controllers-empresas/sucursal.controller.js";
+import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedesSucursal, crearRedSucursal, actualizarRedSucursal, eliminarRedSucursal, eliminarSucursal, } from "../../controllers/controllers-empresas/sucursal.controller.js";
 // Red sucursal
 import { obtenerEmpresaISPs, crearEmpresaISP, actualizarEmpresaISP, eliminarEmpresaISP, } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
 /* ===================== SERVIDORES ===================== */
@@ -36,9 +36,15 @@ fichaEmpresasRouter.get("/:empresaId/isp", obtenerEmpresaISPs);
 fichaEmpresasRouter.post("/:empresaId/isp", crearEmpresaISP);
 fichaEmpresasRouter.put("/isp/:id", actualizarEmpresaISP);
 fichaEmpresasRouter.delete("/isp/:id", eliminarEmpresaISP);
-/* ===================== RED SUCURSAL ===================== */
-fichaEmpresasRouter.get("/sucursales/:sucursalId/red", obtenerRedSucursal);
-fichaEmpresasRouter.put("/sucursales/:sucursalId/red", upsertRedSucursal);
+/* ===================== REDES DE SUCURSAL ===================== */
+/* Listar todas */
+fichaEmpresasRouter.get("/sucursales/:sucursalId/redes", obtenerRedesSucursal);
+/* Crear */
+fichaEmpresasRouter.post("/sucursales/:sucursalId/redes", crearRedSucursal);
+/* Actualizar una */
+fichaEmpresasRouter.patch("/sucursales/:sucursalId/redes/:redId", actualizarRedSucursal);
+/* Eliminar una */
+fichaEmpresasRouter.delete("/sucursales/:sucursalId/redes/:redId", eliminarRedSucursal);
 /* ===================== SERVIDORES ===================== */
 fichaEmpresasRouter.get("/:empresaId/servidores", getServidoresByEmpresa);
 fichaEmpresasRouter.get("/servidores/:id", getServidorById);

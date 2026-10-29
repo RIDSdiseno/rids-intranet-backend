@@ -65,9 +65,14 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
       },
     });
 
-    let relacionAutomatica =
+    let relacionAutomatica:
+      Awaited<
+        ReturnType<
+          typeof intentarVincularEmpresaAutomaticamente
+        >
+      > |
+      null =
       null;
-
 
     try {
 
@@ -245,7 +250,13 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
       },
     });
 
-    let relacionAutomatica =
+    let relacionAutomatica:
+      Awaited<
+        ReturnType<
+          typeof intentarVincularEmpresaAutomaticamente
+        >
+      > |
+      null =
       null;
 
 

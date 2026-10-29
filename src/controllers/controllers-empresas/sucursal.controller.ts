@@ -1,6 +1,32 @@
+// src/controllers/controllers-empresas/sucursal.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../../utils/coordenadas.js";
+
+function limpiarTextoRed(
+    value:
+        unknown
+): string | null {
+
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return null;
+    }
+
+
+    const text =
+        String(
+            value
+        )
+            .trim();
+
+
+    return text !== ""
+        ? text
+        : null;
+}
 
 /* =====================================================
    CREAR SUCURSAL
@@ -52,7 +78,12 @@ export async function crearSucursal(
         },
         include: {
             responsableSucursals: true,
-            redSucursal: true,
+
+            redSucursales: {
+                orderBy: {
+                    id: "asc",
+                },
+            },
         },
     });
 
@@ -78,8 +109,15 @@ export async function obtenerFichaSucursal(
     const sucursal = await prisma.sucursal.findUnique({
         where: { id_sucursal: sucursalId },
         include: {
-            responsableSucursals: true,
-            redSucursal: true,
+            responsableSucursals:
+                true,
+
+            redSucursales: {
+                orderBy: {
+                    id:
+                        "asc",
+                },
+            },
         },
     });
 
@@ -152,7 +190,15 @@ export async function actualizarFichaSucursal(
             where: { id_sucursal: sucursalId },
             data,
             include: {
-                responsableSucursals: true,
+                responsableSucursals:
+                    true,
+
+                redSucursales: {
+                    orderBy: {
+                        id:
+                            "asc",
+                    },
+                },
             },
         });
 
@@ -167,7 +213,7 @@ export async function actualizarFichaSucursal(
 }
 
 /* =====================================================
-   LISTAR SUCURSALES DE UNA EMPRESA (🔥 CLAVE PARA WIFI)
+   LISTAR SUCURSALES DE UNA EMPRESA
 ===================================================== */
 export async function listarSucursalesEmpresa(
     req: Request,
@@ -178,8 +224,15 @@ export async function listarSucursalesEmpresa(
     const sucursales = await prisma.sucursal.findMany({
         where: { empresaId },
         include: {
-            responsableSucursals: true,
-            redSucursal: true,
+            responsableSucursals:
+                true,
+
+            redSucursales: {
+                orderBy: {
+                    id:
+                        "asc",
+                },
+            },
         },
         orderBy: { nombre: "asc" },
     });
@@ -188,58 +241,457 @@ export async function listarSucursalesEmpresa(
 }
 
 /* =====================================================
-   GUARDAR / ACTUALIZAR WIFI DE UNA SUCURSAL
+   LISTAR REDES WIFI DE UNA SUCURSAL
 ===================================================== */
-export async function upsertRedSucursal(
+
+export async function obtenerRedesSucursal(
     req: Request,
     res: Response
 ): Promise<Response> {
-    const sucursalId = Number(req.params.sucursalId);
 
-    const {
-        wifiNombre,
-        claveWifi,
-        ipRed,
-        gateway,
-        observaciones,
-    } = req.body;
+    const sucursalId =
+        Number(
+            req.params.sucursalId
+        );
 
-    const red = await prisma.redSucursal.upsert({
-        where: { sucursalId },
-        update: {
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones,
-        },
-        create: {
-            sucursalId,
-            wifiNombre,
-            claveWifi,
-            ipRed,
-            gateway,
-            observaciones,
-        },
+
+    if (
+        !Number.isInteger(
+            sucursalId
+        ) ||
+        sucursalId <= 0
+    ) {
+
+        return res
+            .status(400)
+            .json({
+                message:
+                    "sucursalId inválido",
+            });
+    }
+
+
+    const sucursal =
+        await prisma.sucursal.findUnique({
+            where: {
+                id_sucursal:
+                    sucursalId,
+            },
+
+            select: {
+                id_sucursal:
+                    true,
+            },
+        });
+
+
+    if (
+        !sucursal
+    ) {
+
+        return res
+            .status(404)
+            .json({
+                message:
+                    "Sucursal no encontrada",
+            });
+    }
+
+
+    const redes =
+        await prisma.redSucursal.findMany({
+            where: {
+                sucursalId,
+            },
+
+            orderBy: {
+                id:
+                    "asc",
+            },
+        });
+
+
+    return res.json({
+        ok:
+            true,
+
+        redes,
     });
-
-    return res.json({ ok: true, red });
 }
 
 /* =====================================================
-   OBTENER WIFI DE UNA SUCURSAL
+   CREAR RED WIFI DE SUCURSAL
 ===================================================== */
-export async function obtenerRedSucursal(
+
+export async function crearRedSucursal(
     req: Request,
     res: Response
 ): Promise<Response> {
-    const sucursalId = Number(req.params.sucursalId);
 
-    const red = await prisma.redSucursal.findUnique({
-        where: { sucursalId },
-    });
+    try {
 
-    return res.json(red);
+        const sucursalId =
+            Number(
+                req.params.sucursalId
+            );
+
+
+        if (
+            !Number.isInteger(
+                sucursalId
+            ) ||
+            sucursalId <= 0
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    message:
+                        "sucursalId inválido",
+                });
+        }
+
+
+        const sucursal =
+            await prisma.sucursal.findUnique({
+                where: {
+                    id_sucursal:
+                        sucursalId,
+                },
+
+                select: {
+                    id_sucursal:
+                        true,
+                },
+            });
+
+
+        if (
+            !sucursal
+        ) {
+
+            return res
+                .status(404)
+                .json({
+                    message:
+                        "Sucursal no encontrada",
+                });
+        }
+
+
+        const {
+            wifiNombre,
+            claveWifi,
+            ipRed,
+            gateway,
+            observaciones,
+        } =
+            req.body;
+
+
+        const red =
+            await prisma.redSucursal.create({
+                data: {
+                    sucursalId,
+
+                    wifiNombre:
+                        limpiarTextoRed(
+                            wifiNombre
+                        ),
+
+                    claveWifi:
+                        limpiarTextoRed(
+                            claveWifi
+                        ),
+
+                    ipRed:
+                        limpiarTextoRed(
+                            ipRed
+                        ),
+
+                    gateway:
+                        limpiarTextoRed(
+                            gateway
+                        ),
+
+                    observaciones:
+                        limpiarTextoRed(
+                            observaciones
+                        ),
+                },
+            });
+
+
+        return res
+            .status(201)
+            .json({
+                ok:
+                    true,
+
+                red,
+            });
+
+    } catch (
+    error
+    ) {
+
+        console.error(
+            "Error creando red de sucursal:",
+            error
+        );
+
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo crear la red",
+            });
+    }
+}
+
+
+/* =====================================================
+   ACTUALIZAR RED WIFI DE SUCURSAL
+===================================================== */
+
+export async function actualizarRedSucursal(
+    req: Request,
+    res: Response
+): Promise<Response> {
+
+    try {
+
+        const sucursalId =
+            Number(
+                req.params.sucursalId
+            );
+
+
+        const redId =
+            Number(
+                req.params.redId
+            );
+
+
+        if (
+            !Number.isInteger(
+                sucursalId
+            ) ||
+            sucursalId <= 0 ||
+            !Number.isInteger(
+                redId
+            ) ||
+            redId <= 0
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    message:
+                        "IDs inválidos",
+                });
+        }
+
+
+        const existente =
+            await prisma.redSucursal.findFirst({
+                where: {
+                    id:
+                        redId,
+
+                    sucursalId,
+                },
+            });
+
+
+        if (
+            !existente
+        ) {
+
+            return res
+                .status(404)
+                .json({
+                    message:
+                        "Red no encontrada",
+                });
+        }
+
+
+        const {
+            wifiNombre,
+            claveWifi,
+            ipRed,
+            gateway,
+            observaciones,
+        } =
+            req.body;
+
+
+        const red =
+            await prisma.redSucursal.update({
+                where: {
+                    id:
+                        redId,
+                },
+
+                data: {
+                    wifiNombre:
+                        limpiarTextoRed(
+                            wifiNombre
+                        ),
+
+                    claveWifi:
+                        limpiarTextoRed(
+                            claveWifi
+                        ),
+
+                    ipRed:
+                        limpiarTextoRed(
+                            ipRed
+                        ),
+
+                    gateway:
+                        limpiarTextoRed(
+                            gateway
+                        ),
+
+                    observaciones:
+                        limpiarTextoRed(
+                            observaciones
+                        ),
+                },
+            });
+
+
+        return res.json({
+            ok:
+                true,
+
+            red,
+        });
+
+    } catch (
+    error
+    ) {
+
+        console.error(
+            "Error actualizando red de sucursal:",
+            error
+        );
+
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo actualizar la red",
+            });
+    }
+}
+
+/* =====================================================
+   ELIMINAR RED WIFI DE SUCURSAL
+===================================================== */
+
+export async function eliminarRedSucursal(
+    req: Request,
+    res: Response
+): Promise<Response> {
+
+    try {
+
+        const sucursalId =
+            Number(
+                req.params.sucursalId
+            );
+
+
+        const redId =
+            Number(
+                req.params.redId
+            );
+
+
+        if (
+            !Number.isInteger(
+                sucursalId
+            ) ||
+            sucursalId <= 0 ||
+            !Number.isInteger(
+                redId
+            ) ||
+            redId <= 0
+        ) {
+
+            return res
+                .status(400)
+                .json({
+                    message:
+                        "IDs inválidos",
+                });
+        }
+
+
+        const existente =
+            await prisma.redSucursal.findFirst({
+                where: {
+                    id:
+                        redId,
+
+                    sucursalId,
+                },
+
+                select: {
+                    id:
+                        true,
+                },
+            });
+
+
+        if (
+            !existente
+        ) {
+
+            return res
+                .status(404)
+                .json({
+                    message:
+                        "Red no encontrada",
+                });
+        }
+
+
+        await prisma.redSucursal.delete({
+            where: {
+                id:
+                    redId,
+            },
+        });
+
+
+        return res.json({
+            ok:
+                true,
+        });
+
+    } catch (
+    error
+    ) {
+
+        console.error(
+            "Error eliminando red:",
+            error
+        );
+
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo eliminar la red",
+            });
+    }
 }
 
 /* =====================================================

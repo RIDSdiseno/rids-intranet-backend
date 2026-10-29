@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { intentarVincularEmpresaAutomaticamente, } from "../service/empresa-entidad.service.js";
 // Util para normalizar dominios ingresados (string o array) a formato consistente
 function normalizeDominios(input) {
     if (input === undefined || input === null)
@@ -542,14 +543,46 @@ export async function createEmpresa(req, res) {
             });
             return;
         }
-        if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
-            res.status(400).json({
+        const rutNormalizado = typeof rut ===
+            "string"
+            ? rut.trim()
+            : "";
+        const direccionNormalizada = typeof direccion ===
+            "string"
+            ? direccion.trim()
+            : "";
+        const telefonoNormalizado = typeof telefono ===
+            "string"
+            ? telefono.trim()
+            : "";
+        const emailNormalizado = typeof email ===
+            "string"
+            ? email.trim()
+            : "";
+        const tieneDetalleSinRut = Boolean(direccionNormalizada ||
+            telefonoNormalizado ||
+            emailNormalizado) &&
+            !rutNormalizado;
+        if (tieneDetalleSinRut) {
+            res
+                .status(400)
+                .json({
                 success: false,
-                error: "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios",
+                error: "El RUT es obligatorio para registrar dirección, teléfono o email",
             });
             return;
         }
         const dominiosNormalizados = normalizeDominios(dominios);
+        if (dominiosNormalizados.length ===
+            0) {
+            res
+                .status(400)
+                .json({
+                success: false,
+                error: "Debes ingresar al menos un dominio",
+            });
+            return;
+        }
         const result = await prisma.$transaction(async (tx) => {
             const nueva = await tx.empresa.create({
                 data: {
@@ -566,22 +599,42 @@ export async function createEmpresa(req, res) {
                 },
             });
             let detalle = null;
-            if (rut && direccion && telefono && email) {
-                detalle = await tx.detalleEmpresa.create({
-                    data: {
-                        rut,
-                        direccion,
-                        telefono,
-                        email,
-                        empresa_id: nueva.id_empresa,
-                    },
-                });
+            if (rutNormalizado) {
+                detalle =
+                    await tx.detalleEmpresa.create({
+                        data: {
+                            rut: rutNormalizado,
+                            direccion: direccionNormalizada ||
+                                null,
+                            telefono: telefonoNormalizado ||
+                                null,
+                            email: emailNormalizado ||
+                                null,
+                            empresa_id: nueva.id_empresa,
+                        },
+                    });
             }
             return { nueva, detalle };
         });
+        let relacionAutomatica = null;
+        if (result.detalle?.rut) {
+            try {
+                relacionAutomatica =
+                    await intentarVincularEmpresaAutomaticamente(result
+                        .nueva
+                        .id_empresa);
+            }
+            catch (error) {
+                console.error("[EMPRESAS] Error intentando relación automática:", error);
+            }
+        }
         res.status(201).json({
             success: true,
-            data: { ...result.nueva, detalleEmpresa: result.detalle },
+            data: {
+                ...result.nueva,
+                detalleEmpresa: result.detalle,
+                relacionAutomatica,
+            },
         });
     }
     catch (error) {
@@ -604,15 +657,35 @@ export async function updateEmpresa(req, res) {
     try {
         const id = Number(req.params.id);
         const { nombre, rut, direccion, telefono, email, dominios } = req.body;
-        if (!Number.isInteger(id) || id <= 0) {
-            res.status(400).json({ success: false, error: "ID inválido" });
-            return;
-        }
-        if ((rut || direccion || telefono || email) && (!rut || !direccion || !telefono || !email)) {
+        const rutNormalizado = typeof rut ===
+            "string"
+            ? rut.trim()
+            : "";
+        const direccionNormalizada = typeof direccion ===
+            "string"
+            ? direccion.trim()
+            : "";
+        const telefonoNormalizado = typeof telefono ===
+            "string"
+            ? telefono.trim()
+            : "";
+        const emailNormalizado = typeof email ===
+            "string"
+            ? email.trim()
+            : "";
+        const tieneDetalleSinRut = Boolean(direccionNormalizada ||
+            telefonoNormalizado ||
+            emailNormalizado) &&
+            !rutNormalizado;
+        if (tieneDetalleSinRut) {
             res.status(400).json({
                 success: false,
-                error: "Si se proporciona detalle de empresa, todos los campos (rut, direccion, telefono, email) son obligatorios",
+                error: "El RUT es obligatorio para registrar dirección, teléfono o email",
             });
+            return;
+        }
+        if (!Number.isInteger(id) || id <= 0) {
+            res.status(400).json({ success: false, error: "ID inválido" });
             return;
         }
         const empresaExistente = await prisma.empresa.findUnique({
@@ -636,40 +709,73 @@ export async function updateEmpresa(req, res) {
             });
             return;
         }
+        let dominiosNormalizados;
+        if (dominios !==
+            undefined) {
+            dominiosNormalizados =
+                normalizeDominios(dominios);
+            if (dominiosNormalizados.length ===
+                0) {
+                res.status(400).json({
+                    success: false,
+                    error: "La empresa debe tener al menos un dominio",
+                });
+                return;
+            }
+        }
         const result = await prisma.$transaction(async (tx) => {
             const dataEmpresa = {};
-            if (typeof nombre === "string") {
-                dataEmpresa.nombre = nombre.trim();
+            if (typeof nombre ===
+                "string") {
+                dataEmpresa.nombre =
+                    nombre.trim();
             }
-            if (dominios !== undefined) {
-                dataEmpresa.dominios = normalizeDominios(dominios);
+            if (dominiosNormalizados !==
+                undefined) {
+                dataEmpresa.dominios =
+                    dominiosNormalizados;
             }
-            if (Object.keys(dataEmpresa).length > 0) {
+            if (Object.keys(dataEmpresa).length >
+                0) {
                 await tx.empresa.update({
-                    where: { id_empresa: id },
+                    where: {
+                        id_empresa: id,
+                    },
                     data: dataEmpresa,
                 });
             }
             let detalle = await tx.detalleEmpresa.findUnique({
-                where: { empresa_id: id },
+                where: {
+                    empresa_id: id,
+                },
             });
-            if (rut && direccion && telefono && email) {
+            if (rutNormalizado) {
+                const dataDetalle = {
+                    rut: rutNormalizado,
+                    direccion: direccionNormalizada ||
+                        null,
+                    telefono: telefonoNormalizado ||
+                        null,
+                    email: emailNormalizado ||
+                        null,
+                };
                 if (detalle) {
-                    detalle = await tx.detalleEmpresa.update({
-                        where: { empresa_id: id },
-                        data: { rut, direccion, telefono, email },
-                    });
+                    detalle =
+                        await tx.detalleEmpresa.update({
+                            where: {
+                                empresa_id: id,
+                            },
+                            data: dataDetalle,
+                        });
                 }
                 else {
-                    detalle = await tx.detalleEmpresa.create({
-                        data: {
-                            rut,
-                            direccion,
-                            telefono,
-                            email,
-                            empresa_id: id,
-                        },
-                    });
+                    detalle =
+                        await tx.detalleEmpresa.create({
+                            data: {
+                                ...dataDetalle,
+                                empresa_id: id,
+                            },
+                        });
                 }
             }
             const empresaAct = await tx.empresa.findUnique({
@@ -685,11 +791,28 @@ export async function updateEmpresa(req, res) {
                     deactivatedAt: true,
                 },
             });
-            return { empresaAct, detalle };
+            return {
+                empresaAct,
+                detalle,
+            };
         });
+        let relacionAutomatica = null;
+        if (result.detalle?.rut) {
+            try {
+                relacionAutomatica =
+                    await intentarVincularEmpresaAutomaticamente(id);
+            }
+            catch (error) {
+                console.error("[EMPRESAS] Error intentando relación automática después de editar:", error);
+            }
+        }
         res.json({
             success: true,
-            data: { ...result.empresaAct, detalleEmpresa: result.detalle },
+            data: {
+                ...result.empresaAct,
+                detalleEmpresa: result.detalle,
+                relacionAutomatica,
+            },
         });
     }
     catch (error) {

@@ -46,6 +46,7 @@ model Empresa {
   receptoresFacturacion  ReceptorFacturacion[]
   receptoresCobranza     ReceptorCobranza[]
   suscripcionesContratos SuscripcionContrato[]
+  consentimientosDatos   ConsentimientoDatos[]
 
   @@index([isActive])
   @@index([deactivatedAt])
@@ -76,7 +77,7 @@ model Sucursal {
   historiales           Historial[]
   visitas               Visita[]
   responsableSucursals  ResponsableSucursal[]
-  redSucursal           RedSucursal?
+  redSucursales         RedSucursal[]
   accesoRouterSucursals AccesoRouterSucursal[]
   empresaISPs           EmpresaISP[]
   contactoEmpresas      ContactoEmpresa[]
@@ -226,13 +227,15 @@ model ChecklistGestionEmpresa {
 
 model RedSucursal {
   id            Int      @id @default(autoincrement())
-  sucursalId    Int      @unique
+  sucursalId    Int
   wifiNombre    String?
   claveWifi     String?
   ipRed         String?
   gateway       String?
   observaciones String?
-  sucursal      Sucursal @relation(fields: [sucursalId], references: [id_sucursal])
+  sucursal      Sucursal @relation(fields: [sucursalId], references: [id_sucursal], onDelete: Cascade)
+
+  @@index([sucursalId])
 }
 
 model Servidor {
@@ -378,6 +381,7 @@ model Solicitante {
   teamViewerDeviceMaps TeamViewerDeviceMap[]
   bitacoras            BitacoraTecnico[]
   equipoMantenciones   EquipoMantencion[]
+  consentimientosDatos ConsentimientoDatos[]
 
   @@index([empresaId])
   @@index([isActive])
@@ -913,6 +917,7 @@ model Tecnico {
   eventosBitacora                 BitacoraEvento[]                 @relation("BitacoraEventoActor")
   plantillasCorreo                PlantillaCorreo[]
   conversionesMercadoPublico      OportunidadMercadoPublico[]      @relation("MercadoPublicoConvertidoPor")
+  campaniasProteccionDatos        CampaniaProteccionDatos[]
 
   @@index([empresaId])
 }
@@ -1182,34 +1187,27 @@ model Factura {
 }
 
 model CotizacionItemGestioo {
-  id                Int             @id @default(autoincrement())
+  id                Int               @id @default(autoincrement())
   cotizacionId      Int
   tipo              ItemTipoGestioo
   descripcion       String?
-  cantidad          Int             @default(1)
-  precio            Float           @default(0)
+  cantidad          Int               @default(1)
+  precio            Float             @default(0)
   porcentaje        Float?
-  createdAt         DateTime        @default(now())
+  createdAt         DateTime          @default(now())
   sku               String?
-  tieneIVA          Boolean         @default(false)
-  tieneDescuento    Boolean         @default(false)
+  tieneIVA          Boolean           @default(false)
+  tieneDescuento    Boolean           @default(false)
   imagen            String?
   porcGanancia      Float?
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
-
-  // Producto original del catálogo
-  productoId Int?
-
-  // Equipo generado/vinculado desde este ítem
-  equipoId Int? @unique
-
-  cotizacion CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-
-  producto ProductoGestioo? @relation(fields: [productoId], references: [id], onDelete: SetNull)
-
-  equipo Equipo? @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+  equipoId          Int?              @unique
+  productoId        Int?
+  cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  producto          ProductoGestioo?  @relation(fields: [productoId], references: [id], onDelete: SetNull)
+  equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
 
   @@index([productoId])
   @@index([equipoId])
@@ -1266,14 +1264,14 @@ model Ticket {
   rolAsignado     String?
   deletedAt       DateTime?
   /// *
-  ///    * Última reapertura real:
-  ///    * CLOSED/RESOLVED -> OPEN.
-  ///    * PENDING -> OPEN NO modifica este campo.
+  /// * Última reapertura real:
+  /// * CLOSED/RESOLVED -> OPEN.
+  /// * PENDING -> OPEN NO modifica este campo.
   lastReopenedAt  DateTime?
   /// *
-  ///    * Ciclo SLA actualmente activo.
-  ///    * 1 = ciclo original.
-  ///    * 2+ = reaperturas.
+  /// * Ciclo SLA actualmente activo.
+  /// * 1 = ciclo original.
+  /// * 2+ = reaperturas.
   slaCycleNumber  Int               @default(1)
   empresa         Empresa           @relation(fields: [empresaId], references: [id_empresa])
   requester       Solicitante?      @relation(fields: [requesterId], references: [id_solicitante])
@@ -1296,28 +1294,28 @@ model TicketSlaCycle {
   ticketId                    Int
   cycleNumber                 Int
   /// *
-  ///    * Snapshot del técnico responsable
-  ///    * durante ese ciclo.
+  /// * Snapshot del técnico responsable
+  /// * durante ese ciclo.
   assigneeId                  Int?
   /// *
-  ///    * Inicio y fin reales del ciclo.
+  /// * Inicio y fin reales del ciclo.
   startedAt                   DateTime
   endedAt                     DateTime?
   /// *
-  ///    * Fechas efectivas.
+  /// * Fechas efectivas.
   firstResponseAt             DateTime?
   resolutionAt                DateTime?
   /// *
-  ///    * Snapshot de la configuración SLA que
-  ///    * estaba vigente para ese ciclo.
+  /// * Snapshot de la configuración SLA que
+  /// * estaba vigente para ese ciclo.
   firstResponseTargetMinutes  Int
   resolutionTargetMinutes     Int
   /// *
-  ///    * PENDING | OK | BREACHED
+  /// * PENDING | OK | BREACHED
   firstResponseStatus         String?
   resolutionStatus            String?
   /// *
-  ///    * Duraciones finales calculadas.
+  /// * Duraciones finales calculadas.
   firstResponseElapsedMinutes Int?
   resolutionElapsedMinutes    Int?
   createdAt                   DateTime  @default(now())
@@ -2399,7 +2397,6 @@ model OportunidadVenta {
   fechaProximaAccion        DateTime?
   fechaUltimoContacto       DateTime?
   observaciones             String?
-  notas                     String?
   motivoPerdida             String?
   fechaCierre               DateTime?
   montoFinal                Decimal?                         @db.Decimal(14, 2)
@@ -2427,6 +2424,7 @@ model OportunidadVenta {
   motivoPostergacion        String?
   fechaReactivacion         DateTime?                        @db.Date
   fechaProbableCierre       DateTime?                        @db.Date
+  notas                     String?
   entidad                   EntidadGestioo?                  @relation(fields: [entidadId], references: [id])
   responsable               Tecnico                          @relation("ResponsableOportunidadVenta", fields: [responsableId], references: [id_tecnico])
   historialEtapas           HistorialEtapaOportunidadVenta[]
@@ -2448,14 +2446,10 @@ model HistorialEtapaOportunidadVenta {
   etapaAnterior EtapaOportunidadVenta?
   etapaNueva    EtapaOportunidadVenta
   actorId       Int?
-
-  nota String?
-
-  createdAt DateTime @default(now())
-
-  oportunidad OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
-
-  actor Tecnico? @relation(fields: [actorId], references: [id_tecnico])
+  createdAt     DateTime               @default(now())
+  nota          String?
+  oportunidad   OportunidadVenta       @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+  actor         Tecnico?               @relation(fields: [actorId], references: [id_tecnico])
 
   @@index([oportunidadId])
   @@index([createdAt])
@@ -2470,12 +2464,11 @@ model SeguimientoOportunidadVenta {
   proximaAccion      String?
   fechaProximaAccion DateTime?
   createdAt          DateTime                     @default(now())
+  completadoAt       DateTime?
   estado             EstadoSeguimientoOportunidad @default(PENDIENTE)
-  notaEstado String?
-
-  completadoAt DateTime?
-  oportunidad  OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
-  autor        Tecnico          @relation(fields: [autorId], references: [id_tecnico])
+  notaEstado         String?
+  oportunidad        OportunidadVenta             @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+  autor              Tecnico                      @relation(fields: [autorId], references: [id_tecnico])
 
   @@index([oportunidadId])
   @@index([createdAt])
@@ -2566,6 +2559,147 @@ model OportunidadMercadoPublico {
   @@index([fechaCierre])
   @@index([entidadId])
   @@index([convertidoPorId])
+}
+
+model CampaniaProteccionDatos {
+  id          Int     @id @default(autoincrement())
+  nombre      String
+  descripcion String?
+
+  tituloDocumento  String
+  versionDocumento String
+  contenidoHtml    String
+  documentoHash    String @db.VarChar(64)
+
+  configuracionConsentimiento Json?
+
+  asuntoCorreo     String
+  cuerpoCorreoHtml String
+
+  estado EstadoCampaniaProteccionDatos @default(BORRADOR)
+
+  fechaInicio       DateTime?
+  fechaFin          DateTime?
+  fechaEnvioInicial DateTime?
+
+  creadoPorId Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creadoPor Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  destinatarios ConsentimientoDatos[]
+
+  @@index([estado])
+  @@index([creadoPorId])
+  @@index([createdAt])
+  @@index([fechaInicio])
+}
+
+model ConsentimientoDatos {
+  id Int @id @default(autoincrement())
+
+  campaniaId Int
+
+  solicitanteId Int?
+  empresaId     Int?
+
+  nombre        String?
+  email         String
+  empresaNombre String?
+
+  tokenHash      String?   @unique @db.VarChar(64)
+  tokenExpiresAt DateTime?
+
+  estado EstadoConsentimientoDatos @default(PENDIENTE)
+
+  fechaEnvio              DateTime?
+  fechaAperturaFormulario DateTime?
+  fechaRespuesta          DateTime?
+  fechaRevocacion         DateTime?
+
+  aceptado Boolean?
+
+  versionDocumento      String
+  documentoHash         String @db.VarChar(64)
+  snapshotDocumentoHtml String
+
+  respuestaJson Json?
+
+  ipRespuesta String?
+  userAgent   String?
+
+  evidenciaPath String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campania CampaniaProteccionDatos @relation(fields: [campaniaId], references: [id], onDelete: Restrict)
+
+  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+
+  empresa Empresa? @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+
+  eventos ConsentimientoDatosEvento[]
+
+  @@unique([campaniaId, email])
+  @@index([campaniaId])
+  @@index([solicitanteId])
+  @@index([empresaId])
+  @@index([estado])
+  @@index([email])
+  @@index([fechaEnvio])
+  @@index([fechaRespuesta])
+  @@index([createdAt])
+}
+
+model ConsentimientoDatosEvento {
+  id               Int                           @id @default(autoincrement())
+  consentimientoId Int
+  tipo             TipoEventoConsentimientoDatos
+
+  detalle Json?
+
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  consentimiento ConsentimientoDatos @relation(fields: [consentimientoId], references: [id], onDelete: Cascade)
+
+  @@index([consentimientoId])
+  @@index([tipo])
+  @@index([createdAt])
+  @@index([consentimientoId, createdAt])
+}
+
+enum EstadoCampaniaProteccionDatos {
+  BORRADOR
+  ACTIVA
+  FINALIZADA
+  CANCELADA
+}
+
+enum EstadoConsentimientoDatos {
+  PENDIENTE
+  ENVIADO
+  ERROR_ENVIO
+  ACEPTADO
+  RECHAZADO
+  REVOCADO
+  EXPIRADO
+}
+
+enum TipoEventoConsentimientoDatos {
+  CREADO
+  ENVIADO
+  ERROR_ENVIO
+  FORMULARIO_ABIERTO
+  ACEPTADO
+  RECHAZADO
+  REVOCADO
+  REENVIADO
 }
 
 enum EstadoSeguimientoOportunidad {

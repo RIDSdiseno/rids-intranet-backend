@@ -33,3 +33,8 @@ export const CONTRATOS_EMPRESAS_BUCKET =
 export const CORREO_PLANTILLAS_BUCKET =
   process.env.SUPABASE_CORREO_PLANTILLAS_BUCKET ||
   "correo-plantillas";
+
+export const PROTECCION_DATOS_DOCUMENTOS_BUCKET =
+  process.env
+    .SUPABASE_PROTECCION_DATOS_DOCUMENTOS_BUCKET ||
+  "proteccion-datos-documentos";

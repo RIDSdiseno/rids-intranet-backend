@@ -80,9 +80,12 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:8100",
+  "http://localhost:3000",
   "capacitor://localhost",
   "ionic://localhost",
   "https://localhost",
+  "https://rids.cl",
+  "https://www.rids.cl",
 ];
 
 console.log("[CORS] allowedOrigins =", allowedOrigins);

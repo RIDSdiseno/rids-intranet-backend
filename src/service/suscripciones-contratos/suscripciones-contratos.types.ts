@@ -36,7 +36,10 @@ export type CrearSuscripcionContratoInput = {
 
     cantidadLicencias?: number;
 
-    costoMensual?: number | null;
+    costoMensual?:
+    number |
+    string |
+    null;
 
     moneda?: string;
 

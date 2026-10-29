@@ -22,12 +22,10 @@ type EnvioMasivoInput = {
     subject: string;
     bodyHtml?: string;
     plantillaId?: number;
-    usarFirmaTecnico?: boolean;
-    firmaTecnicoId?: number;
     attachments?: MailAttachment[];
     user?: MailerUser | null;
 };
-export declare function iniciarEnvioMasivo({ targets, subject, bodyHtml, usarFirmaTecnico, firmaTecnicoId, plantillaId, attachments, user, }: EnvioMasivoInput): Promise<{
+export declare function iniciarEnvioMasivo({ targets, subject, bodyHtml, plantillaId, attachments, user, }: EnvioMasivoInput): Promise<{
     queued: boolean;
     jobId: string;
     requested: number;
@@ -36,10 +34,7 @@ export declare function iniciarEnvioMasivo({ targets, subject, bodyHtml, usarFir
     estimatedCompletionMs: number;
 }>;
 export declare function obtenerMailerJob(id: string): MailerJob | undefined;
-export declare function obtenerFirmaMailer({ user, firmaTecnicoId, }: {
-    user?: MailerUser | null;
-    firmaTecnicoId?: number;
-}): Promise<{
+export declare function obtenerFirmaMailer(): Promise<{
     tecnico: {
         id: number;
         nombre: string | null;
@@ -47,7 +42,7 @@ export declare function obtenerFirmaMailer({ user, firmaTecnicoId, }: {
         cargo: string | null;
         area: string | null;
         firmaPath: string | null;
-    } | null;
+    };
     html: string;
 }>;
 export {};

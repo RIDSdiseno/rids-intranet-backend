@@ -87,6 +87,9 @@ import recordatoriosRouter from "./routes/recordatorios.routes.js";
 /* ===================== RUTAS INTERNAS ===================== */
 import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
 import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.routes.js";
+/* ===================== PROTECCIÓN DE DATOS ===================== */
+import proteccionDatosPublicoRouter from "./routes/proteccion-datos-publico.routes.js";
+import proteccionDatosRouter from "./routes/proteccion-datos.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 export const api = Router();
@@ -94,6 +97,21 @@ api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 api.use("/equipos/agent", equipoAgentRoutes);
 /* ===================== Whatchimp ===================== */
 api.use(whatchimpRouter);
+/* =====================================================
+   PROTECCIÓN DE DATOS — RUTAS PÚBLICAS
+   ===================================================== */
+/*
+ * IMPORTANTE:
+ *
+ * Esta ruta DEBE montarse antes de:
+ *
+ * api.use(auth(false));
+ * api.use(onlyOwnEmpresa());
+ *
+ * El token individual actúa como credencial
+ * para el formulario público.
+ */
+api.use("/proteccion-datos/publico", proteccionDatosPublicoRouter);
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
 /* ===================== App Core ===================== */
@@ -144,10 +162,35 @@ api.use("/cotizaciones-masivas", cotizacionesMasivasRouter);
 api.use("/oportunidades", oportunidadesRouter);
 api.use("/mercado-publico", mercadoPublicoRouter);
 /* ===================== Integraciones ===================== */
-// Google Directory sync (ej: POST /api/sync/google/users)
-api.use(syncAccess, syncGoogleRouter);
-// Microsoft Graph sync
-api.use(syncAccess, msSyncRouter);
+/*
+ * syncAccess debe ejecutarse SOLAMENTE
+ * para las rutas de sincronización.
+ *
+ * No debe bloquear otras rutas del API
+ * como:
+ *
+ * /baseapi/rcv/*
+ * /cotizaciones/*
+ * /detalle-trabajo-gestioo/*
+ * etc.
+ */
+api.use((req, res, next) => {
+    const path = req.path
+        .toLowerCase();
+    const esRutaSync = path.startsWith("/sync/google") ||
+        path.startsWith("/sync/microsoft");
+    if (!esRutaSync) {
+        next();
+        return;
+    }
+    syncAccess(req, res, next);
+});
+/*
+ * Los routers mantienen exactamente
+ * sus rutas actuales.
+ */
+api.use(syncGoogleRouter);
+api.use(msSyncRouter);
 /* ===================== Reportes ===================== */
 api.use("/reportes", reportesRouter);
 /* ===================== Debug ===================== */
@@ -177,6 +220,8 @@ api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
 /* ===================== RUTAS INTERNAS ===================== */
 api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
 api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
+/* ===================== PROTECCIÓN DE DATOS ===================== */
+api.use("/proteccion-datos", proteccionDatosRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map

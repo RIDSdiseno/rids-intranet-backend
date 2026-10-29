@@ -5,7 +5,7 @@ import { crearPlantillaCorreo, listarPlantillasCorreo, obtenerPlantillaCorreo, e
 // =====================================================
 export async function enviarMasivo(req, res) {
     try {
-        const { targets, subject, bodyHtml, plantillaId, usarFirmaTecnico, firmaTecnicoId, attachments, } = req.body;
+        const { targets, subject, bodyHtml, plantillaId, attachments, } = req.body;
         if (!Array.isArray(targets) ||
             !String(subject ??
                 "").trim() ||
@@ -34,26 +34,9 @@ export async function enviarMasivo(req, res) {
                 message: "plantillaId inválido",
             });
         }
-        const parsedFirmaTecnicoId = firmaTecnicoId !== undefined &&
-            firmaTecnicoId !== null &&
-            firmaTecnicoId !== ""
-            ? Number(firmaTecnicoId)
-            : undefined;
-        if (parsedFirmaTecnicoId !== undefined &&
-            (!Number.isInteger(parsedFirmaTecnicoId) ||
-                parsedFirmaTecnicoId <= 0)) {
-            return res
-                .status(400)
-                .json({
-                ok: false,
-                message: "firmaTecnicoId inválido",
-            });
-        }
         const result = await iniciarEnvioMasivo({
             targets,
             subject: String(subject).trim(),
-            usarFirmaTecnico: usarFirmaTecnico !==
-                false,
             attachments: Array.isArray(attachments)
                 ? attachments
                 : [],
@@ -66,11 +49,6 @@ export async function enviarMasivo(req, res) {
             ...(parsedPlantillaId !== undefined
                 ? {
                     plantillaId: parsedPlantillaId,
-                }
-                : {}),
-            ...(parsedFirmaTecnicoId !== undefined
-                ? {
-                    firmaTecnicoId: parsedFirmaTecnicoId,
                 }
                 : {}),
         });
@@ -395,33 +373,9 @@ export async function actualizarPlantilla(req, res) {
 // =====================================================
 // FIRMA MAILER
 // =====================================================
-export async function obtenerFirmaRemitente(req, res) {
+export async function obtenerFirmaRemitente(_req, res) {
     try {
-        const rawTecnicoId = typeof req.query.tecnicoId ===
-            "string"
-            ? req.query.tecnicoId
-            : undefined;
-        const tecnicoId = rawTecnicoId
-            ? Number(rawTecnicoId)
-            : undefined;
-        if (tecnicoId !== undefined &&
-            (!Number.isInteger(tecnicoId) ||
-                tecnicoId <= 0)) {
-            return res
-                .status(400)
-                .json({
-                ok: false,
-                message: "tecnicoId inválido",
-            });
-        }
-        const firma = await obtenerFirmaMailer({
-            user: req.user,
-            ...(tecnicoId !== undefined
-                ? {
-                    firmaTecnicoId: tecnicoId,
-                }
-                : {}),
-        });
+        const firma = await obtenerFirmaMailer();
         return res.json({
             ok: true,
             firma,

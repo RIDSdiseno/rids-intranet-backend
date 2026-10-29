@@ -8,10 +8,18 @@ import { ticketEmailTemplateService, } from "../email/reply-templates/ticket-ema
 // CONSTANTS
 // =====================================================
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const MAILER_FIRMA_TECNICO_ID = Number(process.env.MAILER_FIRMA_TECNICO_ID);
+function getMailerFirmaTecnicoId() {
+    if (!Number.isInteger(MAILER_FIRMA_TECNICO_ID) ||
+        MAILER_FIRMA_TECNICO_ID <= 0) {
+        throw new Error("MAILER_FIRMA_TECNICO_ID no está configurado correctamente");
+    }
+    return MAILER_FIRMA_TECNICO_ID;
+}
 // =====================================================
 // MAIN
 // =====================================================
-export async function iniciarEnvioMasivo({ targets, subject, bodyHtml, usarFirmaTecnico = true, firmaTecnicoId, plantillaId, attachments = [], user, }) {
+export async function iniciarEnvioMasivo({ targets, subject, bodyHtml, plantillaId, attachments = [], user, }) {
     const validTargets = targets
         .map((target) => ({
         ...target,
@@ -55,30 +63,18 @@ export async function iniciarEnvioMasivo({ targets, subject, bodyHtml, usarFirma
         user?.email ??
         null;
     // =================================================
-    // FIRMA DEL CORREO
+    // FIRMA CORPORATIVA SOPORTE RIDS
     // =================================================
-    if (usarFirmaTecnico) {
-        const firma = await obtenerFirmaMailer({
-            ...(user !== undefined
-                ? {
-                    user,
-                }
-                : {}),
-            ...(firmaTecnicoId !== undefined
-                ? {
-                    firmaTecnicoId,
-                }
-                : {}),
-        });
-        if (firma.html) {
-            finalBodyHtml =
-                `
+    const firma = await obtenerFirmaMailer();
+    if (!firma.html) {
+        throw new Error("No fue posible generar la firma corporativa de Soporte RIDS");
+    }
+    finalBodyHtml =
+        `
 ${finalBodyHtml}
 
 ${firma.html}
 `.trim();
-        }
-    }
     // =================================================
     // ADJUNTOS
     // =================================================
@@ -184,36 +180,29 @@ async function resolverUsuarioAutenticado(user) {
     }
     return resolverTecnico(tecnicoId);
 }
-export async function obtenerFirmaMailer({ user, firmaTecnicoId, }) {
-    const usuarioAutenticado = await resolverUsuarioAutenticado(user);
-    const tecnicoFirma = firmaTecnicoId !== undefined
-        ? await resolverTecnico(firmaTecnicoId)
-        : usuarioAutenticado;
-    if (firmaTecnicoId !== undefined &&
-        !tecnicoFirma) {
-        throw new Error("El técnico seleccionado para la firma no existe");
+export async function obtenerFirmaMailer() {
+    const tecnicoId = getMailerFirmaTecnicoId();
+    const tecnicoFirma = await resolverTecnico(tecnicoId);
+    if (!tecnicoFirma) {
+        throw new Error("No existe el técnico configurado como firma de Soporte RIDS");
     }
     const firmaHtml = await ticketEmailTemplateService
-        .buildFirmaHtml(tecnicoFirma
-        ? {
+        .buildFirmaHtml({
+        nombre: tecnicoFirma.nombre,
+        email: tecnicoFirma.email,
+        cargo: tecnicoFirma.cargo,
+        area: tecnicoFirma.area,
+        firmaPath: tecnicoFirma.firmaPath,
+    });
+    return {
+        tecnico: {
+            id: tecnicoFirma.id,
             nombre: tecnicoFirma.nombre,
             email: tecnicoFirma.email,
             cargo: tecnicoFirma.cargo,
             area: tecnicoFirma.area,
             firmaPath: tecnicoFirma.firmaPath,
-        }
-        : null);
-    return {
-        tecnico: tecnicoFirma
-            ? {
-                id: tecnicoFirma.id,
-                nombre: tecnicoFirma.nombre,
-                email: tecnicoFirma.email,
-                cargo: tecnicoFirma.cargo,
-                area: tecnicoFirma.area,
-                firmaPath: tecnicoFirma.firmaPath,
-            }
-            : null,
+        },
         html: firmaHtml,
     };
 }

@@ -18,7 +18,7 @@ export type CrearSuscripcionContratoInput = {
     fabricante: string;
     productoPlan: string;
     cantidadLicencias?: number;
-    costoMensual?: number | null;
+    costoMensual?: number | string | null;
     moneda?: string;
     fechaInicio?: string | null;
     fechaTermino?: string | null;

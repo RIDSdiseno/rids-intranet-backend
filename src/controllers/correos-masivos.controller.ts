@@ -35,8 +35,6 @@ export async function enviarMasivo(
             subject,
             bodyHtml,
             plantillaId,
-            usarFirmaTecnico,
-            firmaTecnicoId,
             attachments,
         } =
             req.body;
@@ -99,37 +97,6 @@ export async function enviarMasivo(
                 });
         }
 
-        const parsedFirmaTecnicoId =
-            firmaTecnicoId !== undefined &&
-                firmaTecnicoId !== null &&
-                firmaTecnicoId !== ""
-                ? Number(
-                    firmaTecnicoId
-                )
-                : undefined;
-
-
-        if (
-            parsedFirmaTecnicoId !== undefined &&
-            (
-                !Number.isInteger(
-                    parsedFirmaTecnicoId
-                ) ||
-                parsedFirmaTecnicoId <= 0
-            )
-        ) {
-
-            return res
-                .status(400)
-                .json({
-                    ok:
-                        false,
-
-                    message:
-                        "firmaTecnicoId inválido",
-                });
-        }
-
         const result =
             await iniciarEnvioMasivo({
                 targets,
@@ -138,10 +105,6 @@ export async function enviarMasivo(
                     String(
                         subject
                     ).trim(),
-
-                usarFirmaTecnico:
-                    usarFirmaTecnico !==
-                    false,
 
                 attachments:
                     Array.isArray(
@@ -166,12 +129,6 @@ export async function enviarMasivo(
                     }
                     : {}),
 
-                ...(parsedFirmaTecnicoId !== undefined
-                    ? {
-                        firmaTecnicoId:
-                            parsedFirmaTecnicoId,
-                    }
-                    : {}),
             });
 
         return res.json({
@@ -807,61 +764,14 @@ export async function actualizarPlantilla(
 // =====================================================
 
 export async function obtenerFirmaRemitente(
-    req: Request,
+    _req: Request,
     res: Response
 ) {
 
     try {
 
-        const rawTecnicoId =
-            typeof req.query.tecnicoId ===
-                "string"
-                ? req.query.tecnicoId
-                : undefined;
-
-
-        const tecnicoId =
-            rawTecnicoId
-                ? Number(
-                    rawTecnicoId
-                )
-                : undefined;
-
-
-        if (
-            tecnicoId !== undefined &&
-            (
-                !Number.isInteger(
-                    tecnicoId
-                ) ||
-                tecnicoId <= 0
-            )
-        ) {
-
-            return res
-                .status(400)
-                .json({
-                    ok:
-                        false,
-
-                    message:
-                        "tecnicoId inválido",
-                });
-        }
-
-
         const firma =
-            await obtenerFirmaMailer({
-                user:
-                    (req as any).user,
-
-                ...(tecnicoId !== undefined
-                    ? {
-                        firmaTecnicoId:
-                            tecnicoId,
-                    }
-                    : {}),
-            });
+            await obtenerFirmaMailer();
 
 
         return res.json({

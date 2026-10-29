@@ -25,6 +25,155 @@ import {
    HELPERS
 ========================================================= */
 
+function normalizarCostoMensual(
+    value:
+        unknown
+): number | null {
+
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    if (
+        typeof value ===
+        "number"
+    ) {
+
+        if (
+            !Number.isFinite(
+                value
+            ) ||
+            value < 0
+        ) {
+            throw new Error(
+                "COSTO_MENSUAL_INVALIDO"
+            );
+        }
+
+        return value;
+    }
+
+    let limpio =
+        String(
+            value
+        )
+            .trim()
+            .replace(
+                /\s/g,
+                ""
+            )
+            .replace(
+                /[^\d.,]/g,
+                ""
+            );
+
+    if (!limpio) {
+        return null;
+    }
+
+    const lastComma =
+        limpio.lastIndexOf(
+            ","
+        );
+
+    const lastDot =
+        limpio.lastIndexOf(
+            "."
+        );
+
+    let normalizado =
+        limpio;
+
+    if (
+        lastComma >= 0 &&
+        lastDot >= 0
+    ) {
+
+        if (
+            lastComma >
+            lastDot
+        ) {
+            normalizado =
+                limpio
+                    .replace(
+                        /\./g,
+                        ""
+                    )
+                    .replace(
+                        ",",
+                        "."
+                    );
+        } else {
+            normalizado =
+                limpio.replace(
+                    /,/g,
+                    ""
+                );
+        }
+
+    } else if (
+        lastComma >= 0
+    ) {
+
+        const decimales =
+            limpio.length -
+            lastComma -
+            1;
+
+        normalizado =
+            decimales >= 1 &&
+                decimales <= 2
+                ? limpio.replace(
+                    ",",
+                    "."
+                )
+                : limpio.replace(
+                    /,/g,
+                    ""
+                );
+
+    } else if (
+        lastDot >= 0
+    ) {
+
+        const decimales =
+            limpio.length -
+            lastDot -
+            1;
+
+        normalizado =
+            decimales >= 1 &&
+                decimales <= 2
+                ? limpio
+                : limpio.replace(
+                    /\./g,
+                    ""
+                );
+    }
+
+    const numero =
+        Number(
+            normalizado
+        );
+
+    if (
+        !Number.isFinite(
+            numero
+        ) ||
+        numero < 0
+    ) {
+        throw new Error(
+            "COSTO_MENSUAL_INVALIDO"
+        );
+    }
+
+    return numero;
+}
+
 function normalizarTexto(
     value:
         unknown
@@ -698,6 +847,11 @@ export async function crearSuscripcionEmpresa(
                     )
             );
 
+    const costoMensual =
+        normalizarCostoMensual(
+            input.costoMensual
+        );
+
     return prisma
         .$transaction(
             async tx => {
@@ -716,9 +870,7 @@ export async function crearSuscripcionEmpresa(
 
                                 cantidadLicencias,
 
-                                costoMensual:
-                                    input.costoMensual ??
-                                    null,
+                                costoMensual,
 
                                 moneda:
                                     normalizarTexto(
@@ -949,7 +1101,9 @@ export async function actualizarSuscripcionEmpresa(
         undefined
     ) {
         data.costoMensual =
-            input.costoMensual;
+            normalizarCostoMensual(
+                input.costoMensual
+            );
     }
 
     /* =====================================================

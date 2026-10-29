@@ -16,4 +16,7 @@ export const BITACORA_EVIDENCIAS_BUCKET = process.env.SUPABASE_BITACORA_EVIDENCI
 export const CONTRATOS_EMPRESAS_BUCKET = process.env.SUPABASE_CONTRATOS_EMPRESAS_BUCKET || "contratos-empresas";
 export const CORREO_PLANTILLAS_BUCKET = process.env.SUPABASE_CORREO_PLANTILLAS_BUCKET ||
     "correo-plantillas";
+export const PROTECCION_DATOS_DOCUMENTOS_BUCKET = process.env
+    .SUPABASE_PROTECCION_DATOS_DOCUMENTOS_BUCKET ||
+    "proteccion-datos-documentos";
 //# sourceMappingURL=supabase.js.map

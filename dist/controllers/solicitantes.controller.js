@@ -96,13 +96,29 @@ const isValidRut = (rut) => {
 };
 /** ✅ Empresas donde los solicitantes pueden ser "boxes" sin cuenta */
 const BOX_CLINIC_EMPRESA_IDS = new Set([6, 7, 22, 29, 31]); // Clínica Alameda, Providencia
-const parseOrderBy = (v) => {
-    const s = String(v ?? "").toLowerCase();
-    if (s === "nombre")
-        return "nombre";
-    if (s === "id" || s === "ids" || s === "id_solicitante")
-        return "id";
-    return "empresa";
+const parseOrderBy = (value) => {
+    const order = String(value ?? "")
+        .trim()
+        .toLowerCase();
+    switch (order) {
+        case "nombre":
+            return "nombre";
+        case "rut":
+            return "rut";
+        case "equipos":
+            return "equipos";
+        case "cuenta":
+            return "cuenta";
+        case "licencias":
+            return "licencias";
+        case "id":
+        case "ids":
+        case "id_solicitante":
+            return "id";
+        case "empresa":
+        default:
+            return "empresa";
+    }
 };
 const parseOrderDir = (v) => {
     const s = String(v ?? "").toLowerCase();
@@ -126,19 +142,139 @@ const applyClinicOverrideOnlyWithAccount = (empresaId, onlyWithAccount) => {
 };
 /** Construye el orderBy compatible con Prisma para las 3 variantes */
 const buildSolicitanteOrderBy = (orderByKey, orderDir) => {
+    /*
+     * =====================================================
+     * NOMBRE
+     * =====================================================
+     */
     if (orderByKey === "nombre") {
-        return [{ nombre: orderDir }, { id_solicitante: "asc" }];
+        return [
+            {
+                nombre: orderDir,
+            },
+            {
+                id_solicitante: "asc",
+            },
+        ];
     }
+    /*
+     * =====================================================
+     * RUT
+     * =====================================================
+     */
+    if (orderByKey === "rut") {
+        return [
+            {
+                rut: orderDir,
+            },
+            {
+                nombre: "asc",
+            },
+            {
+                id_solicitante: "asc",
+            },
+        ];
+    }
+    /*
+     * =====================================================
+     * EQUIPOS
+     *
+     * Ordena por cantidad de equipos relacionados.
+     * =====================================================
+     */
+    if (orderByKey === "equipos") {
+        return [
+            {
+                equipos: {
+                    _count: orderDir,
+                },
+            },
+            {
+                nombre: "asc",
+            },
+            {
+                id_solicitante: "asc",
+            },
+        ];
+    }
+    /*
+     * =====================================================
+     * LICENCIAS MICROSOFT
+     *
+     * Ordena por cantidad de relaciones
+     * SolicitanteMsLicense.
+     * =====================================================
+     */
+    if (orderByKey === "licencias") {
+        return [
+            {
+                msLicenses: {
+                    _count: orderDir,
+                },
+            },
+            {
+                nombre: "asc",
+            },
+            {
+                id_solicitante: "asc",
+            },
+        ];
+    }
+    /*
+     * =====================================================
+     * TIPO DE CUENTA
+     *
+     * google / local / microsoft / null
+     * =====================================================
+     */
+    if (orderByKey === "cuenta") {
+        return [
+            {
+                accountType: orderDir,
+            },
+            {
+                nombre: "asc",
+            },
+            {
+                id_solicitante: "asc",
+            },
+        ];
+    }
+    /*
+     * =====================================================
+     * ID REAL
+     * =====================================================
+     */
     if (orderByKey === "id") {
-        return [{ id_solicitante: orderDir }];
+        return [
+            {
+                id_solicitante: orderDir,
+            },
+        ];
     }
-    // empresa
-    const secondaryForNulls = orderDir === "asc" ? "desc" : "asc";
+    /*
+     * =====================================================
+     * EMPRESA
+     * =====================================================
+     */
+    const secondaryForNulls = orderDir === "asc"
+        ? "desc"
+        : "asc";
     return [
-        { empresa: { nombre: orderDir } },
-        { empresaId: secondaryForNulls },
-        { nombre: "asc" },
-        { id_solicitante: "asc" },
+        {
+            empresa: {
+                nombre: orderDir,
+            },
+        },
+        {
+            empresaId: secondaryForNulls,
+        },
+        {
+            nombre: "asc",
+        },
+        {
+            id_solicitante: "asc",
+        },
     ];
 };
 /** Filtro base: “tiene cuenta” */
@@ -212,7 +348,7 @@ export const listSolicitantes = async (req, res) => {
         // Si NO viene → default depende del rol
         const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
             ? parseOnlyWithAccount(req.query.onlyWithAccount)
-            : user?.rol === "CLIENTE"; // true para cliente, false para admin
+            : false; // true para cliente, false para admin
         const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const includeMsDetails = String(req.query.includeMsDetails ?? "").toLowerCase() === "1" ||
             String(req.query.includeMsDetails ?? "").toLowerCase() === "true";
@@ -338,7 +474,12 @@ export const listSolicitantes = async (req, res) => {
                 select: { id_empresa: true, nombre: true },
             }),
             prisma.equipo.findMany({
-                where: { idSolicitante: { in: Array.from(solicitanteIdSet) } },
+                where: {
+                    idSolicitante: {
+                        in: Array.from(solicitanteIdSet),
+                    },
+                    deletedAt: null,
+                },
                 select: {
                     id_equipo: true,
                     idSolicitante: true,
@@ -350,7 +491,9 @@ export const listSolicitantes = async (req, res) => {
                     disco: true,
                     propiedad: true,
                 },
-                orderBy: { id_equipo: "asc" },
+                orderBy: {
+                    id_equipo: "asc",
+                },
             }),
         ]);
         let msLinks = [];
@@ -470,7 +613,7 @@ export const listSolicitantesByEmpresa = async (req, res) => {
         const user = req.user;
         const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
             ? parseOnlyWithAccount(req.query.onlyWithAccount)
-            : user?.rol === "CLIENTE";
+            : false;
         const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         if (user?.rol === "CLIENTE" && empresaId !== user.empresaId) {
             return res.status(403).json({ error: "No autorizado" });
@@ -608,7 +751,7 @@ export const solicitantesMetrics = async (req, res) => {
         const user = req.user;
         const onlyWithAccountRaw = req.query.onlyWithAccount !== undefined
             ? parseOnlyWithAccount(req.query.onlyWithAccount)
-            : user?.rol === "CLIENTE";
+            : false;
         const onlyWithAccount = applyClinicOverrideOnlyWithAccount(empresaId, onlyWithAccountRaw);
         const userEmpresaId = user?.rol === "CLIENTE" && user?.empresaId ? Number(user.empresaId) : null;
         const where = {
@@ -672,50 +815,23 @@ export const solicitantesMetrics = async (req, res) => {
             distinct: ["empresaId"],
         });
         const empresas = distinctEmpresas.filter((e) => typeof e.empresaId === "number").length;
-        const equiposWhere = userEmpresaId ??
-            (empresaId > 0
-                ? empresaId
-                : null)
-            ? {
+        /* =====================================================
+        EQUIPOS ASOCIADOS A LOS SOLICITANTES FILTRADOS
+     
+        Respeta:
+        - activos / inactivos
+        - empresa
+        - búsqueda
+        - licencia
+        - rol CLIENTE
+     ===================================================== */
+        const equipos = await prisma.equipo.count({
+            where: {
                 deletedAt: null,
                 solicitante: {
-                    is: {
-                        empresaId: userEmpresaId ??
-                            empresaId,
-                        empresa: {
-                            is: {
-                                isActive: true,
-                            },
-                        },
-                    },
+                    is: where,
                 },
-            }
-            : {
-                deletedAt: null,
-                OR: [
-                    {
-                        empresa: {
-                            is: {
-                                isActive: true,
-                            },
-                        },
-                    },
-                    {
-                        empresaId: null,
-                        solicitante: {
-                            is: {
-                                empresa: {
-                                    is: {
-                                        isActive: true,
-                                    },
-                                },
-                            },
-                        },
-                    },
-                ],
-            };
-        const equipos = await prisma.equipo.count({
-            where: equiposWhere,
+            },
         });
         const conLicencia = await prisma
             .solicitante

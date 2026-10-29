@@ -4,6 +4,7 @@ import { getEmpresas, getEmpresaById, createEmpresa, updateEmpresa, updateEmpres
 import { getEquiposByEmpresa, } from "../controllers/equipos.controller.js";
 import { getEmpresaDashboard, } from "../controllers/controllers-empresas/dashboard-empresa.controller.js";
 import { getSoporteMensualPorEmpresa, } from "../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
+import { getRelacionEmpresaEntidades, getEntidadesDisponiblesEmpresa, patchVincularEntidadEmpresa, deleteVinculoEntidadEmpresa, postVincularEntidadAutomaticamente, } from "../controllers/controllers-empresas/empresa-entidad.controller.js";
 import { onlyRole } from "../middlewares/roles.js";
 import { auth } from "../middlewares/auth.js";
 export const empresasRouter = Router();
@@ -30,6 +31,14 @@ empresasRouter.patch("/:id/status", onlyRole("ADMIN", "ADMINISTRACION"), updateE
  */
 empresasRouter.get("/:empresaId/equipos", getEquiposByEmpresa);
 empresasRouter.get("/:id/dashboard", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), getEmpresaDashboard);
+/* =====================================================
+   EMPRESA ↔ ENTIDAD GESTIOO
+===================================================== */
+empresasRouter.get("/:id/entidades-relacion", onlyRole("ADMIN", "ADMINISTRACION", "VENTAS"), getRelacionEmpresaEntidades);
+empresasRouter.get("/:id/entidades-disponibles", onlyRole("ADMIN", "ADMINISTRACION", "VENTAS"), getEntidadesDisponiblesEmpresa);
+empresasRouter.post("/:id/entidades/auto", onlyRole("ADMIN", "ADMINISTRACION"), postVincularEntidadAutomaticamente);
+empresasRouter.patch("/:id/entidades/:entidadId/vincular", onlyRole("ADMIN", "ADMINISTRACION"), patchVincularEntidadEmpresa);
+empresasRouter.delete("/:id/entidades/:entidadId/desvincular", onlyRole("ADMIN", "ADMINISTRACION"), deleteVinculoEntidadEmpresa);
 /*
  * CRUD principal.
  */

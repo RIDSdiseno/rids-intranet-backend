@@ -126,6 +126,12 @@ import recordatoriosRouter from "./routes/recordatorios.routes.js";
 import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js";
 import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.routes.js";
 
+/* ===================== PROTECCIÓN DE DATOS ===================== */
+import proteccionDatosPublicoRouter
+    from "./routes/proteccion-datos-publico.routes.js";
+
+import proteccionDatosRouter from "./routes/proteccion-datos.routes.js";
+
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
@@ -138,6 +144,23 @@ api.use("/equipos/agent", equipoAgentRoutes);
 /* ===================== Whatchimp ===================== */
 
 api.use(whatchimpRouter);
+
+/* =====================================================
+   PROTECCIÓN DE DATOS — RUTAS PÚBLICAS
+   ===================================================== */
+
+/*
+ * IMPORTANTE:
+ *
+ * Esta ruta DEBE montarse antes de:
+ *
+ * api.use(auth(false));
+ * api.use(onlyOwnEmpresa());
+ *
+ * El token individual actúa como credencial
+ * para el formulario público.
+ */
+api.use("/proteccion-datos/publico", proteccionDatosPublicoRouter,);
 
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
@@ -301,6 +324,10 @@ api.use("/baseapi/finanzas", baseApiFinanzasDashboardRoutes);
 
 api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
 api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
+
+/* ===================== PROTECCIÓN DE DATOS ===================== */
+
+api.use("/proteccion-datos", proteccionDatosRouter,);
 
 /* ===================== Export ===================== */
 export default api;

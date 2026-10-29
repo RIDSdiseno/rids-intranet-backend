@@ -69,15 +69,32 @@ export async function obtenerFichaEmpresaCompleta(req: Request, res: Response) {
     ],
   });
 
-  const sucursales = await prisma.sucursal.findMany({
-    where: { empresaId },
-    include: {
-      responsableSucursals: true,
-      redSucursal: true,
-      accesoRouterSucursals: true,
-    },
-    orderBy: { nombre: "asc" },
-  });
+  const sucursales =
+    await prisma.sucursal.findMany({
+      where: {
+        empresaId,
+      },
+
+      include: {
+        responsableSucursals:
+          true,
+
+        redSucursales: {
+          orderBy: {
+            id:
+              "asc",
+          },
+        },
+
+        accesoRouterSucursals:
+          true,
+      },
+
+      orderBy: {
+        nombre:
+          "asc",
+      },
+    });
 
   return res.json({
     empresa,

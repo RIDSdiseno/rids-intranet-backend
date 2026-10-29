@@ -3,10 +3,23 @@ import { prisma, prismaBase } from "../../lib/prisma.js";
    HELPERS
 ========================= */
 function cleanString(value) {
-    if (value === null || value === undefined)
+    if (value === null ||
+        value === undefined) {
         return null;
-    const text = String(value).trim();
-    return text.length > 0 ? text : null;
+    }
+    /*
+     * PostgreSQL no permite el carácter NUL (\u0000)
+     * dentro de TEXT/VARCHAR.
+     *
+     * Puede llegar desde Registry, WMI, PowerShell,
+     * aplicaciones instaladas u otros datos del agente.
+     */
+    const text = String(value)
+        .replace(/\u0000/g, "")
+        .trim();
+    return (text.length > 0
+        ? text
+        : null);
 }
 function normalizeEmailFromUnknown(value) {
     const raw = cleanString(value);
@@ -330,29 +343,100 @@ async function resolveSolicitanteFromAgent(body, empresaId) {
    SOFTWARE
 ========================= */
 async function syncSoftwares(equipoId, softwares) {
-    if (!softwares || !Array.isArray(softwares))
+    if (!softwares ||
+        !Array.isArray(softwares)) {
         return;
+    }
+    for (const [index, software,] of softwares.entries()) {
+        const campos = {
+            nombre: software.nombre,
+            version: software.version,
+            publisher: software.publisher,
+            installDate: software.installDate,
+        };
+        const camposConNullByte = Object.entries(campos)
+            .filter(([, value,]) => typeof value ===
+            "string" &&
+            value.includes("\u0000"))
+            .map(([campo,]) => campo);
+        if (camposConNullByte.length >
+            0) {
+            console.warn("[AGENTE][SOFTWARE] Byte NUL detectado", {
+                equipoId,
+                index,
+                campos: camposConNullByte,
+                nombre: cleanString(software.nombre),
+            });
+        }
+    }
+    /* =====================================================
+       LIMPIAR SOFTWARES
+    ===================================================== */
     const cleaned = softwares
-        .map((s) => ({
-        equipoId,
-        nombre: cleanString(s.nombre),
-        version: cleanString(s.version) ?? "",
-        publisher: cleanString(s.publisher),
-        installDate: dateOrNull(s.installDate),
-    }))
-        .filter((s) => Boolean(s.nombre));
-    if (cleaned.length === 0)
+        .map((software) => {
+        const nombre = cleanString(software.nombre);
+        /*
+         * Sin nombre no podemos considerar
+         * el registro un software válido.
+         */
+        if (!nombre) {
+            return null;
+        }
+        return {
+            equipoId,
+            nombre,
+            version: cleanString(software.version) ??
+                "",
+            publisher: cleanString(software.publisher),
+            installDate: dateOrNull(cleanString(software.installDate)),
+        };
+    })
+        .filter((software) => software !== null);
+    /*
+     * Si el agente realmente envió una lista vacía,
+     * significa que actualmente no detectó software.
+     *
+     * Conservamos el comportamiento actual:
+     * limpiar los registros existentes.
+     */
+    if (cleaned.length === 0) {
+        await prisma
+            .equipoSoftware
+            .deleteMany({
+            where: {
+                equipoId,
+            },
+        });
         return;
-    const unique = Array.from(new Map(cleaned.map((s) => [
-        `${s.nombre.toLowerCase()}|${s.version.toLowerCase()}`,
-        s,
+    }
+    /* =====================================================
+       ELIMINAR DUPLICADOS DEL MISMO PAYLOAD
+    ===================================================== */
+    const unique = Array.from(new Map(cleaned.map((software) => [
+        `${software.nombre
+            .toLowerCase()}|${software.version
+            .toLowerCase()}`,
+        software,
     ])).values());
-    await prisma.equipoSoftware.deleteMany({
-        where: { equipoId },
-    });
-    await prisma.equipoSoftware.createMany({
-        data: unique,
-        skipDuplicates: true,
+    /* =====================================================
+       SINCRONIZACIÓN ATÓMICA
+
+       Si createMany falla, deleteMany también se revierte.
+    ===================================================== */
+    await prisma.$transaction(async (tx) => {
+        await tx
+            .equipoSoftware
+            .deleteMany({
+            where: {
+                equipoId,
+            },
+        });
+        await tx
+            .equipoSoftware
+            .createMany({
+            data: unique,
+            skipDuplicates: true,
+        });
     });
 }
 async function syncAdicionalesDetectados(equipoId, adicionales) {

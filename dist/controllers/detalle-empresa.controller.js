@@ -2,6 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../utils/coordenadas.js";
+import { intentarVincularEmpresaAutomaticamente, } from "../service/empresa-entidad.service.js";
 /* ================== Schemas ================== */
 const direccionItemSchema = z.object({
     tipo: z.string(),
@@ -48,7 +49,18 @@ export async function createDetalleEmpresa(req, res) {
                 },
             },
         });
-        return res.status(201).json(nuevo);
+        let relacionAutomatica = null;
+        try {
+            relacionAutomatica =
+                await intentarVincularEmpresaAutomaticamente(nuevo.empresa_id);
+        }
+        catch (error) {
+            console.error("[DETALLE EMPRESA] Error intentando relación automática:", error);
+        }
+        return res.status(201).json({
+            ...nuevo,
+            relacionAutomatica,
+        });
     }
     catch (err) {
         if (err instanceof z.ZodError) {
@@ -183,7 +195,27 @@ export async function updateDetalleEmpresa(req, res) {
                 },
             },
         });
-        return res.status(200).json(actualizado);
+        let relacionAutomatica = null;
+        /*
+         * Solo tiene sentido reintentar
+         * si cambió el RUT o empresa asociada.
+         */
+        if (rut !== undefined ||
+            empresa_id !== undefined) {
+            try {
+                relacionAutomatica =
+                    await intentarVincularEmpresaAutomaticamente(actualizado
+                        .empresa
+                        .id_empresa);
+            }
+            catch (error) {
+                console.error("[DETALLE EMPRESA] Error intentando relación automática:", error);
+            }
+        }
+        return res.status(200).json({
+            ...actualizado,
+            relacionAutomatica,
+        });
     }
     catch (err) {
         if (err instanceof z.ZodError) {

@@ -4,4 +4,5 @@ export declare const MANUALES_TUTORIALES_BUCKET: string;
 export declare const BITACORA_EVIDENCIAS_BUCKET: string;
 export declare const CONTRATOS_EMPRESAS_BUCKET: string;
 export declare const CORREO_PLANTILLAS_BUCKET: string;
+export declare const PROTECCION_DATOS_DOCUMENTOS_BUCKET: string;
 //# sourceMappingURL=supabase.d.ts.map

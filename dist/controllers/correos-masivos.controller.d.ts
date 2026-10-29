@@ -6,5 +6,5 @@ export declare function listarPlantillas(req: Request, res: Response): Promise<R
 export declare function obtenerPlantilla(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function eliminarPlantilla(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function actualizarPlantilla(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
-export declare function obtenerFirmaRemitente(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function obtenerFirmaRemitente(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=correos-masivos.controller.d.ts.map
