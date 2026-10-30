@@ -1,5 +1,5 @@
 // src/controllers/controllers-empresas/empresa-entidad.controller.ts
-import { obtenerRelacionEmpresaEntidades, buscarEntidadesDisponibles, vincularEntidadEmpresaManual, desvincularEntidadEmpresa, intentarVincularEmpresaAutomaticamente, } from "../../service/empresa-entidad.service.js";
+import { obtenerRelacionEmpresaEntidades, buscarEntidadesDisponibles, vincularEntidadEmpresaManual, desvincularEntidadEmpresa, intentarVincularEmpresaAutomaticamente, } from "../../service/empresas/empresa-entidad.service.js";
 function parsePositiveInt(value) {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) ||

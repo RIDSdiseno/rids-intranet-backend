@@ -11,7 +11,7 @@ import {
     vincularEntidadEmpresaManual,
     desvincularEntidadEmpresa,
     intentarVincularEmpresaAutomaticamente,
-} from "../../service/empresa-entidad.service.js";
+} from "../../service/empresas/empresa-entidad.service.js";
 
 
 function parsePositiveInt(

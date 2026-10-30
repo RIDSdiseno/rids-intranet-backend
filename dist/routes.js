@@ -9,7 +9,7 @@ import { equiposRouter } from "./routes/equipos.routes.js";
 import equipoAdicionalRoutes from "./routes/equipos-adicionales/equipo-adicional.routes.js";
 import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes-routes/reportes.routes.js";
-import { detalleEmpresaRouter } from "./routes/detalle-empresa.routes.js";
+import { detalleEmpresaRouter } from "./routes/routes-empresas/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/empresas.routes.js";
 import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";

@@ -1,5 +1,5 @@
 import { Router, } from "express";
-import { deleteDestinatarioCampania, getCampaniaProteccionDatos, getCampaniasProteccionDatos, getDestinatariosCampania, patchCampaniaProteccionDatos, postActivarCampaniaProteccionDatos, postCancelarCampaniaProteccionDatos, postCampaniaProteccionDatos, postDestinatariosCampania, postFinalizarCampaniaProteccionDatos, postEnviarCampaniaProteccionDatos, uploadDocumentoProteccionDatosController, getEventosConsentimiento } from "../controllers/proteccion-datos.controller.js";
+import { deleteDestinatarioCampania, getCampaniaProteccionDatos, getCampaniasProteccionDatos, getDestinatariosCampania, patchCampaniaProteccionDatos, postActivarCampaniaProteccionDatos, postCancelarCampaniaProteccionDatos, postCampaniaProteccionDatos, postDestinatariosCampania, postFinalizarCampaniaProteccionDatos, postEnviarCampaniaProteccionDatos, uploadDocumentoProteccionDatosController, getEventosConsentimiento } from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
 import { uploadDocumentoProteccionDatos, } from "../middlewares/proteccion-datos-documentos.middleware.js";
 const router = Router();
 /* =========================================================

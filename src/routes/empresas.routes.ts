@@ -9,7 +9,7 @@ import {
   updateEmpresaStatus,
   deleteEmpresa,
   getEmpresasStats,
-} from "../controllers/empresas.controller.js";
+} from "../controllers/controllers-empresas/empresas.controller.js";
 
 import {
   getEquiposByEmpresa,

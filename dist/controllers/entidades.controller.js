@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { TipoEntidadGestioo, OrigenGestioo } from "@prisma/client";
 import { prismaBase as prisma } from "../lib/prisma.js";
-import { intentarVincularEntidadAutomaticamente, } from "../service/empresa-entidad.service.js";
+import { intentarVincularEntidadAutomaticamente, } from "../service/empresas/empresa-entidad.service.js";
 /* =====================================================
    HELPERS
 ===================================================== */

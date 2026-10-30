@@ -16,7 +16,7 @@ import {
     postEnviarCampaniaProteccionDatos,
     uploadDocumentoProteccionDatosController,
     getEventosConsentimiento
-} from "../controllers/proteccion-datos.controller.js";
+} from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
 
 import {
     uploadDocumentoProteccionDatos,

@@ -7,7 +7,7 @@ import { prismaBase as prisma } from "../lib/prisma.js";
 
 import {
     intentarVincularEntidadAutomaticamente,
-} from "../service/empresa-entidad.service.js";
+} from "../service/empresas/empresa-entidad.service.js";
 
 /* =====================================================
    HELPERS

@@ -1,5 +1,5 @@
 import { Router, } from "express";
-import { getConsentimientoPublico, postResponderConsentimientoPublico, postRevocarConsentimientoPublico, } from "../controllers/proteccion-datos-publico.controller.js";
+import { getConsentimientoPublico, postResponderConsentimientoPublico, postRevocarConsentimientoPublico, } from "../controllers/controllers-proteccion-datos/proteccion-datos-publico.controller.js";
 const router = Router();
 /* =========================================================
    PROTECCIÓN DE DATOS — PÚBLICO

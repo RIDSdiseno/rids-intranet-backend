@@ -6,7 +6,7 @@ import {
     getConsentimientoPublico,
     postResponderConsentimientoPublico,
     postRevocarConsentimientoPublico,
-} from "../controllers/proteccion-datos-publico.controller.js";
+} from "../controllers/controllers-proteccion-datos/proteccion-datos-publico.controller.js";
 
 const router =
     Router();

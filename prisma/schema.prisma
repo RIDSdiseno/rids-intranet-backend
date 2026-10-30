@@ -197,7 +197,7 @@ model EmpresaISP {
   wifiClaveRef String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  ipRed        String?
+  ipRed        String[]  @default([])
   esPrincipal  Boolean   @default(false)
   sucursalId   Int?
   empresa      Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)

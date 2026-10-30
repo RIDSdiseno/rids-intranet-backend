@@ -1,0 +1,250 @@
+import { prisma } from "../../lib/prisma.js";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { clasificarCoordenadas, MENSAJE_COORDENADAS_INVALIDAS } from "../../utils/coordenadas.js";
+import { intentarVincularEmpresaAutomaticamente, } from "../../service/empresas/empresa-entidad.service.js";
+/* ================== Schemas ================== */
+const direccionItemSchema = z.object({
+    tipo: z.string(),
+    direccion: z.string(),
+});
+// latitud/longitud solo validan tipo aquí (number | null | undefined); el rango y
+// la consistencia entre ambas se validan con clasificarCoordenadas (misma regla
+// que Sucursal, ver src/utils/coordenadas.ts) para no duplicar criterios distintos.
+const detalleEmpresaSchema = z.object({
+    rut: z.string(),
+    direccion: z.string().optional(), // mantener temporalmente
+    direcciones: z.array(direccionItemSchema).optional(), // 👈 nuevo
+    latitud: z.number().nullable().optional(),
+    longitud: z.number().nullable().optional(),
+    telefono: z.string().nullable().optional().or(z.literal("")),
+    email: z.string().email().nullable().optional().or(z.literal("")),
+    empresa_id: z.number(),
+});
+const detalleEmpresaUpdateSchema = detalleEmpresaSchema.partial();
+/* ================== CRUD ================== */
+// CREATE
+export async function createDetalleEmpresa(req, res) {
+    try {
+        const parsed = detalleEmpresaSchema.parse(req.body);
+        if (clasificarCoordenadas(parsed.latitud, parsed.longitud) === "INVALIDAS") {
+            return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+        }
+        const nuevo = await prisma.detalleEmpresa.create({
+            data: {
+                rut: parsed.rut,
+                empresa_id: parsed.empresa_id,
+                direccion: parsed.direccion ?? null,
+                direcciones: parsed.direcciones !== undefined
+                    ? parsed.direcciones
+                    : Prisma.JsonNull,
+                latitud: parsed.latitud ?? null,
+                longitud: parsed.longitud ?? null,
+                telefono: parsed.telefono ?? null,
+                email: parsed.email ?? null,
+            },
+            include: {
+                empresa: {
+                    select: { id_empresa: true, nombre: true },
+                },
+            },
+        });
+        let relacionAutomatica = null;
+        try {
+            relacionAutomatica =
+                await intentarVincularEmpresaAutomaticamente(nuevo.empresa_id);
+        }
+        catch (error) {
+            console.error("[DETALLE EMPRESA] Error intentando relación automática:", error);
+        }
+        return res.status(201).json({
+            ...nuevo,
+            relacionAutomatica,
+        });
+    }
+    catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+        }
+        console.error("Error al crear detalle empresa:", err);
+        if (err.code === "P2002")
+            return res.status(400).json({ error: "RUT ya existe" });
+        if (err.code === "P2003")
+            return res.status(400).json({ error: "Empresa no existe" });
+        return res.status(500).json({ error: "Error al crear detalle empresa" });
+    }
+}
+// READ ALL
+export async function getDetallesEmpresa(_req, res) {
+    try {
+        const detalles = await prisma.detalleEmpresa.findMany({
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+            },
+            orderBy: { id: "asc" },
+        });
+        return res.status(200).json(detalles);
+    }
+    catch (err) {
+        console.error("Error al obtener detalles empresa:", err);
+        return res.status(500).json({ error: "Error al obtener detalles empresa" });
+    }
+}
+// READ ONE BY ID
+export async function getDetalleEmpresaById(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (isNaN(id))
+            return res.status(400).json({ error: "ID inválido" });
+        const detalle = await prisma.detalleEmpresa.findUnique({
+            where: { id },
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+            },
+        });
+        if (!detalle)
+            return res.status(404).json({ error: "Detalle empresa no encontrado" });
+        return res.status(200).json(detalle);
+    }
+    catch (err) {
+        console.error("Error al obtener detalle empresa:", err);
+        return res.status(500).json({ error: "Error al obtener detalle empresa" });
+    }
+}
+// READ BY EMPRESA ID
+export async function getDetalleEmpresaByEmpresaId(req, res) {
+    try {
+        const empresa_id = Number(req.params.empresa_id);
+        if (isNaN(empresa_id))
+            return res.status(400).json({ error: "ID de empresa inválido" });
+        const detalle = await prisma.detalleEmpresa.findUnique({
+            where: { empresa_id },
+            include: {
+                empresa: {
+                    select: {
+                        id_empresa: true,
+                        nombre: true,
+                    },
+                },
+            },
+        });
+        if (!detalle)
+            return res.status(404).json({ error: "Detalle empresa no encontrado" });
+        return res.status(200).json(detalle);
+    }
+    catch (err) {
+        console.error("Error al obtener detalle empresa:", err);
+        return res.status(500).json({ error: "Error al obtener detalle empresa" });
+    }
+}
+// UPDATE
+export async function updateDetalleEmpresa(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (isNaN(id))
+            return res.status(400).json({ error: "ID inválido" });
+        const parsed = detalleEmpresaUpdateSchema.parse(req.body);
+        const { empresa_id, rut, direccion, direcciones, latitud, longitud, telefono, email } = parsed;
+        if (clasificarCoordenadas(latitud, longitud) === "INVALIDAS") {
+            return res.status(400).json({ error: MENSAJE_COORDENADAS_INVALIDAS });
+        }
+        const data = {};
+        if (rut !== undefined)
+            data.rut = rut;
+        // 🔵 Dirección principal
+        if (direccion !== undefined) {
+            data.direccion = direccion ?? null;
+        }
+        if (latitud !== undefined)
+            data.latitud = latitud ?? null;
+        if (longitud !== undefined)
+            data.longitud = longitud ?? null;
+        // 🟢 Direcciones adicionales (JSON limpio)
+        if (direcciones !== undefined) {
+            const cleaned = Array.isArray(direcciones)
+                ? direcciones.filter(d => d?.direccion?.trim())
+                : [];
+            data.direcciones =
+                cleaned.length > 0
+                    ? cleaned
+                    : Prisma.JsonNull;
+        }
+        if (telefono !== undefined)
+            data.telefono = telefono ?? null;
+        if (email !== undefined)
+            data.email = email ?? null;
+        if (empresa_id !== undefined) {
+            data.empresa = { connect: { id_empresa: empresa_id } };
+        }
+        const actualizado = await prisma.detalleEmpresa.update({
+            where: { id },
+            data,
+            include: {
+                empresa: {
+                    select: { id_empresa: true, nombre: true },
+                },
+            },
+        });
+        let relacionAutomatica = null;
+        /*
+         * Solo tiene sentido reintentar
+         * si cambió el RUT o empresa asociada.
+         */
+        if (rut !== undefined ||
+            empresa_id !== undefined) {
+            try {
+                relacionAutomatica =
+                    await intentarVincularEmpresaAutomaticamente(actualizado
+                        .empresa
+                        .id_empresa);
+            }
+            catch (error) {
+                console.error("[DETALLE EMPRESA] Error intentando relación automática:", error);
+            }
+        }
+        return res.status(200).json({
+            ...actualizado,
+            relacionAutomatica,
+        });
+    }
+    catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ error: "Datos inválidos", detalles: err.flatten() });
+        }
+        console.error("Error al actualizar detalle empresa:", err);
+        if (err.code === "P2002")
+            return res.status(400).json({ error: "RUT ya existe" });
+        if (err.code === "P2003")
+            return res.status(400).json({ error: "Empresa no existe" });
+        if (err.code === "P2025")
+            return res.status(404).json({ error: "Detalle empresa no encontrado" });
+        return res.status(500).json({ error: "Error al actualizar detalle empresa" });
+    }
+}
+// DELETE
+export async function deleteDetalleEmpresa(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (isNaN(id))
+            return res.status(400).json({ error: "ID inválido" });
+        await prisma.detalleEmpresa.delete({ where: { id } });
+        return res.status(204).send();
+    }
+    catch (err) {
+        console.error("Error al eliminar detalle empresa:", err);
+        if (err.code === "P2025")
+            return res.status(404).json({ error: "Detalle empresa no encontrado" });
+        return res.status(500).json({ error: "Error al eliminar detalle empresa" });
+    }
+}
+//# sourceMappingURL=detalle-empresa.controller.js.map
