@@ -428,3 +428,227 @@ export async function upsertChecklistEmpresa(req: Request, res: Response) {
   }
 }
 
+/* =====================================================
+   CONFIGURACIÓN DE SERVIDORES EN LA FICHA
+===================================================== */
+
+/**
+ * GET /api/ficha-empresa/:empresaId/servidores-config
+ */
+export async function obtenerConfiguracionServidores(
+  req: Request,
+  res: Response
+) {
+  try {
+    const empresaId =
+      Number(
+        req.params.empresaId
+      );
+
+    if (
+      !Number.isInteger(
+        empresaId
+      ) ||
+      empresaId <= 0
+    ) {
+      return res.status(400).json({
+        success:
+          false,
+
+        error:
+          "empresaId inválido",
+      });
+    }
+
+    const empresa =
+      await prisma.empresa.findUnique({
+        where: {
+          id_empresa:
+            empresaId,
+        },
+
+        select: {
+          id_empresa:
+            true,
+        },
+      });
+
+    if (
+      !empresa
+    ) {
+      return res.status(404).json({
+        success:
+          false,
+
+        error:
+          "Empresa no encontrada",
+      });
+    }
+
+    const ficha =
+      await prisma.fichaEmpresa.upsert({
+        where: {
+          empresaId,
+        },
+
+        update: {},
+
+        create: {
+          empresaId,
+        },
+
+        select: {
+          empresaId:
+            true,
+
+          servidoresAplica:
+            true,
+        },
+      });
+
+    return res.status(200).json({
+      success:
+        true,
+
+      data:
+        ficha,
+    });
+
+  } catch (
+  error
+  ) {
+    console.error(
+      "Error obteniendo configuración de servidores:",
+      error
+    );
+
+    return res.status(500).json({
+      success:
+        false,
+
+      error:
+        "No se pudo obtener la configuración de servidores",
+    });
+  }
+}
+
+
+/**
+ * PATCH /api/ficha-empresa/:empresaId/servidores-config
+ */
+export async function actualizarConfiguracionServidores(
+  req: Request,
+  res: Response
+) {
+  try {
+    const empresaId =
+      Number(
+        req.params.empresaId
+      );
+
+    const servidoresAplica =
+      req.body
+        ?.servidoresAplica;
+
+    if (
+      !Number.isInteger(
+        empresaId
+      ) ||
+      empresaId <= 0
+    ) {
+      return res.status(400).json({
+        success:
+          false,
+
+        error:
+          "empresaId inválido",
+      });
+    }
+
+    if (
+      typeof servidoresAplica !==
+      "boolean"
+    ) {
+      return res.status(400).json({
+        success:
+          false,
+
+        error:
+          "servidoresAplica debe ser boolean",
+      });
+    }
+
+    const empresa =
+      await prisma.empresa.findUnique({
+        where: {
+          id_empresa:
+            empresaId,
+        },
+
+        select: {
+          id_empresa:
+            true,
+        },
+      });
+
+    if (
+      !empresa
+    ) {
+      return res.status(404).json({
+        success:
+          false,
+
+        error:
+          "Empresa no encontrada",
+      });
+    }
+
+    const ficha =
+      await prisma.fichaEmpresa.upsert({
+        where: {
+          empresaId,
+        },
+
+        update: {
+          servidoresAplica,
+        },
+
+        create: {
+          empresaId,
+          servidoresAplica,
+        },
+
+        select: {
+          empresaId:
+            true,
+
+          servidoresAplica:
+            true,
+        },
+      });
+
+    return res.status(200).json({
+      success:
+        true,
+
+      data:
+        ficha,
+    });
+
+  } catch (
+  error
+  ) {
+    console.error(
+      "Error actualizando configuración de servidores:",
+      error
+    );
+
+    return res.status(500).json({
+      success:
+        false,
+
+      error:
+        "No se pudo actualizar la configuración de servidores",
+    });
+  }
+}

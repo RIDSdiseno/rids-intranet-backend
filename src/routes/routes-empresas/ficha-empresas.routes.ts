@@ -4,7 +4,8 @@ import { Router } from "express";
 // Ficha
 import {
   obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa,
-  upsertFichaTecnicaEmpresa, upsertChecklistEmpresa
+  upsertFichaTecnicaEmpresa, upsertChecklistEmpresa, obtenerConfiguracionServidores,
+  actualizarConfiguracionServidores,
 } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
 
 import {
@@ -141,6 +142,8 @@ fichaEmpresasRouter.post("/servidores", createServidor);
 fichaEmpresasRouter.put("/servidores/:id", updateServidor);
 fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);
 fichaEmpresasRouter.delete("/servidores/:id", deleteServidor);
+fichaEmpresasRouter.get("/:empresaId/servidores-config", obtenerConfiguracionServidores);
+fichaEmpresasRouter.patch("/:empresaId/servidores-config", actualizarConfiguracionServidores);
 
 /* ===================== SERVIDOR USUARIOS ===================== */
 fichaEmpresasRouter.get("/servidores/:servidorId/usuarios", getUsuariosByServidor);

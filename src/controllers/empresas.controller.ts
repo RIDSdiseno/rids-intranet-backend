@@ -5,6 +5,10 @@ import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
 import {
+  evaluarCompletitudFichasEmpresas,
+} from "../service/empresa-ficha-completitud.service.js";
+
+import {
   intentarVincularEmpresaAutomaticamente,
 } from "../service/empresa-entidad.service.js";
 
@@ -118,6 +122,16 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
     }
 
     const empresaIds = empresasBase.map((e) => e.id_empresa);
+
+    const completitudFichaMap =
+      (
+        withStats ||
+        full
+      )
+        ? await evaluarCompletitudFichasEmpresas(
+          empresaIds
+        )
+        : new Map();
 
     if (full) {
       // ------ FULL: Traemos "todo" con consultas separadas y luego agregamos en memoria
@@ -248,6 +262,11 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
             ticketsAbiertos,
             visitasPendientes,
           },
+          completitudFicha:
+            completitudFichaMap.get(
+              e.id_empresa
+            ) ??
+            null,
         };
       });
 
@@ -298,6 +317,54 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
       where: { empresaId: { in: empresaIds }, status: EstadoVisita.PENDIENTE },
       _count: { empresaId: true },
     });
+
+    const trabajos = await prisma.detalleTrabajoGestioo.findMany({
+      where: {
+        entidad: {
+          empresaId: {
+            in: empresaIds,
+          },
+        },
+      },
+
+      select: {
+        id: true,
+        estado: true,
+
+        entidad: {
+          select: {
+            empresaId: true,
+          },
+        },
+      },
+    });
+
+    const trabajosPorEmpresa =
+      new Map<number, number>();
+
+    const trabajosPendientesPorEmpresa =
+      new Map<number, number>();
+
+    for (const trabajo of trabajos) {
+      const empresaId =
+        trabajo.entidad?.empresaId;
+
+      if (!empresaId) {
+        continue;
+      }
+
+      trabajosPorEmpresa.set(
+        empresaId,
+        (trabajosPorEmpresa.get(empresaId) ?? 0) + 1
+      );
+
+      if (trabajo.estado === "PENDIENTE") {
+        trabajosPendientesPorEmpresa.set(
+          empresaId,
+          (trabajosPendientesPorEmpresa.get(empresaId) ?? 0) + 1
+        );
+      }
+    }
 
     // 4) TOTAL visitas por empresa
     const visitasTotal = await prisma.visita.groupBy({
@@ -389,10 +456,22 @@ export async function getEmpresas(req: Request, res: Response): Promise<void> {
         totalEquipos: equiposPorEmpresa.get(e.id_empresa) ?? 0,
         totalTickets: ticketsTotalMap.get(e.id_empresa) ?? 0,
         totalVisitas: visitasTotalMap.get(e.id_empresa) ?? 0,
-        totalTrabajos: 0,
+        totalTrabajos:
+          trabajosPorEmpresa.get(
+            e.id_empresa
+          ) ?? 0,
+        trabajosPendientes:
+          trabajosPendientesPorEmpresa.get(
+            e.id_empresa
+          ) ?? 0,
         ticketsAbiertos: ticketOpenMap.get(e.id_empresa) ?? 0,
         visitasPendientes: visitaPendMap.get(e.id_empresa) ?? 0,
       },
+      completitudFicha:
+        completitudFichaMap.get(
+          e.id_empresa
+        ) ??
+        null,
     }));
 
     res.json({ success: true, data, total: data.length });

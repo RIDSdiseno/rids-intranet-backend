@@ -7,6 +7,8 @@ const SMTP_PORT = Number(process.env.SMTP_PORT ||
 const SMTP_USER = process.env.SMTP_USER
     ?.trim();
 const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
+const SMTP_DEBUG = process.env.SMTP_DEBUG ===
+    "true";
 if (!SMTP_HOST ||
     !SMTP_USER ||
     !SMTP_PASSWORD) {
@@ -30,19 +32,34 @@ export const transporter = nodemailer.createTransport({
         user: SMTP_USER,
         pass: SMTP_PASSWORD,
     },
+    /* =====================================================
+       POOL SMTP
+       ===================================================== */
+    pool: true,
     /*
-     * Sin pool.
-     *
-     * Cada envío utilizará una conexión SMTP
-     * independiente, evitando reutilizar sockets
-     * potencialmente cerrados/inválidos en Railway.
+     * Coincide con la concurrencia inicial
+     * utilizada por Protección de Datos.
      */
+    maxConnections: 5,
+    /*
+     * Número máximo de mensajes que una conexión
+     * puede procesar antes de renovarse.
+     */
+    maxMessages: 100,
+    /* =====================================================
+       TIMEOUTS
+       ===================================================== */
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 30_000,
     tls: {
         rejectUnauthorized: true,
     },
+    /* =====================================================
+       DEBUG OPCIONAL
+       ===================================================== */
+    logger: SMTP_DEBUG,
+    debug: SMTP_DEBUG,
 });
 /*
  * Comprobación opcional del SMTP.
@@ -51,17 +68,26 @@ export const transporter = nodemailer.createTransport({
  * Solo prueba conexión y autenticación.
  */
 export async function verificarSMTP() {
+    const inicio = Date.now();
     try {
         await transporter.verify();
         console.log("[SMTP] ✅ Servidor SMTP disponible", {
             host: SMTP_HOST,
             port: SMTP_PORT,
             user: SMTP_USER,
+            duracionMs: Date.now() -
+                inicio,
         });
         return true;
     }
     catch (error) {
-        console.error("[SMTP] ❌ No fue posible conectar/autenticar con SMTP", error);
+        console.error("[SMTP] ❌ No fue posible conectar/autenticar con SMTP", {
+            host: SMTP_HOST,
+            port: SMTP_PORT,
+            duracionMs: Date.now() -
+                inicio,
+            error,
+        });
         return false;
     }
 }

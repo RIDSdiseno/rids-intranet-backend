@@ -1,7 +1,7 @@
 // Rutas para manejo de ficha de empresas, con endpoints para CRUD completo de ficha técnica, sucursales, red sucursal, servidores y usuarios de servidores, delegando la lógica al controlador correspondiente. Todas las rutas están protegidas por autenticación.
 import { Router } from "express";
 // Ficha
-import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, upsertChecklistEmpresa } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
+import { obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa, upsertFichaTecnicaEmpresa, upsertChecklistEmpresa, obtenerConfiguracionServidores, actualizarConfiguracionServidores, } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
 import { obtenerFichaSucursal, actualizarFichaSucursal, listarSucursalesEmpresa, crearSucursal, obtenerRedesSucursal, crearRedSucursal, actualizarRedSucursal, eliminarRedSucursal, eliminarSucursal, } from "../../controllers/controllers-empresas/sucursal.controller.js";
 // Red sucursal
 import { obtenerEmpresaISPs, crearEmpresaISP, actualizarEmpresaISP, eliminarEmpresaISP, } from "../../controllers/controllers-empresas/red-sucursal.controller.js";
@@ -52,6 +52,8 @@ fichaEmpresasRouter.post("/servidores", createServidor);
 fichaEmpresasRouter.put("/servidores/:id", updateServidor);
 fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);
 fichaEmpresasRouter.delete("/servidores/:id", deleteServidor);
+fichaEmpresasRouter.get("/:empresaId/servidores-config", obtenerConfiguracionServidores);
+fichaEmpresasRouter.patch("/:empresaId/servidores-config", actualizarConfiguracionServidores);
 /* ===================== SERVIDOR USUARIOS ===================== */
 fichaEmpresasRouter.get("/servidores/:servidorId/usuarios", getUsuariosByServidor);
 fichaEmpresasRouter.post("/servidores/:servidorId/usuarios", createUsuarioServidor);

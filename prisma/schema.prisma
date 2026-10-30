@@ -135,13 +135,15 @@ model ContactoEmpresa {
 }
 
 model FichaEmpresa {
-  id                     Int                      @id @default(autoincrement())
-  empresaId              Int                      @unique
-  creadaEn               DateTime                 @default(now())
-  actualizadaEn          DateTime                 @updatedAt
+  id                     Int      @id @default(autoincrement())
+  empresaId              Int      @unique
+  creadaEn               DateTime @default(now())
+  actualizadaEn          DateTime @updatedAt
   condicionesComerciales String?
-  empresa                Empresa                  @relation(fields: [empresaId], references: [id_empresa])
-  checklist              ChecklistGestionEmpresa?
+  servidoresAplica       Boolean  @default(true)
+
+  empresa   Empresa                  @relation(fields: [empresaId], references: [id_empresa])
+  checklist ChecklistGestionEmpresa?
 }
 
 model FichaTecnicaEmpresa {
@@ -2562,34 +2564,25 @@ model OportunidadMercadoPublico {
 }
 
 model CampaniaProteccionDatos {
-  id          Int     @id @default(autoincrement())
-  nombre      String
-  descripcion String?
-
-  tituloDocumento  String
-  versionDocumento String
-  contenidoHtml    String
-  documentoHash    String @db.VarChar(64)
-
+  id                          Int                           @id @default(autoincrement())
+  nombre                      String
+  descripcion                 String?
+  tituloDocumento             String
+  versionDocumento            String
+  contenidoHtml               String
+  documentoHash               String                        @db.VarChar(64)
   configuracionConsentimiento Json?
-
-  asuntoCorreo     String
-  cuerpoCorreoHtml String
-
-  estado EstadoCampaniaProteccionDatos @default(BORRADOR)
-
-  fechaInicio       DateTime?
-  fechaFin          DateTime?
-  fechaEnvioInicial DateTime?
-
-  creadoPorId Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  creadoPor Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
-
-  destinatarios ConsentimientoDatos[]
+  asuntoCorreo                String
+  cuerpoCorreoHtml            String
+  estado                      EstadoCampaniaProteccionDatos @default(BORRADOR)
+  fechaInicio                 DateTime?
+  fechaFin                    DateTime?
+  fechaEnvioInicial           DateTime?
+  creadoPorId                 Int?
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  creadoPor                   Tecnico?                      @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+  destinatarios               ConsentimientoDatos[]
 
   @@index([estado])
   @@index([creadoPorId])
@@ -2598,50 +2591,34 @@ model CampaniaProteccionDatos {
 }
 
 model ConsentimientoDatos {
-  id Int @id @default(autoincrement())
-
-  campaniaId Int
-
-  solicitanteId Int?
-  empresaId     Int?
-
-  nombre        String?
-  email         String
-  empresaNombre String?
-
-  tokenHash      String?   @unique @db.VarChar(64)
-  tokenExpiresAt DateTime?
-
-  estado EstadoConsentimientoDatos @default(PENDIENTE)
-
+  id                      Int                         @id @default(autoincrement())
+  campaniaId              Int
+  solicitanteId           Int?
+  empresaId               Int?
+  nombre                  String?
+  email                   String
+  empresaNombre           String?
+  tokenHash               String?                     @unique @db.VarChar(64)
+  tokenExpiresAt          DateTime?
+  estado                  EstadoConsentimientoDatos   @default(PENDIENTE)
   fechaEnvio              DateTime?
   fechaAperturaFormulario DateTime?
   fechaRespuesta          DateTime?
   fechaRevocacion         DateTime?
-
-  aceptado Boolean?
-
-  versionDocumento      String
-  documentoHash         String @db.VarChar(64)
-  snapshotDocumentoHtml String
-
-  respuestaJson Json?
-
-  ipRespuesta String?
-  userAgent   String?
-
-  evidenciaPath String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  campania CampaniaProteccionDatos @relation(fields: [campaniaId], references: [id], onDelete: Restrict)
-
-  solicitante Solicitante? @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
-
-  empresa Empresa? @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-
-  eventos ConsentimientoDatosEvento[]
+  aceptado                Boolean?
+  versionDocumento        String
+  documentoHash           String                      @db.VarChar(64)
+  snapshotDocumentoHtml   String
+  respuestaJson           Json?
+  ipRespuesta             String?
+  userAgent               String?
+  evidenciaPath           String?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  campania                CampaniaProteccionDatos     @relation(fields: [campaniaId], references: [id], onDelete: Restrict)
+  solicitante             Solicitante?                @relation(fields: [solicitanteId], references: [id_solicitante], onDelete: SetNull)
+  empresa                 Empresa?                    @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  eventos                 ConsentimientoDatosEvento[]
 
   @@unique([campaniaId, email])
   @@index([campaniaId])
@@ -2658,15 +2635,11 @@ model ConsentimientoDatosEvento {
   id               Int                           @id @default(autoincrement())
   consentimientoId Int
   tipo             TipoEventoConsentimientoDatos
-
-  detalle Json?
-
-  ip        String?
-  userAgent String?
-
-  createdAt DateTime @default(now())
-
-  consentimiento ConsentimientoDatos @relation(fields: [consentimientoId], references: [id], onDelete: Cascade)
+  detalle          Json?
+  ip               String?
+  userAgent        String?
+  createdAt        DateTime                      @default(now())
+  consentimiento   ConsentimientoDatos           @relation(fields: [consentimientoId], references: [id], onDelete: Cascade)
 
   @@index([consentimientoId])
   @@index([tipo])

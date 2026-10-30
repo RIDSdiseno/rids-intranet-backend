@@ -14,7 +14,7 @@ export type SendEmailInput = {
 };
 export declare function sendEmail({ to, subject, bodyHtml, attachments, replyTo, }: SendEmailInput): Promise<{
     messageId: string;
-    accepted: (string | import("nodemailer/lib/mailer/index.js").Address)[];
-    rejected: (string | import("nodemailer/lib/mailer/index.js").Address)[];
+    accepted: string[];
+    rejected: string[];
 }>;
 //# sourceMappingURL=masivos-email-sender.service.d.ts.map
