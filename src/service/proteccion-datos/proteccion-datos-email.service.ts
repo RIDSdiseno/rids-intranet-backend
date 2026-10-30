@@ -3,6 +3,7 @@ import {
     EstadoCampaniaProteccionDatos,
     EstadoConsentimientoDatos,
     TipoEventoConsentimientoDatos,
+    Prisma
 } from "@prisma/client";
 
 import {
@@ -241,6 +242,428 @@ function personalizarCorreo({
         );
 
     return result;
+}
+
+const PROTECCION_DATOS_CONCURRENCIA =
+    Math.max(
+        1,
+        Math.min(
+            10,
+            Number(
+                process.env
+                    .PROTECCION_DATOS_CONCURRENCIA ||
+                5
+            )
+        )
+    );
+
+type DestinatarioEnvio =
+    Prisma.ConsentimientoDatosGetPayload<{
+        select: {
+            id: true;
+            nombre: true;
+            email: true;
+            empresaNombre: true;
+            versionDocumento: true;
+            estado: true;
+            tokenHash: true;
+        };
+    }>;
+
+async function procesarDestinatarioCampania({
+    destinatario,
+    campania,
+    baseUrl,
+    firmaHtml,
+}: {
+    destinatario:
+    DestinatarioEnvio;
+
+    campania: {
+        id: number;
+        asuntoCorreo: string;
+        cuerpoCorreoHtml: string;
+    };
+
+    baseUrl:
+    string;
+
+    firmaHtml:
+    string |
+    null |
+    undefined;
+}): Promise<
+    ResultadoEnvioDestinatario
+> {
+
+    const startedAt =
+        Date.now();
+
+    console.log(
+        "[PROTECCION DATOS] 📤 Procesando destinatario",
+        {
+            consentimientoId:
+                destinatario.id,
+
+            email:
+                destinatario.email,
+        }
+    );
+
+    const token =
+        generarTokenConsentimiento();
+
+    const tokenHash =
+        hashTokenConsentimiento(
+            token
+        );
+
+    /* =====================================================
+       RESERVAR DESTINATARIO
+       ===================================================== */
+
+    const claimStartedAt =
+        Date.now();
+
+    const claimed =
+        await prisma
+            .consentimientoDatos
+            .updateMany({
+                where: {
+                    id:
+                        destinatario.id,
+
+                    campaniaId:
+                        campania.id,
+
+                    estado: {
+                        in: [
+                            EstadoConsentimientoDatos.PENDIENTE,
+                            EstadoConsentimientoDatos.ERROR_ENVIO,
+                        ],
+                    },
+
+                    tokenHash:
+                        null,
+                },
+
+                data: {
+                    tokenHash,
+
+                    tokenExpiresAt:
+                        null,
+                },
+            });
+
+    console.log(
+        "[PROTECCION DATOS] ⏱ Token reservado",
+        {
+            consentimientoId:
+                destinatario.id,
+
+            email:
+                destinatario.email,
+
+            durationMs:
+                Date.now() -
+                claimStartedAt,
+        }
+    );
+
+    /*
+     * Otro proceso ya reclamó este destinatario.
+     */
+    if (
+        claimed.count ===
+        0
+    ) {
+
+        console.warn(
+            "[PROTECCION DATOS] ⚠️ Destinatario ya reclamado",
+            {
+                consentimientoId:
+                    destinatario.id,
+
+                email:
+                    destinatario.email,
+            }
+        );
+
+        return {
+            consentimientoId:
+                destinatario.id,
+
+            email:
+                destinatario.email,
+
+            ok:
+                false,
+
+            error:
+                "El destinatario ya fue reclamado por otro proceso",
+        };
+    }
+
+    const publicUrl =
+        `${baseUrl}/${token}`;
+
+    let bodyHtml =
+        personalizarCorreo({
+            bodyHtml:
+                campania.cuerpoCorreoHtml,
+
+            nombre:
+                destinatario.nombre,
+
+            email:
+                destinatario.email,
+
+            empresaNombre:
+                destinatario.empresaNombre,
+
+            versionDocumento:
+                destinatario.versionDocumento,
+
+            publicUrl,
+        });
+
+    if (
+        firmaHtml
+    ) {
+
+        bodyHtml =
+            `
+                ${bodyHtml}
+
+                ${firmaHtml}
+            `.trim();
+    }
+
+    try {
+
+        /* =================================================
+           SMTP
+           ================================================= */
+
+        const smtpStartedAt =
+            Date.now();
+
+        await sendEmail({
+            to:
+                destinatario.email,
+
+            subject:
+                campania.asuntoCorreo,
+
+            bodyHtml,
+
+            attachments:
+                [],
+        });
+
+        console.log(
+            "[PROTECCION DATOS] ⏱ SMTP completado",
+            {
+                consentimientoId:
+                    destinatario.id,
+
+                email:
+                    destinatario.email,
+
+                durationMs:
+                    Date.now() -
+                    smtpStartedAt,
+            }
+        );
+
+        const ahora =
+            new Date();
+
+        /* =================================================
+           BD POST ENVÍO
+           ================================================= */
+
+        const dbStartedAt =
+            Date.now();
+
+        await prisma.$transaction([
+            prisma
+                .consentimientoDatos
+                .update({
+                    where: {
+                        id:
+                            destinatario.id,
+                    },
+
+                    data: {
+                        estado:
+                            EstadoConsentimientoDatos.ENVIADO,
+
+                        fechaEnvio:
+                            ahora,
+                    },
+                }),
+
+            prisma
+                .consentimientoDatosEvento
+                .create({
+                    data: {
+                        consentimientoId:
+                            destinatario.id,
+
+                        tipo:
+                            TipoEventoConsentimientoDatos.ENVIADO,
+
+                        detalle: {
+                            email:
+                                destinatario.email,
+                        },
+                    },
+                }),
+
+            prisma
+                .campaniaProteccionDatos
+                .updateMany({
+                    where: {
+                        id:
+                            campania.id,
+
+                        fechaEnvioInicial:
+                            null,
+                    },
+
+                    data: {
+                        fechaEnvioInicial:
+                            ahora,
+                    },
+                }),
+        ]);
+
+        console.log(
+            "[PROTECCION DATOS] ✅ Destinatario enviado",
+            {
+                consentimientoId:
+                    destinatario.id,
+
+                email:
+                    destinatario.email,
+
+                dbDurationMs:
+                    Date.now() -
+                    dbStartedAt,
+
+                totalDurationMs:
+                    Date.now() -
+                    startedAt,
+            }
+        );
+
+        return {
+            consentimientoId:
+                destinatario.id,
+
+            email:
+                destinatario.email,
+
+            ok:
+                true,
+        };
+
+    } catch (
+    error
+    ) {
+
+        /* =================================================
+           INVALIDAR TOKEN FALLIDO
+           ================================================= */
+
+        const dbErrorStartedAt =
+            Date.now();
+
+        await prisma.$transaction([
+            prisma
+                .consentimientoDatos
+                .update({
+                    where: {
+                        id:
+                            destinatario.id,
+                    },
+
+                    data: {
+                        estado:
+                            EstadoConsentimientoDatos.ERROR_ENVIO,
+
+                        tokenHash:
+                            null,
+
+                        tokenExpiresAt:
+                            null,
+                    },
+                }),
+
+            prisma
+                .consentimientoDatosEvento
+                .create({
+                    data: {
+                        consentimientoId:
+                            destinatario.id,
+
+                        tipo:
+                            TipoEventoConsentimientoDatos.ERROR_ENVIO,
+
+                        detalle: {
+                            email:
+                                destinatario.email,
+
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : "Error desconocido",
+                        },
+                    },
+                }),
+        ]);
+
+        console.error(
+            "[PROTECCION DATOS] ❌ Error destinatario",
+            {
+                consentimientoId:
+                    destinatario.id,
+
+                email:
+                    destinatario.email,
+
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : error,
+
+                dbDurationMs:
+                    Date.now() -
+                    dbErrorStartedAt,
+
+                totalDurationMs:
+                    Date.now() -
+                    startedAt,
+            }
+        );
+
+        return {
+            consentimientoId:
+                destinatario.id,
+
+            email:
+                destinatario.email,
+
+            ok:
+                false,
+
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Error desconocido",
+        };
+    }
 }
 
 /* =========================================================
