@@ -127,10 +127,11 @@ import mobileTallerRoutes from "./routes/internal-routes/mobile-taller.routes.js
 import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.routes.js";
 
 /* ===================== PROTECCIÓN DE DATOS ===================== */
-import proteccionDatosPublicoRouter
-    from "./routes/proteccion-datos-publico.routes.js";
-
+import proteccionDatosPublicoRouter from "./routes/proteccion-datos-publico.routes.js";
 import proteccionDatosRouter from "./routes/proteccion-datos.routes.js";
+
+import leypdRouter from "./routes/routes-leypd/leypd.routes.js";
+import leypdPublicoRouter from "./routes/routes-leypd/leypd-publico.routes.js";
 
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
@@ -161,6 +162,7 @@ api.use(whatchimpRouter);
  * para el formulario público.
  */
 api.use("/proteccion-datos/publico", proteccionDatosPublicoRouter,);
+api.use("/public/leypd", leypdPublicoRouter);
 
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
@@ -328,6 +330,8 @@ api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
 /* ===================== PROTECCIÓN DE DATOS ===================== */
 
 api.use("/proteccion-datos", proteccionDatosRouter,);
+
+api.use("/leypd", leypdRouter);
 
 /* ===================== Export ===================== */
 export default api;

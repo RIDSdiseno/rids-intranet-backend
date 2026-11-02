@@ -86,12 +86,17 @@ async function getToken(auth: MsAuth): Promise<string> {
   });
 
   const url = `https://login.microsoftonline.com/${auth.tenant}/oauth2/v2.0/token`;
+  console.log(
+    "[graph:getToken] tenant:", auth.tenant,
+    "| clientId:", auth.clientId,
+    "| secret suffix:", auth.clientSecret?.slice(-4)
+  );
   const r = await fetch(url, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
   });
-  
+
   if (!r.ok) {
     const text =
       await r

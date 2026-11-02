@@ -1177,21 +1177,9 @@ export async function evaluarCompletitudFichasEmpresas(
                     ],
 
                     [
-                        "numeroTicket",
-                        "Número de ticket / referencia",
-                        isp.numeroTicket,
-                    ],
-
-                    [
                         "wifiNombre",
                         "Nombre WiFi",
                         isp.wifiNombre,
-                    ],
-
-                    [
-                        "wifiClaveRef",
-                        "Referencia de clave WiFi",
-                        isp.wifiClaveRef,
                     ],
 
                     [

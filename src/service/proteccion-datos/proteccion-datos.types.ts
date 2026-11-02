@@ -91,6 +91,30 @@ export type ResponderConsentimientoPublicoInput =
     RespuestaConsentimientoDatos;
 
 /* =========================================================
+   ORIGEN DE CAMPAÑA
+   ========================================================= */
+
+/**
+ * GENERAL = campaña creada desde el módulo Protección de Datos.
+ * LEYPD   = campaña creada desde el elemento 04 de Ley PD.
+ */
+export type OrigenCampaniaProteccionDatos =
+    | "GENERAL"
+    | "LEYPD";
+
+export const ORIGENES_CAMPANIA_PROTECCION_DATOS:
+    OrigenCampaniaProteccionDatos[] = [
+        "GENERAL",
+        "LEYPD",
+    ];
+
+/**
+ * Elemento Ley PD "Gestión del consentimiento".
+ */
+export const LEYPD_ELEMENTO_CONSENTIMIENTO =
+    4;
+
+/* =========================================================
    CAMPAÑAS
    ========================================================= */
 
@@ -117,6 +141,12 @@ export type CrearCampaniaProteccionDatosInput = {
     fechaFin?: Date | null;
 
     creadoPorId?: number | null;
+
+    empresaId?: number | null;
+
+    origen?: OrigenCampaniaProteccionDatos;
+
+    leypdElementoNumero?: number | null;
 };
 
 export type ActualizarCampaniaProteccionDatosInput = {

@@ -14,13 +14,18 @@ import {
     hashDocumento,
 } from "./proteccion-datos-documento.service.js";
 
+import {
+    LEYPD_ELEMENTO_CONSENTIMIENTO,
+    ORIGENES_CAMPANIA_PROTECCION_DATOS,
+} from "./proteccion-datos.types.js";
+
 import type {
     ActualizarCampaniaProteccionDatosInput,
     ConfiguracionConsentimientoDatos,
     CrearCampaniaProteccionDatosInput,
-    CampoConsentimiento
+    CampoConsentimiento,
+    OrigenCampaniaProteccionDatos,
 } from "./proteccion-datos.types.js";
-
 /* =========================================================
    TIPOS INTERNOS
    ========================================================= */
@@ -882,6 +887,132 @@ function validarRangoFechas(
 }
 
 /* =========================================================
+   CONTEXTO DE CAMPAÑA
+   ========================================================= */
+
+type ContextoCampania = {
+    empresaId:
+    number | null;
+
+    origen:
+    OrigenCampaniaProteccionDatos;
+
+    leypdElementoNumero:
+    number | null;
+};
+
+/**
+ * Valida y normaliza el contexto de la campaña.
+ *
+ * Reglas:
+ * - origen por defecto GENERAL
+ * - LEYPD exige empresa y elemento 04
+ * - GENERAL no puede asociarse a un elemento Ley PD
+ * - si hay empresa, debe existir y estar activa
+ */
+async function resolverContextoCampania(
+    input:
+        CrearCampaniaProteccionDatosInput,
+): Promise<ContextoCampania> {
+
+    const origen =
+        input.origen ??
+        "GENERAL";
+
+    if (
+        !ORIGENES_CAMPANIA_PROTECCION_DATOS.includes(
+            origen,
+        )
+    ) {
+        throw new Error(
+            "El origen de la campaña no es válido",
+        );
+    }
+
+    const empresaId =
+        input.empresaId ??
+        null;
+
+    if (
+        origen ===
+        "LEYPD"
+    ) {
+        if (
+            empresaId ===
+            null
+        ) {
+            throw new Error(
+                "Una campaña Ley PD debe estar asociada a una empresa",
+            );
+        }
+
+        if (
+            input.leypdElementoNumero !==
+            LEYPD_ELEMENTO_CONSENTIMIENTO
+        ) {
+            throw new Error(
+                "Una campaña Ley PD debe asociarse al elemento 04 (Gestión del consentimiento)",
+            );
+        }
+    } else if (
+        input.leypdElementoNumero !==
+        undefined &&
+        input.leypdElementoNumero !==
+        null
+    ) {
+        throw new Error(
+            "Solo las campañas Ley PD pueden asociarse a un elemento Ley PD",
+        );
+    }
+
+    if (
+        empresaId !==
+        null
+    ) {
+        const empresa =
+            await prisma.empresa.findUnique({
+                where: {
+                    id_empresa:
+                        empresaId,
+                },
+
+                select: {
+                    isActive:
+                        true,
+                },
+            });
+
+        if (
+            !empresa
+        ) {
+            throw new Error(
+                "La empresa asociada a la campaña no existe",
+            );
+        }
+
+        if (
+            !empresa.isActive
+        ) {
+            throw new Error(
+                "La empresa asociada a la campaña está inactiva",
+            );
+        }
+    }
+
+    return {
+        empresaId,
+
+        origen,
+
+        leypdElementoNumero:
+            origen ===
+                "LEYPD"
+                ? LEYPD_ELEMENTO_CONSENTIMIENTO
+                : null,
+    };
+}
+
+/* =========================================================
    CREAR CAMPAÑA
    ========================================================= */
 
@@ -933,6 +1064,11 @@ export async function crearCampaniaProteccionDatos(
         input.fechaInicio,
         input.fechaFin,
     );
+
+    const contexto =
+        await resolverContextoCampania(
+            input,
+        );
 
     /* =====================================================
        VALIDAR AUTOR
@@ -1031,6 +1167,15 @@ export async function crearCampaniaProteccionDatos(
             creadoPorId:
                 input.creadoPorId ??
                 null,
+
+            empresaId:
+                contexto.empresaId,
+
+            origen:
+                contexto.origen,
+
+            leypdElementoNumero:
+                contexto.leypdElementoNumero,
         },
 
         include: {
@@ -1068,6 +1213,15 @@ export async function listarCampaniasProteccionDatos(
 
         take?:
         number;
+
+        empresaId?:
+        number;
+
+        origen?:
+        OrigenCampaniaProteccionDatos;
+
+        leypdElementoNumero?:
+        number;
     },
 ) {
 
@@ -1101,6 +1255,29 @@ export async function listarCampaniasProteccionDatos(
         ...(estado
             ? {
                 estado,
+            }
+            : {}),
+
+        ...(params?.empresaId !==
+            undefined
+            ? {
+                empresaId:
+                    params.empresaId,
+            }
+            : {}),
+
+        ...(params?.origen
+            ? {
+                origen:
+                    params.origen,
+            }
+            : {}),
+
+        ...(params?.leypdElementoNumero !==
+            undefined
+            ? {
+                leypdElementoNumero:
+                    params.leypdElementoNumero,
             }
             : {}),
 

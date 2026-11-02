@@ -85,6 +85,9 @@ async function obtenerCampaniaEditable(
 
                 contenidoHtml:
                     true,
+
+                empresaId:
+                    true,
             },
         });
 
@@ -389,6 +392,28 @@ export async function agregarDestinatariosCampania(
 
                 motivo:
                     "La empresa del solicitante se encuentra inactiva",
+            });
+
+            continue;
+        }
+
+        /* -------------------------------------------------
+           CAMPAÑA ASOCIADA A UNA EMPRESA
+           (por ejemplo, campañas Ley PD)
+           ------------------------------------------------- */
+
+        if (
+            campania.empresaId !==
+            null &&
+            solicitante.empresa.id_empresa !==
+            campania.empresaId
+        ) {
+            omitidos.push({
+                solicitanteId:
+                    solicitante.id_solicitante,
+
+                motivo:
+                    "El solicitante no pertenece a la empresa de la campaña",
             });
 
             continue;

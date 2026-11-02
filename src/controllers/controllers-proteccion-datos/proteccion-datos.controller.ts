@@ -23,6 +23,7 @@ import type {
     ActualizarCampaniaProteccionDatosInput,
     AgregarDestinatariosCampaniaInput,
     CrearCampaniaProteccionDatosInput,
+    OrigenCampaniaProteccionDatos,
 } from "../../service/proteccion-datos/proteccion-datos.types.js";
 
 import {
@@ -215,6 +216,77 @@ function parseNumeroQueryOpcional(
 }
 
 /* =========================================================
+   CONTEXTO
+   ========================================================= */
+
+function parseOrigenCampania(
+    value: unknown,
+): OrigenCampaniaProteccionDatos | undefined {
+
+    if (
+        value === undefined ||
+        value === null ||
+        value === ""
+    ) {
+        return undefined;
+    }
+
+    if (
+        value !==
+        "GENERAL" &&
+        value !==
+        "LEYPD"
+    ) {
+        throw new Error(
+            "Origen de campaña inválido",
+        );
+    }
+
+    return value;
+}
+
+/**
+ * undefined = no vino en el body
+ * null      = vino explícitamente vacío
+ */
+function parseEnteroBodyOpcional(
+    value: unknown,
+    nombre: string,
+): number | null | undefined {
+
+    if (
+        value === undefined
+    ) {
+        return undefined;
+    }
+
+    if (
+        value === null ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    const numero =
+        Number(
+            value,
+        );
+
+    if (
+        !Number.isInteger(
+            numero,
+        ) ||
+        numero <= 0
+    ) {
+        throw new Error(
+            `${nombre} inválido`,
+        );
+    }
+
+    return numero;
+}
+
+/* =========================================================
    LISTAR CAMPAÑAS
    ========================================================= */
 
@@ -247,6 +319,25 @@ export async function getCampaniasProteccionDatos(
                 "take",
             );
 
+        const empresaId =
+            parseNumeroQueryOpcional(
+                req.query.empresaId,
+                "empresaId",
+                1,
+            );
+
+        const origen =
+            parseOrigenCampania(
+                req.query.origen,
+            );
+
+        const leypdElementoNumero =
+            parseNumeroQueryOpcional(
+                req.query.leypdElementoNumero,
+                "leypdElementoNumero",
+                1,
+            );
+
         const params: {
             estado?:
             EstadoCampaniaProteccionDatos;
@@ -259,7 +350,40 @@ export async function getCampaniasProteccionDatos(
 
             take?:
             number;
+
+            empresaId?:
+            number;
+
+            origen?:
+            OrigenCampaniaProteccionDatos;
+
+            leypdElementoNumero?:
+            number;
         } = {};
+
+        if (
+            empresaId !==
+            undefined
+        ) {
+            params.empresaId =
+                empresaId;
+        }
+
+        if (
+            origen !==
+            undefined
+        ) {
+            params.origen =
+                origen;
+        }
+
+        if (
+            leypdElementoNumero !==
+            undefined
+        ) {
+            params.leypdElementoNumero =
+                leypdElementoNumero;
+        }
 
         if (
             estado !==
@@ -503,6 +627,51 @@ export async function postCampaniaProteccionDatos(
         ) {
             input.creadoPorId =
                 null;
+        }
+
+        /* =====================================================
+           CONTEXTO (empresa / origen / elemento Ley PD)
+           ===================================================== */
+
+        const empresaId =
+            parseEnteroBodyOpcional(
+                body.empresaId,
+                "empresaId",
+            );
+
+        if (
+            empresaId !==
+            undefined
+        ) {
+            input.empresaId =
+                empresaId;
+        }
+
+        const origen =
+            parseOrigenCampania(
+                body.origen,
+            );
+
+        if (
+            origen !==
+            undefined
+        ) {
+            input.origen =
+                origen;
+        }
+
+        const leypdElementoNumero =
+            parseEnteroBodyOpcional(
+                body.leypdElementoNumero,
+                "leypdElementoNumero",
+            );
+
+        if (
+            leypdElementoNumero !==
+            undefined
+        ) {
+            input.leypdElementoNumero =
+                leypdElementoNumero;
         }
 
         const data =
