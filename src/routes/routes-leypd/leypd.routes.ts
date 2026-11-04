@@ -31,8 +31,9 @@ import {
     postActualizacionLeypd,
     getActualizacionLeypd,
     getActualizacionActivaLeypd,
+    getUltimaActualizacionLeypd,
+    postCancelarActualizacionLeypd,
 } from "../../controllers/controllers-leypd/leypd-actualizacion.controller.js";
-
 import {
     getConsentimientosElementoLeypd,
 } from "../../controllers/controllers-leypd/leypd-consentimientos.controller.js";
@@ -40,6 +41,7 @@ import {
 import {
     getSharepointLeypd,
     postSincronizarSharepointLeypd,
+    postSincronizarTodasSharepointLeypd,
     postVincularSharepointLeypd,
 } from "../../controllers/controllers-leypd/leypd-sharepoint.controller.js";
 
@@ -82,6 +84,36 @@ router.get(
         "ADMINISTRACION"
     ),
     getActualizacionActivaLeypd
+);
+
+router.get(
+    "/actualizaciones/ultima",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    getUltimaActualizacionLeypd
+);
+
+router.post(
+    "/actualizaciones/:id/cancelar",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    postCancelarActualizacionLeypd
+);
+
+router.post(
+    "/sharepoint/sincronizar-todas",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    postSincronizarTodasSharepointLeypd
 );
 
 router.get(

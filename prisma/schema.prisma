@@ -50,6 +50,8 @@ model Empresa {
   leypdElementos           LeypdElemento[]
   leypdFicha               LeypdFicha?
   leypdSharepoint          LeypdSharepoint?
+  leypdDocumentosGenerados LeypdDocumentoGenerado[]
+  leypdActualizaciones     LeypdActualizacion[]
   campaniasProteccionDatos CampaniaProteccionDatos[]
 
   @@index([isActive])
@@ -2639,52 +2641,57 @@ model LeypdActualizacion {
   terminadoAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  empresaId     Int?
   iniciadoPor   Tecnico?  @relation(fields: [iniciadoPorId], references: [id_tecnico], onDelete: SetNull)
+  empresa       Empresa?  @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
 
   @@index([estado])
   @@index([createdAt])
   @@index([iniciadoPorId])
+  @@index([empresaId])
+}
+
+/// Último archivo que el worker subió a la carpeta LEYPD de cada empresa.
+/// Permite no subir una versión nueva si el contenido no cambió.
+model LeypdDocumentoGenerado {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  /// Ruta relativa a la carpeta LEYPD, p. ej. "01 Política de Privacidad/01 Politica_Privacidad_NORMEN.docx"
+  ruta      String
+  /// driveItem de Microsoft Graph
+  itemId    String
+  /// sha256 del contenido sin metadatos ni fecha del día
+  huella    String   @db.VarChar(64)
+  /// cTag que devolvió SharePoint al subir: si cambia, alguien modificó el archivo
+  cTag      String?
+  subidoAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@unique([empresaId, ruta])
+  @@index([empresaId])
 }
 
 model LeypdSharepoint {
-  id Int @id @default(autoincrement())
-
-  // ===================== EMPRESA =====================
-
-  empresaId Int @unique
-
-  // ===================== CARPETA LEYPD DEL CLIENTE =====================
-
+  id              Int       @id @default(autoincrement())
+  empresaId       Int       @unique
   /// IDs de Microsoft Graph. No cambian si la carpeta se renombra o se mueve.
-  driveId       String
-  carpetaItemId String
-  carpetaNombre String
-  carpetaWebUrl String
-
-  // ===================== CHECKLIST =====================
-
+  driveId         String
+  carpetaItemId   String
+  carpetaNombre   String
+  carpetaWebUrl   String
   checklistItemId String?
   checklistNombre String?
   checklistWebUrl String?
-
-  // ===================== ESTADO POR ELEMENTO =====================
-
   /// { "1": { existe, itemId, webUrl, documentos[], faltantes[], opcionalesFaltantes[] }, ... }
-  elementos Json @default("{}")
-
-  // ===================== SINCRONIZACIÓN =====================
-
-  sincronizadoAt DateTime?
-  ultimoError    String?
-
-  vinculadoPorId Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ===================== RELACIONES =====================
-
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  elementos       Json      @default("{}")
+  sincronizadoAt  DateTime?
+  ultimoError     String?
+  vinculadoPorId  Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  empresa         Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
   @@index([sincronizadoAt])
 }

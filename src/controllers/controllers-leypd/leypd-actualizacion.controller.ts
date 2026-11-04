@@ -6,9 +6,11 @@ import type {
 } from "express";
 
 import {
+    cancelarActualizacionLeypd,
     crearActualizacionLeypd,
     obtenerActualizacionLeypd,
     obtenerActualizacionActivaLeypd,
+    obtenerUltimaActualizacionLeypd,
 } from "../../service/leypd/leypd-actualizacion.service.js";
 
 import {
@@ -151,6 +153,103 @@ export async function getActualizacionActivaLeypd(
             .json({
                 message:
                     "No se pudo consultar la actualización activa.",
+            });
+    }
+}
+
+/* =====================================================
+   ÚLTIMA
+===================================================== */
+
+export async function getUltimaActualizacionLeypd(
+    _req: Request,
+    res: Response
+) {
+    try {
+        return res.json({
+            actualizacion:
+                await obtenerUltimaActualizacionLeypd(),
+        });
+    } catch (error) {
+        console.error(
+            "[LEYPD ACTUALIZACION]",
+            error
+        );
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo consultar la última actualización.",
+            });
+    }
+}
+
+/* =====================================================
+   CANCELAR
+===================================================== */
+
+export async function postCancelarActualizacionLeypd(
+    req: Request,
+    res: Response
+) {
+    const parsed =
+        actualizacionIdSchema.safeParse(
+            req.params.id
+        );
+
+    if (!parsed.success) {
+        return res
+            .status(400)
+            .json({
+                message:
+                    "ID inválido.",
+            });
+    }
+
+    try {
+        return res.json(
+            await cancelarActualizacionLeypd(
+                parsed.data
+            )
+        );
+    } catch (error) {
+        if (error instanceof Error) {
+            if (
+                error.message ===
+                "ACTUALIZACION_NO_ENCONTRADA"
+            ) {
+                return res
+                    .status(404)
+                    .json({
+                        message:
+                            "Actualización no encontrada.",
+                    });
+            }
+
+            if (
+                error.message ===
+                "ACTUALIZACION_NO_CANCELABLE"
+            ) {
+                return res
+                    .status(409)
+                    .json({
+                        message:
+                            "Solo se puede cancelar una actualización que aún no comenzó.",
+                    });
+            }
+        }
+
+        console.error(
+            "[LEYPD ACTUALIZACION]",
+            error
+        );
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo cancelar la actualización.",
             });
     }
 }

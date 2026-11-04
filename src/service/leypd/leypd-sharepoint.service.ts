@@ -498,3 +498,60 @@ export async function vincularSharepointLeypd(
 
     return sincronizarSharepointLeypd(empresaId);
 }
+
+/* =====================================================
+   SINCRONIZAR TODAS (segundo plano)
+===================================================== */
+
+let sincronizacionMasivaEnCurso = false;
+
+/**
+ * Re-sincroniza todas las empresas vinculadas, una tras otra,
+ * sin bloquear la respuesta HTTP.
+ *
+ * Se usa al terminar una actualización documental del worker,
+ * para que los faltantes del CRM reflejen los documentos nuevos.
+ * Cada error queda en ultimoError de su empresa.
+ */
+export function sincronizarTodasSharepointLeypdEnSegundoPlano() {
+    if (sincronizacionMasivaEnCurso) {
+        return {
+            iniciada: false,
+        };
+    }
+
+    sincronizacionMasivaEnCurso = true;
+
+    void (async () => {
+        try {
+            const registros =
+                await prisma.leypdSharepoint.findMany({
+                    select: {
+                        empresaId: true,
+                    },
+                });
+
+            for (const registro of registros) {
+                try {
+                    await sincronizarSharepointLeypd(
+                        registro.empresaId
+                    );
+                } catch (error) {
+                    console.error(
+                        "[LEYPD SHAREPOINT] Sincronización masiva, empresa",
+                        registro.empresaId,
+                        error instanceof Error
+                            ? error.message
+                            : error
+                    );
+                }
+            }
+        } finally {
+            sincronizacionMasivaEnCurso = false;
+        }
+    })();
+
+    return {
+        iniciada: true,
+    };
+}

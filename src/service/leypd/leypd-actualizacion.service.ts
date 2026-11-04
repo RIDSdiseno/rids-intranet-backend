@@ -211,3 +211,93 @@ export async function marcarActualizacionError(
         },
     });
 }
+
+/* =====================================================
+   ÚLTIMA (cualquier estado)
+===================================================== */
+
+/**
+ * Último trabajo, para mostrar su resultado
+ * (COMPLETADO / ERROR / CANCELADO) en la pantalla.
+ */
+export async function obtenerUltimaActualizacionLeypd() {
+    return prisma.leypdActualizacion.findFirst({
+        orderBy: {
+            createdAt:
+                "desc",
+        },
+
+        include: {
+            iniciadoPor: {
+                select: {
+                    id_tecnico:
+                        true,
+
+                    nombre:
+                        true,
+                },
+            },
+        },
+    });
+}
+
+/* =====================================================
+   CANCELAR (solo PENDIENTE)
+===================================================== */
+
+/**
+ * Cancela un trabajo que el worker aún no tomó.
+ *
+ * updateMany con la condición estado = PENDIENTE es atómico:
+ * si el worker lo tomó en el mismo instante, no se cancela.
+ */
+export async function cancelarActualizacionLeypd(
+    id: number
+) {
+    const resultado =
+        await prisma.leypdActualizacion.updateMany({
+            where: {
+                id,
+                estado:
+                    "PENDIENTE",
+            },
+
+            data: {
+                estado:
+                    "CANCELADO",
+
+                terminadoAt:
+                    new Date(),
+
+                mensaje:
+                    "Cancelada antes de que el worker la tomara.",
+            },
+        });
+
+    if (
+        resultado.count ===
+        0
+    ) {
+        const job =
+            await prisma.leypdActualizacion.findUnique({
+                where: {
+                    id,
+                },
+
+                select: {
+                    id:
+                        true,
+                },
+            });
+
+        throw new Error(
+            job
+                ? "ACTUALIZACION_NO_CANCELABLE"
+                : "ACTUALIZACION_NO_ENCONTRADA"
+        );
+    }
+
+    return obtenerActualizacionLeypd(
+        id
+    );
+}

@@ -9,6 +9,7 @@ import {
     obtenerSharepointLeypd,
     sincronizarSharepointLeypd,
     vincularSharepointLeypd,
+    sincronizarTodasSharepointLeypdEnSegundoPlano
 } from "../../service/leypd/leypd-sharepoint.service.js";
 
 import {
@@ -182,4 +183,15 @@ export async function postSincronizarSharepointLeypd(
     } catch (error) {
         return responderErrorSharepoint(error, res);
     }
+}
+
+export function postSincronizarTodasSharepointLeypd(
+    _req: Request,
+    res: Response
+) {
+    return res
+        .status(202)
+        .json(
+            sincronizarTodasSharepointLeypdEnSegundoPlano()
+        );
 }
