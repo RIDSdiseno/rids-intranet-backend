@@ -772,21 +772,6 @@ export async function evaluarCompletitudFichasEmpresas(
 
                 {
                     campo:
-                        "diasCredito",
-
-                    label:
-                        "Días de crédito",
-
-                    completo:
-                        tieneValor(
-                            empresa
-                                .detalleEmpresa
-                                ?.diasCredito
-                        ),
-                },
-
-                {
-                    campo:
                         "condicionesComerciales",
 
                     label:

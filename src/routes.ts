@@ -136,6 +136,11 @@ import leypdPublicoRouter from "./routes/routes-leypd/leypd-publico.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
 
+import {
+    limitePublicoPorEnlace,
+    limitePublicoPorIp,
+} from "./middlewares/rate-limit-publico.js";
+
 export const api = Router();
 
 api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
@@ -161,8 +166,19 @@ api.use(whatchimpRouter);
  * El token individual actúa como credencial
  * para el formulario público.
  */
-api.use("/proteccion-datos/publico", proteccionDatosPublicoRouter,);
-api.use("/public/leypd", leypdPublicoRouter);
+api.use(
+    "/proteccion-datos/publico",
+    limitePublicoPorIp,
+    limitePublicoPorEnlace,
+    proteccionDatosPublicoRouter,
+);
+
+api.use(
+    "/public/leypd",
+    limitePublicoPorIp,
+    limitePublicoPorEnlace,
+    leypdPublicoRouter,
+);
 
 api.use(auth(false));
 api.use(onlyOwnEmpresa());

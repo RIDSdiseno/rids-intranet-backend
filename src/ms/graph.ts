@@ -28,6 +28,16 @@ function parseAuthMap(): Record<string, MsAuth> {
 
 const AUTH_BY_DOMAIN = parseAuthMap();
 
+/*
+ * Credenciales para SharePoint (Ley PD).
+ * Si no hay variables propias, usa las de MS_* por defecto.
+ */
+const SHAREPOINT_AUTH: MsAuth = {
+  tenant: process.env.SHAREPOINT_TENANT_ID || DEFAULT_AUTH.tenant,
+  clientId: process.env.SHAREPOINT_CLIENT_ID || DEFAULT_AUTH.clientId,
+  clientSecret: process.env.SHAREPOINT_CLIENT_SECRET || DEFAULT_AUTH.clientSecret,
+};
+
 function getAuthForDomain(domain?: string): MsAuth {
   if (!domain) return DEFAULT_AUTH;
   return AUTH_BY_DOMAIN[domain.toLowerCase()] || DEFAULT_AUTH;
@@ -302,4 +312,13 @@ export async function listUsersWithLicenses(opts?: ListOpts): Promise<MsUser[]> 
     for (const u of arr) map.set(u.id, u);
   }
   return [...map.values()];
+}
+
+/* =================== SharePoint =================== */
+
+/**
+ * Token app-only para leer SharePoint vía Graph.
+ */
+export function obtenerTokenSharepoint(): Promise<string> {
+  return getToken(SHAREPOINT_AUTH);
 }

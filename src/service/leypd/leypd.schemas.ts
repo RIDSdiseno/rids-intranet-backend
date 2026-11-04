@@ -128,3 +128,23 @@ export const enviarFichaPublicaLeypdSchema =
                 z.unknown()
             ),
     });
+
+/* =====================================================
+   SHAREPOINT
+===================================================== */
+
+export const vincularSharepointLeypdSchema =
+    z.object({
+        url:
+            z.string()
+                .trim()
+                .min(10)
+                .max(2000)
+                .refine(
+                    (valor) =>
+                        /^https:\/\/[^/]+\.sharepoint\.com\//i.test(
+                            valor
+                        ),
+                    "Debe ser una URL de SharePoint"
+                ),
+    });

@@ -10,46 +10,46 @@ datasource db {
 }
 
 model Empresa {
-  id_empresa             Int                    @id @default(autoincrement())
-  nombre                 String                 @unique
-  tieneSucursales        Boolean                @default(false)
-  razonSocial            String?
-  dominios               String[]               @default([])
-  deactivatedAt          DateTime?
-  isActive               Boolean                @default(true)
-  recibeCobranza         Boolean                @default(false)
-  recibeFacturas         Boolean                @default(false)
-  solicitantes           Solicitante[]
-  visitas                Visita[]               @relation("Empresa_Visita")
-  tickets                FreshdeskTicket[]
-  companyMaps            FreshdeskCompanyMap[]
-  detalleEmpresa         DetalleEmpresa?
-  sucursales             Sucursal[]
-  contactoEmpresas       ContactoEmpresa[]
-  fichaEmpresa           FichaEmpresa?
-  fichaTecnicaEmpresa    FichaTecnicaEmpresa?
-  historials             Historial[]
-  ticketsRids            Ticket[]
-  empresaISP             EmpresaISP[]
-  servidors              Servidor[]
-  tecnicos               Tecnico[]
-  equipos                Equipo[]
-  mantencionesRemotas    MantencionRemota[]     @relation("EmpresaMantencionesRemotas")
-  teamViewerDeviceMaps   TeamViewerDeviceMap[]
-  agendasVisita          AgendaVisita[]         @relation("Empresa_AgendaVisita")
-  entidadGestioos        EntidadGestioo[]
-  analisisInventarioIAs  AnalisisInventarioIA[]
-  manualTutoriales       ManualTutorial[]
-  bitacoras              BitacoraTecnico[]
-  equipoMantencions      EquipoMantencion[]
-  aliasesOutlook         EmpresaAliasOutlook[]
-  receptoresFacturacion  ReceptorFacturacion[]
-  receptoresCobranza     ReceptorCobranza[]
-  suscripcionesContratos SuscripcionContrato[]
-  consentimientosDatos   ConsentimientoDatos[]
-
+  id_empresa               Int                       @id @default(autoincrement())
+  nombre                   String                    @unique
+  tieneSucursales          Boolean                   @default(false)
+  razonSocial              String?
+  dominios                 String[]                  @default([])
+  deactivatedAt            DateTime?
+  isActive                 Boolean                   @default(true)
+  recibeCobranza           Boolean                   @default(false)
+  recibeFacturas           Boolean                   @default(false)
+  solicitantes             Solicitante[]
+  visitas                  Visita[]                  @relation("Empresa_Visita")
+  tickets                  FreshdeskTicket[]
+  companyMaps              FreshdeskCompanyMap[]
+  detalleEmpresa           DetalleEmpresa?
+  sucursales               Sucursal[]
+  contactoEmpresas         ContactoEmpresa[]
+  fichaEmpresa             FichaEmpresa?
+  fichaTecnicaEmpresa      FichaTecnicaEmpresa?
+  historials               Historial[]
+  ticketsRids              Ticket[]
+  empresaISP               EmpresaISP[]
+  servidors                Servidor[]
+  tecnicos                 Tecnico[]
+  equipos                  Equipo[]
+  mantencionesRemotas      MantencionRemota[]        @relation("EmpresaMantencionesRemotas")
+  teamViewerDeviceMaps     TeamViewerDeviceMap[]
+  agendasVisita            AgendaVisita[]            @relation("Empresa_AgendaVisita")
+  entidadGestioos          EntidadGestioo[]
+  analisisInventarioIAs    AnalisisInventarioIA[]
+  manualTutoriales         ManualTutorial[]
+  bitacoras                BitacoraTecnico[]
+  equipoMantencions        EquipoMantencion[]
+  aliasesOutlook           EmpresaAliasOutlook[]
+  receptoresFacturacion    ReceptorFacturacion[]
+  receptoresCobranza       ReceptorCobranza[]
+  suscripcionesContratos   SuscripcionContrato[]
+  consentimientosDatos     ConsentimientoDatos[]
   leypdElementos           LeypdElemento[]
   leypdFicha               LeypdFicha?
+  leypdSharepoint          LeypdSharepoint?
   campaniasProteccionDatos CampaniaProteccionDatos[]
 
   @@index([isActive])
@@ -139,15 +139,14 @@ model ContactoEmpresa {
 }
 
 model FichaEmpresa {
-  id                     Int      @id @default(autoincrement())
-  empresaId              Int      @unique
-  creadaEn               DateTime @default(now())
-  actualizadaEn          DateTime @updatedAt
+  id                     Int                      @id @default(autoincrement())
+  empresaId              Int                      @unique
+  creadaEn               DateTime                 @default(now())
+  actualizadaEn          DateTime                 @updatedAt
   condicionesComerciales String?
-  servidoresAplica       Boolean  @default(true)
-
-  empresa   Empresa                  @relation(fields: [empresaId], references: [id_empresa])
-  checklist ChecklistGestionEmpresa?
+  servidoresAplica       Boolean                  @default(true)
+  empresa                Empresa                  @relation(fields: [empresaId], references: [id_empresa])
+  checklist              ChecklistGestionEmpresa?
 }
 
 model FichaTecnicaEmpresa {
@@ -924,9 +923,8 @@ model Tecnico {
   plantillasCorreo                PlantillaCorreo[]
   conversionesMercadoPublico      OportunidadMercadoPublico[]      @relation("MercadoPublicoConvertidoPor")
   campaniasProteccionDatos        CampaniaProteccionDatos[]
-
-  leypdElementosActualizados LeypdElemento[]
-  leypdActualizaciones       LeypdActualizacion[]
+  leypdElementosActualizados      LeypdElemento[]
+  leypdActualizaciones            LeypdActualizacion[]
 
   @@index([empresaId])
 }
@@ -2570,47 +2568,21 @@ model OportunidadMercadoPublico {
   @@index([convertidoPorId])
 }
 
-// =========================================================
-// LEY PD — CUMPLIMIENTO POR EMPRESA
-// =========================================================
-
 model LeypdElemento {
-  id Int @id @default(autoincrement())
-
-  // ===================== CONTEXTO =====================
-
-  empresaId Int
-  numero    Int
-
-  // ===================== ESTADO =====================
-
+  id               Int       @id @default(autoincrement())
+  empresaId        Int
+  numero           Int
   /// NO_INICIADO | EN_PROGRESO | IMPLEMENTADO | NO_APLICA
-  estado String @default("NO_INICIADO")
-
-  responsable     String?
-  fechaCompromiso DateTime? @db.Date
-
-  // ===================== EVIDENCIA =====================
-
-  evidencia     String?
-  observaciones String?
-
-  // ===================== AUDITORÍA =====================
-
+  estado           String    @default("NO_INICIADO")
+  responsable      String?
+  fechaCompromiso  DateTime? @db.Date
+  evidencia        String?
+  observaciones    String?
   actualizadoPorId Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ===================== RELACIONES =====================
-
-  empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-
-  actualizadoPor Tecnico? @relation(fields: [actualizadoPorId], references: [id_tecnico], onDelete: SetNull)
-
-  // ===================== RESTRICCIONES =====================
-
-  // ===================== ÍNDICES =====================
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  empresa          Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  actualizadoPor   Tecnico?  @relation(fields: [actualizadoPorId], references: [id_tecnico], onDelete: SetNull)
 
   @@unique([empresaId, numero])
   @@index([empresaId])
@@ -2621,44 +2593,91 @@ model LeypdElemento {
 }
 
 model LeypdFicha {
+  id                         Int       @id @default(autoincrement())
+  empresaId                  Int       @unique
+  ///
+  /// Estructura:
+  ///
+  /// {
+  /// "campo": {
+  /// "valor": "...",
+  /// "fuente": "CRM | RIDS | CLIENTE_PORTAL | ENLACE_PUBLICO",
+  /// "confirmado": true,
+  /// "actualizadoPor": "...",
+  /// "fecha": "..."
+  /// }
+  /// }
+  ///
+  datos                      Json      @default("{}")
+  tokenHash                  String?   @unique @db.VarChar(64)
+  tokenExpiresAt             DateTime?
+  tokenRevokedAt             DateTime?
+  enlaceCreadoAt             DateTime?
+  respondidoAt               DateTime?
+  respondidoPor              String?
+  fuenteRespuesta            String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  nombreRespondienteBorrador String?
+  empresa                    Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@index([respondidoAt])
+  @@index([tokenExpiresAt])
+}
+
+model LeypdActualizacion {
+  id            Int       @id @default(autoincrement())
+  /// PENDIENTE | EJECUTANDO | COMPLETADO | ERROR | CANCELADO
+  estado        String    @default("PENDIENTE")
+  pasoActual    Int       @default(0)
+  totalPasos    Int?
+  progreso      Int       @default(0)
+  mensaje       String?
+  error         String?
+  iniciadoPorId Int?
+  iniciadoAt    DateTime?
+  terminadoAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  iniciadoPor   Tecnico?  @relation(fields: [iniciadoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([estado])
+  @@index([createdAt])
+  @@index([iniciadoPorId])
+}
+
+model LeypdSharepoint {
   id Int @id @default(autoincrement())
 
   // ===================== EMPRESA =====================
 
   empresaId Int @unique
 
-  // ===================== RESPUESTAS =====================
+  // ===================== CARPETA LEYPD DEL CLIENTE =====================
 
-  ///
-  /// Estructura:
-  ///
-  /// {
-  ///   "campo": {
-  ///      "valor": "...",
-  ///      "fuente": "CRM | RIDS | CLIENTE_PORTAL | ENLACE_PUBLICO",
-  ///      "confirmado": true,
-  ///      "actualizadoPor": "...",
-  ///      "fecha": "..."
-  ///   }
-  /// }
-  ///
-  datos Json @default("{}")
+  /// IDs de Microsoft Graph. No cambian si la carpeta se renombra o se mueve.
+  driveId       String
+  carpetaItemId String
+  carpetaNombre String
+  carpetaWebUrl String
 
-  // ===================== ENLACE PÚBLICO =====================
+  // ===================== CHECKLIST =====================
 
-  tokenHash      String?   @unique @db.VarChar(64)
-  tokenExpiresAt DateTime?
-  tokenRevokedAt DateTime?
-  enlaceCreadoAt DateTime?
-  nombreRespondienteBorrador String?
+  checklistItemId String?
+  checklistNombre String?
+  checklistWebUrl String?
 
-  // ===================== RESPUESTA FINAL =====================
+  // ===================== ESTADO POR ELEMENTO =====================
 
-  respondidoAt    DateTime?
-  respondidoPor   String?
-  fuenteRespuesta String?
+  /// { "1": { existe, itemId, webUrl, documentos[], faltantes[], opcionalesFaltantes[] }, ... }
+  elementos Json @default("{}")
 
-  // ===================== AUDITORÍA =====================
+  // ===================== SINCRONIZACIÓN =====================
+
+  sincronizadoAt DateTime?
+  ultimoError    String?
+
+  vinculadoPorId Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2667,101 +2686,33 @@ model LeypdFicha {
 
   empresa Empresa @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
-  // ===================== ÍNDICES =====================
-
-  @@index([respondidoAt])
-  @@index([tokenExpiresAt])
-}
-
-model LeypdActualizacion {
-  id Int @id @default(autoincrement())
-
-  // ===================== ESTADO DEL JOB =====================
-
-  /// PENDIENTE | EJECUTANDO | COMPLETADO | ERROR | CANCELADO
-  estado String @default("PENDIENTE")
-
-  // ===================== PROGRESO =====================
-
-  pasoActual Int  @default(0)
-  totalPasos Int?
-  progreso   Int  @default(0)
-
-  mensaje String?
-  error   String?
-
-  // ===================== EJECUCIÓN =====================
-
-  iniciadoPorId Int?
-
-  iniciadoAt  DateTime?
-  terminadoAt DateTime?
-
-  // ===================== AUDITORÍA =====================
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ===================== RELACIONES =====================
-
-  iniciadoPor Tecnico? @relation(fields: [iniciadoPorId], references: [id_tecnico], onDelete: SetNull)
-
-  // ===================== ÍNDICES =====================
-
-  @@index([estado])
-  @@index([createdAt])
-  @@index([iniciadoPorId])
+  @@index([sincronizadoAt])
 }
 
 model CampaniaProteccionDatos {
-  id Int @id @default(autoincrement())
-
-  // ===================== CONTEXTO / ORIGEN =====================
-
-  empresaId           Int?
-  origen              String @default("GENERAL")
-  leypdElementoNumero Int?
-
-  // ===================== DOCUMENTO =====================
-
+  id                          Int                           @id @default(autoincrement())
   nombre                      String
   descripcion                 String?
   tituloDocumento             String
   versionDocumento            String
   contenidoHtml               String
-  documentoHash               String  @db.VarChar(64)
+  documentoHash               String                        @db.VarChar(64)
   configuracionConsentimiento Json?
-
-  // ===================== CORREO =====================
-
-  asuntoCorreo     String
-  cuerpoCorreoHtml String
-
-  // ===================== ESTADO =====================
-
-  estado            EstadoCampaniaProteccionDatos @default(BORRADOR)
-  fechaInicio       DateTime?
-  fechaFin          DateTime?
-  fechaEnvioInicial DateTime?
-
-  // ===================== AUTOR =====================
-
-  creadoPorId Int?
-
-  // ===================== AUDITORÍA =====================
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ===================== RELACIONES =====================
-
-  empresa Empresa? @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
-
-  creadoPor Tecnico? @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
-
-  destinatarios ConsentimientoDatos[]
-
-  // ===================== ÍNDICES =====================
+  asuntoCorreo                String
+  cuerpoCorreoHtml            String
+  estado                      EstadoCampaniaProteccionDatos @default(BORRADOR)
+  fechaInicio                 DateTime?
+  fechaFin                    DateTime?
+  fechaEnvioInicial           DateTime?
+  creadoPorId                 Int?
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  empresaId                   Int?
+  leypdElementoNumero         Int?
+  origen                      String                        @default("GENERAL")
+  empresa                     Empresa?                      @relation(fields: [empresaId], references: [id_empresa], onDelete: SetNull)
+  creadoPor                   Tecnico?                      @relation(fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+  destinatarios               ConsentimientoDatos[]
 
   @@index([empresaId])
   @@index([estado])

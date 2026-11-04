@@ -593,40 +593,19 @@ export async function postCampaniaProteccionDatos(
         }
 
         /* =====================================================
-           CREADO POR
-           TEMPORAL HASTA CONECTAR JWT
-           ===================================================== */
+   CREADO POR
+   Siempre desde la sesión, nunca desde el body.
+   ===================================================== */
+
+        const userId =
+            (req as { user?: { id?: number } })
+                .user?.id;
 
         if (
-            body.creadoPorId !==
-            undefined &&
-            body.creadoPorId !==
-            null
-        ) {
-            const creadoPorId =
-                Number(
-                    body.creadoPorId,
-                );
-
-            if (
-                !Number.isInteger(
-                    creadoPorId,
-                ) ||
-                creadoPorId <= 0
-            ) {
-                throw new Error(
-                    "creadoPorId inválido",
-                );
-            }
-
-            input.creadoPorId =
-                creadoPorId;
-        } else if (
-            body.creadoPorId ===
-            null
+            userId
         ) {
             input.creadoPorId =
-                null;
+                userId;
         }
 
         /* =====================================================

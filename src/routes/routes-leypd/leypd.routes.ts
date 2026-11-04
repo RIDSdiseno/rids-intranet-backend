@@ -37,6 +37,12 @@ import {
     getConsentimientosElementoLeypd,
 } from "../../controllers/controllers-leypd/leypd-consentimientos.controller.js";
 
+import {
+    getSharepointLeypd,
+    postSincronizarSharepointLeypd,
+    postVincularSharepointLeypd,
+} from "../../controllers/controllers-leypd/leypd-sharepoint.controller.js";
+
 const router =
     Router();
 
@@ -183,6 +189,42 @@ router.put(
         "TECNICO"
     ),
     actualizarElementoLeypdController
+);
+
+/* =====================================================
+   SHAREPOINT
+===================================================== */
+
+router.get(
+    "/:empresaId/sharepoint",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "TECNICO"
+    ),
+    getSharepointLeypd
+);
+
+router.post(
+    "/:empresaId/sharepoint/vincular",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    postVincularSharepointLeypd
+);
+
+router.post(
+    "/:empresaId/sharepoint/sincronizar",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "TECNICO"
+    ),
+    postSincronizarSharepointLeypd
 );
 
 /* =====================================================

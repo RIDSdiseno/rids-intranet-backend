@@ -120,6 +120,19 @@ const corsOptions: cors.CorsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
+/*
+ * Endpoints públicos: límite bajo.
+ * Debe ir ANTES del parser general. Si este parser ya leyó
+ * el body, el de 60 MB lo omite.
+ *
+ * 128 KB alcanza para la ficha completa (24 campos,
+ * textareas de hasta 2000 caracteres con tildes).
+ */
+app.use(
+  ["/api/public", "/api/proteccion-datos/publico"],
+  express.json({ limit: "128kb" })
+);
+
 /* ========= Parsers ========= */
 app.use(express.json({ limit: "60mb" }));
 app.use(express.urlencoded({ extended: true, limit: "60mb" }));

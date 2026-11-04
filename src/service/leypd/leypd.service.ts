@@ -2,6 +2,7 @@
 
 import type {
     LeypdElemento,
+    Prisma
 } from "@prisma/client";
 
 import {
@@ -228,6 +229,86 @@ function calcularResumenLeypd(
 }
 
 /* =====================================================
+   RESUMEN SHAREPOINT (LISTADO)
+===================================================== */
+
+/**
+ * Resumen liviano del estado SharePoint de una empresa.
+ * No devuelve documentos: solo conteos para la tabla.
+ */
+function resumirSharepoint(
+    registro: {
+        carpetaWebUrl: string;
+        sincronizadoAt: Date | null;
+        ultimoError: string | null;
+        elementos: Prisma.JsonValue;
+    } | null
+) {
+    if (!registro) {
+        return {
+            vinculado: false,
+            carpetaWebUrl: null,
+            sincronizadoAt: null,
+            ultimoError: null,
+            carpetasFaltantes: 0,
+            documentosFaltantes: 0,
+        };
+    }
+
+    const elementos =
+        registro.elementos &&
+            typeof registro.elementos === "object" &&
+            !Array.isArray(registro.elementos)
+            ? Object.values(
+                registro.elementos as Record<
+                    string,
+                    {
+                        existe?: boolean;
+                        faltantes?: unknown[];
+                    } | null
+                >
+            )
+            : [];
+
+    const sincronizado =
+        Boolean(
+            registro.sincronizadoAt
+        );
+
+    return {
+        vinculado: true,
+
+        carpetaWebUrl:
+            registro.carpetaWebUrl,
+
+        sincronizadoAt:
+            registro.sincronizadoAt,
+
+        ultimoError:
+            registro.ultimoError,
+
+        carpetasFaltantes:
+            sincronizado
+                ? elementos.filter(
+                    (e) => !e?.existe
+                ).length
+                : 0,
+
+        documentosFaltantes:
+            sincronizado
+                ? elementos.reduce(
+                    (total, e) =>
+                        total +
+                        (Array.isArray(e?.faltantes)
+                            ? e.faltantes.length
+                            : 0),
+                    0
+                )
+                : 0,
+    };
+}
+
+/* =====================================================
    LISTADO GLOBAL
 ===================================================== */
 
@@ -264,6 +345,22 @@ export async function listarEmpresasLeypd() {
                             true,
 
                         updatedAt:
+                            true,
+                    },
+                },
+
+                leypdSharepoint: {
+                    select: {
+                        carpetaWebUrl:
+                            true,
+
+                        sincronizadoAt:
+                            true,
+
+                        ultimoError:
+                            true,
+
+                        elementos:
                             true,
                     },
                 },
@@ -326,7 +423,13 @@ export async function listarEmpresasLeypd() {
                                 .leypdFicha
                                 ?.updatedAt ??
                             null,
+
                     },
+
+                    sharepoint:
+                        resumirSharepoint(
+                            empresa.leypdSharepoint
+                        ),
                 };
             }
         );
@@ -360,6 +463,12 @@ export async function listarEmpresasLeypd() {
                         empresa.vencidos,
                     0
                 ),
+
+            sharepointVinculadas:
+                resultado.filter(
+                    (empresa) =>
+                        empresa.sharepoint.vinculado
+                ).length,
 
             elementosImplementados:
                 resultado.reduce(

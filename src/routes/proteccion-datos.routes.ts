@@ -22,8 +22,30 @@ import {
     uploadDocumentoProteccionDatos,
 } from "../middlewares/proteccion-datos-documentos.middleware.js";
 
+import {
+    auth,
+} from "../middlewares/auth.js";
+
+import {
+    onlyRole,
+} from "../middlewares/roles.js";
+
 const router =
     Router();
+
+/*
+ * routes.ts usa auth(false) global (sesión opcional).
+ * Este router exige sesión y rol interno.
+ * Las rutas públicas viven en proteccion-datos-publico.routes.ts.
+ */
+router.use(
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "TECNICO"
+    )
+);
 
 /* =========================================================
    CAMPAÑAS
