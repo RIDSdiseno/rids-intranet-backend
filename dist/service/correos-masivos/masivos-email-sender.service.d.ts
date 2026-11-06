@@ -1,3 +1,4 @@
+import "isomorphic-fetch";
 export type EmailAttachment = {
     name: string;
     contentType: string;
@@ -12,9 +13,12 @@ export type SendEmailInput = {
     attachments?: EmailAttachment[];
     replyTo?: string;
 };
-export declare function sendEmail({ to, subject, bodyHtml, attachments, replyTo, }: SendEmailInput): Promise<{
-    messageId: string;
+export type SendEmailResult = {
+    proveedor: "graph" | "smtp";
+    /** Graph no devuelve id de mensaje en sendMail (responde 202). */
+    messageId: string | null;
     accepted: string[];
     rejected: string[];
-}>;
+};
+export declare function sendEmail(input: SendEmailInput): Promise<SendEmailResult>;
 //# sourceMappingURL=masivos-email-sender.service.d.ts.map
