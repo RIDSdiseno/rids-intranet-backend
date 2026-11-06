@@ -296,13 +296,6 @@ export async function evaluarCompletitudFichasEmpresas(empresaIds) {
                     ?.direccion),
             },
             {
-                campo: "diasCredito",
-                label: "Días de crédito",
-                completo: tieneValor(empresa
-                    .detalleEmpresa
-                    ?.diasCredito),
-            },
-            {
                 campo: "condicionesComerciales",
                 label: "Condiciones comerciales",
                 completo: tieneValor(empresa
@@ -476,19 +469,9 @@ export async function evaluarCompletitudFichasEmpresas(empresaIds) {
                         isp.servicio,
                     ],
                     [
-                        "numeroTicket",
-                        "Número de ticket / referencia",
-                        isp.numeroTicket,
-                    ],
-                    [
                         "wifiNombre",
                         "Nombre WiFi",
                         isp.wifiNombre,
-                    ],
-                    [
-                        "wifiClaveRef",
-                        "Referencia de clave WiFi",
-                        isp.wifiClaveRef,
                     ],
                     [
                         "ipRed",

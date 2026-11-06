@@ -31,6 +31,7 @@ export async function mobileBitacoraUser(req, res, next) {
         }
         req.user = {
             id: tecnico.id_tecnico,
+            empresaId: null,
             id_tecnico: tecnico.id_tecnico,
             tecnicoId: tecnico.id_tecnico,
             nombre: tecnico.nombre,

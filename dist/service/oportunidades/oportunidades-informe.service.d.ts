@@ -4,6 +4,13 @@ export interface EnviarInformeOportunidadInput {
     mensaje?: string | undefined;
 }
 export declare function obtenerDatosInformeOportunidad(oportunidadId: number): Promise<{
+    responsable: {
+        nombre: string;
+        email: string;
+        cargo: string | null;
+        id_tecnico: number;
+        area: string | null;
+    };
     cotizaciones: ({
         tecnico: {
             nombre: string;
@@ -66,13 +73,6 @@ export declare function obtenerDatosInformeOportunidad(oportunidadId: number): P
         direccion: string | null;
         correo: string | null;
     } | null;
-    responsable: {
-        nombre: string;
-        email: string;
-        cargo: string | null;
-        id_tecnico: number;
-        area: string | null;
-    };
     historialEtapas: ({
         actor: {
             nombre: string;

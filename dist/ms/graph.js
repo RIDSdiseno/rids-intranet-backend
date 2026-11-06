@@ -24,6 +24,15 @@ function parseAuthMap() {
     return out;
 }
 const AUTH_BY_DOMAIN = parseAuthMap();
+/*
+ * Credenciales para SharePoint (Ley PD).
+ * Si no hay variables propias, usa las de MS_* por defecto.
+ */
+const SHAREPOINT_AUTH = {
+    tenant: process.env.SHAREPOINT_TENANT_ID || DEFAULT_AUTH.tenant,
+    clientId: process.env.SHAREPOINT_CLIENT_ID || DEFAULT_AUTH.clientId,
+    clientSecret: process.env.SHAREPOINT_CLIENT_SECRET || DEFAULT_AUTH.clientSecret,
+};
 function getAuthForDomain(domain) {
     if (!domain)
         return DEFAULT_AUTH;
@@ -44,6 +53,7 @@ async function getToken(auth) {
         grant_type: "client_credentials",
     });
     const url = `https://login.microsoftonline.com/${auth.tenant}/oauth2/v2.0/token`;
+    console.log("[graph:getToken] tenant:", auth.tenant, "| clientId:", auth.clientId, "| secret suffix:", auth.clientSecret?.slice(-4));
     const r = await fetch(url, {
         method: "POST",
         body,
@@ -209,5 +219,12 @@ export async function listUsersWithLicenses(opts) {
             map.set(u.id, u);
     }
     return [...map.values()];
+}
+/* =================== SharePoint =================== */
+/**
+ * Token app-only para leer SharePoint vía Graph.
+ */
+export function obtenerTokenSharepoint() {
+    return getToken(SHAREPOINT_AUTH);
 }
 //# sourceMappingURL=graph.js.map

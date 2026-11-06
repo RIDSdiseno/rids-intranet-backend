@@ -15,6 +15,7 @@ import {
 
 import {
     actualizacionIdSchema,
+    crearActualizacionLeypdSchema
 } from "../../service/leypd/leypd.schemas.js";
 
 /* =====================================================
@@ -37,10 +38,25 @@ export async function postActualizacionLeypd(
             });
     }
 
+    const body =
+        crearActualizacionLeypdSchema.safeParse(
+            req.body ?? {}
+        );
+
+    if (!body.success) {
+        return res
+            .status(400)
+            .json({
+                message:
+                    "Empresa inválida.",
+            });
+    }
+
     try {
         const job =
             await crearActualizacionLeypd(
-                tecnicoId
+                tecnicoId,
+                body.data.empresaId
             );
 
         return res
@@ -60,6 +76,20 @@ export async function postActualizacionLeypd(
                 .json({
                     message:
                         "Ya existe una actualización Ley PD pendiente o en ejecución.",
+                });
+        }
+
+        if (
+            error instanceof
+            Error &&
+            error.message ===
+            "EMPRESA_SIN_CARPETA_LEYPD"
+        ) {
+            return res
+                .status(400)
+                .json({
+                    message:
+                        "La empresa no tiene carpeta LEYPD vinculada en SharePoint.",
                 });
         }
 
@@ -235,7 +265,7 @@ export async function postCancelarActualizacionLeypd(
                     .status(409)
                     .json({
                         message:
-                            "Solo se puede cancelar una actualización que aún no comenzó.",
+                            "Solo se puede cancelar una actualización en cola o en ejecución.",
                     });
             }
         }

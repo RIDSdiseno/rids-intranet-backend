@@ -27,6 +27,16 @@ export const actualizacionIdSchema =
         .int()
         .positive();
 
+/** Body de POST /leypd/actualizaciones. Sin empresaId = todas. */
+export const crearActualizacionLeypdSchema =
+    z.object({
+        empresaId:
+            z.number()
+                .int()
+                .positive()
+                .optional(),
+    });
+
 export const tokenLeypdSchema =
     z.string()
         .trim()

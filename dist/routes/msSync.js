@@ -217,24 +217,39 @@ async function selectMsUsers(domains, email) {
         .toLowerCase()
         .replace(/^@/, ""))
         .filter(Boolean)));
-    if (cleanDomains.length ===
-        0) {
+    if (cleanDomains.length === 0) {
         return {
             target: [],
             allCount: 0,
             domains: [],
-            timings: {
-                graphMs: Date.now() -
-                    t0,
-            },
+            failedDomains: [],
+            timings: { graphMs: Date.now() - t0 },
         };
     }
     /*
-     * Se consultan todos los dominios.
-     */
-    const resultados = await Promise.all(cleanDomains.map((domain) => listUsersWithLicenses({
-        filterDomain: domain,
-    })));
+   * Se consultan todos los dominios de forma tolerante:
+   * si uno falla, se registra y se continúa con los demás.
+   */
+    const settled = await Promise.allSettled(cleanDomains.map((domain) => listUsersWithLicenses({ filterDomain: domain })));
+    const resultados = [];
+    const okDomains = [];
+    const failedDomains = [];
+    settled.forEach((r, i) => {
+        const domain = cleanDomains[i];
+        if (r.status === "fulfilled") {
+            resultados.push(r.value);
+            okDomains.push(domain);
+        }
+        else {
+            const msg = r.reason?.message ?? String(r.reason);
+            console.warn(`[selectMsUsers] Dominio ${domain} falló:`, msg);
+            failedDomains.push({ domain, error: msg });
+        }
+    });
+    if (okDomains.length === 0) {
+        throw new Error(`Microsoft Graph falló para todos los dominios: ` +
+            failedDomains.map((f) => `${f.domain} (${f.error})`).join(" | "));
+    }
     /*
      * Un mismo usuario podría aparecer más
      * de una vez si tiene aliases/dominos relacionados.
@@ -270,13 +285,13 @@ async function selectMsUsers(domains, email) {
         : all;
     const graphMs = Date.now() -
         t0;
+    // return final
     return {
         target,
         allCount: all.length,
-        domains: cleanDomains,
-        timings: {
-            graphMs,
-        },
+        domains: okDomains, // solo los que respondieron
+        failedDomains,
+        timings: { graphMs },
     };
 }
 /* =========================================================
@@ -413,23 +428,22 @@ msSyncRouter.post("/sync/microsoft/users", async (req, res) => {
             ?.trim())
             .filter((id) => Boolean(id));
         /*
-         * IMPORTANTE:
-         *
-         * La desactivación ocurre UNA SOLA VEZ,
-         * después de haber unido todos los dominios.
-         */
-        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaIdNumber, microsoftIdsActivos);
+    * Si algún dominio falló, NO se desactiva a nadie:
+    * faltarían usuarios y se desactivarían por error.
+    */
+        const partial = sel.failedDomains.length > 0;
+        const deactivated = partial
+            ? null
+            : await deactivateMissingMicrosoftSolicitantes(empresaIdNumber, microsoftIdsActivos);
         res.json({
             ok: true,
             empresaId: empresaIdNumber,
             domains: sel.domains,
+            failedDomains: sel.failedDomains,
             ...r,
-            deactivated: deactivated.count,
-            deactivatedUsers: deactivated.users,
-            timings: {
-                ...sel.timings,
-                ...r.timings,
-            },
+            deactivated: deactivated?.count ?? 0,
+            deactivatedUsers: deactivated?.users ?? [],
+            deactivationSkipped: partial,
         });
     }
     catch (e) {
@@ -502,18 +516,19 @@ msSyncRouter.get("/sync/microsoft/users", async (req, res) => {
         /*
          * 4. Desactivar faltantes una sola vez.
          */
-        const deactivated = await deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsActivos);
+        const partial = sel.failedDomains.length > 0;
+        const deactivated = partial
+            ? null
+            : await deactivateMissingMicrosoftSolicitantes(empresaId, microsoftIdsActivos);
         res.json({
             ok: true,
             empresaId,
             domains: sel.domains,
+            failedDomains: sel.failedDomains,
             ...r,
-            deactivated: deactivated.count,
-            deactivatedUsers: deactivated.users,
-            timings: {
-                ...sel.timings,
-                ...r.timings,
-            },
+            deactivated: deactivated?.count ?? 0,
+            deactivatedUsers: deactivated?.users ?? [],
+            deactivationSkipped: partial,
         });
     }
     catch (e) {

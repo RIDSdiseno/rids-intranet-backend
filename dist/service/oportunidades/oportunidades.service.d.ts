@@ -181,6 +181,11 @@ export declare function crearOportunidad(actorId: number, payload: CrearOportuni
 }>;
 export declare function listarOportunidades(filtros: FiltrosOportunidadInput): Promise<{
     data: ({
+        responsable: {
+            nombre: string;
+            email: string;
+            id_tecnico: number;
+        };
         _count: {
             cotizaciones: number;
         };
@@ -188,11 +193,6 @@ export declare function listarOportunidades(filtros: FiltrosOportunidadInput): P
             nombre: string;
             id: number;
         } | null;
-        responsable: {
-            nombre: string;
-            email: string;
-            id_tecnico: number;
-        };
     } & {
         createdAt: Date;
         updatedAt: Date;
@@ -257,16 +257,16 @@ export declare function obtenerFunnel(): Promise<{
     id: number;
     titulo: string;
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
+    responsable: {
+        nombre: string;
+        id_tecnico: number;
+    };
     entidad: {
         nombre: string;
         id: number;
     } | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
     codigo: string;
-    responsable: {
-        nombre: string;
-        id_tecnico: number;
-    };
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
     montoEstimado: Prisma.Decimal | null;
@@ -415,6 +415,12 @@ export declare function obtenerOportunidadPorId(id: number): Promise<{
         changes: Prisma.JsonValue | null;
         description: string | null;
     }[];
+    responsable: {
+        nombre: string;
+        email: string;
+        id_tecnico: number;
+        rol: string;
+    };
     cotizaciones: {
         createdAt: Date;
         id: number;
@@ -437,12 +443,6 @@ export declare function obtenerOportunidadPorId(id: number): Promise<{
         tipo: import("@prisma/client").$Enums.TipoEntidadGestioo;
         correo: string | null;
     } | null;
-    responsable: {
-        nombre: string;
-        email: string;
-        id_tecnico: number;
-        rol: string;
-    };
     historialEtapas: ({
         actor: {
             nombre: string;

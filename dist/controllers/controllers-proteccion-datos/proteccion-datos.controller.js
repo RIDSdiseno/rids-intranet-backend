@@ -78,6 +78,42 @@ function parseNumeroQueryOpcional(value, nombre, min = 0) {
     return numero;
 }
 /* =========================================================
+   CONTEXTO
+   ========================================================= */
+function parseOrigenCampania(value) {
+    if (value === undefined ||
+        value === null ||
+        value === "") {
+        return undefined;
+    }
+    if (value !==
+        "GENERAL" &&
+        value !==
+            "LEYPD") {
+        throw new Error("Origen de campaña inválido");
+    }
+    return value;
+}
+/**
+ * undefined = no vino en el body
+ * null      = vino explícitamente vacío
+ */
+function parseEnteroBodyOpcional(value, nombre) {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === null ||
+        value === "") {
+        return null;
+    }
+    const numero = Number(value);
+    if (!Number.isInteger(numero) ||
+        numero <= 0) {
+        throw new Error(`${nombre} inválido`);
+    }
+    return numero;
+}
+/* =========================================================
    LISTAR CAMPAÑAS
    ========================================================= */
 export async function getCampaniasProteccionDatos(req, res, next) {
@@ -89,7 +125,25 @@ export async function getCampaniasProteccionDatos(req, res, next) {
             : undefined;
         const skip = parseNumeroQueryOpcional(req.query.skip, "skip");
         const take = parseNumeroQueryOpcional(req.query.take, "take");
+        const empresaId = parseNumeroQueryOpcional(req.query.empresaId, "empresaId", 1);
+        const origen = parseOrigenCampania(req.query.origen);
+        const leypdElementoNumero = parseNumeroQueryOpcional(req.query.leypdElementoNumero, "leypdElementoNumero", 1);
         const params = {};
+        if (empresaId !==
+            undefined) {
+            params.empresaId =
+                empresaId;
+        }
+        if (origen !==
+            undefined) {
+            params.origen =
+                origen;
+        }
+        if (leypdElementoNumero !==
+            undefined) {
+            params.leypdElementoNumero =
+                leypdElementoNumero;
+        }
         if (estado !==
             undefined) {
             params.estado =
@@ -201,25 +255,35 @@ export async function postCampaniaProteccionDatos(req, res, next) {
             }
         }
         /* =====================================================
-           CREADO POR
-           TEMPORAL HASTA CONECTAR JWT
-           ===================================================== */
-        if (body.creadoPorId !==
-            undefined &&
-            body.creadoPorId !==
-                null) {
-            const creadoPorId = Number(body.creadoPorId);
-            if (!Number.isInteger(creadoPorId) ||
-                creadoPorId <= 0) {
-                throw new Error("creadoPorId inválido");
-            }
+   CREADO POR
+   Siempre desde la sesión, nunca desde el body.
+   ===================================================== */
+        const userId = req
+            .user?.id;
+        if (userId) {
             input.creadoPorId =
-                creadoPorId;
+                userId;
         }
-        else if (body.creadoPorId ===
-            null) {
-            input.creadoPorId =
-                null;
+        /* =====================================================
+           CONTEXTO (empresa / origen / elemento Ley PD)
+           ===================================================== */
+        const empresaId = parseEnteroBodyOpcional(body.empresaId, "empresaId");
+        if (empresaId !==
+            undefined) {
+            input.empresaId =
+                empresaId;
+        }
+        const origen = parseOrigenCampania(body.origen);
+        if (origen !==
+            undefined) {
+            input.origen =
+                origen;
+        }
+        const leypdElementoNumero = parseEnteroBodyOpcional(body.leypdElementoNumero, "leypdElementoNumero");
+        if (leypdElementoNumero !==
+            undefined) {
+            input.leypdElementoNumero =
+                leypdElementoNumero;
         }
         const data = await crearCampaniaProteccionDatos(input);
         return res

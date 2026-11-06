@@ -28,6 +28,16 @@ export type RespuestaConsentimientoDatos = {
     respuestas: RespuestasConsentimiento;
 };
 export type ResponderConsentimientoPublicoInput = RespuestaConsentimientoDatos;
+/**
+ * GENERAL = campaña creada desde el módulo Protección de Datos.
+ * LEYPD   = campaña creada desde el elemento 04 de Ley PD.
+ */
+export type OrigenCampaniaProteccionDatos = "GENERAL" | "LEYPD";
+export declare const ORIGENES_CAMPANIA_PROTECCION_DATOS: OrigenCampaniaProteccionDatos[];
+/**
+ * Elemento Ley PD "Gestión del consentimiento".
+ */
+export declare const LEYPD_ELEMENTO_CONSENTIMIENTO = 4;
 export type CrearCampaniaProteccionDatosInput = {
     nombre: string;
     descripcion?: string | null;
@@ -40,6 +50,9 @@ export type CrearCampaniaProteccionDatosInput = {
     fechaInicio?: Date | null;
     fechaFin?: Date | null;
     creadoPorId?: number | null;
+    empresaId?: number | null;
+    origen?: OrigenCampaniaProteccionDatos;
+    leypdElementoNumero?: number | null;
 };
 export type ActualizarCampaniaProteccionDatosInput = {
     nombre?: string;

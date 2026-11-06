@@ -4,13 +4,57 @@ import {
     prisma,
 } from "../../lib/prisma.js";
 
+/** Datos que el panel muestra junto a cada trabajo. */
+const INCLUDE_ACTUALIZACION = {
+    iniciadoPor: {
+        select: {
+            id_tecnico:
+                true,
+
+            nombre:
+                true,
+        },
+    },
+
+    empresa: {
+        select: {
+            id_empresa:
+                true,
+
+            nombre:
+                true,
+        },
+    },
+} as const;
+
 /* =====================================================
    CREAR JOB
 ===================================================== */
 
 export async function crearActualizacionLeypd(
-    tecnicoId: number
+    tecnicoId: number,
+    empresaId?: number
 ) {
+    if (empresaId !== undefined) {
+        const vinculo =
+            await prisma.leypdSharepoint.findUnique({
+                where: {
+                    empresaId,
+                },
+
+                select: {
+                    empresaId:
+                        true,
+                },
+            });
+
+        if (!vinculo) {
+            throw new Error(
+                "EMPRESA_SIN_CARPETA_LEYPD"
+            );
+        }
+    }
+
     const activa =
         await prisma.leypdActualizacion.findFirst({
             where: {
@@ -34,23 +78,26 @@ export async function crearActualizacionLeypd(
         );
     }
 
+    /*
+ * totalPasos queda null: el worker lo fija con el
+ * número de empresas al tomar el trabajo.
+ * Sin empresaId = todas las empresas vinculadas.
+ */
     return prisma.leypdActualizacion.create({
         data: {
             estado:
                 "PENDIENTE",
 
-            pasoActual:
-                0,
-
-            totalPasos:
-                9,
-
-            progreso:
-                0,
-
             iniciadoPorId:
                 tecnicoId,
+
+            ...(empresaId !== undefined
+                ? { empresaId }
+                : {}),
         },
+
+        include:
+            INCLUDE_ACTUALIZACION,
     });
 }
 
@@ -66,6 +113,9 @@ export async function obtenerActualizacionLeypd(
             where: {
                 id,
             },
+
+            include:
+                INCLUDE_ACTUALIZACION,
         });
 
     if (!job) {
@@ -83,6 +133,8 @@ export async function obtenerActualizacionLeypd(
 
 export async function obtenerActualizacionActivaLeypd() {
     return prisma.leypdActualizacion.findFirst({
+        include:
+            INCLUDE_ACTUALIZACION,
         where: {
             estado: {
                 in: [
@@ -227,29 +279,22 @@ export async function obtenerUltimaActualizacionLeypd() {
                 "desc",
         },
 
-        include: {
-            iniciadoPor: {
-                select: {
-                    id_tecnico:
-                        true,
-
-                    nombre:
-                        true,
-                },
-            },
-        },
+        include:
+            INCLUDE_ACTUALIZACION,
     });
 }
 
 /* =====================================================
-   CANCELAR (solo PENDIENTE)
+   CANCELAR (PENDIENTE o EJECUTANDO)
 ===================================================== */
 
 /**
- * Cancela un trabajo que el worker aún no tomó.
+ * PENDIENTE: el worker ya no la toma.
+ * EJECUTANDO: el worker termina la empresa en curso, se
+ * detiene y deja en el mensaje lo que alcanzó a hacer
+ * (solo escribe mientras el trabajo sigue EJECUTANDO).
  *
- * updateMany con la condición estado = PENDIENTE es atómico:
- * si el worker lo tomó en el mismo instante, no se cancela.
+ * updateMany con la condición de estado es atómico.
  */
 export async function cancelarActualizacionLeypd(
     id: number
@@ -258,8 +303,12 @@ export async function cancelarActualizacionLeypd(
         await prisma.leypdActualizacion.updateMany({
             where: {
                 id,
-                estado:
-                    "PENDIENTE",
+                estado: {
+                    in: [
+                        "PENDIENTE",
+                        "EJECUTANDO",
+                    ],
+                },
             },
 
             data: {
@@ -270,7 +319,7 @@ export async function cancelarActualizacionLeypd(
                     new Date(),
 
                 mensaje:
-                    "Cancelada antes de que el worker la tomara.",
+                    "Cancelada desde el panel.",
             },
         });
 

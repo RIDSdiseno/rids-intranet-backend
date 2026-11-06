@@ -1,7 +1,15 @@
 import { Router, } from "express";
 import { deleteDestinatarioCampania, getCampaniaProteccionDatos, getCampaniasProteccionDatos, getDestinatariosCampania, patchCampaniaProteccionDatos, postActivarCampaniaProteccionDatos, postCancelarCampaniaProteccionDatos, postCampaniaProteccionDatos, postDestinatariosCampania, postFinalizarCampaniaProteccionDatos, postEnviarCampaniaProteccionDatos, uploadDocumentoProteccionDatosController, getEventosConsentimiento } from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
 import { uploadDocumentoProteccionDatos, } from "../middlewares/proteccion-datos-documentos.middleware.js";
+import { auth, } from "../middlewares/auth.js";
+import { onlyRole, } from "../middlewares/roles.js";
 const router = Router();
+/*
+ * routes.ts usa auth(false) global (sesión opcional).
+ * Este router exige sesión y rol interno.
+ * Las rutas públicas viven en proteccion-datos-publico.routes.ts.
+ */
+router.use(auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"));
 /* =========================================================
    CAMPAÑAS
    ========================================================= */

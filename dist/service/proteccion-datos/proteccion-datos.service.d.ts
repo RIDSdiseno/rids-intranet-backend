@@ -1,5 +1,5 @@
 import { EstadoCampaniaProteccionDatos, Prisma } from "@prisma/client";
-import type { ActualizarCampaniaProteccionDatosInput, CrearCampaniaProteccionDatosInput } from "./proteccion-datos.types.js";
+import type { ActualizarCampaniaProteccionDatosInput, CrearCampaniaProteccionDatosInput, OrigenCampaniaProteccionDatos } from "./proteccion-datos.types.js";
 /**
  * Sanitización específica para documentos legales.
  *
@@ -31,8 +31,10 @@ export declare function crearCampaniaProteccionDatos(input: CrearCampaniaProtecc
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -47,12 +49,16 @@ export declare function crearCampaniaProteccionDatos(input: CrearCampaniaProtecc
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 export declare function listarCampaniasProteccionDatos(params?: {
     estado?: EstadoCampaniaProteccionDatos;
     search?: string;
     skip?: number;
     take?: number;
+    empresaId?: number;
+    origen?: OrigenCampaniaProteccionDatos;
+    leypdElementoNumero?: number;
 }): Promise<{
     items: ({
         _count: {
@@ -65,8 +71,10 @@ export declare function listarCampaniasProteccionDatos(params?: {
         } | null;
     } & {
         nombre: string;
+        empresaId: number | null;
         createdAt: Date;
         updatedAt: Date;
+        origen: string;
         id: number;
         estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
         descripcion: string | null;
@@ -81,6 +89,7 @@ export declare function listarCampaniasProteccionDatos(params?: {
         asuntoCorreo: string;
         cuerpoCorreoHtml: string;
         fechaEnvioInicial: Date | null;
+        leypdElementoNumero: number | null;
     })[];
     total: number;
     skip: number;
@@ -97,8 +106,10 @@ export declare function obtenerCampaniaProteccionDatos(id: number): Promise<{
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -113,6 +124,7 @@ export declare function obtenerCampaniaProteccionDatos(id: number): Promise<{
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 export declare function actualizarCampaniaProteccionDatos(id: number, input: ActualizarCampaniaProteccionDatosInput): Promise<{
     _count: {
@@ -125,8 +137,10 @@ export declare function actualizarCampaniaProteccionDatos(id: number, input: Act
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -141,6 +155,7 @@ export declare function actualizarCampaniaProteccionDatos(id: number, input: Act
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 export declare function activarCampaniaProteccionDatos(id: number): Promise<{
     _count: {
@@ -153,8 +168,10 @@ export declare function activarCampaniaProteccionDatos(id: number): Promise<{
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -169,6 +186,7 @@ export declare function activarCampaniaProteccionDatos(id: number): Promise<{
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 export declare function finalizarCampaniaProteccionDatos(id: number): Promise<{
     _count: {
@@ -181,8 +199,10 @@ export declare function finalizarCampaniaProteccionDatos(id: number): Promise<{
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -197,6 +217,7 @@ export declare function finalizarCampaniaProteccionDatos(id: number): Promise<{
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 export declare function cancelarCampaniaProteccionDatos(id: number): Promise<{
     _count: {
@@ -209,8 +230,10 @@ export declare function cancelarCampaniaProteccionDatos(id: number): Promise<{
     } | null;
 } & {
     nombre: string;
+    empresaId: number | null;
     createdAt: Date;
     updatedAt: Date;
+    origen: string;
     id: number;
     estado: import("@prisma/client").$Enums.EstadoCampaniaProteccionDatos;
     descripcion: string | null;
@@ -225,5 +248,6 @@ export declare function cancelarCampaniaProteccionDatos(id: number): Promise<{
     asuntoCorreo: string;
     cuerpoCorreoHtml: string;
     fechaEnvioInicial: Date | null;
+    leypdElementoNumero: number | null;
 }>;
 //# sourceMappingURL=proteccion-datos.service.d.ts.map

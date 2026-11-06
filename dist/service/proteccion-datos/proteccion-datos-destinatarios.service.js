@@ -33,6 +33,7 @@ async function obtenerCampaniaEditable(campaniaId) {
             versionDocumento: true,
             documentoHash: true,
             contenidoHtml: true,
+            empresaId: true,
         },
     });
     if (!campania) {
@@ -173,6 +174,20 @@ export async function agregarDestinatariosCampania(campaniaId, input) {
             omitidos.push({
                 solicitanteId: solicitante.id_solicitante,
                 motivo: "La empresa del solicitante se encuentra inactiva",
+            });
+            continue;
+        }
+        /* -------------------------------------------------
+           CAMPAÑA ASOCIADA A UNA EMPRESA
+           (por ejemplo, campañas Ley PD)
+           ------------------------------------------------- */
+        if (campania.empresaId !==
+            null &&
+            solicitante.empresa.id_empresa !==
+                campania.empresaId) {
+            omitidos.push({
+                solicitanteId: solicitante.id_solicitante,
+                motivo: "El solicitante no pertenece a la empresa de la campaña",
             });
             continue;
         }

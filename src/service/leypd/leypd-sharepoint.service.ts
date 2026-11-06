@@ -74,7 +74,48 @@ function normalizarNombre(
 }
 
 /**
+ * Documentos esperados de un elemento según lo que el worker
+ * generó para esta empresa (LeypdDocumentoGenerado).
+ *
+ * Es la fuente preferida: respeta lo que aplica a cada empresa
+ * (p. ej. sin política de visitas si no tiene visitas) y los
+ * nombres reales de los archivos. "Faltante" = el worker lo
+ * generó y ya no está en SharePoint.
+ *
+ * Solo los archivos directos de la carpeta del elemento.
+ */
+function documentosEsperadosRegistro(
+    catalogo: LeypdCatalogoItem,
+    rutas: string[]
+): DocumentoEsperado[] {
+    const carpeta =
+        normalizarNombre(
+            catalogo.carpeta
+        );
+
+    return rutas
+        .map((ruta) => ruta.split("/"))
+        .filter(
+            (partes) =>
+                partes.length === 2 &&
+                normalizarNombre(partes[0] ?? "") === carpeta
+        )
+        .map((partes): DocumentoEsperado => {
+            const nombre =
+                partes[1] ?? "";
+
+            return {
+                etiqueta: nombre,
+                prefijo: normalizarNombre(nombre),
+                opcional: false,
+                esCarpeta: false,
+            };
+        });
+}
+
+/**
  * Documentos esperados de un elemento, según el catálogo.
+ * Respaldo para empresas que el worker aún no procesa.
  *
  * Se comparan por PREFIJO porque el sufijo de cliente
  * (p.ej. "_ALIANZ") puede no coincidir con el nombre
@@ -289,8 +330,10 @@ export async function obtenerSharepointLeypd(
 /**
  * Lee la carpeta LEYPD del cliente y actualiza:
  * - checklist
- * - existencia, URL y documentos de las 13 carpetas
- * - documentos faltantes según catálogo
+  * - existencia, URL y documentos de las 13 carpetas
+ * - documentos faltantes: según lo que generó el worker
+ *   (LeypdDocumentoGenerado) o, si aún no hay registro,
+ *   según el catálogo
  *
  * Solo lectura: no crea ni modifica nada en SharePoint.
  */
@@ -311,6 +354,25 @@ export async function sincronizarSharepointLeypd(
             "SHAREPOINT_NO_VINCULADO"
         );
     }
+
+    /*
+ * Registro del worker: qué documentos genera para esta empresa.
+ */
+    const rutasGeneradas =
+        (
+            await prisma.leypdDocumentoGenerado.findMany({
+                where: {
+                    empresaId,
+                },
+
+                select: {
+                    ruta: true,
+                },
+            })
+        ).map((d) => d.ruta);
+
+    const usarRegistro =
+        rutasGeneradas.length > 0;
 
     try {
         const hijosRaiz =
@@ -369,7 +431,12 @@ export async function sincronizarSharepointLeypd(
                             );
 
                         const esperados =
-                            documentosEsperados(catalogo);
+                            usarRegistro
+                                ? documentosEsperadosRegistro(
+                                    catalogo,
+                                    rutasGeneradas
+                                )
+                                : documentosEsperados(catalogo);
 
                         const noEncontrados =
                             esperados.filter(

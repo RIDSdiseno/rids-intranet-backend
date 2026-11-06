@@ -42,6 +42,7 @@ export declare function conciliarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    responsable: string | null;
     observacion: string | null;
     folio: string;
     montoNeto: number;
@@ -56,7 +57,6 @@ export declare function conciliarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    responsable: string | null;
     conciliadoAt: Date | null;
 }>;
 export declare function desconciliarDocumentoRcv(params: {
@@ -70,6 +70,7 @@ export declare function desconciliarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    responsable: string | null;
     observacion: string | null;
     folio: string;
     montoNeto: number;
@@ -84,7 +85,6 @@ export declare function desconciliarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    responsable: string | null;
     conciliadoAt: Date | null;
 }>;
 export declare function observarDocumentoRcv(params: {
@@ -100,6 +100,7 @@ export declare function observarDocumentoRcv(params: {
     createdAt: Date;
     updatedAt: Date;
     id: string;
+    responsable: string | null;
     observacion: string | null;
     folio: string;
     montoNeto: number;
@@ -114,7 +115,6 @@ export declare function observarDocumentoRcv(params: {
     origenRcv: string | null;
     estadoConciliacion: string;
     formaPago: string | null;
-    responsable: string | null;
     conciliadoAt: Date | null;
 }>;
 export type PuntualidadEstado = EstadoPuntualidadCliente;

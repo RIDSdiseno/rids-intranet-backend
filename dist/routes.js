@@ -90,8 +90,11 @@ import mobileBitacoraRoutes from "./routes/internal-routes/mobile-bitacora.route
 /* ===================== PROTECCIÓN DE DATOS ===================== */
 import proteccionDatosPublicoRouter from "./routes/proteccion-datos-publico.routes.js";
 import proteccionDatosRouter from "./routes/proteccion-datos.routes.js";
+import leypdRouter from "./routes/routes-leypd/leypd.routes.js";
+import leypdPublicoRouter from "./routes/routes-leypd/leypd-publico.routes.js";
 /* ========================================================= */
 import { auth, onlyOwnEmpresa } from "./middlewares/auth.js";
+import { limitePublicoPorEnlace, limitePublicoPorIp, } from "./middlewares/rate-limit-publico.js";
 export const api = Router();
 api.use("/equipos/equipos-mantencion", equiposMantencionRoutes);
 api.use("/equipos/agent", equipoAgentRoutes);
@@ -111,7 +114,8 @@ api.use(whatchimpRouter);
  * El token individual actúa como credencial
  * para el formulario público.
  */
-api.use("/proteccion-datos/publico", proteccionDatosPublicoRouter);
+api.use("/proteccion-datos/publico", limitePublicoPorIp, limitePublicoPorEnlace, proteccionDatosPublicoRouter);
+api.use("/public/leypd", limitePublicoPorIp, limitePublicoPorEnlace, leypdPublicoRouter);
 api.use(auth(false));
 api.use(onlyOwnEmpresa());
 /* ===================== App Core ===================== */
@@ -222,6 +226,7 @@ api.use("/internal/mobile/taller", syncAccess, mobileTallerRoutes);
 api.use("/internal/mobile/bitacora", syncAccess, mobileBitacoraRoutes);
 /* ===================== PROTECCIÓN DE DATOS ===================== */
 api.use("/proteccion-datos", proteccionDatosRouter);
+api.use("/leypd", leypdRouter);
 /* ===================== Export ===================== */
 export default api;
 //# sourceMappingURL=routes.js.map
