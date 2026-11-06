@@ -346,7 +346,14 @@ export async function enviarCampaniaProteccionDatos(campaniaId) {
     /* =====================================================
        FIRMA RIDS
        ===================================================== */
+    const firmaStartedAt = Date.now();
     const firma = await obtenerFirmaMailer();
+    console.log("[PROTECCION DATOS] ⏱ Firma", {
+        campaniaId: campania.id,
+        durationMs: Date.now() -
+            firmaStartedAt,
+        firmaKb: Math.round((firma.html?.length ?? 0) / 1024),
+    });
     /* =====================================================
        RESULTADOS
        ===================================================== */
@@ -432,11 +439,19 @@ export async function enviarCampaniaProteccionDatos(campaniaId) {
            SMTP
            ================================================= */
         try {
+            const envioStartedAt = Date.now();
             await sendEmail({
                 to: destinatario.email,
                 subject: campania.asuntoCorreo,
                 bodyHtml,
                 attachments: [],
+            });
+            console.log("[PROTECCION DATOS] ⏱ Envío de correo", {
+                consentimientoId: destinatario.id,
+                email: destinatario.email,
+                correoKb: Math.round(bodyHtml.length / 1024),
+                durationMs: Date.now() -
+                    envioStartedAt,
             });
             const ahora = new Date();
             /* =================================================
