@@ -42,6 +42,8 @@ export declare function obtenerConsentimientoPublico(token: string, contexto?: C
         textoBoton: string;
     } | null;
     estado: import("@prisma/client").$Enums.EstadoConsentimientoDatos;
+    /** Fecha límite para responder (informativa en el formulario). */
+    plazo: Date | null;
     respondido: boolean;
     fechaRespuesta: Date | null;
     fechaRevocacion: Date | null;
@@ -81,6 +83,8 @@ export declare function responderConsentimientoPublico(token: string, input: Res
         textoBoton: string;
     } | null;
     estado: import("@prisma/client").$Enums.EstadoConsentimientoDatos;
+    /** Fecha límite para responder (informativa en el formulario). */
+    plazo: Date | null;
     respondido: boolean;
     fechaRespuesta: Date | null;
     fechaRevocacion: Date | null;
@@ -120,6 +124,8 @@ export declare function revocarConsentimientoPublico(token: string, input?: Revo
         textoBoton: string;
     } | null;
     estado: import("@prisma/client").$Enums.EstadoConsentimientoDatos;
+    /** Fecha límite para responder (informativa en el formulario). */
+    plazo: Date | null;
     respondido: boolean;
     fechaRespuesta: Date | null;
     fechaRevocacion: Date | null;

@@ -65,6 +65,7 @@ async function buscarConsentimientoPorToken(token) {
                     id: true,
                     nombre: true,
                     tituloDocumento: true,
+                    fechaFin: true,
                     estado: true,
                     configuracionConsentimiento: true,
                 },
@@ -303,6 +304,10 @@ async function construirRespuestaPublica(consentimiento) {
         },
         configuracion,
         estado: consentimiento.estado,
+        /** Fecha límite para responder (informativa en el formulario). */
+        plazo: consentimiento
+            .campania
+            .fechaFin,
         respondido: consentimiento
             .fechaRespuesta !==
             null,

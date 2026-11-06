@@ -51,6 +51,7 @@ model Empresa {
   leypdFicha               LeypdFicha?
   leypdSharepoint          LeypdSharepoint?
   leypdDocumentosGenerados LeypdDocumentoGenerado[]
+  leypdSitioRevisiones     LeypdSitioRevision[]
   leypdActualizaciones     LeypdActualizacion[]
   campaniasProteccionDatos CampaniaProteccionDatos[]
 
@@ -2670,6 +2671,24 @@ model LeypdDocumentoGenerado {
   empresa   Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
 
   @@unique([empresaId, ruta])
+  @@index([empresaId])
+}
+
+model LeypdSitioRevision {
+  id                Int       @id @default(autoincrement())
+  empresaId         Int
+  dominio           String
+  /// Lo que detectó la revisión automática (SSL, banner, servicios, formularios…)
+  datos             Json
+  /// Último día en que el sitio respondió
+  respondioAt       DateTime  @db.Date
+  /// Primer día sin respuesta desde la última vez que respondió (null = responde)
+  sinRespuestaDesde DateTime? @db.Date
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  empresa           Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@unique([empresaId, dominio])
   @@index([empresaId])
 }
 

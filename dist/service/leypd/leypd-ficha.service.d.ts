@@ -35,8 +35,8 @@ export declare function guardarFichaLeypdInterna(empresaId: number, datos: Recor
     id: number;
     tokenHash: string | null;
     tokenExpiresAt: Date | null;
-    respondidoAt: Date | null;
     datos: Prisma.JsonValue;
+    respondidoAt: Date | null;
     tokenRevokedAt: Date | null;
     enlaceCreadoAt: Date | null;
     respondidoPor: string | null;
@@ -55,8 +55,8 @@ export declare function revocarEnlaceFichaLeypd(empresaId: number): Promise<{
     id: number;
     tokenHash: string | null;
     tokenExpiresAt: Date | null;
-    respondidoAt: Date | null;
     datos: Prisma.JsonValue;
+    respondidoAt: Date | null;
     tokenRevokedAt: Date | null;
     enlaceCreadoAt: Date | null;
     respondidoPor: string | null;
@@ -81,8 +81,8 @@ export declare function guardarFichaLeypdPublica(token: string, datos: Record<st
     id: number;
     tokenHash: string | null;
     tokenExpiresAt: Date | null;
-    respondidoAt: Date | null;
     datos: Prisma.JsonValue;
+    respondidoAt: Date | null;
     tokenRevokedAt: Date | null;
     enlaceCreadoAt: Date | null;
     respondidoPor: string | null;
@@ -96,8 +96,8 @@ export declare function enviarFichaLeypdPublica(token: string, datos: Record<str
     id: number;
     tokenHash: string | null;
     tokenExpiresAt: Date | null;
-    respondidoAt: Date | null;
     datos: Prisma.JsonValue;
+    respondidoAt: Date | null;
     tokenRevokedAt: Date | null;
     enlaceCreadoAt: Date | null;
     respondidoPor: string | null;
@@ -131,8 +131,8 @@ export declare function guardarFichaLeypdCliente(empresaId: number, datos: Recor
     id: number;
     tokenHash: string | null;
     tokenExpiresAt: Date | null;
-    respondidoAt: Date | null;
     datos: Prisma.JsonValue;
+    respondidoAt: Date | null;
     tokenRevokedAt: Date | null;
     enlaceCreadoAt: Date | null;
     respondidoPor: string | null;

@@ -166,6 +166,9 @@ async function buscarConsentimientoPorToken(
                         tituloDocumento:
                             true,
 
+                        fechaFin:
+                            true,
+
                         estado:
                             true,
 
@@ -677,6 +680,12 @@ async function construirRespuestaPublica(
 
         estado:
             consentimiento.estado,
+
+        /** Fecha límite para responder (informativa en el formulario). */
+        plazo:
+            consentimiento
+                .campania
+                .fechaFin,
 
         respondido:
             consentimiento
