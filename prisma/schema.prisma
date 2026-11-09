@@ -2834,6 +2834,7 @@ enum TipoEventoConsentimientoDatos {
   REVOCADO
   REENVIADO
   DOCUMENTO_ABIERTO
+  COMPROBANTE_ENVIADO
 }
 
 enum EstadoSeguimientoOportunidad {

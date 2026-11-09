@@ -26,6 +26,10 @@ import {
     resolverDocumentosLeypd,
 } from "./proteccion-datos-leypd-documentos.service.js";
 
+import {
+    enviarComprobanteFirma,
+} from "./proteccion-datos-comprobante.service.js";
+
 import type {
     ConfiguracionConsentimientoDatos,
     ResponderConsentimientoPublicoInput,
@@ -1199,6 +1203,19 @@ export async function responderConsentimientoPublico(
         await buscarConsentimientoPorToken(
             token,
         );
+
+    /*
+     * Comprobante de firma en segundo plano:
+     * no retrasa la respuesta y nunca lanza.
+     */
+    if (
+        actualizado.estado ===
+        EstadoConsentimientoDatos.ACEPTADO
+    ) {
+        void enviarComprobanteFirma(
+            actualizado.id,
+        );
+    }
 
     return await construirRespuestaPublica(
         actualizado,
