@@ -14,8 +14,10 @@ import {
     postDestinatariosCampania,
     postFinalizarCampaniaProteccionDatos,
     postEnviarCampaniaProteccionDatos,
+    postRecordatorioCampaniaProteccionDatos,
     uploadDocumentoProteccionDatosController,
-    getEventosConsentimiento
+    getEventosConsentimiento,
+    getResumenEmpresasProteccionDatos
 } from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
 
 import {
@@ -45,6 +47,15 @@ router.use(
         "ADMINISTRACION",
         "TECNICO"
     )
+);
+
+/* =========================================================
+   RESUMEN POR EMPRESA
+   ========================================================= */
+
+router.get(
+    "/empresas-resumen",
+    getResumenEmpresasProteccionDatos,
 );
 
 /* =========================================================
@@ -115,6 +126,11 @@ router.post(
 router.post(
     "/campanias/:id/enviar",
     postEnviarCampaniaProteccionDatos,
+);
+
+router.post(
+    "/campanias/:id/recordatorio",
+    postRecordatorioCampaniaProteccionDatos,
 );
 
 router.post(

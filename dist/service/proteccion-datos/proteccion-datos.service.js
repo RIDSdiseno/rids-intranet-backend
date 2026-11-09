@@ -3,6 +3,7 @@ import { EstadoCampaniaProteccionDatos, Prisma, } from "@prisma/client";
 import sanitizeHtml from "sanitize-html";
 import { prisma, } from "../../lib/prisma.js";
 import { hashDocumento, } from "./proteccion-datos-documento.service.js";
+import { obtenerElementoCatalogo, } from "../leypd/leypd-catalogo.js";
 import { LEYPD_ELEMENTO_CONSENTIMIENTO, ORIGENES_CAMPANIA_PROTECCION_DATOS, } from "./proteccion-datos.types.js";
 /* =========================================================
    CAMPOS LEGALES INMUTABLES
@@ -377,6 +378,32 @@ function validarCampoConsentimiento(campo, index, keys) {
             };
         }) ??
             [];
+        /* Documentos de la carpeta LEYPD de cada empresa */
+        const documentosLeypd = (campo.documentosLeypd ?? []).map((referencia, referenciaIndex) => {
+            const titulo = referencia
+                ?.titulo
+                ?.trim();
+            const elemento = obtenerElementoCatalogo(Number(referencia?.elemento));
+            const documentoCatalogo = elemento?.documentos.find((d) => d.nombreBase ===
+                referencia?.nombreBase &&
+                d.tipo !==
+                    "CARPETA" &&
+                d.tipo !==
+                    "JS" &&
+                !d.subcarpeta);
+            if (!titulo) {
+                throw new Error(`El documento Ley PD #${referenciaIndex + 1} de "${label}" no tiene título`);
+            }
+            if (!elemento ||
+                !documentoCatalogo) {
+                throw new Error(`El documento Ley PD "${titulo}" no existe en el catálogo`);
+            }
+            return {
+                elemento: elemento.numero,
+                nombreBase: documentoCatalogo.nombreBase,
+                titulo,
+            };
+        });
         return {
             key,
             tipo: "CHECKBOX",
@@ -391,6 +418,12 @@ function validarCampoConsentimiento(campo, index, keys) {
                 0
                 ? {
                     documentos,
+                }
+                : {}),
+            ...(documentosLeypd.length >
+                0
+                ? {
+                    documentosLeypd,
                 }
                 : {}),
         };
@@ -758,6 +791,45 @@ export async function actualizarCampaniaProteccionDatos(id, input) {
        DATA UPDATE
        ===================================================== */
     const data = {};
+    /* Empresa: solo en BORRADOR y en campañas generales (las Ley PD quedan fijas) */
+    if (input.empresaId !==
+        undefined) {
+        if (campaniaActual.estado !==
+            EstadoCampaniaProteccionDatos.BORRADOR) {
+            throw new Error("La empresa solo puede cambiarse mientras la campaña está en BORRADOR");
+        }
+        if (campaniaActual.origen ===
+            "LEYPD") {
+            throw new Error("La empresa de una campaña Ley PD no puede cambiarse");
+        }
+        if (input.empresaId ===
+            null) {
+            data.empresa = {
+                disconnect: true,
+            };
+        }
+        else {
+            const empresa = await prisma.empresa.findUnique({
+                where: {
+                    id_empresa: input.empresaId,
+                },
+                select: {
+                    isActive: true,
+                },
+            });
+            if (!empresa) {
+                throw new Error("La empresa asociada a la campaña no existe");
+            }
+            if (!empresa.isActive) {
+                throw new Error("La empresa asociada a la campaña está inactiva");
+            }
+            data.empresa = {
+                connect: {
+                    id_empresa: input.empresaId,
+                },
+            };
+        }
+    }
     /* =====================================================
        METADATOS
        ===================================================== */
@@ -966,6 +1038,248 @@ export async function cancelarCampaniaProteccionDatos(id) {
                 },
             },
         },
+    });
+}
+function fechaMayor(a, b) {
+    if (!a) {
+        return b;
+    }
+    if (!b) {
+        return a;
+    }
+    return a > b
+        ? a
+        : b;
+}
+export async function resumenEmpresasProteccionDatos(params) {
+    const campanias = await prisma.campaniaProteccionDatos.findMany({
+        where: params?.estado
+            ? {
+                estado: params.estado,
+            }
+            : {},
+        select: {
+            id: true,
+            nombre: true,
+            tituloDocumento: true,
+            versionDocumento: true,
+            estado: true,
+            empresaId: true,
+            fechaEnvioInicial: true,
+            fechaFin: true,
+            createdAt: true,
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+    });
+    const grupos = await prisma.consentimientoDatos.groupBy({
+        by: [
+            "campaniaId",
+            "empresaId",
+            "estado",
+        ],
+        where: {
+            campaniaId: {
+                in: campanias.map((c) => c.id),
+            },
+        },
+        _count: {
+            _all: true,
+            fechaEnvio: true,
+        },
+        _max: {
+            fechaEnvio: true,
+        },
+    });
+    /* Nombres de empresa (de los destinatarios y de las campañas) */
+    const idsEmpresa = [
+        ...new Set([
+            ...grupos.map((g) => g.empresaId),
+            ...campanias.map((c) => c.empresaId),
+        ].filter((id) => id !==
+            null)),
+    ];
+    const empresas = await prisma.empresa.findMany({
+        where: {
+            id_empresa: {
+                in: idsEmpresa,
+            },
+        },
+        select: {
+            id_empresa: true,
+            nombre: true,
+        },
+    });
+    const nombreEmpresa = new Map(empresas.map((e) => [
+        e.id_empresa,
+        e.nombre,
+    ]));
+    const campaniaPorId = new Map(campanias.map((c) => [
+        c.id,
+        c,
+    ]));
+    /* empresaId -> campaniaId -> resumen */
+    const porEmpresa = new Map();
+    const fila = (empresaId, campaniaId) => {
+        const c = campaniaPorId.get(campaniaId);
+        if (!c) {
+            return null;
+        }
+        let mapa = porEmpresa.get(empresaId);
+        if (!mapa) {
+            mapa =
+                new Map();
+            porEmpresa.set(empresaId, mapa);
+        }
+        let r = mapa.get(campaniaId);
+        if (!r) {
+            r = {
+                id: c.id,
+                nombre: c.nombre,
+                tituloDocumento: c.tituloDocumento,
+                versionDocumento: c.versionDocumento,
+                estado: c.estado,
+                fechaEnvioInicial: c.fechaEnvioInicial,
+                fechaFin: c.fechaFin,
+                createdAt: c.createdAt,
+                destinatarios: 0,
+                enviados: 0,
+                aceptados: 0,
+                rechazados: 0,
+                revocados: 0,
+                pendientes: 0,
+                errores: 0,
+                ultimoEnvio: null,
+            };
+            mapa.set(campaniaId, r);
+        }
+        return r;
+    };
+    for (const g of grupos) {
+        const r = fila(g.empresaId, g.campaniaId);
+        if (!r) {
+            continue;
+        }
+        const n = g._count._all;
+        r.destinatarios +=
+            n;
+        r.enviados +=
+            g._count.fechaEnvio;
+        r.ultimoEnvio =
+            fechaMayor(r.ultimoEnvio, g._max.fechaEnvio);
+        switch (g.estado) {
+            case "ACEPTADO":
+                r.aceptados += n;
+                break;
+            case "RECHAZADO":
+                r.rechazados += n;
+                break;
+            case "REVOCADO":
+                r.revocados += n;
+                break;
+            case "ERROR_ENVIO":
+                r.errores += n;
+                break;
+            case "PENDIENTE":
+            case "ENVIADO":
+                r.pendientes += n;
+                break;
+            default:
+                break;
+        }
+    }
+    /* Campañas sin destinatarios: bajo la empresa de la campaña */
+    const conDestinatarios = new Set(grupos.map((g) => g.campaniaId));
+    for (const c of campanias) {
+        if (!conDestinatarios.has(c.id)) {
+            fila(c.empresaId, c.id);
+        }
+    }
+    const resultado = [...porEmpresa.entries()].map(([empresaId, mapa,]) => {
+        const detalle = [...mapa.values()].sort((a, b) => b.createdAt.getTime() -
+            a.createdAt.getTime());
+        const suma = (k) => detalle.reduce((t, d) => t + d[k], 0);
+        return {
+            empresaId,
+            empresaNombre: empresaId === null
+                ? "Sin empresa"
+                : nombreEmpresa.get(empresaId) ??
+                    `Empresa ${empresaId}`,
+            campanias: detalle.length,
+            campaniasEnviadas: detalle.filter((d) => d.enviados >
+                0).length,
+            destinatarios: suma("destinatarios"),
+            enviados: suma("enviados"),
+            aceptados: suma("aceptados"),
+            rechazados: suma("rechazados"),
+            revocados: suma("revocados"),
+            pendientes: suma("pendientes"),
+            errores: suma("errores"),
+            ultimoEnvio: detalle.reduce((f, d) => fechaMayor(f, d.ultimoEnvio), null),
+            campaniasDetalle: detalle,
+        };
+    });
+    /*
+ * Empresas activas sin campañas: solo sin filtro de estado.
+ * Con un estado elegido, se muestran solo las empresas que tienen
+ * campañas en ese estado.
+ */
+    const conFila = new Set(resultado.map((r) => r.empresaId));
+    const activas = params?.estado
+        ? []
+        : await prisma.empresa.findMany({
+            where: {
+                isActive: true,
+            },
+            select: {
+                id_empresa: true,
+                nombre: true,
+            },
+        });
+    for (const e of activas) {
+        if (conFila.has(e.id_empresa)) {
+            continue;
+        }
+        resultado.push({
+            empresaId: e.id_empresa,
+            empresaNombre: e.nombre,
+            campanias: 0,
+            campaniasEnviadas: 0,
+            destinatarios: 0,
+            enviados: 0,
+            aceptados: 0,
+            rechazados: 0,
+            revocados: 0,
+            pendientes: 0,
+            errores: 0,
+            ultimoEnvio: null,
+            campaniasDetalle: [],
+        });
+    }
+    /*
+     * Primero las empresas con campañas (envío más reciente primero),
+     * luego las sin campañas por nombre; "Sin empresa" al final.
+     */
+    return resultado.sort((a, b) => {
+        if (a.empresaId === null) {
+            return 1;
+        }
+        if (b.empresaId === null) {
+            return -1;
+        }
+        if ((a.campanias > 0) !==
+            (b.campanias > 0)) {
+            return a.campanias > 0
+                ? -1
+                : 1;
+        }
+        const fa = a.ultimoEnvio?.getTime() ??
+            0;
+        const fb = b.ultimoEnvio?.getTime() ??
+            0;
+        return fb - fa ||
+            a.empresaNombre.localeCompare(b.empresaNombre, "es");
     });
 }
 //# sourceMappingURL=proteccion-datos.service.js.map

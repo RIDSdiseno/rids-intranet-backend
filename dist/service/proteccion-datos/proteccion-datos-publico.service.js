@@ -3,6 +3,7 @@ import { EstadoCampaniaProteccionDatos, EstadoConsentimientoDatos, Prisma, TipoE
 import { prisma, } from "../../lib/prisma.js";
 import { hashTokenConsentimiento, } from "./proteccion-datos-token.service.js";
 import { crearUrlFirmadaDocumentoProteccionDatos, } from "./proteccion-datos-documentos.service.js";
+import { agregarDocumentosLeypdPublicos, descargarPdfLeypd, documentosLeypdHabilitados, DocumentoLeypdNoDisponibleError, resolverDocumentosLeypd, } from "./proteccion-datos-leypd-documentos.service.js";
 /* =========================================================
    ERROR PÚBLICO DEL MÓDULO
    ========================================================= */
@@ -65,6 +66,7 @@ async function buscarConsentimientoPorToken(token) {
                     id: true,
                     nombre: true,
                     tituloDocumento: true,
+                    empresaId: true,
                     fechaFin: true,
                     estado: true,
                     configuracionConsentimiento: true,
@@ -282,11 +284,23 @@ function validarRespuesta(input, configuracion) {
 /* =========================================================
    SERIALIZAR RESPUESTA PÚBLICA
    ========================================================= */
-async function construirRespuestaPublica(consentimiento) {
+async function construirRespuestaPublica(consentimiento, 
+/** Token en claro: arma los enlaces a documentos Ley PD. */
+token) {
     const configuracionBase = obtenerConfiguracion(consentimiento
         .campania
         .configuracionConsentimiento);
-    const configuracion = await prepararConfiguracionPublica(configuracionBase);
+    const configuracionPreparada = await prepararConfiguracionPublica(configuracionBase);
+    const configuracion = configuracionPreparada
+        ? {
+            ...configuracionPreparada,
+            campos: await agregarDocumentosLeypdPublicos(configuracionPreparada.campos, {
+                token: token.trim(),
+                empresaId: consentimiento.empresaId ??
+                    consentimiento.campania.empresaId,
+            }),
+        }
+        : null;
     return {
         nombre: consentimiento.nombre,
         email: consentimiento.email,
@@ -369,7 +383,81 @@ export async function obtenerConsentimientoPublico(token, contexto) {
         consentimiento.fechaAperturaFormulario =
             ahora;
     }
-    return await construirRespuestaPublica(consentimiento);
+    return await construirRespuestaPublica(consentimiento, token);
+}
+/* =========================================================
+   DOCUMENTO LEY PD (PDF)
+   ========================================================= */
+/**
+ * PDF de un documento Ley PD de la empresa del destinatario,
+ * referenciado en campo.documentosLeypd[indice].
+ */
+export async function obtenerDocumentoLeypdPublico(token, campoKey, indice, contexto) {
+    const consentimiento = await buscarConsentimientoPorToken(token);
+    validarCampaniaPublica(consentimiento
+        .campania
+        .estado);
+    const noDisponible = new ProteccionDatosPublicError(404, "DOCUMENTO_NO_DISPONIBLE", "El documento no está disponible");
+    const empresaId = consentimiento.empresaId ??
+        consentimiento.campania.empresaId;
+    if (!empresaId ||
+        !documentosLeypdHabilitados(empresaId)) {
+        throw noDisponible;
+    }
+    const referencia = obtenerConfiguracion(consentimiento
+        .campania
+        .configuracionConsentimiento)
+        ?.campos
+        .find((campo) => campo.key ===
+        campoKey)
+        ?.documentosLeypd?.[indice];
+    if (!referencia) {
+        throw noDisponible;
+    }
+    const [documento,] = await resolverDocumentosLeypd(empresaId, [
+        referencia,
+    ]);
+    if (!documento) {
+        throw noDisponible;
+    }
+    let contenido;
+    try {
+        contenido =
+            await descargarPdfLeypd(documento);
+    }
+    catch (error) {
+        if (error instanceof
+            DocumentoLeypdNoDisponibleError) {
+            throw new ProteccionDatosPublicError(502, "DOCUMENTO_NO_DISPONIBLE", "No se pudo obtener el documento. Intenta nuevamente en unos minutos.");
+        }
+        throw error;
+    }
+    /* Evidencia: qué versión del documento se entregó */
+    await prisma.consentimientoDatosEvento.create({
+        data: {
+            consentimientoId: consentimiento.id,
+            tipo: TipoEventoConsentimientoDatos
+                .DOCUMENTO_ABIERTO,
+            detalle: toPrismaJson({
+                campo: campoKey,
+                titulo: documento.titulo,
+                ruta: documento.ruta,
+                itemId: documento.itemId,
+                cTag: documento.cTag,
+                modificadoAt: documento.modificadoAt,
+                bytes: contenido.length,
+            }),
+            ip: contexto?.ip ??
+                null,
+            userAgent: contexto
+                ?.userAgent ??
+                null,
+        },
+    });
+    return {
+        nombre: documento.nombre,
+        contenido,
+    };
 }
 /* =========================================================
    RESPONDER CONSENTIMIENTO
@@ -475,7 +563,7 @@ export async function responderConsentimientoPublico(token, input, contexto) {
      * Recuperamos el estado realmente persistido.
      */
     const actualizado = await buscarConsentimientoPorToken(token);
-    return await construirRespuestaPublica(actualizado);
+    return await construirRespuestaPublica(actualizado, token);
 }
 /* =========================================================
    REVOCAR
@@ -552,6 +640,6 @@ export async function revocarConsentimientoPublico(token, input, contexto) {
         });
     });
     const actualizado = await buscarConsentimientoPorToken(token);
-    return await construirRespuestaPublica(actualizado);
+    return await construirRespuestaPublica(actualizado, token);
 }
 //# sourceMappingURL=proteccion-datos-publico.service.js.map

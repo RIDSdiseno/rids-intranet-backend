@@ -18,6 +18,14 @@ import {
     crearUrlFirmadaDocumentoProteccionDatos,
 } from "./proteccion-datos-documentos.service.js";
 
+import {
+    agregarDocumentosLeypdPublicos,
+    descargarPdfLeypd,
+    documentosLeypdHabilitados,
+    DocumentoLeypdNoDisponibleError,
+    resolverDocumentosLeypd,
+} from "./proteccion-datos-leypd-documentos.service.js";
+
 import type {
     ConfiguracionConsentimientoDatos,
     ResponderConsentimientoPublicoInput,
@@ -164,6 +172,9 @@ async function buscarConsentimientoPorToken(
                             true,
 
                         tituloDocumento:
+                            true,
+
+                        empresaId:
                             true,
 
                         fechaFin:
@@ -634,6 +645,10 @@ async function construirRespuestaPublica(
                 typeof buscarConsentimientoPorToken
             >
         >,
+
+    /** Token en claro: arma los enlaces a documentos Ley PD. */
+    token:
+        string,
 ) {
     const configuracionBase =
         obtenerConfiguracion(
@@ -642,10 +657,31 @@ async function construirRespuestaPublica(
                 .configuracionConsentimiento,
         );
 
-    const configuracion =
+    const configuracionPreparada =
         await prepararConfiguracionPublica(
             configuracionBase,
         );
+
+    const configuracion =
+        configuracionPreparada
+            ? {
+                ...configuracionPreparada,
+
+                campos:
+                    await agregarDocumentosLeypdPublicos(
+                        configuracionPreparada.campos,
+
+                        {
+                            token:
+                                token.trim(),
+
+                            empresaId:
+                                consentimiento.empresaId ??
+                                consentimiento.campania.empresaId,
+                        },
+                    ),
+            }
+            : null;
 
     return {
         nombre:
@@ -798,7 +834,170 @@ export async function obtenerConsentimientoPublico(
 
     return await construirRespuestaPublica(
         consentimiento,
+        token,
     );
+}
+
+/* =========================================================
+   DOCUMENTO LEY PD (PDF)
+   ========================================================= */
+
+/**
+ * PDF de un documento Ley PD de la empresa del destinatario,
+ * referenciado en campo.documentosLeypd[indice].
+ */
+export async function obtenerDocumentoLeypdPublico(
+    token: string,
+
+    campoKey: string,
+
+    indice: number,
+
+    contexto?:
+        ContextoRequestPublico,
+) {
+    const consentimiento =
+        await buscarConsentimientoPorToken(
+            token,
+        );
+
+    validarCampaniaPublica(
+        consentimiento
+            .campania
+            .estado,
+    );
+
+    const noDisponible =
+        new ProteccionDatosPublicError(
+            404,
+            "DOCUMENTO_NO_DISPONIBLE",
+            "El documento no está disponible",
+        );
+
+    const empresaId =
+        consentimiento.empresaId ??
+        consentimiento.campania.empresaId;
+
+    if (
+        !empresaId ||
+        !documentosLeypdHabilitados(
+            empresaId,
+        )
+    ) {
+        throw noDisponible;
+    }
+
+    const referencia =
+        obtenerConfiguracion(
+            consentimiento
+                .campania
+                .configuracionConsentimiento,
+        )
+            ?.campos
+            .find(
+                (campo) =>
+                    campo.key ===
+                    campoKey,
+            )
+            ?.documentosLeypd
+        ?.[indice];
+
+    if (
+        !referencia
+    ) {
+        throw noDisponible;
+    }
+
+    const [
+        documento,
+    ] =
+        await resolverDocumentosLeypd(
+            empresaId,
+            [
+                referencia,
+            ],
+        );
+
+    if (
+        !documento
+    ) {
+        throw noDisponible;
+    }
+
+    let contenido:
+        Buffer;
+
+    try {
+        contenido =
+            await descargarPdfLeypd(
+                documento,
+            );
+    } catch (error) {
+        if (
+            error instanceof
+            DocumentoLeypdNoDisponibleError
+        ) {
+            throw new ProteccionDatosPublicError(
+                502,
+                "DOCUMENTO_NO_DISPONIBLE",
+                "No se pudo obtener el documento. Intenta nuevamente en unos minutos.",
+            );
+        }
+
+        throw error;
+    }
+
+    /* Evidencia: qué versión del documento se entregó */
+    await prisma.consentimientoDatosEvento.create({
+        data: {
+            consentimientoId:
+                consentimiento.id,
+
+            tipo:
+                TipoEventoConsentimientoDatos
+                    .DOCUMENTO_ABIERTO,
+
+            detalle:
+                toPrismaJson({
+                    campo:
+                        campoKey,
+
+                    titulo:
+                        documento.titulo,
+
+                    ruta:
+                        documento.ruta,
+
+                    itemId:
+                        documento.itemId,
+
+                    cTag:
+                        documento.cTag,
+
+                    modificadoAt:
+                        documento.modificadoAt,
+
+                    bytes:
+                        contenido.length,
+                }),
+
+            ip:
+                contexto?.ip ??
+                null,
+
+            userAgent:
+                contexto
+                    ?.userAgent ??
+                null,
+        },
+    });
+
+    return {
+        nombre:
+            documento.nombre,
+
+        contenido,
+    };
 }
 
 /* =========================================================
@@ -1003,6 +1202,7 @@ export async function responderConsentimientoPublico(
 
     return await construirRespuestaPublica(
         actualizado,
+        token,
     );
 }
 
@@ -1158,5 +1358,6 @@ export async function revocarConsentimientoPublico(
 
     return await construirRespuestaPublica(
         actualizado,
+        token
     );
 }

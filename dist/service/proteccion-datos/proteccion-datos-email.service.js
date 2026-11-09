@@ -555,4 +555,237 @@ export async function enviarCampaniaProteccionDatos(campaniaId) {
         resultados,
     };
 }
+/* =========================================================
+   RECORDATORIO
+
+   Para destinatarios que recibieron el correo y aún no
+   responden (estado ENVIADO). Sirve para toda la campaña o
+   para destinatarios específicos (consentimientoIds).
+
+   El enlace se guarda solo como hash, así que el recordatorio
+   lleva un enlace NUEVO: el token se reemplaza recién después
+   de que el correo sale bien (si el envío falla, el enlace
+   anterior sigue vigente). El enlace del correo anterior deja
+   de funcionar.
+   ========================================================= */
+/** Horas mínimas entre un correo y el recordatorio siguiente al mismo destinatario. */
+const RECORDATORIO_INTERVALO_HORAS = Math.max(0, Number(process.env
+    .PROTECCION_DATOS_RECORDATORIO_HORAS ??
+    12) || 0);
+function formatearPlazoCorreo(fecha) {
+    if (!fecha) {
+        return null;
+    }
+    return new Intl.DateTimeFormat("es-CL", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "America/Santiago",
+    }).format(fecha);
+}
+export async function enviarRecordatorioCampaniaProteccionDatos(campaniaId, consentimientoIds) {
+    if (!Number.isInteger(campaniaId) ||
+        campaniaId <= 0) {
+        throw new Error("ID de campaña inválido");
+    }
+    const campania = await prisma
+        .campaniaProteccionDatos
+        .findUnique({
+        where: {
+            id: campaniaId,
+        },
+        select: {
+            id: true,
+            estado: true,
+            asuntoCorreo: true,
+            cuerpoCorreoHtml: true,
+            fechaFin: true,
+        },
+    });
+    if (!campania) {
+        throw new Error("Campaña de protección de datos no encontrada");
+    }
+    if (campania.estado !==
+        EstadoCampaniaProteccionDatos.ACTIVA) {
+        throw new Error("Solo una campaña ACTIVA puede enviar recordatorios");
+    }
+    const ids = (consentimientoIds ?? []).filter((id) => Number.isInteger(id) &&
+        id > 0);
+    const destinatarios = await prisma
+        .consentimientoDatos
+        .findMany({
+        where: {
+            campaniaId: campania.id,
+            estado: EstadoConsentimientoDatos.ENVIADO,
+            ...(ids.length > 0
+                ? {
+                    id: {
+                        in: ids,
+                    },
+                }
+                : {}),
+        },
+        select: {
+            id: true,
+            nombre: true,
+            email: true,
+            empresaNombre: true,
+            versionDocumento: true,
+            eventos: {
+                where: {
+                    tipo: {
+                        in: [
+                            TipoEventoConsentimientoDatos.ENVIADO,
+                            TipoEventoConsentimientoDatos.REENVIADO,
+                        ],
+                    },
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+                take: 1,
+                select: {
+                    createdAt: true,
+                },
+            },
+        },
+        orderBy: {
+            id: "asc",
+        },
+    });
+    if (destinatarios.length ===
+        0) {
+        throw new Error("No hay destinatarios sin responder para enviar un recordatorio");
+    }
+    const baseUrl = getPublicBaseUrl();
+    const firma = await obtenerFirmaMailer();
+    const plazo = formatearPlazoCorreo(campania.fechaFin);
+    const intro = `
+            <p style="margin:0 0 16px;padding:12px 16px;background:#FFF7E6;border-left:4px solid #F5A623;border-radius:6px;font-family:Arial,sans-serif;">
+                <strong>Recordatorio:</strong> aún no registramos tu respuesta${plazo
+        ? `. El plazo para responder es hasta el <strong>${escaparHtml(plazo)}</strong>`
+        : ""}. Usa el enlace de este correo (el del correo anterior ya no es válido).
+            </p>
+        `.trim();
+    const limite = Date.now() -
+        RECORDATORIO_INTERVALO_HORAS *
+            3_600_000;
+    const resultados = [];
+    let enviados = 0;
+    let errores = 0;
+    let omitidos = 0;
+    for (const destinatario of destinatarios) {
+        const ultimoCorreo = destinatario.eventos[0]?.createdAt;
+        if (ultimoCorreo &&
+            ultimoCorreo.getTime() >
+                limite) {
+            omitidos +=
+                1;
+            continue;
+        }
+        const token = generarTokenConsentimiento();
+        const publicUrl = `${baseUrl}/${token}`;
+        let bodyHtml = `
+                ${intro}
+
+                ${personalizarCorreo({
+            bodyHtml: campania.cuerpoCorreoHtml,
+            nombre: destinatario.nombre,
+            email: destinatario.email,
+            empresaNombre: destinatario.empresaNombre,
+            versionDocumento: destinatario.versionDocumento,
+            publicUrl,
+        })}
+            `.trim();
+        if (firma.html) {
+            bodyHtml =
+                `
+                    ${bodyHtml}
+
+                    ${firma.html}
+                `.trim();
+        }
+        try {
+            await sendEmail({
+                to: destinatario.email,
+                subject: `Recordatorio: ${campania.asuntoCorreo}`,
+                bodyHtml,
+                attachments: [],
+            });
+        }
+        catch (error) {
+            const detalle = error instanceof Error
+                ? error.message
+                : "Error desconocido";
+            /* El enlace anterior sigue vigente: no se toca el estado */
+            await prisma
+                .consentimientoDatosEvento
+                .create({
+                data: {
+                    consentimientoId: destinatario.id,
+                    tipo: TipoEventoConsentimientoDatos.ERROR_ENVIO,
+                    detalle: {
+                        email: destinatario.email,
+                        recordatorio: true,
+                        error: detalle,
+                    },
+                },
+            });
+            errores +=
+                1;
+            resultados.push({
+                consentimientoId: destinatario.id,
+                email: destinatario.email,
+                ok: false,
+                error: detalle,
+            });
+            continue;
+        }
+        /*
+         * Correo enviado: ahora sí se reemplaza el enlace.
+         * Si justo respondió (ya no está ENVIADO), no se toca.
+         */
+        await prisma.$transaction([
+            prisma
+                .consentimientoDatos
+                .updateMany({
+                where: {
+                    id: destinatario.id,
+                    estado: EstadoConsentimientoDatos.ENVIADO,
+                },
+                data: {
+                    tokenHash: hashTokenConsentimiento(token),
+                    tokenExpiresAt: null,
+                },
+            }),
+            prisma
+                .consentimientoDatosEvento
+                .create({
+                data: {
+                    consentimientoId: destinatario.id,
+                    tipo: TipoEventoConsentimientoDatos.REENVIADO,
+                    detalle: {
+                        email: destinatario.email,
+                        recordatorio: true,
+                    },
+                },
+            }),
+        ]);
+        enviados +=
+            1;
+        resultados.push({
+            consentimientoId: destinatario.id,
+            email: destinatario.email,
+            ok: true,
+        });
+    }
+    return {
+        campaniaId: campania.id,
+        procesados: resultados.length,
+        enviados,
+        errores,
+        omitidos,
+        resultados,
+    };
+}
 //# sourceMappingURL=proteccion-datos-email.service.js.map

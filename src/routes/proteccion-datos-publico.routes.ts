@@ -4,6 +4,7 @@ import {
 
 import {
     getConsentimientoPublico,
+    getDocumentoLeypdPublico,
     postResponderConsentimientoPublico,
     postRevocarConsentimientoPublico,
 } from "../controllers/controllers-proteccion-datos/proteccion-datos-publico.controller.js";
@@ -23,6 +24,16 @@ const router =
 router.get(
     "/:token",
     getConsentimientoPublico,
+);
+
+/**
+ * PDF de un documento Ley PD de la empresa del destinatario.
+ *
+ * NO requiere JWT.
+ */
+router.get(
+    "/:token/documento-leypd/:campo/:indice",
+    getDocumentoLeypdPublico,
 );
 
 /**

@@ -12,4 +12,6 @@ export declare function getDestinatariosCampania(req: Request, res: Response, ne
 export declare function deleteDestinatarioCampania(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
 export declare function uploadDocumentoProteccionDatosController(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
 export declare function getEventosConsentimiento(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
+export declare function getResumenEmpresasProteccionDatos(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
+export declare function postRecordatorioCampaniaProteccionDatos(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
 //# sourceMappingURL=proteccion-datos.controller.d.ts.map

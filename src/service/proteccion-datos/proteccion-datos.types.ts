@@ -43,7 +43,26 @@ export type CampoConsentimiento = {
 
     documentos?:
     DocumentoCampoConsentimiento[];
+
+    documentosLeypd?:
+    DocumentoLeypdCampoConsentimiento[];
 };
+
+/** Referencia a un documento del catálogo Ley PD. */
+export type DocumentoLeypdCampoConsentimiento = {
+    /** Número de elemento Ley PD (1-13). */
+    elemento:
+    number;
+
+    /** nombreBase del catálogo, p. ej. "Politica_Privacidad". */
+    nombreBase:
+    string;
+
+    /** Título que ve el destinatario. */
+    titulo:
+    string;
+};
+
 
 /* =========================================================
    CONFIGURACIÓN
@@ -150,6 +169,9 @@ export type CrearCampaniaProteccionDatosInput = {
 };
 
 export type ActualizarCampaniaProteccionDatosInput = {
+
+   empresaId?: number | null;
+
     nombre?: string;
 
     descripcion?: string | null;

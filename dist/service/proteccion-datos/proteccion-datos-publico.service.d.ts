@@ -19,7 +19,7 @@ export declare function obtenerConsentimientoPublico(token: string, contexto?: C
         hash: string;
     };
     configuracion: {
-        campos: {
+        campos: Omit<{
             documentos: {
                 titulo: string;
                 nombre: string;
@@ -35,7 +35,8 @@ export declare function obtenerConsentimientoPublico(token: string, contexto?: C
             obligatorio: boolean;
             placeholder?: string;
             opciones?: import("./proteccion-datos.types.js").OpcionCampoConsentimiento[];
-        }[];
+            documentosLeypd?: import("./proteccion-datos.types.js").DocumentoLeypdCampoConsentimiento[];
+        }, "documentosLeypd">[];
         schemaVersion: 2;
         tituloFormulario: string;
         descripcionFormulario?: string;
@@ -49,6 +50,14 @@ export declare function obtenerConsentimientoPublico(token: string, contexto?: C
     fechaRevocacion: Date | null;
     respuesta: import("./proteccion-datos.types.js").RespuestaConsentimientoDatos | null;
 }>;
+/**
+ * PDF de un documento Ley PD de la empresa del destinatario,
+ * referenciado en campo.documentosLeypd[indice].
+ */
+export declare function obtenerDocumentoLeypdPublico(token: string, campoKey: string, indice: number, contexto?: ContextoRequestPublico): Promise<{
+    nombre: string;
+    contenido: Buffer<ArrayBufferLike>;
+}>;
 export declare function responderConsentimientoPublico(token: string, input: ResponderConsentimientoPublicoInput, contexto?: ContextoRequestPublico): Promise<{
     nombre: string | null;
     email: string;
@@ -60,7 +69,7 @@ export declare function responderConsentimientoPublico(token: string, input: Res
         hash: string;
     };
     configuracion: {
-        campos: {
+        campos: Omit<{
             documentos: {
                 titulo: string;
                 nombre: string;
@@ -76,7 +85,8 @@ export declare function responderConsentimientoPublico(token: string, input: Res
             obligatorio: boolean;
             placeholder?: string;
             opciones?: import("./proteccion-datos.types.js").OpcionCampoConsentimiento[];
-        }[];
+            documentosLeypd?: import("./proteccion-datos.types.js").DocumentoLeypdCampoConsentimiento[];
+        }, "documentosLeypd">[];
         schemaVersion: 2;
         tituloFormulario: string;
         descripcionFormulario?: string;
@@ -101,7 +111,7 @@ export declare function revocarConsentimientoPublico(token: string, input?: Revo
         hash: string;
     };
     configuracion: {
-        campos: {
+        campos: Omit<{
             documentos: {
                 titulo: string;
                 nombre: string;
@@ -117,7 +127,8 @@ export declare function revocarConsentimientoPublico(token: string, input?: Revo
             obligatorio: boolean;
             placeholder?: string;
             opciones?: import("./proteccion-datos.types.js").OpcionCampoConsentimiento[];
-        }[];
+            documentosLeypd?: import("./proteccion-datos.types.js").DocumentoLeypdCampoConsentimiento[];
+        }, "documentosLeypd">[];
         schemaVersion: 2;
         tituloFormulario: string;
         descripcionFormulario?: string;

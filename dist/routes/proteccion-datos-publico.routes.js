@@ -1,5 +1,5 @@
 import { Router, } from "express";
-import { getConsentimientoPublico, postResponderConsentimientoPublico, postRevocarConsentimientoPublico, } from "../controllers/controllers-proteccion-datos/proteccion-datos-publico.controller.js";
+import { getConsentimientoPublico, getDocumentoLeypdPublico, postResponderConsentimientoPublico, postRevocarConsentimientoPublico, } from "../controllers/controllers-proteccion-datos/proteccion-datos-publico.controller.js";
 const router = Router();
 /* =========================================================
    PROTECCIÓN DE DATOS — PÚBLICO
@@ -10,6 +10,12 @@ const router = Router();
  * NO requiere JWT.
  */
 router.get("/:token", getConsentimientoPublico);
+/**
+ * PDF de un documento Ley PD de la empresa del destinatario.
+ *
+ * NO requiere JWT.
+ */
+router.get("/:token/documento-leypd/:campo/:indice", getDocumentoLeypdPublico);
 /**
  * Registrar respuesta.
  *

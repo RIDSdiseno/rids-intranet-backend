@@ -1,5 +1,5 @@
 import { Router, } from "express";
-import { deleteDestinatarioCampania, getCampaniaProteccionDatos, getCampaniasProteccionDatos, getDestinatariosCampania, patchCampaniaProteccionDatos, postActivarCampaniaProteccionDatos, postCancelarCampaniaProteccionDatos, postCampaniaProteccionDatos, postDestinatariosCampania, postFinalizarCampaniaProteccionDatos, postEnviarCampaniaProteccionDatos, uploadDocumentoProteccionDatosController, getEventosConsentimiento } from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
+import { deleteDestinatarioCampania, getCampaniaProteccionDatos, getCampaniasProteccionDatos, getDestinatariosCampania, patchCampaniaProteccionDatos, postActivarCampaniaProteccionDatos, postCancelarCampaniaProteccionDatos, postCampaniaProteccionDatos, postDestinatariosCampania, postFinalizarCampaniaProteccionDatos, postEnviarCampaniaProteccionDatos, postRecordatorioCampaniaProteccionDatos, uploadDocumentoProteccionDatosController, getEventosConsentimiento, getResumenEmpresasProteccionDatos } from "../controllers/controllers-proteccion-datos/proteccion-datos.controller.js";
 import { uploadDocumentoProteccionDatos, } from "../middlewares/proteccion-datos-documentos.middleware.js";
 import { auth, } from "../middlewares/auth.js";
 import { onlyRole, } from "../middlewares/roles.js";
@@ -10,6 +10,10 @@ const router = Router();
  * Las rutas públicas viven en proteccion-datos-publico.routes.ts.
  */
 router.use(auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"));
+/* =========================================================
+   RESUMEN POR EMPRESA
+   ========================================================= */
+router.get("/empresas-resumen", getResumenEmpresasProteccionDatos);
 /* =========================================================
    CAMPAÑAS
    ========================================================= */
@@ -30,6 +34,7 @@ router.post("/documentos", uploadDocumentoProteccionDatos.single("file"), upload
    ========================================================= */
 router.post("/campanias/:id/activar", postActivarCampaniaProteccionDatos);
 router.post("/campanias/:id/enviar", postEnviarCampaniaProteccionDatos);
+router.post("/campanias/:id/recordatorio", postRecordatorioCampaniaProteccionDatos);
 router.post("/campanias/:id/finalizar", postFinalizarCampaniaProteccionDatos);
 router.post("/campanias/:id/cancelar", postCancelarCampaniaProteccionDatos);
 export default router;

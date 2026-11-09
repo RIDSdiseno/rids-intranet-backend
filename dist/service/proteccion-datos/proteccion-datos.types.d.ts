@@ -13,6 +13,16 @@ export type CampoConsentimiento = {
     placeholder?: string;
     opciones?: OpcionCampoConsentimiento[];
     documentos?: DocumentoCampoConsentimiento[];
+    documentosLeypd?: DocumentoLeypdCampoConsentimiento[];
+};
+/** Referencia a un documento del catálogo Ley PD. */
+export type DocumentoLeypdCampoConsentimiento = {
+    /** Número de elemento Ley PD (1-13). */
+    elemento: number;
+    /** nombreBase del catálogo, p. ej. "Politica_Privacidad". */
+    nombreBase: string;
+    /** Título que ve el destinatario. */
+    titulo: string;
 };
 export type ConfiguracionConsentimientoDatos = {
     schemaVersion: 2;
@@ -55,6 +65,7 @@ export type CrearCampaniaProteccionDatosInput = {
     leypdElementoNumero?: number | null;
 };
 export type ActualizarCampaniaProteccionDatosInput = {
+    empresaId?: number | null;
     nombre?: string;
     descripcion?: string | null;
     tituloDocumento?: string;

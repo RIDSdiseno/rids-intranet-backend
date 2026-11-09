@@ -7,6 +7,7 @@ import type {
 
 import {
     obtenerConsentimientoPublico,
+    obtenerDocumentoLeypdPublico,
     ProteccionDatosPublicError,
     responderConsentimientoPublico,
     revocarConsentimientoPublico,
@@ -137,6 +138,116 @@ export async function getConsentimientoPublico(
 
                 data,
             });
+    } catch (
+    error
+    ) {
+        return responderErrorPublico(
+            error,
+            res,
+            next,
+        );
+    }
+}
+
+/* =========================================================
+   GET
+   /publico/:token/documento-leypd/:campo/:indice
+   ========================================================= */
+
+export async function getDocumentoLeypdPublico(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) {
+    try {
+        const token =
+            obtenerToken(
+                req,
+            );
+
+        const campo =
+            typeof req.params.campo ===
+                "string"
+                ? req.params.campo
+                : "";
+
+        const indice =
+            Number(
+                req.params.indice,
+            );
+
+        if (
+            !/^[a-z0-9_]+$/.test(
+                campo,
+            ) ||
+            !Number.isInteger(
+                indice,
+            ) ||
+            indice < 0 ||
+            indice > 20
+        ) {
+            return res
+                .status(
+                    404,
+                )
+                .json({
+                    ok:
+                        false,
+
+                    code:
+                        "DOCUMENTO_NO_DISPONIBLE",
+
+                    message:
+                        "El documento no está disponible",
+                });
+        }
+
+        const documento =
+            await obtenerDocumentoLeypdPublico(
+                token,
+                campo,
+                indice,
+
+                {
+                    ip:
+                        obtenerIp(
+                            req,
+                        ),
+
+                    userAgent:
+                        obtenerUserAgent(
+                            req,
+                        ),
+                },
+            );
+
+        res.setHeader(
+            "Content-Type",
+            "application/pdf",
+        );
+
+        res.setHeader(
+            "Content-Disposition",
+            `inline; filename*=UTF-8''${encodeURIComponent(documento.nombre)}`,
+        );
+
+        res.setHeader(
+            "Cache-Control",
+            "private, no-store",
+        );
+
+        res.setHeader(
+            "X-Content-Type-Options",
+            "nosniff",
+        );
+
+        return res
+            .status(
+                200,
+            )
+            .send(
+                documento.contenido,
+            );
     } catch (
     error
     ) {

@@ -17,6 +17,7 @@ import {
     finalizarCampaniaProteccionDatos,
     listarCampaniasProteccionDatos,
     obtenerCampaniaProteccionDatos,
+    resumenEmpresasProteccionDatos
 } from "../../service/proteccion-datos/proteccion-datos.service.js";
 
 import type {
@@ -35,6 +36,7 @@ import {
 
 import {
     enviarCampaniaProteccionDatos,
+    enviarRecordatorioCampaniaProteccionDatos
 } from "../../service/proteccion-datos/proteccion-datos-email.service.js";
 
 import {
@@ -804,6 +806,20 @@ export async function patchCampaniaProteccionDatos(
             }
         }
 
+        const empresaId =
+            parseEnteroBodyOpcional(
+                body.empresaId,
+                "empresaId",
+            );
+
+        if (
+            empresaId !==
+            undefined
+        ) {
+            input.empresaId =
+                empresaId;
+        }
+
         const data =
             await actualizarCampaniaProteccionDatos(
                 id,
@@ -1334,6 +1350,151 @@ export async function getEventosConsentimiento(
     } catch (
     error
     ) {
+
+        return next(
+            error,
+        );
+    }
+}
+
+/* =========================================================
+   GET
+   /proteccion-datos/empresas-resumen
+   ========================================================= */
+
+export async function getResumenEmpresasProteccionDatos(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) {
+    try {
+        const estado =
+            parseEstadoCampania(
+                req.query.estado,
+            );
+
+        const data =
+            await resumenEmpresasProteccionDatos(
+                estado !==
+                    undefined
+                    ? {
+                        estado,
+                    }
+                    : undefined,
+            );
+
+        return res
+            .status(
+                200,
+            )
+            .json({
+                ok:
+                    true,
+
+                data,
+            });
+    } catch (
+    error
+    ) {
+        return next(
+            error,
+        );
+    }
+}
+
+/* =========================================================
+   POST
+   /proteccion-datos/campanias/:id/recordatorio
+   body: { consentimientoIds?: number[] }  (vacío = todos los que no responden)
+   ========================================================= */
+
+export async function postRecordatorioCampaniaProteccionDatos(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) {
+    try {
+
+        const id =
+            parseId(
+                req.params.id,
+                "ID de campaña",
+            );
+
+        const ids =
+            req.body?.consentimientoIds;
+
+        if (
+            ids !== undefined &&
+            (
+                !Array.isArray(ids) ||
+                ids.some(
+                    (x: unknown) =>
+                        !Number.isInteger(x),
+                )
+            )
+        ) {
+            return res
+                .status(
+                    400,
+                )
+                .json({
+                    ok:
+                        false,
+
+                    error:
+                        "consentimientoIds debe ser una lista de números",
+                });
+        }
+
+        const data =
+            await enviarRecordatorioCampaniaProteccionDatos(
+                id,
+                ids as number[] | undefined,
+            );
+
+        return res
+            .status(
+                200,
+            )
+            .json({
+                ok:
+                    true,
+
+                message:
+                    data.errores === 0
+                        ? "Recordatorio enviado"
+                        : "El recordatorio se envió con algunos errores",
+
+                data,
+            });
+
+    } catch (
+    error
+    ) {
+
+        if (
+            error instanceof Error &&
+            (
+                error.message ===
+                "Solo una campaña ACTIVA puede enviar recordatorios" ||
+
+                error.message ===
+                "No hay destinatarios sin responder para enviar un recordatorio"
+            )
+        ) {
+            return res
+                .status(
+                    409,
+                )
+                .json({
+                    ok:
+                        false,
+
+                    error:
+                        error.message,
+                });
+        }
 
         return next(
             error,

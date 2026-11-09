@@ -250,4 +250,42 @@ export declare function cancelarCampaniaProteccionDatos(id: number): Promise<{
     fechaEnvioInicial: Date | null;
     leypdElementoNumero: number | null;
 }>;
+export type ResumenCampaniaEmpresa = {
+    id: number;
+    nombre: string;
+    tituloDocumento: string;
+    versionDocumento: string;
+    estado: EstadoCampaniaProteccionDatos;
+    fechaEnvioInicial: Date | null;
+    fechaFin: Date | null;
+    createdAt: Date;
+    /** Destinatarios de ESTA empresa en la campaña. */
+    destinatarios: number;
+    enviados: number;
+    aceptados: number;
+    rechazados: number;
+    revocados: number;
+    /** Sin respuesta todavía (pendientes de envío o enviados sin responder). */
+    pendientes: number;
+    errores: number;
+    ultimoEnvio: Date | null;
+};
+export type ResumenEmpresaProteccionDatos = {
+    empresaId: number | null;
+    empresaNombre: string;
+    campanias: number;
+    campaniasEnviadas: number;
+    destinatarios: number;
+    enviados: number;
+    aceptados: number;
+    rechazados: number;
+    revocados: number;
+    pendientes: number;
+    errores: number;
+    ultimoEnvio: Date | null;
+    campaniasDetalle: ResumenCampaniaEmpresa[];
+};
+export declare function resumenEmpresasProteccionDatos(params?: {
+    estado?: EstadoCampaniaProteccionDatos;
+}): Promise<ResumenEmpresaProteccionDatos[]>;
 //# sourceMappingURL=proteccion-datos.service.d.ts.map
