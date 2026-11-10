@@ -283,6 +283,23 @@ export async function crearSuscripcion(
                 });
         }
 
+        if (
+            message ===
+            "CORREO_AVISO_INVALIDO"
+        ) {
+            return res
+                .status(
+                    400
+                )
+                .json({
+                    ok:
+                        false,
+
+                    error:
+                        "Revisa los correos de aviso: deben ser válidos y como máximo 10.",
+                });
+        }
+
         console.error(
             error
         );

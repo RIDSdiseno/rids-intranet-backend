@@ -3,12 +3,18 @@
 import type { Request, Response } from "express";
 
 import {
+    AreaGestioo,
     EstadoRecordatorio,
     OrigenRecordatorio,
     Prisma,
+    TicketStatus,
 } from "@prisma/client";
 
 import { prismaBase as prisma } from "../lib/prisma.js";
+
+import {
+    vencimientosSuscripcionesCampana,
+} from "../service/suscripciones-contratos/suscripciones-vencimientos.service.js";
 
 const DIAS_EXPIRACION_RECORDATORIO =
     3;
@@ -289,6 +295,258 @@ async function expirarRecordatoriosPendientes(
 }
 
 /* =====================================================
+   ÓRDENES DE TALLER PENDIENTES (CALCULADO EN VIVO)
+===================================================== */
+
+/** Roles internos que ven las órdenes de taller en la campana. */
+const ROLES_TALLER_CAMPANA = new Set([
+    "ADMIN",
+    "ADMINISTRACION",
+    "TECNICO",
+    "VENTAS",
+]);
+
+/**
+ * Estados que cierran una orden.
+ * DetalleTrabajoGestioo.estado es texto libre: se compara sin mayúsculas.
+ */
+const ESTADOS_TALLER_CERRADOS = [
+    "COMPLETADA",
+    "COMPLETADO",
+    "FINALIZADA",
+    "FINALIZADO",
+    "CANCELADA",
+    "CANCELADO",
+];
+
+const MAX_ORDENES_TALLER_CAMPANA = 50;
+
+/**
+ * Órdenes abiertas = ENTRADA (una fila por orden) que aún no
+ * tiene salida. Al registrar la SALIDA, la ENTRADA pasa a COMPLETADA.
+ */
+async function obtenerOrdenesTallerPendientes(
+    rol: string | null | undefined
+) {
+    if (!rol || !ROLES_TALLER_CAMPANA.has(rol)) {
+        return [];
+    }
+
+    const where: Prisma.DetalleTrabajoGestiooWhereInput = {
+        area: AreaGestioo.ENTRADA,
+
+        OR: [
+            { estado: null },
+            {
+                NOT: ESTADOS_TALLER_CERRADOS.map(
+                    (estado) => ({
+                        estado: {
+                            equals: estado,
+                            mode: Prisma.QueryMode.insensitive,
+                        },
+                    })
+                ),
+            },
+        ],
+    };
+
+    return prisma.detalleTrabajoGestioo.findMany({
+        where,
+
+        orderBy: [
+            { fechaIngreso: "asc" },
+            { fecha: "asc" },
+        ],
+
+        take: MAX_ORDENES_TALLER_CAMPANA,
+
+        select: {
+            id: true,
+            numeroOrden: true,
+            fecha: true,
+            fechaIngreso: true,
+            tipoTrabajo: true,
+            descripcion: true,
+            estado: true,
+            prioridad: true,
+            tecnicoId: true,
+            tecnico: {
+                select: { nombre: true },
+            },
+            entidad: {
+                select: { nombre: true },
+            },
+            equipo: {
+                select: {
+                    marca: true,
+                    modelo: true,
+                    serial: true,
+                },
+            },
+        },
+    });
+}
+
+/* =====================================================
+   CANCELAR RECORDATORIOS DE TICKETS QUE YA NO APORTAN
+===================================================== */
+
+/**
+ * Estados de ticket que ya no requieren aviso.
+ * Quita RESOLVED si quieres seguir viendo los resueltos.
+ */
+const ESTADOS_TICKET_SIN_AVISO: TicketStatus[] = [
+    TicketStatus.RESOLVED,
+    TicketStatus.CLOSED,
+];
+
+/**
+ * Cancela (no borra) los recordatorios pendientes del técnico
+ * cuyo ticket ya no requiere atención:
+ * - RESOLVED o CLOSED;
+ * - eliminado (deletedAt);
+ * - inexistente (relationMode = "prisma" no garantiza integridad).
+ *
+ * Se ejecuta al cargar la campana, igual que la expiración de 3 días.
+ */
+async function cancelarRecordatoriosTicketsCerrados(
+    tecnicoId: number
+): Promise<number> {
+    const pendientes =
+        await prisma.recordatorio.findMany({
+            where: {
+                destinatarioId:
+                    tecnicoId,
+
+                estado:
+                    EstadoRecordatorio.PENDIENTE,
+
+                origen:
+                    OrigenRecordatorio.TICKET,
+
+                ticketId: {
+                    not: null,
+                },
+            },
+
+            select: {
+                id: true,
+                ticketId: true,
+            },
+        });
+
+    if (
+        pendientes.length ===
+        0
+    ) {
+        return 0;
+    }
+
+    const ticketIds =
+        Array.from(
+            new Set(
+                pendientes
+                    .map(
+                        (recordatorio) =>
+                            recordatorio.ticketId
+                    )
+                    .filter(
+                        (
+                            id
+                        ): id is number =>
+                            typeof id ===
+                            "number"
+                    )
+            )
+        );
+
+    /* Tickets que SÍ siguen necesitando atención */
+    const vigentes =
+        await prisma.ticket.findMany({
+            where: {
+                id: {
+                    in:
+                        ticketIds,
+                },
+
+                deletedAt:
+                    null,
+
+                status: {
+                    notIn:
+                        ESTADOS_TICKET_SIN_AVISO,
+                },
+            },
+
+            select: {
+                id: true,
+            },
+        });
+
+    const idsVigentes =
+        new Set(
+            vigentes.map(
+                (ticket) =>
+                    ticket.id
+            )
+        );
+
+    const recordatorioIds =
+        pendientes
+            .filter(
+                (recordatorio) =>
+                    recordatorio.ticketId !==
+                    null &&
+                    !idsVigentes.has(
+                        recordatorio.ticketId
+                    )
+            )
+            .map(
+                (recordatorio) =>
+                    recordatorio.id
+            );
+
+    if (
+        recordatorioIds.length ===
+        0
+    ) {
+        return 0;
+    }
+
+    const ahora =
+        new Date();
+
+    const resultado =
+        await prisma.recordatorio.updateMany({
+            where: {
+                id: {
+                    in:
+                        recordatorioIds,
+                },
+
+                estado:
+                    EstadoRecordatorio.PENDIENTE,
+            },
+
+            data: {
+                estado:
+                    EstadoRecordatorio.CANCELADO,
+
+                canceladoAt:
+                    ahora,
+
+                leidoAt:
+                    ahora,
+
+                completadoAt:
+                    null,
+            },
+        });
+
+    return resultado.count;
+}
+
+/* =====================================================
    CREAR RECORDATORIO
 ===================================================== */
 
@@ -470,6 +728,11 @@ export async function obtenerMisRecordatorios(
  * expirar automáticamente recordatorios
  * pendientes que lleven más de 3 días vencidos.
  */
+        /* Tickets cerrados, resueltos o eliminados ya no aportan */
+        await cancelarRecordatoriosTicketsCerrados(
+            tecnicoId
+        );
+
         await expirarRecordatoriosPendientes(
             tecnicoId
         );
@@ -569,6 +832,21 @@ export async function obtenerMisRecordatorios(
                             modelo: true,
                         },
                     },
+
+                    suscripcion: {
+                        select: {
+                            id: true,
+                            empresaId: true,
+                            productoPlan: true,
+                            fechaRenovacion: true,
+                            fechaTermino: true,
+                            empresa: {
+                                select: {
+                                    nombre: true,
+                                },
+                            },
+                        },
+                    },
                 },
             });
 
@@ -610,9 +888,36 @@ export async function obtenerMisRecordatorios(
                 },
             });
 
+        const rol =
+            (
+                req as Request & {
+                    user?: { rol?: string };
+                }
+            ).user?.rol;
+
+        /* Taller y vencimientos: solo roles internos (no CLIENTE) */
+        const esInterno =
+            !!rol &&
+            ROLES_TALLER_CAMPANA.has(rol);
+
+        const [
+            taller,
+            suscripciones,
+        ] = await Promise.all([
+            obtenerOrdenesTallerPendientes(
+                rol
+            ),
+
+            esInterno
+                ? vencimientosSuscripcionesCampana()
+                : Promise.resolve([]),
+        ]);
+
         return res.json({
             data: recordatorios,
             pendientesNoLeidos,
+            taller,
+            suscripciones,
         });
     } catch (error) {
         console.error(

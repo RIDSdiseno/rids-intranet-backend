@@ -107,7 +107,7 @@ model ResponsableSucursal {
 
 model DetalleEmpresa {
   id          Int     @id @default(autoincrement())
-  rut         String  @unique
+  rut         String? @unique
   direccion   String?
   telefono    String?
   email       String?
@@ -321,10 +321,15 @@ model SuscripcionContrato {
   createdAt             DateTime                       @default(now())
   updatedAt             DateTime                       @updatedAt
   empresa               Empresa                        @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  avisosActivos         Boolean                        @default(true)
+  correosAviso          String[]                       @default([])
   ejecutivosComerciales SuscripcionContratoEjecutivo[]
   contactosSoporte      SuscripcionContratoSoporte[]
+  avisos                SuscripcionContratoAviso[]
+  recordatorios         Recordatorio[]
 
   @@index([empresaId])
+  @@index([fechaTermino])
   @@index([fabricante])
   @@index([proveedor])
   @@index([fechaRenovacion])
@@ -356,6 +361,20 @@ model SuscripcionContratoSoporte {
   updatedAt     DateTime            @updatedAt
   suscripcion   SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
+  @@index([suscripcionId])
+}
+
+model SuscripcionContratoAviso {
+  id            Int                 @id @default(autoincrement())
+  suscripcionId Int
+  tipoFecha     String
+  fechaObjetivo DateTime            @db.Date
+  umbral        Int
+  destinatarios String[]            @default([])
+  createdAt     DateTime            @default(now())
+  suscripcion   SuscripcionContrato @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+
+  @@unique([suscripcionId, tipoFecha, fechaObjetivo, umbral])
   @@index([suscripcionId])
 }
 
@@ -2235,7 +2254,7 @@ model BitacoraEvento {
 }
 
 model Recordatorio {
-  id              Int                @id @default(autoincrement())
+  id              Int                  @id @default(autoincrement())
   /// Texto principal mostrado en la campana global.
   titulo          String
   /// Información adicional del recordatorio.
@@ -2243,9 +2262,9 @@ model Recordatorio {
   /// Fecha y hora en la que debe activarse.
   fechaProgramada DateTime
   /// Estado actual del recordatorio.
-  estado          EstadoRecordatorio @default(PENDIENTE)
+  estado          EstadoRecordatorio   @default(PENDIENTE)
   /// Módulo desde el cual fue creado.
-  origen          OrigenRecordatorio @default(MANUAL)
+  origen          OrigenRecordatorio   @default(MANUAL)
   /// Técnico que recibirá el recordatorio.
   destinatarioId  Int
   /// Técnico que creó el recordatorio.
@@ -2258,6 +2277,7 @@ model Recordatorio {
   equipoId        Int?
   mantencionId    Int?
   oportunidadId   Int?
+  suscripcionId   Int?
   /// Fecha en la que el usuario visualizó el aviso.
   leidoAt         DateTime?
   /// Fecha en la que el sistema envió la notificación.
@@ -2266,15 +2286,16 @@ model Recordatorio {
   completadoAt    DateTime?
   /// Fecha en la que el recordatorio fue cancelado.
   canceladoAt     DateTime?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  destinatario    Tecnico            @relation("RecordatorioDestinatario", fields: [destinatarioId], references: [id_tecnico], onDelete: Cascade)
-  creadoPor       Tecnico?           @relation("RecordatorioCreador", fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
-  bitacora        BitacoraTecnico?   @relation("BitacoraRecordatorios", fields: [bitacoraId], references: [id], onDelete: Cascade)
-  ticket          Ticket?            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  cotizacion      CotizacionGestioo? @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-  visita          Visita?            @relation(fields: [visitaId], references: [id_visita], onDelete: Cascade)
-  equipo          Equipo?            @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  destinatario    Tecnico              @relation("RecordatorioDestinatario", fields: [destinatarioId], references: [id_tecnico], onDelete: Cascade)
+  creadoPor       Tecnico?             @relation("RecordatorioCreador", fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
+  bitacora        BitacoraTecnico?     @relation("BitacoraRecordatorios", fields: [bitacoraId], references: [id], onDelete: Cascade)
+  ticket          Ticket?              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  cotizacion      CotizacionGestioo?   @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  visita          Visita?              @relation(fields: [visitaId], references: [id_visita], onDelete: Cascade)
+  equipo          Equipo?              @relation(fields: [equipoId], references: [id_equipo], onDelete: Cascade)
+  suscripcion     SuscripcionContrato? @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
   @@index([destinatarioId])
   @@index([creadoPorId])
@@ -2290,6 +2311,7 @@ model Recordatorio {
   @@index([equipoId])
   @@index([mantencionId])
   @@index([oportunidadId])
+  @@index([suscripcionId])
   @@index([destinatarioId, estado, fechaProgramada])
 }
 
@@ -3212,6 +3234,7 @@ enum OrigenRecordatorio {
   COTIZACION
   VISITA
   EQUIPO
+  SUSCRIPCION
 }
 
 /// Estado funcional del recordatorio.

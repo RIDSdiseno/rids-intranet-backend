@@ -18,6 +18,8 @@ import {
 } from "../../lib/supabase/supabase.js";
 
 import {
+    EstadoRecordatorio,
+    OrigenRecordatorio,
     Prisma,
 } from "@prisma/client";
 
@@ -221,6 +223,98 @@ function normalizarFecha(
     }
 
     return fecha;
+}
+
+/* =========================================================
+   CORREOS DE AVISO
+========================================================= */
+
+const REGEX_CORREO_AVISO =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const MAX_CORREOS_AVISO =
+    10;
+
+/**
+ * Normaliza los correos adicionales de aviso:
+ * minúsculas, sin repetidos. Si alguno no es válido
+ * lanza CORREO_AVISO_INVALIDO (no se descartan en silencio).
+ */
+function normalizarCorreosAviso(
+    value:
+        unknown
+): string[] {
+    if (
+        value === null ||
+        value === undefined
+    ) {
+        return [];
+    }
+
+    const items =
+        Array.isArray(
+            value
+        )
+            ? value
+            : String(
+                value
+            ).split(
+                /[,;\s]+/
+            );
+
+    const correos =
+        [
+            ...new Set(
+                items
+                    .map(
+                        correo =>
+                            String(
+                                correo
+                            )
+                                .trim()
+                                .toLowerCase()
+                    )
+                    .filter(
+                        Boolean
+                    )
+            ),
+        ];
+
+    if (
+        correos.length >
+        MAX_CORREOS_AVISO ||
+        correos.some(
+            correo =>
+                !REGEX_CORREO_AVISO.test(
+                    correo
+                )
+        )
+    ) {
+        throw new Error(
+            "CORREO_AVISO_INVALIDO"
+        );
+    }
+
+    return correos;
+}
+
+/* =========================================================
+   RECORDATORIOS DE VENCIMIENTO
+========================================================= */
+
+/** "YYYY-MM-DD" de una fecha guardada (o null). */
+function claveDia(
+    fecha:
+        Date | null
+): string | null {
+    return fecha
+        ? fecha
+            .toISOString()
+            .slice(
+                0,
+                10
+            )
+        : null;
 }
 
 /* =========================================================
@@ -852,6 +946,11 @@ export async function crearSuscripcionEmpresa(
             input.costoMensual
         );
 
+    const correosAviso =
+        normalizarCorreosAviso(
+            input.correosAviso
+        );
+
     return prisma
         .$transaction(
             async tx => {
@@ -911,6 +1010,12 @@ export async function crearSuscripcionEmpresa(
                                 activo:
                                     input.activo ??
                                     true,
+
+                                avisosActivos:
+                                    input.avisosActivos ??
+                                    true,
+
+                                correosAviso,
                             },
                         });
 
@@ -1212,6 +1317,74 @@ export async function actualizarSuscripcionEmpresa(
     }
 
     /* =====================================================
+       AVISOS DE VENCIMIENTO
+    ===================================================== */
+
+    if (
+        input.avisosActivos !==
+        undefined
+    ) {
+        data.avisosActivos =
+            input.avisosActivos;
+    }
+
+    if (
+        input.correosAviso !==
+        undefined
+    ) {
+        data.correosAviso =
+            normalizarCorreosAviso(
+                input.correosAviso
+            );
+    }
+
+    /* =====================================================
+   ¿CAMBIA EL VENCIMIENTO?
+
+   Si cambia una fecha, el estado o los avisos, los
+   recordatorios pendientes de la campana dejan de
+   corresponder: se cancelan. El job de avisos crea los
+   nuevos según las fechas actualizadas.
+===================================================== */
+
+    const cambiaVencimiento =
+        (
+            input.fechaRenovacion !==
+            undefined &&
+            claveDia(
+                normalizarFecha(
+                    input.fechaRenovacion
+                )
+            ) !==
+            claveDia(
+                actual.fechaRenovacion
+            )
+        ) ||
+        (
+            input.fechaTermino !==
+            undefined &&
+            claveDia(
+                normalizarFecha(
+                    input.fechaTermino
+                )
+            ) !==
+            claveDia(
+                actual.fechaTermino
+            )
+        ) ||
+        (
+            input.activo !==
+            undefined &&
+            input.activo !==
+            actual.activo
+        ) ||
+        (
+            input.avisosActivos !==
+            undefined &&
+            input.avisosActivos !==
+            actual.avisosActivos
+        );
+    /* =====================================================
        TRANSACCIÓN
     ===================================================== */
 
@@ -1231,6 +1404,42 @@ export async function actualizarSuscripcionEmpresa(
 
                     data,
                 });
+
+            /* =============================================
+               RECORDATORIOS DE LA CAMPANA
+            ============================================= */
+
+            if (
+                cambiaVencimiento
+            ) {
+                const ahora =
+                    new Date();
+
+                await tx
+                    .recordatorio
+                    .updateMany({
+                        where: {
+                            suscripcionId,
+
+                            origen:
+                                OrigenRecordatorio.SUSCRIPCION,
+
+                            estado:
+                                EstadoRecordatorio.PENDIENTE,
+                        },
+
+                        data: {
+                            estado:
+                                EstadoRecordatorio.CANCELADO,
+
+                            canceladoAt:
+                                ahora,
+
+                            leidoAt:
+                                ahora,
+                        },
+                    });
+            }
 
             /* =============================================
                EJECUTIVOS COMERCIALES

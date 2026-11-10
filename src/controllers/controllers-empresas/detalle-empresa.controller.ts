@@ -45,7 +45,7 @@ export async function createDetalleEmpresa(req: Request, res: Response) {
 
     const nuevo = await prisma.detalleEmpresa.create({
       data: {
-        rut: parsed.rut,
+        rut: parsed.rut.trim() || null,
         empresa_id: parsed.empresa_id,
         direccion: parsed.direccion ?? null,
         direcciones:
@@ -210,7 +210,7 @@ export async function updateDetalleEmpresa(req: Request, res: Response) {
 
     const data: Prisma.DetalleEmpresaUpdateInput = {};
 
-    if (rut !== undefined) data.rut = rut;
+    if (rut !== undefined) data.rut = rut.trim() || null;
 
     // 🔵 Dirección principal
     if (direccion !== undefined) {

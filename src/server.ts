@@ -15,12 +15,10 @@ import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordat
 import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
 import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
 
-import {
-  iniciarSchedulerFacturasAutomaticas,
-} from "./service/baseapi/facturas/factura-envio-scheduler.service.js";
-import {
-    iniciarCobranzaScheduler,
-} from "./service/baseapi/cobranza/cobranza-scheduler.service.js";
+import {  iniciarSchedulerFacturasAutomaticas,} from "./service/baseapi/facturas/factura-envio-scheduler.service.js";
+import {iniciarCobranzaScheduler,} from "./service/baseapi/cobranza/cobranza-scheduler.service.js";
+
+import { startSuscripcionesAvisosCron } from "./jobs/suscripciones-avisos.cron.js";
 
 import { prismaBase } from "./lib/prisma.js";
 
@@ -98,6 +96,7 @@ server.listen(PORT, () => {
   startAgendaCierreCron();
   startAgendaNotificacionesCron();
   startAgendaRecordatoriosCron();
+  startSuscripcionesAvisosCron();
   startAgendaOutlookSyncCron();
   startTicketSlaAlertsCron();
 

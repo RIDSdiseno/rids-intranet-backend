@@ -9,6 +9,7 @@ import {
   updateEmpresaStatus,
   deleteEmpresa,
   getEmpresasStats,
+  getEmpresaIndicadores
 } from "../controllers/controllers-empresas/empresas.controller.js";
 
 import {
@@ -101,6 +102,18 @@ empresasRouter.get(
     "CLIENTE"
   ),
   getEmpresaDashboard
+);
+
+empresasRouter.get(
+  "/:id/indicadores",
+  onlyRole(
+    "ADMIN",
+    "ADMINISTRACION",
+    "TECNICO",
+    "VENTAS",
+    "CLIENTE"
+  ),
+  getEmpresaIndicadores
 );
 
 /* =====================================================

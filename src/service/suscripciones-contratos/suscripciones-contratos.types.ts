@@ -57,6 +57,12 @@ export type CrearSuscripcionContratoInput = {
 
     activo?: boolean;
 
+    /** Enviar avisos de vencimiento por correo. */
+    avisosActivos?: boolean;
+
+    /** Correos adicionales que reciben los avisos de esta suscripción. */
+    correosAviso?: string[] | null;
+
     ejecutivosComerciales?:
     SuscripcionEjecutivoInput[];
 
