@@ -32,7 +32,7 @@ export async function createDetalleEmpresa(req, res) {
         }
         const nuevo = await prisma.detalleEmpresa.create({
             data: {
-                rut: parsed.rut,
+                rut: parsed.rut.trim() || null,
                 empresa_id: parsed.empresa_id,
                 direccion: parsed.direccion ?? null,
                 direcciones: parsed.direcciones !== undefined
@@ -160,7 +160,7 @@ export async function updateDetalleEmpresa(req, res) {
         }
         const data = {};
         if (rut !== undefined)
-            data.rut = rut;
+            data.rut = rut.trim() || null;
         // 🔵 Dirección principal
         if (direccion !== undefined) {
             data.direccion = direccion ?? null;

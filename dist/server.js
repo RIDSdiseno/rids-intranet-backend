@@ -15,6 +15,7 @@ import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sy
 import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
 import { iniciarSchedulerFacturasAutomaticas, } from "./service/baseapi/facturas/factura-envio-scheduler.service.js";
 import { iniciarCobranzaScheduler, } from "./service/baseapi/cobranza/cobranza-scheduler.service.js";
+import { startSuscripcionesAvisosCron } from "./jobs/suscripciones-avisos.cron.js";
 import { prismaBase } from "./lib/prisma.js";
 function parseOrigins(raw) {
     if (!raw || !raw.trim())
@@ -79,6 +80,7 @@ server.listen(PORT, () => {
     startAgendaCierreCron();
     startAgendaNotificacionesCron();
     startAgendaRecordatoriosCron();
+    startSuscripcionesAvisosCron();
     startAgendaOutlookSyncCron();
     startTicketSlaAlertsCron();
     iniciarSchedulerFacturasAutomaticas();

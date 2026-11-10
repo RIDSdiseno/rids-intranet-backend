@@ -1658,7 +1658,8 @@ export async function obtenerEstadosDocumentosCobranza(
     ) {
         if (
             detalle.diasCredito ===
-            null
+            null ||
+            !detalle.rut
         ) {
             continue;
         }

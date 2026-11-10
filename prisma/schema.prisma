@@ -320,9 +320,9 @@ model SuscripcionContrato {
   contratoStoragePath   String?
   createdAt             DateTime                       @default(now())
   updatedAt             DateTime                       @updatedAt
-  empresa               Empresa                        @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   avisosActivos         Boolean                        @default(true)
   correosAviso          String[]                       @default([])
+  empresa               Empresa                        @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   ejecutivosComerciales SuscripcionContratoEjecutivo[]
   contactosSoporte      SuscripcionContratoSoporte[]
   avisos                SuscripcionContratoAviso[]
@@ -2277,7 +2277,6 @@ model Recordatorio {
   equipoId        Int?
   mantencionId    Int?
   oportunidadId   Int?
-  suscripcionId   Int?
   /// Fecha en la que el usuario visualizó el aviso.
   leidoAt         DateTime?
   /// Fecha en la que el sistema envió la notificación.
@@ -2288,6 +2287,7 @@ model Recordatorio {
   canceladoAt     DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+  suscripcionId   Int?
   destinatario    Tecnico              @relation("RecordatorioDestinatario", fields: [destinatarioId], references: [id_tecnico], onDelete: Cascade)
   creadoPor       Tecnico?             @relation("RecordatorioCreador", fields: [creadoPorId], references: [id_tecnico], onDelete: SetNull)
   bitacora        BitacoraTecnico?     @relation("BitacoraRecordatorios", fields: [bitacoraId], references: [id], onDelete: Cascade)

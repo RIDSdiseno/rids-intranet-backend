@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { EstadoVisita } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { evaluarCompletitudFichasEmpresas, } from "../../service/empresas/empresa-ficha-completitud.service.js";
+import { resumenVencimientosEmpresas, } from "../../service/suscripciones-contratos/suscripciones-vencimientos.service.js";
 import { intentarVincularEmpresaAutomaticamente, } from "../../service/empresas/empresa-entidad.service.js";
 // Util para normalizar dominios ingresados (string o array) a formato consistente
 function normalizeDominios(input) {
@@ -90,6 +91,15 @@ export async function getEmpresas(req, res) {
         const completitudFichaMap = (withStats ||
             full)
             ? await evaluarCompletitudFichasEmpresas(empresaIds)
+            : new Map();
+        /*
+       * Vencimientos de suscripciones (chip del listado).
+       * No se calcula para CLIENTE: es información interna.
+       */
+        const vencimientosMap = (withStats ||
+            full) &&
+            user?.rol !== "CLIENTE"
+            ? await resumenVencimientosEmpresas(empresaIds)
             : new Map();
         if (full) {
             // ------ FULL: Traemos "todo" con consultas separadas y luego agregamos en memoria
@@ -193,6 +203,8 @@ export async function getEmpresas(req, res) {
                         visitasPendientes,
                     },
                     completitudFicha: completitudFichaMap.get(e.id_empresa) ??
+                        null,
+                    vencimientos: vencimientosMap.get(e.id_empresa) ??
                         null,
                 };
             });
@@ -339,6 +351,8 @@ export async function getEmpresas(req, res) {
             },
             completitudFicha: completitudFichaMap.get(e.id_empresa) ??
                 null,
+            vencimientos: vencimientosMap.get(e.id_empresa) ??
+                null,
         }));
         res.json({ success: true, data, total: data.length });
     }
@@ -466,6 +480,59 @@ export async function getEmpresasStats(req, res) {
     }
     catch (error) {
         console.error("Error al obtener estadísticas:", error);
+        res.status(500).json({
+            success: false,
+            error: "Error interno del servidor",
+        });
+    }
+}
+/* =======================================================
+   GET /api/empresas/:id/indicadores
+   Chips del listado (Ficha % y vencimientos) de UNA empresa.
+   Se usa para refrescar la fila al cerrar la ficha.
+   ======================================================= */
+export async function getEmpresaIndicadores(req, res) {
+    try {
+        const id = Number(req.params.id);
+        const user = req.user;
+        if (!Number.isInteger(id) || id <= 0) {
+            res.status(400).json({
+                success: false,
+                error: "ID inválido",
+            });
+            return;
+        }
+        if (user?.rol === "CLIENTE" &&
+            Number(user.empresaId) !== id) {
+            res.status(403).json({
+                success: false,
+                error: "No autorizado",
+            });
+            return;
+        }
+        const [completitudMap, vencimientosMap,] = await Promise.all([
+            evaluarCompletitudFichasEmpresas([
+                id,
+            ]),
+            /* Igual que en el listado: CLIENTE no recibe vencimientos */
+            user?.rol === "CLIENTE"
+                ? Promise.resolve(new Map())
+                : resumenVencimientosEmpresas([
+                    id,
+                ]),
+        ]);
+        res.json({
+            success: true,
+            data: {
+                completitudFicha: completitudMap.get(id) ??
+                    null,
+                vencimientos: vencimientosMap.get(id) ??
+                    null,
+            },
+        });
+    }
+    catch (error) {
+        console.error("Error obteniendo indicadores de empresa:", error);
         res.status(500).json({
             success: false,
             error: "Error interno del servidor",

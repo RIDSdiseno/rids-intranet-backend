@@ -1,6 +1,6 @@
 // src/routes/empresas.routes.ts
 import { Router } from "express";
-import { getEmpresas, getEmpresaById, createEmpresa, updateEmpresa, updateEmpresaStatus, deleteEmpresa, getEmpresasStats, } from "../controllers/controllers-empresas/empresas.controller.js";
+import { getEmpresas, getEmpresaById, createEmpresa, updateEmpresa, updateEmpresaStatus, deleteEmpresa, getEmpresasStats, getEmpresaIndicadores } from "../controllers/controllers-empresas/empresas.controller.js";
 import { getEquiposByEmpresa, } from "../controllers/equipos.controller.js";
 import { getEmpresaDashboard, } from "../controllers/controllers-empresas/dashboard-empresa.controller.js";
 import { getSoporteMensualPorEmpresa, } from "../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
@@ -31,6 +31,7 @@ empresasRouter.patch("/:id/status", onlyRole("ADMIN", "ADMINISTRACION"), updateE
  */
 empresasRouter.get("/:empresaId/equipos", getEquiposByEmpresa);
 empresasRouter.get("/:id/dashboard", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), getEmpresaDashboard);
+empresasRouter.get("/:id/indicadores", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), getEmpresaIndicadores);
 /* =====================================================
    EMPRESA ↔ ENTIDAD GESTIOO
 ===================================================== */

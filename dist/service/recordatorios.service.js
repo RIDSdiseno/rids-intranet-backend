@@ -201,7 +201,7 @@ export async function sincronizarRecordatorioTicket(params) {
  * Evitamos enviar recordatorios a cuentas CLIENTE,
  * cuentas de empresa o usuarios externos.
  */
-async function obtenerTecnicosActivosParaRecordatorio() {
+export async function obtenerTecnicosActivosParaRecordatorio() {
     return prisma.tecnico.findMany({
         where: {
             status: true,

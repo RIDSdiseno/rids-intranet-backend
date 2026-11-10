@@ -93,6 +93,26 @@ export async function actualizarFichaEmpresa(req, res) {
         const { razonSocial, rut, direccion, // 🔵 Principal
         direcciones, // 🟢 Sucursales
         telefono, email, condicionesComerciales, contactos, } = req.body;
+        const rutNormalizado = typeof rut === "string" && rut.trim() !== ""
+            ? rut.trim()
+            : null;
+        /* Antes de escribir nada: el RUT no puede ser de otra empresa */
+        if (rutNormalizado) {
+            const rutExistente = await prisma.detalleEmpresa.findUnique({
+                where: { rut: rutNormalizado },
+                select: {
+                    empresa_id: true,
+                    empresa: { select: { nombre: true } },
+                },
+            });
+            if (rutExistente &&
+                rutExistente.empresa_id !== empresaId) {
+                return res.status(409).json({
+                    ok: false,
+                    message: `El RUT ${rutNormalizado} ya está registrado en la empresa «${rutExistente.empresa.nombre}»`,
+                });
+            }
+        }
         /* =====================================================
            1️⃣ EMPRESA
         ===================================================== */
@@ -124,7 +144,7 @@ export async function actualizarFichaEmpresa(req, res) {
         await prisma.detalleEmpresa.upsert({
             where: { empresa_id: empresaId },
             update: {
-                rut: rut ?? null,
+                rut: rutNormalizado,
                 direccion: direccion ?? null,
                 direcciones: cleanedDirecciones && cleanedDirecciones.length > 0
                     ? cleanedDirecciones
@@ -133,7 +153,7 @@ export async function actualizarFichaEmpresa(req, res) {
                 email: email ?? null,
             },
             create: {
-                rut: rut ?? null,
+                rut: rutNormalizado,
                 direccion: direccion ?? null,
                 direcciones: cleanedDirecciones && cleanedDirecciones.length > 0
                     ? cleanedDirecciones
@@ -185,6 +205,13 @@ export async function actualizarFichaEmpresa(req, res) {
         return res.status(200).json({ ok: true });
     }
     catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002") {
+            return res.status(409).json({
+                ok: false,
+                message: "El RUT ya está registrado en otra empresa",
+            });
+        }
         console.error("Error al actualizar ficha empresa:", error);
         return res.status(500).json({
             ok: false,

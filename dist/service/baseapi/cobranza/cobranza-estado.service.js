@@ -726,7 +726,8 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
      */
     for (const detalle of detallesEmpresa) {
         if (detalle.diasCredito ===
-            null) {
+            null ||
+            !detalle.rut) {
             continue;
         }
         const rut = getCreditoRutKey(detalle.rut);

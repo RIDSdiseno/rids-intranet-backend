@@ -7,7 +7,7 @@ export declare function obtenerRelacionEmpresaEntidades(empresaId: number): Prom
         detalleEmpresa: {
             email: string | null;
             telefono: string | null;
-            rut: string;
+            rut: string | null;
             direccion: string | null;
         } | null;
         entidadGestioos: {

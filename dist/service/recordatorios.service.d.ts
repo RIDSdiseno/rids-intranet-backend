@@ -45,6 +45,7 @@ export declare function sincronizarRecordatorioBitacora(params: SincronizarRecor
     mantencionId: number | null;
     equipoId: number | null;
     cotizacionId: number | null;
+    suscripcionId: number | null;
     bitacoraId: number | null;
     completadoAt: Date | null;
     fechaProgramada: Date;
@@ -78,6 +79,7 @@ export declare function sincronizarRecordatorioTicket(params: SincronizarRecorda
     mantencionId: number | null;
     equipoId: number | null;
     cotizacionId: number | null;
+    suscripcionId: number | null;
     bitacoraId: number | null;
     completadoAt: Date | null;
     fechaProgramada: Date;
@@ -87,5 +89,15 @@ export declare function sincronizarRecordatorioTicket(params: SincronizarRecorda
     notificadoAt: Date | null;
     canceladoAt: Date | null;
 } | null>;
+/**
+ * Obtiene solo usuarios internos que deben recibir
+ * recordatorios globales de tickets.
+ *
+ * Evitamos enviar recordatorios a cuentas CLIENTE,
+ * cuentas de empresa o usuarios externos.
+ */
+export declare function obtenerTecnicosActivosParaRecordatorio(): Promise<{
+    id_tecnico: number;
+}[]>;
 export {};
 //# sourceMappingURL=recordatorios.service.d.ts.map

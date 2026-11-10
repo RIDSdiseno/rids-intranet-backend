@@ -2,7 +2,7 @@
 import { prisma, } from "../../lib/prisma.js";
 import { randomUUID, } from "node:crypto";
 import { CONTRATOS_EMPRESAS_BUCKET, supabaseAdmin, } from "../../lib/supabase/supabase.js";
-import { Prisma, } from "@prisma/client";
+import { EstadoRecordatorio, OrigenRecordatorio, Prisma, } from "@prisma/client";
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -90,6 +90,49 @@ function normalizarFecha(value) {
         throw new Error(`Fecha inválida: ${value}`);
     }
     return fecha;
+}
+/* =========================================================
+   CORREOS DE AVISO
+========================================================= */
+const REGEX_CORREO_AVISO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_CORREOS_AVISO = 10;
+/**
+ * Normaliza los correos adicionales de aviso:
+ * minúsculas, sin repetidos. Si alguno no es válido
+ * lanza CORREO_AVISO_INVALIDO (no se descartan en silencio).
+ */
+function normalizarCorreosAviso(value) {
+    if (value === null ||
+        value === undefined) {
+        return [];
+    }
+    const items = Array.isArray(value)
+        ? value
+        : String(value).split(/[,;\s]+/);
+    const correos = [
+        ...new Set(items
+            .map(correo => String(correo)
+            .trim()
+            .toLowerCase())
+            .filter(Boolean)),
+    ];
+    if (correos.length >
+        MAX_CORREOS_AVISO ||
+        correos.some(correo => !REGEX_CORREO_AVISO.test(correo))) {
+        throw new Error("CORREO_AVISO_INVALIDO");
+    }
+    return correos;
+}
+/* =========================================================
+   RECORDATORIOS DE VENCIMIENTO
+========================================================= */
+/** "YYYY-MM-DD" de una fecha guardada (o null). */
+function claveDia(fecha) {
+    return fecha
+        ? fecha
+            .toISOString()
+            .slice(0, 10)
+        : null;
 }
 /* =========================================================
    SUBIR / REEMPLAZAR CONTRATO
@@ -390,6 +433,7 @@ export async function crearSuscripcionEmpresa(empresaId, input) {
         contacto.email ||
         contacto.telefono));
     const costoMensual = normalizarCostoMensual(input.costoMensual);
+    const correosAviso = normalizarCorreosAviso(input.correosAviso);
     return prisma
         .$transaction(async (tx) => {
         const suscripcion = await tx
@@ -412,6 +456,9 @@ export async function crearSuscripcionEmpresa(empresaId, input) {
                 observaciones: normalizarTexto(input.observaciones),
                 activo: input.activo ??
                     true,
+                avisosActivos: input.avisosActivos ??
+                    true,
+                correosAviso,
             },
         });
         if (ejecutivosNormalizados.length >
@@ -566,6 +613,43 @@ export async function actualizarSuscripcionEmpresa(empresaId, suscripcionId, inp
             input.activo;
     }
     /* =====================================================
+       AVISOS DE VENCIMIENTO
+    ===================================================== */
+    if (input.avisosActivos !==
+        undefined) {
+        data.avisosActivos =
+            input.avisosActivos;
+    }
+    if (input.correosAviso !==
+        undefined) {
+        data.correosAviso =
+            normalizarCorreosAviso(input.correosAviso);
+    }
+    /* =====================================================
+   ¿CAMBIA EL VENCIMIENTO?
+
+   Si cambia una fecha, el estado o los avisos, los
+   recordatorios pendientes de la campana dejan de
+   corresponder: se cancelan. El job de avisos crea los
+   nuevos según las fechas actualizadas.
+===================================================== */
+    const cambiaVencimiento = (input.fechaRenovacion !==
+        undefined &&
+        claveDia(normalizarFecha(input.fechaRenovacion)) !==
+            claveDia(actual.fechaRenovacion)) ||
+        (input.fechaTermino !==
+            undefined &&
+            claveDia(normalizarFecha(input.fechaTermino)) !==
+                claveDia(actual.fechaTermino)) ||
+        (input.activo !==
+            undefined &&
+            input.activo !==
+                actual.activo) ||
+        (input.avisosActivos !==
+            undefined &&
+            input.avisosActivos !==
+                actual.avisosActivos);
+    /* =====================================================
        TRANSACCIÓN
     ===================================================== */
     return prisma.$transaction(async (tx) => {
@@ -580,6 +664,26 @@ export async function actualizarSuscripcionEmpresa(empresaId, suscripcionId, inp
             },
             data,
         });
+        /* =============================================
+           RECORDATORIOS DE LA CAMPANA
+        ============================================= */
+        if (cambiaVencimiento) {
+            const ahora = new Date();
+            await tx
+                .recordatorio
+                .updateMany({
+                where: {
+                    suscripcionId,
+                    origen: OrigenRecordatorio.SUSCRIPCION,
+                    estado: EstadoRecordatorio.PENDIENTE,
+                },
+                data: {
+                    estado: EstadoRecordatorio.CANCELADO,
+                    canceladoAt: ahora,
+                    leidoAt: ahora,
+                },
+            });
+        }
         /* =============================================
            EJECUTIVOS COMERCIALES
         ============================================= */

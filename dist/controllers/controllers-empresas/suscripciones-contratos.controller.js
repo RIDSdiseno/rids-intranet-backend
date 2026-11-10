@@ -126,6 +126,15 @@ export async function crearSuscripcion(req, res) {
                 error: "Proveedor, fabricante y producto/plan son obligatorios.",
             });
         }
+        if (message ===
+            "CORREO_AVISO_INVALIDO") {
+            return res
+                .status(400)
+                .json({
+                ok: false,
+                error: "Revisa los correos de aviso: deben ser válidos y como máximo 10.",
+            });
+        }
         console.error(error);
         return res
             .status(500)

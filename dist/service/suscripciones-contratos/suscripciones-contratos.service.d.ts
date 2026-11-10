@@ -33,6 +33,8 @@ export declare function subirContratoSuscripcion(empresaId: number, suscripcionI
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 }>;
 export declare function obtenerContratoSuscripcion(empresaId: number, suscripcionId: number): Promise<{
     nombre: string | null;
@@ -68,6 +70,8 @@ export declare function eliminarContratoSuscripcion(empresaId: number, suscripci
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 }>;
 export declare function listarSuscripcionesEmpresa(empresaId: number): Promise<({
     ejecutivosComerciales: {
@@ -117,6 +121,8 @@ export declare function listarSuscripcionesEmpresa(empresaId: number): Promise<(
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 })[]>;
 export declare function obtenerSuscripcionEmpresa(empresaId: number, suscripcionId: number): Promise<({
     ejecutivosComerciales: {
@@ -166,6 +172,8 @@ export declare function obtenerSuscripcionEmpresa(empresaId: number, suscripcion
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 }) | null>;
 export declare function crearSuscripcionEmpresa(empresaId: number, input: CrearSuscripcionContratoInput): Promise<({
     ejecutivosComerciales: {
@@ -215,6 +223,8 @@ export declare function crearSuscripcionEmpresa(empresaId: number, input: CrearS
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 }) | null>;
 export declare function actualizarSuscripcionEmpresa(empresaId: number, suscripcionId: number, input: ActualizarSuscripcionContratoInput): Promise<({
     ejecutivosComerciales: {
@@ -264,6 +274,8 @@ export declare function actualizarSuscripcionEmpresa(empresaId: number, suscripc
     contratoMimeType: string | null;
     contratoBytes: number | null;
     contratoStoragePath: string | null;
+    avisosActivos: boolean;
+    correosAviso: string[];
 }) | null>;
 export declare function eliminarSuscripcionEmpresa(empresaId: number, suscripcionId: number): Promise<{
     ok: boolean;
