@@ -91,6 +91,10 @@ function diffObjects(before: any, after: any) {
   return changes;
 }
 
+// --- Campos que nunca se guardan en claro en AuditLog (contrasena, password, claveTv, secretoRef…) ---
+const CAMPO_SENSIBLE_AUDIT =
+  /contrasena|password|clave|secret/i;
+
 // --- Helper para sanitizar objetos antes de guardarlos en AuditLog (solo primitivos) ---
 function sanitizeForAudit(obj: any) {
   if (!obj) return {};
@@ -105,7 +109,11 @@ function sanitizeForAudit(obj: any) {
 
   for (const key in obj) {
     if (isPrimitive(obj[key])) {
-      clean[key] = obj[key];
+      /* Contraseñas y secretos nunca se copian al historial */
+      clean[key] =
+        CAMPO_SENSIBLE_AUDIT.test(key) && obj[key]
+          ? "••••"
+          : obj[key];
     }
   }
 

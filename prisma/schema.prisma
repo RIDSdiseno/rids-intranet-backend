@@ -54,6 +54,8 @@ model Empresa {
   leypdSitioRevisiones     LeypdSitioRevision[]
   leypdActualizaciones     LeypdActualizacion[]
   campaniasProteccionDatos CampaniaProteccionDatos[]
+  telefoniaParlantes       TelefoniaParlante[]
+  telefoniaUsuarios        TelefoniaUsuario[]
 
   @@index([isActive])
   @@index([deactivatedAt])
@@ -148,6 +150,7 @@ model FichaEmpresa {
   actualizadaEn          DateTime                 @updatedAt
   condicionesComerciales String?
   servidoresAplica       Boolean                  @default(true)
+  telefoniaAplica        Boolean                  @default(false)
   empresa                Empresa                  @relation(fields: [empresaId], references: [id_empresa])
   checklist              ChecklistGestionEmpresa?
 }
@@ -193,24 +196,65 @@ model FichaTecnicaEmpresa {
 }
 
 model EmpresaISP {
-  id           Int       @id @default(autoincrement())
-  empresaId    Int
-  operador     String?
-  telefono     String?
-  servicio     String?
-  numeroTicket String?
-  wifiNombre   String?
-  wifiClaveRef String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  ipRed        String[]  @default([])
-  esPrincipal  Boolean   @default(false)
-  sucursalId   Int?
-  empresa      Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
-  sucursal     Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
+  id              Int       @id @default(autoincrement())
+  empresaId       Int
+  operador        String?
+  telefono        String?
+  servicio        String?
+  numeroTicket    String?
+  codigoServicio  String?
+  direccion       String?
+  rut             String?
+  telefonoSoporte String?
+  wifiNombre      String?
+  wifiClaveRef    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  ipRed           String[]  @default([])
+  esPrincipal     Boolean   @default(false)
+  sucursalId      Int?
+  empresa         Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+  sucursal        Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
 
   @@index([empresaId])
   @@index([sucursalId])
+}
+
+/// Telefonía: parlantes / altavoces IP de la empresa
+model TelefoniaParlante {
+  id              Int      @id @default(autoincrement())
+  empresaId       Int
+  ubicacion       String?
+  marcaModelo     String?
+  anexo           String?
+  macAddress      String?
+  /// Texto plano: solo lo leen roles internos
+  contrasenaAdmin String?
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  empresa         Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@index([empresaId])
+}
+
+/// Telefonía: usuarios de la app (Linkus) / anexos
+model TelefoniaUsuario {
+  id            Int      @id @default(autoincrement())
+  empresaId     Int
+  nombre        String
+  anexo         String?
+  /// Texto plano: solo lo leen roles internos
+  contrasena    String?
+  ipPrivada     String?
+  puertoPrivado Int?
+  ipPublica     String?
+  puertoPublico Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  empresa       Empresa  @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
+
+  @@index([empresaId])
 }
 
 model ChecklistGestionEmpresa {
@@ -947,6 +991,7 @@ model Tecnico {
   campaniasProteccionDatos        CampaniaProteccionDatos[]
   leypdElementosActualizados      LeypdElemento[]
   leypdActualizaciones            LeypdActualizacion[]
+  documentosOportunidad           OportunidadDocumento[]           @relation("OportunidadDocumentoSubidoPor")
 
   @@index([empresaId])
 }
@@ -2463,6 +2508,7 @@ model OportunidadVenta {
   seguimientos              SeguimientoOportunidadVenta[]
   cotizaciones              CotizacionGestioo[]
   mercadoPublicoOrigen      OportunidadMercadoPublico?       @relation("MercadoPublicoOportunidadVenta")
+  documentos                OportunidadDocumento[]
 
   @@index([etapa])
   @@index([responsableId])
@@ -2470,6 +2516,27 @@ model OportunidadVenta {
   @@index([prioridad])
   @@index([activo])
   @@index([etapa, orden])
+}
+
+/// PDF adjunto a una oportunidad del funnel (propuesta, bases, orden de compra…).
+/// El archivo vive en Supabase Storage (bucket oportunidades-documentos).
+model OportunidadDocumento {
+  id            Int              @id @default(autoincrement())
+  oportunidadId Int
+  /// PROPUESTA | BASES | ORDEN_COMPRA | CONTRATO | OTRO
+  tipo          String           @default("OTRO")
+  nombre        String
+  descripcion   String?
+  mimeType      String
+  bytes         Int
+  storagePath   String           @unique
+  subidoPorId   Int?
+  createdAt     DateTime         @default(now())
+  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+  subidoPor     Tecnico?         @relation("OportunidadDocumentoSubidoPor", fields: [subidoPorId], references: [id_tecnico], onDelete: SetNull)
+
+  @@index([oportunidadId])
+  @@index([subidoPorId])
 }
 
 model HistorialEtapaOportunidadVenta {

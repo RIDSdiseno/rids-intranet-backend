@@ -235,6 +235,10 @@ export const listVisitas = async (req: Request, res: Response) => {
   const statusQ = req.query.status as string | undefined;
   const q = (req.query.q as string | undefined)?.trim();
 
+  // Solo PENDIENTE | COMPLETADA | CANCELADA; cualquier otro valor se ignora
+  const statusParsed = StatusEnum.safeParse(statusQ?.trim().toUpperCase());
+  const statusFiltro = statusParsed.success ? statusParsed.data : undefined;
+
   // NUEVO: filtros por mes/año
   const monthQ = req.query.month as string | undefined;
   const yearQ = req.query.year as string | undefined;
@@ -278,10 +282,10 @@ export const listVisitas = async (req: Request, res: Response) => {
         }
         : {},
 
-      statusQ
+      statusFiltro
         ? {
           status:
-            statusQ as any,
+            statusFiltro,
         }
         : {},
 

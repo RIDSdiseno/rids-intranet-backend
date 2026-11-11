@@ -14,6 +14,8 @@ import {
   generarCotizacionDesdeOrden,
 } from "../controllers/detalle-trabajo-gestioo.controller.js";
 
+import { getHistorialOrdenTaller } from "../controllers/taller-historial.controller.js";
+
 const detalleTrabajoGestiooRouter = Router();
 
 const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"] as const;
@@ -25,6 +27,14 @@ detalleTrabajoGestiooRouter.get(
   auth(),
   onlyOwnEmpresa(),
   getDetallesTrabajo
+);
+
+// Historial de la orden (ENTRADA + SALIDA) — solo internos
+detalleTrabajoGestiooRouter.get(
+  "/:id/historial",
+  auth(),
+  onlyRole(...ROLES_INTERNOS),
+  getHistorialOrdenTaller
 );
 
 // Detalle — auth requerido; CLIENTE solo ve órdenes de su empresa

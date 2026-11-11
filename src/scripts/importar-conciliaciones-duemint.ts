@@ -43,7 +43,9 @@ const XLSX =
  *   - vencimientos
  */
 const DRY_RUN =
-    false;
+    !process.argv.includes(
+        "--real"
+    );
 
 const ARCHIVO =
     process.argv[2];
@@ -1162,8 +1164,6 @@ async function main() {
 
                         vencimientosGuardados++;
                     }
-
-                    vencimientosGuardados++;
                 }
             } else {
                 sinVencimiento++;

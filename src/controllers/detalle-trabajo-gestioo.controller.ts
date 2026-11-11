@@ -2,7 +2,7 @@
 // Controlador para manejo de detalles de trabajo, con funciones para crear, obtener, actualizar y eliminar detalles de trabajo, así como generar cotizaciones desde órdenes. Utiliza Prisma para acceso a base de datos y tiene lógica robusta para validación y manejo de errores.
 import type { Request, Response } from "express";
 import { EstadoEquipo, DestinoEquipoTaller } from "@prisma/client";
-import { prismaBase as prisma } from "../lib/prisma.js";
+import { prisma } from "../lib/prisma.js";
 
 const ESTADOS_EQUIPO_VALIDOS = Object.values(EstadoEquipo);
 

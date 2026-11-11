@@ -61,6 +61,22 @@ import {
 
 import multer from "multer";
 
+import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
+import { descargarFichaEmpresaPdf } from "../../controllers/controllers-empresas/ficha-empresa-pdf.controller.js";
+import { onlyRole } from "../../middlewares/roles.js";
+
+import {
+  obtenerTelefoniaEmpresa,
+  crearTelefoniaParlante,
+  actualizarTelefoniaParlante,
+  eliminarTelefoniaParlante,
+  crearTelefoniaUsuario,
+  actualizarTelefoniaUsuario,
+  eliminarTelefoniaUsuario,
+  obtenerConfiguracionTelefonia,
+  actualizarConfiguracionTelefonia,
+} from "../../controllers/controllers-empresas/telefonia.controller.js";
+
 export const fichaEmpresasRouter = Router();
 
 const uploadContrato =
@@ -171,6 +187,36 @@ fichaEmpresasRouter.delete("/:empresaId/suscripciones/:suscripcionId", eliminarS
 fichaEmpresasRouter.post("/:empresaId/suscripciones/:suscripcionId/contrato", uploadContrato.single("contrato"), subirContrato);
 fichaEmpresasRouter.get("/:empresaId/suscripciones/:suscripcionId/contrato", obtenerContrato);
 fichaEmpresasRouter.delete("/:empresaId/suscripciones/:suscripcionId/contrato", eliminarContrato);
+
+/* ===================== TELEFONÍA ===================== */
+/* Contiene contraseñas en texto plano: solo roles internos */
+const soloInternosTelefonia = [
+  auth(true),
+  onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"),
+];
+
+fichaEmpresasRouter.get("/:empresaId/telefonia", ...soloInternosTelefonia, obtenerTelefoniaEmpresa);
+/* ¿Cuenta telefonía en la completitud de la ficha? (igual que servidores-config) */
+fichaEmpresasRouter.get("/:empresaId/telefonia-config", ...soloInternosTelefonia, obtenerConfiguracionTelefonia);
+fichaEmpresasRouter.patch("/:empresaId/telefonia-config", ...soloInternosTelefonia, actualizarConfiguracionTelefonia);
+
+fichaEmpresasRouter.post("/:empresaId/telefonia/parlantes", ...soloInternosTelefonia, crearTelefoniaParlante);
+fichaEmpresasRouter.put("/telefonia/parlantes/:id", ...soloInternosTelefonia, actualizarTelefoniaParlante);
+fichaEmpresasRouter.delete("/telefonia/parlantes/:id", ...soloInternosTelefonia, eliminarTelefoniaParlante);
+
+fichaEmpresasRouter.post("/:empresaId/telefonia/usuarios", ...soloInternosTelefonia, crearTelefoniaUsuario);
+fichaEmpresasRouter.put("/telefonia/usuarios/:id", ...soloInternosTelefonia, actualizarTelefoniaUsuario);
+fichaEmpresasRouter.delete("/telefonia/usuarios/:id", ...soloInternosTelefonia, eliminarTelefoniaUsuario);
+
+/* ===================== PDF DE LA FICHA ===================== */
+/* Internos: con credenciales. CLIENTE: solo su empresa y sin credenciales */
+fichaEmpresasRouter.get(
+  "/:empresaId/pdf",
+  auth(true),
+  onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "CLIENTE"),
+  onlyOwnEmpresa(),
+  descargarFichaEmpresaPdf
+);
 
 fichaEmpresasRouter.put("/:empresaId/checklist", upsertChecklistEmpresa);
 

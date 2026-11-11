@@ -27,6 +27,24 @@ import {
   enviarInformeOportunidadController,
 } from "../../controllers/controllers-oportunidades/oportunidades.controller.js";
 
+import type {
+  NextFunction,
+  Request,
+  Response,
+} from "express";
+
+import multer from "multer";
+
+import {
+  listarDocumentosController,
+  subirDocumentoController,
+  obtenerDocumentoController,
+  eliminarDocumentoController,
+} from "../../controllers/controllers-oportunidades/oportunidades-documentos.controller.js";
+
+import {
+  MAX_BYTES_DOCUMENTO,
+} from "../../service/oportunidades/oportunidades-documentos.service.js";
 
 /*
  * Roles internos habilitados
@@ -42,6 +60,76 @@ const ROLES_OPORTUNIDADES = [
 const oportunidadesRouter =
   Router();
 
+/*
+ * PDF en memoria: el service lo sube a Supabase.
+ * Si multer falla (tamaño, tipo), respondemos 400 en JSON
+ * en vez de dejar que llegue al handler global de errores.
+ */
+const uploadDocumento =
+  multer({
+    storage:
+      multer.memoryStorage(),
+
+    limits: {
+      fileSize:
+        MAX_BYTES_DOCUMENTO,
+
+      files:
+        1,
+    },
+
+    fileFilter: (
+      _req,
+      file,
+      cb
+    ) => {
+      if (
+        file.mimetype !==
+        "application/pdf"
+      ) {
+        return cb(
+          new Error(
+            "Solo se permiten archivos PDF."
+          )
+        );
+      }
+
+      cb(
+        null,
+        true
+      );
+    },
+  });
+
+function recibirPdf(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  uploadDocumento.single("archivo")(
+    req,
+    res,
+    (err: unknown) => {
+      if (!err) {
+        return next();
+      }
+
+      const mensaje =
+        err instanceof multer.MulterError &&
+          err.code === "LIMIT_FILE_SIZE"
+          ? `El PDF supera el máximo de ${Math.round(MAX_BYTES_DOCUMENTO / 1024 / 1024)} MB.`
+          : err instanceof Error
+            ? err.message
+            : "Archivo inválido.";
+
+      return res.status(400).json({
+        success: false,
+        code: "ARCHIVO_INVALIDO",
+        message: mensaje,
+      });
+    }
+  );
+}
 
 /*
  * Autorización centralizada
@@ -138,6 +226,31 @@ oportunidadesRouter.delete(
   desvincularCotizacionController
 );
 
+/* =========================================================
+   DOCUMENTOS PDF
+========================================================= */
+
+oportunidadesRouter.get(
+  "/:id/documentos",
+  listarDocumentosController
+);
+
+oportunidadesRouter.post(
+  "/:id/documentos",
+  recibirPdf,
+  subirDocumentoController
+);
+
+/* URL firmada (10 min). ?descargar=1 fuerza la descarga */
+oportunidadesRouter.get(
+  "/:id/documentos/:documentoId",
+  obtenerDocumentoController
+);
+
+oportunidadesRouter.delete(
+  "/:id/documentos/:documentoId",
+  eliminarDocumentoController
+);
 
 /* =========================================================
    INFORME DE RESPALDO
