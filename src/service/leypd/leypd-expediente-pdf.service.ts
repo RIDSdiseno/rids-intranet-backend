@@ -368,7 +368,6 @@ function construirPortada({ detalle, docs, logoEmpresa, generadoPor, generadoAt 
         doc.moveDown(3);
         const datos: Array<[string, string]> = [
             ["Generado", fechaHoraChile(generadoAt)],
-            ["Generado por", generadoPor ?? "—"],
             ["Avance Ley PD", `${resumen.porcentaje}% (${resumen.completados} de ${resumen.total} elementos)`],
             ["Documentos incluidos", `${incluidos.length} de ${docs.length} (${totalPaginasDocs} páginas)`],
         ];

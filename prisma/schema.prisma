@@ -19,9 +19,9 @@ model Empresa {
   isActive                 Boolean                   @default(true)
   recibeCobranza           Boolean                   @default(false)
   recibeFacturas           Boolean                   @default(false)
-   logoUrl                  String?
-  logoPublicId             String?
   logoActualizadoAt        DateTime?
+  logoPublicId             String?
+  logoUrl                  String?
   solicitantes             Solicitante[]
   visitas                  Visita[]                  @relation("Empresa_Visita")
   tickets                  FreshdeskTicket[]
