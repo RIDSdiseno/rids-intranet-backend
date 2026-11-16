@@ -23,32 +23,29 @@ import {
     crearOportunidad,
 } from "../oportunidades/oportunidades.service.js";
 
+import {
+    fechaChile,
+} from "../../utils/fecha-chile.js";
 
+import {
+    sincronizarHitosLicitacion,
+    whereVigenciaLicitacion,
+    type VigenciaMercadoPublico,
+} from "./mercado-publico-hitos.service.js";
+
+
+/*
+ * Mercado Público entrega fechas en hora de Chile sin zona.
+ * new Date() las corría 3-4 h en Railway (UTC).
+ */
 function toDate(
     value:
         unknown
 ): Date | null {
 
-    if (
-        !value
-    ) {
-        return null;
-    }
-
-
-    const date =
-        new Date(
-            String(
-                value
-            )
-        );
-
-
-    return Number.isNaN(
-        date.getTime()
-    )
-        ? null
-        : date;
+    return fechaChile(
+        value
+    );
 }
 
 
@@ -99,6 +96,41 @@ function normalizarRut(
 
     return rut ||
         null;
+}
+
+function textoONull(
+    value:
+        unknown
+): string | null {
+
+    if (
+        typeof value !==
+        "string"
+    ) {
+        return null;
+    }
+
+
+    const texto =
+        value.trim();
+
+
+    return texto ||
+        null;
+}
+
+
+/** Copia JSON-serializable del detalle para guardarlo en rawJson. */
+function aJson(
+    value:
+        unknown
+): Prisma.InputJsonValue {
+
+    return JSON.parse(
+        JSON.stringify(
+            value
+        )
+    ) as Prisma.InputJsonValue;
 }
 
 function sleep(
@@ -167,12 +199,43 @@ export async function sincronizarOportunidadesMercadoPublico() {
         await consultarLicitacionesActivas();
 
 
-    const basicas =
-        Array.isArray(
+    /*
+ * Si Mercado Público no entrega un Listado (ticket inválido,
+ * límite diario, peticiones simultáneas…), se informa el error
+ * en vez de terminar en silencio con totalApi 0.
+ * Solo se muestra Codigo/Mensaje de la API: la URL lleva el ticket.
+ */
+    if (
+        !Array.isArray(
             respuesta.Listado
         )
-            ? respuesta.Listado
-            : [];
+    ) {
+
+        const r =
+            respuesta as Record<string, unknown>;
+
+
+        throw new Error(
+            `Mercado Público no devolvió licitaciones` +
+            (
+                r.Codigo !== undefined
+                    ? ` (código ${String(r.Codigo)})`
+                    : ""
+            ) +
+            `: ${typeof r.Mensaje === "string"
+                ? r.Mensaje
+                : `claves recibidas: ${Object.keys(r).join(", ") || "ninguna"}`}`
+        );
+    }
+
+
+    console.log(
+        `[MERCADO PUBLICO] Activas: Cantidad=${String(respuesta.Cantidad ?? "?")} Listado=${respuesta.Listado.length}`
+    );
+
+
+    const basicas =
+        respuesta.Listado;
 
 
     let procesadas =
@@ -297,6 +360,11 @@ export async function sincronizarOportunidadesMercadoPublico() {
                 });
 
 
+        /*
+  * Ya existe en nuestra base: no se vuelve a consultar aquí.
+  * Las INTERESANTE/CONVERTIDA se refrescan con la
+  * sincronización de hitos (mercado-publico-hitos.service.ts).
+  */
         if (
             existente
         ) {
@@ -308,56 +376,9 @@ export async function sincronizarOportunidadesMercadoPublico() {
 
 
         /*
-         * Si ya existe en nuestra base,
-         * no volvemos a consultar el detalle
-         * en cada sincronización.
-         */
-        const existenteAntesDetalle =
-            await prisma
-                .oportunidadMercadoPublico
-                .findUnique({
-
-                    where: {
-                        codigoExterno:
-                            codigoBasico,
-                    },
-
-                    select: {
-                        id:
-                            true,
-
-                        sincronizadoAt:
-                            true,
-
-                        rawJson:
-                            true,
-                    },
-                });
-
-
-        if (
-            existenteAntesDetalle
-        ) {
-
-            /*
-             * Ya fue enriquecida anteriormente.
-             * La saltamos en esta sincronización.
-             */
-            continue;
-        }
-
-
-        /*
          * Limitar cantidad de consultas externas
          * por ejecución.
          */
-        if (
-            detallesConsultados >=
-            MAX_DETALLES_POR_SINCRONIZACION
-        ) {
-            continue;
-        }
-
         if (
             detallesConsultados >=
             MAX_DETALLES_POR_SINCRONIZACION
@@ -407,9 +428,333 @@ export async function sincronizarOportunidadesMercadoPublico() {
         }
 
 
-        // ... continúa tu lógica actual
-    }
+        /*
+         * ==========================================
+         * 3. SCORE FINAL CON EL DETALLE (incluye ítems)
+         * ==========================================
+         */
 
+        const items =
+            (
+                detalle
+                    .Items
+                    ?.Listado ??
+                []
+            ).map(
+                (
+                    item
+                ) => ({
+
+                    nombre:
+                        textoONull(
+                            item.NombreProducto
+                        ),
+
+                    descripcion:
+                        textoONull(
+                            item.Descripcion
+                        ),
+
+                    categoria:
+                        textoONull(
+                            item.Categoria
+                        ),
+                })
+            );
+
+
+        const montoEstimado =
+            toNumber(
+                detalle.MontoEstimado
+            );
+
+
+        const fechaCierre =
+            toDate(
+                detalle
+                    .Fechas
+                    ?.FechaCierre ??
+                detalle
+                    .FechaCierre
+            );
+
+
+        const scoring =
+            calcularScoreMercadoPublico({
+
+                nombre:
+                    textoONull(
+                        detalle.Nombre
+                    ),
+
+                descripcion:
+                    textoONull(
+                        detalle.Descripcion
+                    ),
+
+                items,
+
+                montoEstimado,
+
+                fechaCierre,
+            });
+
+
+        if (
+            !scoring
+                .tieneAfinidadTecnica
+        ) {
+
+            descartadasScore++;
+
+            continue;
+        }
+
+
+        /*
+         * ==========================================
+         * 4. GUARDAR
+         * ==========================================
+         *
+         * No se toca `estado` al actualizar: es decisión del usuario.
+         * El contacto del contrato tiene prioridad sobre el usuario
+         * comprador (el cargo solo se conoce para este último).
+         */
+
+        const comprador =
+            detalle.Comprador;
+
+
+        const contactoContrato =
+            textoONull(
+                detalle.NombreResponsableContrato
+            );
+
+
+        const datos:
+            Omit<
+                Prisma.OportunidadMercadoPublicoUncheckedCreateInput,
+                "codigoExterno"
+            > = {
+
+            nombre:
+                textoONull(
+                    detalle.Nombre
+                ) ??
+                codigo,
+
+            descripcion:
+                textoONull(
+                    detalle.Descripcion
+                ),
+
+            codigoEstado:
+                typeof detalle.CodigoEstado ===
+                    "number"
+                    ? detalle.CodigoEstado
+                    : null,
+
+            estadoMercadoPublico:
+                textoONull(
+                    detalle.Estado
+                ),
+
+            tipoLicitacion:
+                textoONull(
+                    detalle.Tipo
+                ),
+
+            fechaPublicacion:
+                toDate(
+                    detalle
+                        .Fechas
+                        ?.FechaPublicacion
+                ),
+
+            fechaCierre,
+
+            moneda:
+                textoONull(
+                    detalle.Moneda
+                ),
+
+            montoEstimado,
+
+            organismoCodigo:
+                textoONull(
+                    comprador?.CodigoOrganismo
+                ),
+
+            organismoNombre:
+                textoONull(
+                    comprador?.NombreOrganismo
+                ) ??
+                "Sin organismo",
+
+            organismoRut:
+                normalizarRut(
+                    comprador?.RutUnidad
+                ),
+
+            unidadCodigo:
+                textoONull(
+                    comprador?.CodigoUnidad
+                ),
+
+            unidadNombre:
+                textoONull(
+                    comprador?.NombreUnidad
+                ),
+
+            unidadDireccion:
+                textoONull(
+                    comprador?.DireccionUnidad
+                ),
+
+            unidadComuna:
+                textoONull(
+                    comprador?.ComunaUnidad
+                ),
+
+            unidadRegion:
+                textoONull(
+                    comprador?.RegionUnidad
+                ),
+
+            contactoNombre:
+                contactoContrato ??
+                textoONull(
+                    comprador?.NombreUsuario
+                ),
+
+            contactoCargo:
+                contactoContrato
+                    ? null
+                    : textoONull(
+                        comprador?.CargoUsuario
+                    ),
+
+            contactoEmail:
+                textoONull(
+                    detalle.EmailResponsableContrato
+                ),
+
+            contactoTelefono:
+                textoONull(
+                    detalle.FonoResponsableContrato
+                ),
+
+            score:
+                scoring.score,
+
+            nivelAfinidad:
+                scoring.nivel,
+
+            coincidencias:
+                scoring.coincidencias,
+
+            rawJson:
+                aJson(
+                    detalle
+                ),
+
+            sincronizadoAt:
+                new Date(),
+        };
+
+
+        try {
+
+            /*
+             * El código del detalle puede diferir del básico
+             * (raro): se vuelve a revisar antes de guardar.
+             */
+            const previa =
+                await prisma
+                    .oportunidadMercadoPublico
+                    .findUnique({
+
+                        where: {
+                            codigoExterno:
+                                codigo,
+                        },
+
+                        select: {
+                            id:
+                                true,
+                        },
+                    });
+
+
+            const guardada =
+                await prisma
+                    .oportunidadMercadoPublico
+                    .upsert({
+
+                        where: {
+                            codigoExterno:
+                                codigo,
+                        },
+
+                        create: {
+                            codigoExterno:
+                                codigo,
+
+                            ...datos,
+                        },
+
+                        update:
+                            datos,
+
+                        select: {
+                            id:
+                                true,
+                        },
+                    });
+
+
+            procesadas++;
+
+            if (
+                previa
+            ) {
+                actualizadas++;
+            } else {
+                nuevas++;
+            }
+
+
+            /*
+             * Hitos con el detalle ya consultado (sin nueva llamada a la API).
+             * Los avisos solo se envían para INTERESANTE/CONVERTIDA.
+             */
+            try {
+
+                await sincronizarHitosLicitacion(
+                    guardada.id,
+                    detalle
+                );
+
+            } catch (
+            error
+            ) {
+
+                console.error(
+                    `[MERCADO PUBLICO] No fue posible crear hitos de ${codigo}:`,
+                    error
+                );
+            }
+
+        } catch (
+        error
+        ) {
+
+            console.error(
+                `[MERCADO PUBLICO] No fue posible guardar ${codigo}:`,
+                error
+            );
+        }
+    }
 
     return {
         totalApi:
@@ -432,6 +777,10 @@ export async function sincronizarOportunidadesMercadoPublico() {
 }
 
 export type FiltrosMercadoPublico = {
+
+    /** vigentes (por defecto) | cerradas | todas */
+    vigencia?:
+    VigenciaMercadoPublico;
 
     texto?:
     string;
@@ -472,8 +821,14 @@ export async function listarOportunidadesMercadoPublico(
 
     const where:
         Prisma.OportunidadMercadoPublicoWhereInput =
-        {};
-
+    {
+        AND: [
+            whereVigenciaLicitacion(
+                filtros.vigencia ??
+                "vigentes"
+            ),
+        ],
+    };
 
     if (
         filtros.estado
@@ -692,6 +1047,29 @@ export async function convertirMercadoPublicoAFunnel(
     actorId:
         number
 ) {
+
+    /*
+     * Refresca estado, fechas (hora de Chile) e hitos desde
+     * Mercado Público antes de convertir, para que fechaCierre
+     * llegue correcta a la oportunidad. Si la API falla, se
+     * convierte con lo guardado.
+     */
+    try {
+
+        await sincronizarHitosLicitacion(
+            id
+        );
+
+    } catch (
+    error
+    ) {
+
+        console.error(
+            `[MERCADO PUBLICO] No fue posible refrescar hitos antes de convertir ${id}:`,
+            error
+        );
+    }
+
 
     const oportunidadMP =
         await prisma

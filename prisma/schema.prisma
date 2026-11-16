@@ -202,10 +202,6 @@ model EmpresaISP {
   telefono        String?
   servicio        String?
   numeroTicket    String?
-  codigoServicio  String?
-  direccion       String?
-  rut             String?
-  telefonoSoporte String?
   wifiNombre      String?
   wifiClaveRef    String?
   createdAt       DateTime  @default(now())
@@ -213,6 +209,10 @@ model EmpresaISP {
   ipRed           String[]  @default([])
   esPrincipal     Boolean   @default(false)
   sucursalId      Int?
+  codigoServicio  String?
+  direccion       String?
+  rut             String?
+  telefonoSoporte String?
   empresa         Empresa   @relation(fields: [empresaId], references: [id_empresa], onDelete: Cascade)
   sucursal        Sucursal? @relation(fields: [sucursalId], references: [id_sucursal], onDelete: SetNull)
 
@@ -2509,6 +2509,7 @@ model OportunidadVenta {
   cotizaciones              CotizacionGestioo[]
   mercadoPublicoOrigen      OportunidadMercadoPublico?       @relation("MercadoPublicoOportunidadVenta")
   documentos                OportunidadDocumento[]
+  avisosFechas              OportunidadFechaAviso[]
 
   @@index([etapa])
   @@index([responsableId])
@@ -2516,6 +2517,26 @@ model OportunidadVenta {
   @@index([prioridad])
   @@index([activo])
   @@index([etapa, orden])
+}
+
+/// Aviso enviado al responsable por una fecha de la oportunidad (próxima acción,
+/// envío comprometido, vencimiento de propuesta, reactivación). El único evita
+/// repetir; si la fecha cambia, fechaObjetivo cambia y se vuelve a avisar.
+model OportunidadFechaAviso {
+  id            Int              @id @default(autoincrement())
+  oportunidadId Int
+  /// PROXIMA_ACCION | COMPROMISO_ENVIO | VENCIMIENTO_PROPUESTA | REACTIVACION
+  tipoFecha     String
+  fechaObjetivo DateTime
+  /// Días antes: 3 | 1 | 0
+  umbral        Int
+  destinatario  String
+  createdAt     DateTime         @default(now())
+  oportunidad   OportunidadVenta @relation(fields: [oportunidadId], references: [id], onDelete: Cascade)
+
+  @@unique([oportunidadId, tipoFecha, fechaObjetivo, umbral])
+  @@index([oportunidadId])
+  @@index([createdAt])
 }
 
 /// PDF adjunto a una oportunidad del funnel (propuesta, bases, orden de compra…).
@@ -2648,6 +2669,7 @@ model OportunidadMercadoPublico {
   entidad              EntidadGestioo?                 @relation("MercadoPublicoEntidad", fields: [entidadId], references: [id], onDelete: SetNull)
   oportunidadVenta     OportunidadVenta?               @relation("MercadoPublicoOportunidadVenta", fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
   convertidoPor        Tecnico?                        @relation("MercadoPublicoConvertidoPor", fields: [convertidoPorId], references: [id_tecnico], onDelete: SetNull)
+  hitos                LicitacionHito[]
 
   @@index([estado])
   @@index([score])
@@ -2658,6 +2680,53 @@ model OportunidadMercadoPublico {
   @@index([fechaCierre])
   @@index([entidadId])
   @@index([convertidoPorId])
+}
+
+/// Fecha clave de una licitación de Mercado Público.
+/// origen API: la sincronización la crea y actualiza. MANUAL: solo la edita el usuario.
+/// Independiente de Recordatorio y del resumen de pendientes.
+model LicitacionHito {
+  id                          Int                       @id @default(autoincrement())
+  oportunidadMercadoPublicoId Int
+  /// CIERRE | FINAL_PREGUNTAS | PUBLICACION_RESPUESTAS | APERTURA_TECNICA | APERTURA_ECONOMICA | ADJUDICACION | VISITA_TERRENO | ENTREGA_ANTECEDENTES | OTRO
+  tipo                        String
+  /// Texto libre (obligatorio en hitos MANUAL de tipo OTRO)
+  descripcion                 String?
+  /// Fecha y hora del hito (hora de Chile convertida a UTC)
+  fecha                       DateTime
+  /// API | MANUAL
+  origen                      String                    @default("API")
+  /// false = la API ya no informa este hito o el usuario lo desactivó; no genera avisos
+  activo                      Boolean                   @default(true)
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  oportunidadMercadoPublico   OportunidadMercadoPublico @relation(fields: [oportunidadMercadoPublicoId], references: [id], onDelete: Cascade)
+  avisos                      LicitacionHitoAviso[]
+
+  @@index([oportunidadMercadoPublicoId])
+  @@index([oportunidadMercadoPublicoId, tipo])
+  @@index([fecha])
+  @@index([activo])
+}
+
+/// Registro de cada aviso enviado por un hito. El único evita repetir un aviso;
+/// si la fecha del hito cambia (prórroga), fechaObjetivo cambia y se vuelve a avisar.
+model LicitacionHitoAviso {
+  id            Int            @id @default(autoincrement())
+  hitoId        Int
+  fechaObjetivo DateTime
+  /// Días antes del hito: 7 | 3 | 1 | 0
+  umbral        Int
+  destinatarios String[]       @default([])
+  /// ENVIADO | ERROR
+  estado        String         @default("ENVIADO")
+  error         String?
+  createdAt     DateTime       @default(now())
+  hito          LicitacionHito @relation(fields: [hitoId], references: [id], onDelete: Cascade)
+
+  @@unique([hitoId, fechaObjetivo, umbral])
+  @@index([hitoId])
+  @@index([createdAt])
 }
 
 model LeypdElemento {

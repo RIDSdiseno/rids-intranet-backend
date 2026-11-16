@@ -17,15 +17,19 @@ import {
     sincronizarMercadoPublicoController,
 } from "../../controllers/mercado-publico/mercado-publico.controller.js";
 
+import {
+    listarHitosController,
+    sincronizarHitosController,
+    sincronizarHitosVigentesController,
+    procesarAvisosController
+} from "../../controllers/mercado-publico/mercado-publico-hitos.controller.js";
 
 const router =
     Router();
 
-
 router.use(
     auth()
 );
-
 
 router.get(
     "/",
@@ -70,5 +74,47 @@ router.post(
     convertirMercadoPublicoController
 );
 
+/* ==================== HITOS / AVISOS DE LICITACIONES ==================== */
+
+router.post(
+    "/avisos/procesar",
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    procesarAvisosController
+);
+
+router.post(
+    "/hitos/sincronizar-vigentes",
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "VENTAS"
+    ),
+    sincronizarHitosVigentesController
+);
+
+
+router.get(
+    "/:id/hitos",
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "VENTAS"
+    ),
+    listarHitosController
+);
+
+
+router.post(
+    "/:id/hitos/sincronizar",
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "VENTAS"
+    ),
+    sincronizarHitosController
+);
 
 export default router;

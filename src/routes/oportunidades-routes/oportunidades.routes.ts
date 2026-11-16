@@ -25,6 +25,7 @@ import {
   crearOportunidadDesdeCotizacionController,
   cambiarEstadoSeguimientoController,
   enviarInformeOportunidadController,
+  procesarAvisosFunnelController
 } from "../../controllers/controllers-oportunidades/oportunidades.controller.js";
 
 import type {
@@ -139,6 +140,15 @@ oportunidadesRouter.use(
   onlyRole(
     ...ROLES_OPORTUNIDADES
   )
+);
+
+oportunidadesRouter.post(
+    "/avisos/procesar",
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION"
+    ),
+    procesarAvisosFunnelController
 );
 
 

@@ -18,6 +18,9 @@ import {
     sincronizarOportunidadesMercadoPublico,
 } from "../../service/mercado-publico/mercado-publico.service.js";
 
+import {
+    VIGENCIAS_MERCADO_PUBLICO,
+} from "../../service/mercado-publico/mercado-publico-hitos.service.js";
 
 const filtrosSchema =
     z.object({
@@ -48,6 +51,12 @@ const filtrosSchema =
         region:
             z.string()
                 .trim()
+                .optional(),
+
+        vigencia:
+            z.enum(
+                VIGENCIAS_MERCADO_PUBLICO
+            )
                 .optional(),
 
         page:
@@ -191,6 +200,13 @@ export async function listarMercadoPublicoController(
                     ? {
                         region:
                             parsed.data.region,
+                    }
+                    : {}),
+
+                ...(parsed.data.vigencia !== undefined
+                    ? {
+                        vigencia:
+                            parsed.data.vigencia,
                     }
                     : {}),
             });
