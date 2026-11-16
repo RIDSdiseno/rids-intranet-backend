@@ -2,6 +2,7 @@ import { z } from "zod";
 import { EtapaOportunidadVenta, PrioridadOportunidadVenta, MonedaGestioo, EstadoDesarrolloPropuesta, TipoServicioOportunidad, RiesgoTecnicoOportunidad, } from "@prisma/client";
 import { crearOportunidad, listarOportunidades, obtenerFunnel, obtenerDashboardFunnel, obtenerOportunidadPorId, editarOportunidad, cambiarEtapaOportunidad, reordenarOportunidad, desactivarOportunidad, crearSeguimiento, listarSeguimientos, obtenerHistorial, listarCotizacionesOportunidad, vincularCotizacion, desvincularCotizacion, OportunidadNoEncontradaError, EtapaOportunidadInvalidaError, CierreOportunidadInvalidoError, ResponsableOportunidadInvalidoError, EntidadOportunidadInvalidaError, OrdenOportunidadInvalidoError, CotizacionYaVinculadaError, CotizacionNoEncontradaError, CotizacionNoVinculadaError, crearOportunidadDesdeCotizacion, cambiarEstadoSeguimiento } from "../../service/oportunidades/oportunidades.service.js";
 import { enviarInformeOportunidad, } from "../../service/oportunidades/oportunidades-informe.service.js";
+import { procesarAvisosFunnel, } from "../../service/oportunidades/oportunidades-avisos.service.js";
 /* =========================================================
    Validaciones Zod (mismo patrón que agenda.controller.ts:
    los schemas viven junto al controller, no en un módulo aparte)
@@ -450,6 +451,34 @@ export async function cambiarEstadoSeguimientoController(req, res) {
         console.error(error);
         return res.status(500).json({
             error: "No se pudo actualizar el seguimiento.",
+        });
+    }
+}
+/* =========================================================
+   AVISOS DE FECHAS DEL FUNNEL
+   POST /oportunidades/avisos/procesar
+   Por defecto SIMULA (no envía ni registra).
+   Con ?enviar=1 envía y registra (mismo proceso del cron).
+========================================================= */
+export async function procesarAvisosFunnelController(req, res) {
+    const enviar = String(req.query.enviar ?? "") === "1";
+    const enviarA = typeof req.query.enviarA === "string" ? req.query.enviarA.trim().toLowerCase() : "";
+    if (enviarA && !z.string().email().safeParse(enviarA).success) {
+        return res.status(400).json({ success: false, code: "CORREO_INVALIDO", message: "enviarA no es un correo válido." });
+    }
+    try {
+        const data = await procesarAvisosFunnel({
+            simular: !enviar && !enviarA,
+            ...(enviarA ? { redirigirA: enviarA } : {}),
+        });
+        return res.status(200).json({ success: true, data });
+    }
+    catch (err) {
+        console.error("[oportunidades][avisos]", err);
+        return res.status(500).json({
+            success: false,
+            code: "AVISOS_ERROR",
+            message: err instanceof Error ? err.message : "No fue posible procesar los avisos del funnel.",
         });
     }
 }

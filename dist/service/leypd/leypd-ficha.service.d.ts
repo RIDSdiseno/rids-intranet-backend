@@ -27,6 +27,11 @@ export declare function obtenerFichaLeypdInterna(empresaId: number): Promise<{
         updatedAt: Date | null;
     };
     campos: import("./leypd-ficha-campos.js").CampoFichaLeypd[];
+    contactoEmpresa: {
+        email: string | null;
+        telefono: string | null;
+    } | null;
+    contactos: import("./leypd-ficha-sugerencias.service.js").ContactoFichaLeypd[];
 }>;
 export declare function guardarFichaLeypdInterna(empresaId: number, datos: Record<string, unknown>, actorEmail: string | null): Promise<{
     empresaId: number;
@@ -123,6 +128,11 @@ export declare function obtenerFichaLeypdCliente(empresaId: number): Promise<{
         updatedAt: Date | null;
     };
     campos: import("./leypd-ficha-campos.js").CampoFichaLeypd[];
+    contactoEmpresa: {
+        email: string | null;
+        telefono: string | null;
+    } | null;
+    contactos: import("./leypd-ficha-sugerencias.service.js").ContactoFichaLeypd[];
 }>;
 export declare function guardarFichaLeypdCliente(empresaId: number, datos: Record<string, unknown>, actorEmail: string | null): Promise<{
     empresaId: number;

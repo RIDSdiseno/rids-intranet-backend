@@ -5,6 +5,8 @@ export declare function postEnlaceFichaLeypd(req: Request, res: Response): Promi
 export declare function postRevocarEnlaceFichaLeypd(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getMiFichaLeypd(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function putMiFichaLeypd(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+/** GET /leypd/:empresaId/ficha/pdf */
+export declare function getFichaLeypdPdf(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getFichaLeypdPublica(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function putFichaLeypdPublica(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function postEnviarFichaLeypdPublica(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

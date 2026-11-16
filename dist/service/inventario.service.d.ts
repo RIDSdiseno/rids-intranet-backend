@@ -38,9 +38,9 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
         hostname: string | null;
         macAddress: string | null;
         descripcion: string | null;
+        ubicacion: string | null;
         serialAdicional: string | null;
         ipAddress: string | null;
-        ubicacion: string | null;
         cantidad: number;
     }[];
     empresa: {
@@ -91,9 +91,9 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
             hostname: string | null;
             macAddress: string | null;
             descripcion: string | null;
+            ubicacion: string | null;
             serialAdicional: string | null;
             ipAddress: string | null;
-            ubicacion: string | null;
             cantidad: number;
         };
         observacion: string | null;

@@ -79,7 +79,7 @@ function crearSeccion({ key, label, obligatoria, campos, sinDatos = false, noApl
 /* =====================================================
    LABELS CHECKLIST
 ===================================================== */
-const CHECKLIST_LABELS = {
+export const CHECKLIST_LABELS = {
     levantamientoEquipos: "Levantamiento de equipos",
     inventarioSoftware: "Inventario de software",
     soporteComputacional: "Soporte computacional",
@@ -96,7 +96,7 @@ const CHECKLIST_LABELS = {
 /* =====================================================
    FICHA TÉCNICA
 ===================================================== */
-const FICHA_TECNICA_LABELS = {
+export const FICHA_TECNICA_LABELS = {
     tecnicoPrincipal: "Técnico principal",
     tecnicosRespaldo: "Técnicos de respaldo",
     sistemasOperativos: "Sistemas operativos",
@@ -171,6 +171,7 @@ export async function evaluarCompletitudFichasEmpresas(empresaIds) {
                 select: {
                     condicionesComerciales: true,
                     servidoresAplica: true,
+                    telefoniaAplica: true,
                     checklist: {
                         select: {
                             levantamientoEquipos: true,
@@ -253,6 +254,30 @@ export async function evaluarCompletitudFichasEmpresas(empresaIds) {
                     nombreUsuario: true,
                     ipExterna: true,
                     probado: true,
+                },
+            },
+            /*
+            * Las contraseñas solo se leen para saber si
+            * están registradas; nunca salen del servicio.
+            */
+            telefoniaParlantes: {
+                select: {
+                    id: true,
+                    ubicacion: true,
+                    marcaModelo: true,
+                    anexo: true,
+                    macAddress: true,
+                    contrasenaAdmin: true,
+                },
+            },
+            telefoniaUsuarios: {
+                select: {
+                    id: true,
+                    nombre: true,
+                    anexo: true,
+                    contrasena: true,
+                    ipPrivada: true,
+                    ipPublica: true,
                 },
             },
         },
@@ -599,6 +624,79 @@ export async function evaluarCompletitudFichasEmpresas(empresaIds) {
                 empresa.servidors.length ===
                     0,
             campos: camposServidores,
+        }));
+        /* =================================================
+           9. TELEFONÍA
+           Solo cuenta si la empresa la tiene marcada como
+           «aplica» (FichaEmpresa.telefoniaAplica).
+        ================================================= */
+        const telefoniaAplica = empresa
+            .fichaEmpresa
+            ?.telefoniaAplica ??
+            false;
+        const totalRegistrosTelefonia = empresa.telefoniaParlantes.length +
+            empresa.telefoniaUsuarios.length;
+        const camposTelefonia = [];
+        if (telefoniaAplica) {
+            if (totalRegistrosTelefonia ===
+                0) {
+                camposTelefonia.push({
+                    campo: "telefonia",
+                    label: "Al menos un parlante o usuario de telefonía",
+                    completo: false,
+                });
+            }
+            else {
+                for (const parlante of empresa.telefoniaParlantes) {
+                    const registro = parlante.ubicacion ||
+                        (parlante.anexo
+                            ? `Parlante anexo ${parlante.anexo}`
+                            : `Parlante #${parlante.id}`);
+                    const campos = [
+                        ["ubicacion", "Ubicación", parlante.ubicacion],
+                        ["marcaModelo", "Marca / modelo", parlante.marcaModelo],
+                        ["anexo", "Anexo", parlante.anexo],
+                        ["macAddress", "MAC", parlante.macAddress],
+                        ["contrasenaAdmin", "Contraseña admin", parlante.contrasenaAdmin],
+                    ];
+                    for (const [campo, label, valor,] of campos) {
+                        camposTelefonia.push({
+                            campo: `parlante.${parlante.id}.${campo}`,
+                            label,
+                            registro,
+                            completo: tieneValor(valor),
+                        });
+                    }
+                }
+                for (const usuario of empresa.telefoniaUsuarios) {
+                    const registro = usuario.nombre ||
+                        `Usuario #${usuario.id}`;
+                    const campos = [
+                        ["anexo", "Anexo / usuario", usuario.anexo],
+                        ["contrasena", "Contraseña", usuario.contrasena],
+                        ["ipPrivada", "IP privada", usuario.ipPrivada],
+                        ["ipPublica", "IP pública", usuario.ipPublica],
+                    ];
+                    for (const [campo, label, valor,] of campos) {
+                        camposTelefonia.push({
+                            campo: `usuarioTelefonia.${usuario.id}.${campo}`,
+                            label,
+                            registro,
+                            completo: tieneValor(valor),
+                        });
+                    }
+                }
+            }
+        }
+        secciones.push(crearSeccion({
+            key: "telefonia",
+            label: "Telefonía",
+            obligatoria: telefoniaAplica,
+            noAplica: !telefoniaAplica,
+            sinDatos: telefoniaAplica &&
+                totalRegistrosTelefonia ===
+                    0,
+            campos: camposTelefonia,
         }));
         /* =================================================
            ESTADO GENERAL

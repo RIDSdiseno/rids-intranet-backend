@@ -29,9 +29,48 @@ import {
     FichaLeypdValidacionError,
 } from "../../service/leypd/leypd-ficha-validacion.js";
 
+import {
+    generarFichaLeypdPdf,
+} from "../../service/leypd/leypd-ficha-pdf.service.js";
+
 /* =====================================================
    ERROR HANDLER
 ===================================================== */
+
+/**
+ * Códigos que el service lanza como `new Error("CODIGO")`.
+ * Se responden con su status; el resto termina en 500.
+ */
+const ERRORES_FICHA: Record<
+    string,
+    { status: number; message: string }
+> = {
+    EMPRESA_NO_ENCONTRADA: {
+        status: 404,
+        message: "Empresa no encontrada.",
+    },
+    FICHA_NO_ENCONTRADA: {
+        status: 404,
+        message: "Ficha no encontrada.",
+    },
+    TOKEN_INVALIDO: {
+        status: 404,
+        message: "Enlace inválido.",
+    },
+    TOKEN_REVOCADO: {
+        status: 410,
+        message: "El enlace fue revocado.",
+    },
+    TOKEN_EXPIRADO: {
+        status: 410,
+        message: "El enlace expiró.",
+    },
+    FICHA_YA_ENVIADA: {
+        status: 409,
+        message:
+            "Esta ficha ya fue enviada. Si necesitas modificarla, solicita a RIDS un nuevo enlace.",
+    },
+};
 
 function responderErrorFicha(
     error: unknown,
@@ -41,60 +80,35 @@ function responderErrorFicha(
         error instanceof
         FichaLeypdValidacionError
     ) {
-        switch (
-        error.message
-        ) {
-            case "EMPRESA_NO_ENCONTRADA":
-                return res
-                    .status(404)
-                    .json({
-                        message:
-                            "Empresa no encontrada.",
-                    });
+        return res
+            .status(400)
+            .json({
+                code:
+                    "FICHA_VALIDACION",
+                message:
+                    "Hay respuestas con errores. Revisa los campos marcados.",
+                errores:
+                    error.errores,
+            });
+    }
 
-            case "FICHA_NO_ENCONTRADA":
-                return res
-                    .status(404)
-                    .json({
-                        message:
-                            "Ficha no encontrada.",
-                    });
+    if (error instanceof Error) {
+        const conocido =
+            ERRORES_FICHA[
+            error.message
+            ];
 
-            case "TOKEN_INVALIDO":
-                return res
-                    .status(404)
-                    .json({
-                        message:
-                            "Enlace inválido.",
-                    });
-
-            case "TOKEN_REVOCADO":
-                return res
-                    .status(410)
-                    .json({
-                        message:
-                            "El enlace fue revocado.",
-                    });
-
-            case "TOKEN_EXPIRADO":
-                return res
-                    .status(410)
-                    .json({
-                        message:
-                            "El enlace expiró.",
-                    });
-
-            case "FICHA_YA_ENVIADA":
-                return res
-                    .status(409)
-                    .json({
-                        code:
-                            "FICHA_YA_ENVIADA",
-                        message:
-                            "Esta ficha ya fue enviada. Si necesitas modificarla, solicita a RIDS un nuevo enlace.",
-                    });
-
-            case "FRONTEND_URL_NO_CONFIGURADO":
+        if (conocido) {
+            return res
+                .status(
+                    conocido.status
+                )
+                .json({
+                    code:
+                        error.message,
+                    message:
+                        conocido.message,
+                });
         }
     }
 
@@ -107,7 +121,11 @@ function responderErrorFicha(
         .status(500)
         .json({
             message:
-                "No se pudo completar la operación.",
+                error instanceof Error &&
+                    error.message ===
+                    "FRONTEND_URL_NO_CONFIGURADO"
+                    ? "Falta configurar FRONTEND_URL en el servidor."
+                    : "No se pudo completar la operación.",
         });
 }
 
@@ -345,6 +363,83 @@ export async function putMiFichaLeypd(
             error,
             res
         );
+    }
+}
+
+/* =====================================================
+   PDF INTERNO DE LA FICHA
+===================================================== */
+
+/** GET /leypd/:empresaId/ficha/pdf */
+export async function getFichaLeypdPdf(
+    req: Request,
+    res: Response
+) {
+    const parsed =
+        empresaIdSchema.safeParse(
+            req.params.empresaId
+        );
+
+    if (!parsed.success) {
+        return res
+            .status(400)
+            .json({
+                message:
+                    "ID de empresa inválido.",
+            });
+    }
+
+    try {
+        const pdf =
+            await generarFichaLeypdPdf(
+                parsed.data,
+                req.user?.email ??
+                null
+            );
+
+        res.setHeader(
+            "Content-Type",
+            "application/pdf"
+        );
+
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${pdf.nombreArchivo}"`
+        );
+
+        res.setHeader(
+            "Cache-Control",
+            "no-store"
+        );
+
+        return res.send(
+            pdf.buffer
+        );
+    } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message ===
+            "EMPRESA_NO_ENCONTRADA"
+        ) {
+            return res
+                .status(404)
+                .json({
+                    message:
+                        "Empresa no encontrada.",
+                });
+        }
+
+        console.error(
+            "[LEYPD FICHA PDF]",
+            error
+        );
+
+        return res
+            .status(500)
+            .json({
+                message:
+                    "No se pudo generar el PDF de la ficha.",
+            });
     }
 }
 

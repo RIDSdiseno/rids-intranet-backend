@@ -1,4 +1,5 @@
 import { EstadoOportunidadMercadoPublico, Prisma } from "@prisma/client";
+import { type VigenciaMercadoPublico } from "./mercado-publico-hitos.service.js";
 export declare function sincronizarOportunidadesMercadoPublico(): Promise<{
     totalApi: number;
     procesadas: number;
@@ -10,6 +11,8 @@ export declare function sincronizarOportunidadesMercadoPublico(): Promise<{
     omitidasPorLimite: number;
 }>;
 export type FiltrosMercadoPublico = {
+    /** vigentes (por defecto) | cerradas | todas */
+    vigencia?: VigenciaMercadoPublico;
     texto?: string;
     estado?: EstadoOportunidadMercadoPublico;
     scoreMin?: number;

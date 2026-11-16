@@ -4,11 +4,14 @@ import { auth } from "../middlewares/auth.js";
 import { onlyRole } from "../middlewares/roles.js";
 import { onlyOwnEmpresa } from "../middlewares/auth.js";
 import { createDetalleTrabajo, getDetallesTrabajo, getDetalleTrabajoById, updateDetalleTrabajo, deleteDetalleTrabajo, getDetallesTrabajoByEquipo, generarCotizacionDesdeOrden, } from "../controllers/detalle-trabajo-gestioo.controller.js";
+import { getHistorialOrdenTaller } from "../controllers/taller-historial.controller.js";
 const detalleTrabajoGestiooRouter = Router();
 const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"];
 const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"];
 // Listar — auth requerido; CLIENTE filtra por su empresa (lógica en controller)
 detalleTrabajoGestiooRouter.get("/", auth(), onlyOwnEmpresa(), getDetallesTrabajo);
+// Historial de la orden (ENTRADA + SALIDA) — solo internos
+detalleTrabajoGestiooRouter.get("/:id/historial", auth(), onlyRole(...ROLES_INTERNOS), getHistorialOrdenTaller);
 // Detalle — auth requerido; CLIENTE solo ve órdenes de su empresa
 detalleTrabajoGestiooRouter.get("/:id", auth(), onlyOwnEmpresa(), getDetalleTrabajoById);
 // Por equipo — solo internos

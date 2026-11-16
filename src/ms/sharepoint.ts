@@ -346,3 +346,84 @@ export async function listarHijosCarpeta(
 
     return items;
 }
+
+/* =====================================================
+   DESCARGAR (OPCIONALMENTE CONVERTIDO A PDF)
+===================================================== */
+
+/**
+ * Descarga un archivo del drive. Con `convertir`, Graph lo entrega
+ * convertido a PDF (docx, doc, pptx, rtf, odt…).
+ * Reintenta si Graph responde 429/503 (conversión ocupada).
+ */
+export async function descargarArchivoComoPdf(
+    driveId: string,
+    itemId: string,
+    convertir: boolean
+): Promise<Buffer> {
+    const url =
+        `${GRAPH}/drives/${driveId}/items/${itemId}/content` +
+        (convertir ? "?format=pdf" : "");
+
+    for (let intento = 1; ; intento++) {
+        const token =
+            await obtenerTokenSharepoint();
+
+        const r =
+            await fetch(url, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                signal: AbortSignal.timeout(90_000),
+            });
+
+        if (r.ok) {
+            return Buffer.from(
+                await r.arrayBuffer()
+            );
+        }
+
+        if (
+            (r.status === 429 ||
+                r.status === 503) &&
+            intento < 3
+        ) {
+            const segundos =
+                Number(r.headers.get("retry-after")) ||
+                2 * intento;
+
+            await new Promise((listo) =>
+                setTimeout(listo, Math.min(segundos, 20) * 1000)
+            );
+
+            continue;
+        }
+
+        const texto =
+            await r.text().catch(() => "");
+
+        if (r.status === 404) {
+            throw new Error(
+                "SHAREPOINT_NO_ENCONTRADO"
+            );
+        }
+
+        if (
+            r.status === 401 ||
+            r.status === 403
+        ) {
+            console.error(
+                "[SharePoint] Sin permisos al descargar:",
+                texto.slice(0, 500)
+            );
+
+            throw new Error(
+                "SHAREPOINT_SIN_PERMISOS"
+            );
+        }
+
+        throw new Error(
+            `SHAREPOINT_ERROR ${r.status}: ${texto.slice(0, 300)}`
+        );
+    }
+}

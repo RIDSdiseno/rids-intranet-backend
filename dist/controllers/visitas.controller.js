@@ -190,6 +190,9 @@ export const listVisitas = async (req, res) => {
     const empresaIdQ = req.query.empresaId;
     const statusQ = req.query.status;
     const q = req.query.q?.trim();
+    // Solo PENDIENTE | COMPLETADA | CANCELADA; cualquier otro valor se ignora
+    const statusParsed = StatusEnum.safeParse(statusQ?.trim().toUpperCase());
+    const statusFiltro = statusParsed.success ? statusParsed.data : undefined;
     // NUEVO: filtros por mes/año
     const monthQ = req.query.month;
     const yearQ = req.query.year;
@@ -221,9 +224,9 @@ export const listVisitas = async (req, res) => {
                     tecnicoId: Number(tecnicoIdQ),
                 }
                 : {},
-            statusQ
+            statusFiltro
                 ? {
-                    status: statusQ,
+                    status: statusFiltro,
                 }
                 : {},
             dateFilter

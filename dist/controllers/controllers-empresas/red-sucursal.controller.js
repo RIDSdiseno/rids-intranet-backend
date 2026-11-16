@@ -23,6 +23,16 @@ function normalizarIpsPublicas(value) {
     }
     return ips;
 }
+/** "" o espacios → null; recorta el resto. */
+function textoOpcional(value) {
+    if (typeof value !==
+        "string") {
+        return null;
+    }
+    const texto = value.trim();
+    return texto ||
+        null;
+}
 export async function crearEmpresaISP(req, res) {
     const empresaId = Number(req.params.empresaId);
     const body = req.body;
@@ -42,6 +52,10 @@ export async function crearEmpresaISP(req, res) {
             telefono: body.telefono ?? null,
             servicio: body.servicio ?? null,
             numeroTicket: body.numeroTicket ?? null,
+            codigoServicio: textoOpcional(body.codigoServicio),
+            direccion: textoOpcional(body.direccion),
+            rut: textoOpcional(body.rut),
+            telefonoSoporte: textoOpcional(body.telefonoSoporte),
             wifiNombre: body.wifiNombre ?? null,
             wifiClaveRef: body.wifiClaveRef ?? null,
             ipRed: ipsPublicas,
@@ -120,6 +134,19 @@ export async function actualizarEmpresaISP(req, res) {
                     null,
                 numeroTicket: body.numeroTicket ??
                     null,
+                /* Si el campo no viene en el body, se conserva el valor actual */
+                codigoServicio: body.codigoServicio === undefined
+                    ? existente.codigoServicio
+                    : textoOpcional(body.codigoServicio),
+                direccion: body.direccion === undefined
+                    ? existente.direccion
+                    : textoOpcional(body.direccion),
+                rut: body.rut === undefined
+                    ? existente.rut
+                    : textoOpcional(body.rut),
+                telefonoSoporte: body.telefonoSoporte === undefined
+                    ? existente.telefonoSoporte
+                    : textoOpcional(body.telefonoSoporte),
                 wifiNombre: body.wifiNombre ??
                     null,
                 wifiClaveRef: body.wifiClaveRef ??

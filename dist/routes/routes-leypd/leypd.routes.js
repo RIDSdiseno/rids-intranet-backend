@@ -3,10 +3,11 @@ import { Router, } from "express";
 import { auth, } from "../../middlewares/auth.js";
 import { onlyRole, } from "../../middlewares/roles.js";
 import { listarLeypd, obtenerEmpresaLeypd, actualizarElementoLeypdController, } from "../../controllers/controllers-leypd/leypd.controller.js";
-import { getFichaLeypdInterna, putFichaLeypdInterna, postEnlaceFichaLeypd, postRevocarEnlaceFichaLeypd, getMiFichaLeypd, putMiFichaLeypd, } from "../../controllers/controllers-leypd/leypd-ficha.controller.js";
+import { getFichaLeypdInterna, putFichaLeypdInterna, postEnlaceFichaLeypd, postRevocarEnlaceFichaLeypd, getMiFichaLeypd, putMiFichaLeypd, getFichaLeypdPdf, } from "../../controllers/controllers-leypd/leypd-ficha.controller.js";
 import { postActualizacionLeypd, getActualizacionLeypd, getActualizacionActivaLeypd, getUltimaActualizacionLeypd, postCancelarActualizacionLeypd, } from "../../controllers/controllers-leypd/leypd-actualizacion.controller.js";
 import { getConsentimientosElementoLeypd, } from "../../controllers/controllers-leypd/leypd-consentimientos.controller.js";
 import { getSharepointLeypd, postSincronizarSharepointLeypd, postSincronizarTodasSharepointLeypd, postVincularSharepointLeypd, } from "../../controllers/controllers-leypd/leypd-sharepoint.controller.js";
+import { getExpedienteLeypdPdf, } from "../../controllers/controllers-leypd/leypd-expediente.controller.js";
 const router = Router();
 /* =====================================================
    PORTAL CLIENTE
@@ -33,6 +34,11 @@ router.get("/", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), listarLe
 ===================================================== */
 router.get("/:empresaId/ficha", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), getFichaLeypdInterna);
 router.put("/:empresaId/ficha", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), putFichaLeypdInterna);
+router.get("/:empresaId/ficha/pdf", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), getFichaLeypdPdf);
+/* =====================================================
+   EXPEDIENTE PDF (uso interno: documentos unidos)
+===================================================== */
+router.get("/:empresaId/expediente/pdf", auth(), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), getExpedienteLeypdPdf);
 router.post("/:empresaId/ficha/enlace", auth(), onlyRole("ADMIN", "ADMINISTRACION"), postEnlaceFichaLeypd);
 router.post("/:empresaId/ficha/revocar", auth(), onlyRole("ADMIN", "ADMINISTRACION"), postRevocarEnlaceFichaLeypd);
 /* =====================================================

@@ -1,5 +1,5 @@
 // src/controllers/recordatorios.controller.ts
-import { AreaGestioo, EstadoRecordatorio, OrigenRecordatorio, Prisma, TicketStatus, } from "@prisma/client";
+import { AreaGestioo, EstadoCotizacionGestioo, EstadoRecordatorio, EstadoVisita, OrigenRecordatorio, Prisma, TicketStatus, } from "@prisma/client";
 import { prismaBase as prisma } from "../lib/prisma.js";
 import { vencimientosSuscripcionesCampana, } from "../service/suscripciones-contratos/suscripciones-vencimientos.service.js";
 const DIAS_EXPIRACION_RECORDATORIO = 3;
@@ -190,7 +190,7 @@ const MAX_ORDENES_TALLER_CAMPANA = 50;
  * Órdenes abiertas = ENTRADA (una fila por orden) que aún no
  * tiene salida. Al registrar la SALIDA, la ENTRADA pasa a COMPLETADA.
  */
-async function obtenerOrdenesTallerPendientes(rol) {
+export async function obtenerOrdenesTallerPendientes(rol) {
     if (!rol || !ROLES_TALLER_CAMPANA.has(rol)) {
         return [];
     }
@@ -325,6 +325,229 @@ async function cancelarRecordatoriosTicketsCerrados(tecnicoId) {
         },
     });
     return resultado.count;
+}
+/* =====================================================
+   VISITAS PENDIENTES VENCIDAS (CALCULADO EN VIVO)
+===================================================== */
+/** Horas en PENDIENTE (desde el inicio de la visita) para considerarla vencida. */
+const HORAS_VISITA_VENCIDA = 24;
+const MAX_VISITAS_VENCIDAS_CAMPANA = 50;
+/** Ven las visitas vencidas de todos los técnicos; el resto de los roles internos, solo las propias. */
+const ROLES_VISITAS_TODAS = new Set([
+    "ADMIN",
+    "ADMINISTRACION",
+]);
+function fechaChile(fecha) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Santiago",
+    }).format(fecha);
+}
+/**
+ * Visitas que siguen PENDIENTE más de 24 horas después de su inicio,
+ * agrupadas por jornada (técnico + empresa + día).
+ */
+export async function obtenerVisitasVencidas(rol, tecnicoId) {
+    if (!rol || !ROLES_TALLER_CAMPANA.has(rol)) {
+        return [];
+    }
+    const ahora = new Date();
+    const limite = new Date(ahora.getTime() -
+        HORAS_VISITA_VENCIDA *
+            60 *
+            60 *
+            1000);
+    const visitas = await prisma.visita.findMany({
+        where: {
+            status: EstadoVisita.PENDIENTE,
+            inicio: {
+                lt: limite,
+            },
+            empresa: {
+                is: {
+                    isActive: true,
+                },
+            },
+            ...(ROLES_VISITAS_TODAS.has(rol)
+                ? {}
+                : { tecnicoId }),
+        },
+        orderBy: {
+            inicio: "asc",
+        },
+        /* Tope de filas: varias visitas forman una sola jornada */
+        take: 500,
+        select: {
+            id_visita: true,
+            inicio: true,
+            empresaId: true,
+            tecnicoId: true,
+            solicitante: true,
+            empresa: {
+                select: { nombre: true },
+            },
+            tecnico: {
+                select: { nombre: true },
+            },
+            solicitanteRef: {
+                select: { nombre: true },
+            },
+        },
+    });
+    const jornadas = new Map();
+    for (const visita of visitas) {
+        const fecha = fechaChile(visita.inicio);
+        const clave = `${visita.tecnicoId}|${visita.empresaId}|${fecha}`;
+        let jornada = jornadas.get(clave);
+        if (!jornada) {
+            jornada = {
+                clave,
+                empresaId: visita.empresaId,
+                empresaNombre: visita.empresa.nombre,
+                tecnicoId: visita.tecnicoId,
+                tecnicoNombre: visita.tecnico.nombre,
+                fecha,
+                inicio: visita.inicio,
+                dias: Math.floor((ahora.getTime() -
+                    visita.inicio.getTime()) /
+                    86_400_000),
+                visitaIds: [],
+                solicitantes: [],
+            };
+            jornadas.set(clave, jornada);
+        }
+        jornada.visitaIds.push(visita.id_visita);
+        const nombre = visita.solicitanteRef?.nombre?.trim() ||
+            visita.solicitante?.trim();
+        if (nombre &&
+            !jornada.solicitantes.includes(nombre)) {
+            jornada.solicitantes.push(nombre);
+        }
+    }
+    /* La más antigua primero */
+    return Array.from(jornadas.values()).slice(0, MAX_VISITAS_VENCIDAS_CAMPANA);
+}
+/* =====================================================
+   TICKETS ACTIVOS (CALCULADO EN VIVO)
+===================================================== */
+/** Estados que la campana muestra como tickets activos. */
+const ESTADOS_TICKET_ACTIVOS = [
+    TicketStatus.NEW,
+    TicketStatus.OPEN,
+    TicketStatus.PENDING,
+];
+const MAX_TICKETS_CAMPANA = 100;
+/**
+ * Tickets NEW, OPEN y PENDING (no eliminados), visibles para todos
+ * los roles internos. Primero los de mayor prioridad y, dentro de
+ * cada prioridad, los más antiguos.
+ *
+ * Devuelve también el total real, por si supera el máximo que se envía.
+ */
+export async function obtenerTicketsActivos(rol) {
+    if (!rol || !ROLES_TALLER_CAMPANA.has(rol)) {
+        return {
+            tickets: [],
+            total: 0,
+        };
+    }
+    const where = {
+        status: {
+            in: ESTADOS_TICKET_ACTIVOS,
+        },
+        deletedAt: null,
+    };
+    const [tickets, total,] = await Promise.all([
+        prisma.ticket.findMany({
+            where,
+            orderBy: [
+                /* El enum va de LOW a URGENT: desc = URGENT primero */
+                { priority: "desc" },
+                { createdAt: "asc" },
+            ],
+            take: MAX_TICKETS_CAMPANA,
+            select: {
+                id: true,
+                subject: true,
+                status: true,
+                priority: true,
+                createdAt: true,
+                lastActivityAt: true,
+                empresa: {
+                    select: { nombre: true },
+                },
+                requester: {
+                    select: { nombre: true },
+                },
+                assignee: {
+                    select: { nombre: true },
+                },
+            },
+        }),
+        prisma.ticket.count({ where }),
+    ]);
+    return {
+        tickets,
+        total,
+    };
+}
+/* =====================================================
+   COTIZACIONES EN BORRADOR (CALCULADO EN VIVO)
+===================================================== */
+/** Días hacia atrás (por fecha de la cotización) que se consideran. */
+const DIAS_COTIZACIONES_BORRADOR = 30;
+const MAX_COTIZACIONES_CAMPANA = 50;
+/**
+ * Cotizaciones en BORRADOR con fecha de los últimos 30 días, visibles para
+ * todos los roles internos. La más antigua primero (la que está por salir
+ * de la ventana). Devuelve también el total real.
+ */
+export async function obtenerCotizacionesBorrador(rol) {
+    if (!rol || !ROLES_TALLER_CAMPANA.has(rol)) {
+        return {
+            cotizaciones: [],
+            total: 0,
+        };
+    }
+    const desde = new Date(Date.now() -
+        DIAS_COTIZACIONES_BORRADOR *
+            24 *
+            60 *
+            60 *
+            1000);
+    const where = {
+        estado: EstadoCotizacionGestioo.BORRADOR,
+        fecha: {
+            gte: desde,
+        },
+    };
+    const [cotizaciones, total,] = await Promise.all([
+        prisma.cotizacionGestioo.findMany({
+            where,
+            orderBy: {
+                fecha: "asc",
+            },
+            take: MAX_COTIZACIONES_CAMPANA,
+            select: {
+                id: true,
+                fecha: true,
+                tipo: true,
+                total: true,
+                moneda: true,
+                personaResponsable: true,
+                entidad: {
+                    select: { nombre: true },
+                },
+                tecnico: {
+                    select: { nombre: true },
+                },
+            },
+        }),
+        prisma.cotizacionGestioo.count({ where }),
+    ]);
+    return {
+        cotizaciones,
+        total,
+    };
 }
 /* =====================================================
    CREAR RECORDATORIO
@@ -553,17 +776,23 @@ export async function obtenerMisRecordatorios(req, res) {
         /* Taller y vencimientos: solo roles internos (no CLIENTE) */
         const esInterno = !!rol &&
             ROLES_TALLER_CAMPANA.has(rol);
-        const [taller, suscripciones,] = await Promise.all([
+        const [taller, suscripciones, visitasVencidas, ticketsActivos, cotizacionesBorrador,] = await Promise.all([
             obtenerOrdenesTallerPendientes(rol),
             esInterno
                 ? vencimientosSuscripcionesCampana()
                 : Promise.resolve([]),
+            obtenerVisitasVencidas(rol, tecnicoId),
+            obtenerTicketsActivos(rol),
+            obtenerCotizacionesBorrador(rol),
         ]);
         return res.json({
             data: recordatorios,
             pendientesNoLeidos,
             taller,
             suscripciones,
+            visitasVencidas,
+            ticketsActivos,
+            cotizacionesBorrador
         });
     }
     catch (error) {

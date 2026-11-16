@@ -1,6 +1,7 @@
 import { EstadoOportunidadMercadoPublico, } from "@prisma/client";
 import { z, } from "zod";
 import { cambiarEstadoMercadoPublico, convertirMercadoPublicoAFunnel, listarOportunidadesMercadoPublico, sincronizarOportunidadesMercadoPublico, } from "../../service/mercado-publico/mercado-publico.service.js";
+import { VIGENCIAS_MERCADO_PUBLICO, } from "../../service/mercado-publico/mercado-publico-hitos.service.js";
 const filtrosSchema = z.object({
     texto: z.string()
         .trim()
@@ -15,6 +16,8 @@ const filtrosSchema = z.object({
         .optional(),
     region: z.string()
         .trim()
+        .optional(),
+    vigencia: z.enum(VIGENCIAS_MERCADO_PUBLICO)
         .optional(),
     page: z.coerce
         .number()
@@ -82,6 +85,11 @@ export async function listarMercadoPublicoController(req, res) {
             ...(parsed.data.region !== undefined
                 ? {
                     region: parsed.data.region,
+                }
+                : {}),
+            ...(parsed.data.vigencia !== undefined
+                ? {
+                    vigencia: parsed.data.vigencia,
                 }
                 : {}),
         });

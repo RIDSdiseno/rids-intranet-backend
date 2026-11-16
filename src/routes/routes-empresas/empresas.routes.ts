@@ -10,19 +10,19 @@ import {
   deleteEmpresa,
   getEmpresasStats,
   getEmpresaIndicadores
-} from "../controllers/controllers-empresas/empresas.controller.js";
+} from "../../controllers/controllers-empresas/empresas.controller.js";
 
 import {
   getEquiposByEmpresa,
-} from "../controllers/equipos.controller.js";
+} from "../../controllers/equipos.controller.js";
 
 import {
   getEmpresaDashboard,
-} from "../controllers/controllers-empresas/dashboard-empresa.controller.js";
+} from "../../controllers/controllers-empresas/dashboard-empresa.controller.js";
 
 import {
   getSoporteMensualPorEmpresa,
-} from "../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
+} from "../../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
 
 import {
   getRelacionEmpresaEntidades,
@@ -30,10 +30,10 @@ import {
   patchVincularEntidadEmpresa,
   deleteVinculoEntidadEmpresa,
   postVincularEntidadAutomaticamente,
-} from "../controllers/controllers-empresas/empresa-entidad.controller.js";
+} from "../../controllers/controllers-empresas/empresa-entidad.controller.js";
 
-import { onlyRole } from "../middlewares/roles.js";
-import { auth } from "../middlewares/auth.js";
+import { onlyRole } from "../../middlewares/roles.js";
+import { auth } from "../../middlewares/auth.js";
 
 export const empresasRouter = Router();
 

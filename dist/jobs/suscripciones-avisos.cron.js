@@ -9,6 +9,19 @@ import { horaAviso, horaChileActual, procesarAvisosSuscripciones, } from "../ser
  * registrado en SuscripcionContratoAviso.
  */
 export function startSuscripcionesAvisosCron() {
+    /*
+     * En local poner SUSCRIPCIONES_AVISO_CRON=false:
+     * el .env apunta a la base de producción y el cron
+     * enviaría avisos reales al levantar el backend.
+     */
+    if (process.env
+        .SUSCRIPCIONES_AVISO_CRON
+        ?.trim()
+        .toLowerCase() ===
+        "false") {
+        console.log("[SUSCRIPCIONES AVISOS] Cron desactivado (SUSCRIPCIONES_AVISO_CRON=false).");
+        return;
+    }
     const hora = horaAviso();
     let isRunning = false;
     const ejecutar = async (origen) => {

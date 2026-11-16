@@ -26,4 +26,10 @@ export type CarpetaResuelta = {
  */
 export declare function resolverCarpetaDesdeUrl(urlTexto: string): Promise<CarpetaResuelta>;
 export declare function listarHijosCarpeta(driveId: string, itemId: string): Promise<DriveItemGraph[]>;
+/**
+ * Descarga un archivo del drive. Con `convertir`, Graph lo entrega
+ * convertido a PDF (docx, doc, pptx, rtf, odt…).
+ * Reintenta si Graph responde 429/503 (conversión ocupada).
+ */
+export declare function descargarArchivoComoPdf(driveId: string, itemId: string, convertir: boolean): Promise<Buffer>;
 //# sourceMappingURL=sharepoint.d.ts.map

@@ -13,9 +13,12 @@ import { startAgendaNotificacionesCron } from "./jobs/agenda-jobs/agenda-notific
 import { startAgendaRecordatoriosCron } from "./jobs/agenda-jobs/agenda-recordatorios.cron.js";
 import { startAgendaOutlookSyncCron } from "./jobs/agenda-jobs/agenda-outlook-sync.cron.js";
 import { startTicketSlaAlertsCron } from "./jobs/ticket-sla-alerts.cron.js";
+import { startPendientesResumenCron } from "./jobs/pendientes-resumen.cron.js";
 import { iniciarSchedulerFacturasAutomaticas, } from "./service/baseapi/facturas/factura-envio-scheduler.service.js";
 import { iniciarCobranzaScheduler, } from "./service/baseapi/cobranza/cobranza-scheduler.service.js";
 import { startSuscripcionesAvisosCron } from "./jobs/suscripciones-avisos.cron.js";
+import { startFunnelAvisosCron } from "./jobs/funnel-avisos.cron.js";
+import { startMercadoPublicoAvisosCron } from "./jobs/mercado-publico-avisos.cron.js";
 import { prismaBase } from "./lib/prisma.js";
 function parseOrigins(raw) {
     if (!raw || !raw.trim())
@@ -81,6 +84,9 @@ server.listen(PORT, () => {
     startAgendaNotificacionesCron();
     startAgendaRecordatoriosCron();
     startSuscripcionesAvisosCron();
+    startFunnelAvisosCron();
+    startMercadoPublicoAvisosCron();
+    startPendientesResumenCron();
     startAgendaOutlookSyncCron();
     startTicketSlaAlertsCron();
     iniciarSchedulerFacturasAutomaticas();

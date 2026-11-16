@@ -2,7 +2,7 @@
 import crypto from "node:crypto";
 import { prisma, } from "../../lib/prisma.js";
 import { FICHA_LEYPD_CAMPOS, } from "./leypd-ficha-campos.js";
-import { obtenerSugerenciasFichaLeypd, } from "./leypd-ficha-sugerencias.service.js";
+import { obtenerContactosFichaLeypd, obtenerSugerenciasFichaLeypd, } from "./leypd-ficha-sugerencias.service.js";
 import { validarCambiosFichaLeypd, validarObligatoriosFichaLeypd, } from "./leypd-ficha-validacion.js";
 /* =====================================================
    HELPERS
@@ -61,13 +61,14 @@ export async function obtenerFichaLeypdInterna(empresaId) {
     if (!empresa) {
         throw new Error("EMPRESA_NO_ENCONTRADA");
     }
-    const [ficha, sugerencias,] = await Promise.all([
+    const [ficha, sugerencias, contactosCrm,] = await Promise.all([
         prisma.leypdFicha.findUnique({
             where: {
                 empresaId,
             },
         }),
         obtenerSugerenciasFichaLeypd(empresaId),
+        obtenerContactosFichaLeypd(empresaId),
     ]);
     const actuales = normalizarDatos(ficha?.datos ??
         null);
@@ -96,6 +97,8 @@ export async function obtenerFichaLeypdInterna(empresaId) {
                 null,
         },
         campos: FICHA_LEYPD_CAMPOS,
+        contactoEmpresa: contactosCrm.contactoEmpresa,
+        contactos: contactosCrm.contactos,
     };
 }
 /* =====================================================

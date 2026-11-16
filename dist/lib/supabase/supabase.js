@@ -19,4 +19,6 @@ export const CORREO_PLANTILLAS_BUCKET = process.env.SUPABASE_CORREO_PLANTILLAS_B
 export const PROTECCION_DATOS_DOCUMENTOS_BUCKET = process.env
     .SUPABASE_PROTECCION_DATOS_DOCUMENTOS_BUCKET ||
     "proteccion-datos-documentos";
+export const OPORTUNIDADES_DOCUMENTOS_BUCKET = process.env.SUPABASE_OPORTUNIDADES_DOCUMENTOS_BUCKET ||
+    "oportunidades-documentos";
 //# sourceMappingURL=supabase.js.map

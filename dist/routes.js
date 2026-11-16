@@ -10,7 +10,8 @@ import equipoAdicionalRoutes from "./routes/equipos-adicionales/equipo-adicional
 import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes-routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/routes-empresas/detalle-empresa.routes.js";
-import { empresasRouter } from "./routes/empresas.routes.js";
+import { empresasRouter } from "./routes/routes-empresas/empresas.routes.js";
+import empresaLogoRouter from "./routes/routes-empresas/empresa-logo.routes.js";
 import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 import fichaEmpresasRouter from "./routes/routes-empresas/ficha-empresas.routes.js";
 // Maintenance / Jobs
@@ -139,6 +140,7 @@ api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
 api.use("/ficha-empresa", fichaEmpresasRouter);
+api.use("/empresas-logo", empresaLogoRouter);
 api.use("/mantenciones-remotas", mantencionesRemotasRouter);
 api.use("/tecnicos", tecnicosRouter);
 // Reportes e Inventario

@@ -25,6 +25,7 @@ import {
     postRevocarEnlaceFichaLeypd,
     getMiFichaLeypd,
     putMiFichaLeypd,
+    getFichaLeypdPdf,
 } from "../../controllers/controllers-leypd/leypd-ficha.controller.js";
 
 import {
@@ -44,6 +45,10 @@ import {
     postSincronizarTodasSharepointLeypd,
     postVincularSharepointLeypd,
 } from "../../controllers/controllers-leypd/leypd-sharepoint.controller.js";
+
+import {
+    getExpedienteLeypdPdf,
+} from "../../controllers/controllers-leypd/leypd-expediente.controller.js";
 
 const router =
     Router();
@@ -175,6 +180,32 @@ router.put(
         "TECNICO"
     ),
     putFichaLeypdInterna
+);
+
+router.get(
+    "/:empresaId/ficha/pdf",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "TECNICO"
+    ),
+    getFichaLeypdPdf
+);
+
+/* =====================================================
+   EXPEDIENTE PDF (uso interno: documentos unidos)
+===================================================== */
+
+router.get(
+    "/:empresaId/expediente/pdf",
+    auth(),
+    onlyRole(
+        "ADMIN",
+        "ADMINISTRACION",
+        "TECNICO"
+    ),
+    getExpedienteLeypdPdf
 );
 
 router.post(

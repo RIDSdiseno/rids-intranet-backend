@@ -21,7 +21,7 @@ const XLSX = require("xlsx");
  *   - conciliaciones
  *   - vencimientos
  */
-const DRY_RUN = false;
+const DRY_RUN = !process.argv.includes("--real");
 const ARCHIVO = process.argv[2];
 const EMPRESA = (process.argv[3] ??
     "rids")
@@ -508,7 +508,6 @@ async function main() {
                         }));
                         vencimientosGuardados++;
                     }
-                    vencimientosGuardados++;
                 }
             }
             else {

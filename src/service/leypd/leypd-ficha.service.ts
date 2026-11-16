@@ -15,6 +15,7 @@ import {
 } from "./leypd-ficha-campos.js";
 
 import {
+    obtenerContactosFichaLeypd,
     obtenerSugerenciasFichaLeypd,
 } from "./leypd-ficha-sugerencias.service.js";
 
@@ -169,6 +170,7 @@ export async function obtenerFichaLeypdInterna(
     const [
         ficha,
         sugerencias,
+        contactosCrm,
     ] =
         await Promise.all([
             prisma.leypdFicha.findUnique(
@@ -180,6 +182,10 @@ export async function obtenerFichaLeypdInterna(
             ),
 
             obtenerSugerenciasFichaLeypd(
+                empresaId
+            ),
+
+            obtenerContactosFichaLeypd(
                 empresaId
             ),
         ]);
@@ -241,6 +247,12 @@ export async function obtenerFichaLeypdInterna(
 
         campos:
             FICHA_LEYPD_CAMPOS,
+
+        contactoEmpresa:
+            contactosCrm.contactoEmpresa,
+
+        contactos:
+            contactosCrm.contactos,
     };
 }
 
