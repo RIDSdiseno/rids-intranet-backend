@@ -3,6 +3,10 @@ import {
     prisma,
 } from "../../lib/prisma.js";
 
+import {
+    ESTADOS_AGENDA_PENDIENTE,
+} from "./ficha-tecnica-crm.service.js";
+
 /* =====================================================
    TIPOS
 ===================================================== */
@@ -404,6 +408,12 @@ export async function evaluarCompletitudFichasEmpresas(
         return new Map();
     }
 
+    /* Hoy en Chile como fecha @db.Date, para la próxima visita en agenda */
+    const hoyChile =
+        new Date(
+            `${new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date())}T00:00:00Z`
+        );
+
     /*
      * Una sola consulta Prisma para todas las empresas.
      *
@@ -725,7 +735,47 @@ export async function evaluarCompletitudFichasEmpresas(
                                 true,
                         },
                     },
+
+                    /* Última visita y próxima agenda: la ficha técnica las calcula, no las guarda */
+                    visitas: {
+                        where: {
+                            status:
+                                "COMPLETADA",
+                        },
+
+                        select: {
+                            id_visita:
+                                true,
+                        },
+
+                        take:
+                            1,
+                    },
+
+                    agendasVisita: {
+                        where: {
+                            fecha: {
+                                gte:
+                                    hoyChile,
+                            },
+
+                            estado: {
+                                in: [
+                                    ...ESTADOS_AGENDA_PENDIENTE,
+                                ],
+                            },
+                        },
+
+                        select: {
+                            id:
+                                true,
+                        },
+
+                        take:
+                            1,
+                    },
                 },
+
             });
 
     const resultado =
@@ -1085,33 +1135,69 @@ export async function evaluarCompletitudFichasEmpresas(
                 .fichaTecnicaEmpresa;
 
 
+        /*
+ * Última y próxima visita se calculan desde Visita y AgendaVisita.
+ * Solo cuentan si la empresa tiene visitas presenciales en el checklist.
+ */
+        const visitasAplican =
+            Boolean(
+                checklist
+                    ?.visitasPresenciales
+            );
+
         const camposFichaTecnica:
             CampoEvaluado[] =
             Object.entries(
                 FICHA_TECNICA_LABELS
-            ).map(
-                (
-                    [
-                        key,
+            )
+                .filter(
+                    (
+                        [
+                            key,
+                        ]
+                    ) =>
+                        visitasAplican ||
+                        (
+                            key !==
+                            "fechaUltimaVisita" &&
+                            key !==
+                            "proximaVisitaProgramada"
+                        )
+                )
+                .map(
+                    (
+                        [
+                            key,
+                            label,
+                        ]
+                    ) => ({
+                        campo:
+                            key,
+
                         label,
-                    ]
-                ) => ({
-                    campo:
-                        key,
 
-                    label,
-
-                    completo:
-                        fichaTecnica
-                            ? tieneValor(
-                                fichaTecnica[
-                                key as keyof typeof FICHA_TECNICA_LABELS
-                                ]
-                            )
-                            : false,
-                })
-            );
-
+                        completo:
+                            key ===
+                                "fechaUltimaVisita"
+                                ? empresa
+                                    .visitas
+                                    .length >
+                                0
+                                : key ===
+                                    "proximaVisitaProgramada"
+                                    ? empresa
+                                        .agendasVisita
+                                        .length >
+                                    0
+                                    : fichaTecnica
+                                        ? tieneValor(
+                                            fichaTecnica[
+                                            key as keyof typeof FICHA_TECNICA_LABELS
+                                            ]
+                                        )
+                                        : false,
+                    })
+                );
 
         secciones.push(
             crearSeccion({

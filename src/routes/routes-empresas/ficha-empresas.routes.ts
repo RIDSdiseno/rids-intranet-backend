@@ -5,7 +5,7 @@ import { Router } from "express";
 import {
   obtenerFichaEmpresa, obtenerFichaEmpresaCompleta, actualizarFichaEmpresa, obtenerFichaTecnicaEmpresa,
   upsertFichaTecnicaEmpresa, upsertChecklistEmpresa, obtenerConfiguracionServidores,
-  actualizarConfiguracionServidores,
+  actualizarConfiguracionServidores, obtenerDatosCrmFichaTecnicaController,
 } from "../../controllers/controllers-empresas/ficha-empresa.controller.js";
 
 import {
@@ -159,6 +159,7 @@ fichaEmpresasRouter.put("/servidores/:id", updateServidor);
 fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);
 fichaEmpresasRouter.delete("/servidores/:id", deleteServidor);
 fichaEmpresasRouter.get("/:empresaId/servidores-config", obtenerConfiguracionServidores);
+fichaEmpresasRouter.get("/:empresaId/ficha-tecnica/datos-crm", auth(true), onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), obtenerDatosCrmFichaTecnicaController);
 fichaEmpresasRouter.patch("/:empresaId/servidores-config", actualizarConfiguracionServidores);
 
 /* ===================== SERVIDOR USUARIOS ===================== */

@@ -44,6 +44,10 @@ import {
     sendEmail,
 } from "../correos-masivos/masivos-email-sender.service.js";
 
+import {
+    logoEmpresaPngParaPdf,
+} from "../empresas/empresa-logo.service.js";
+
 import type {
     CampoConsentimiento,
     ConfiguracionConsentimientoDatos,
@@ -56,12 +60,23 @@ import type {
 const LOG =
     "[PROTECCION DATOS] Comprobante";
 
-/** Si el archivo no existe, el PDF se genera sin logo. */
+/** Si el archivo no existe, el PDF se genera sin logo de RIDS. */
 const LOGO =
-    path.resolve(
-        process.cwd(),
-        "src/assets/logo-rids.png",
-    );
+    [
+        path.resolve(
+            process.cwd(),
+            "src/assets/logo-rids.png",
+        ),
+        path.resolve(
+            process.cwd(),
+            "assets/logo-rids.png",
+        ),
+    ].find(
+        (ruta) =>
+            existsSync(
+                ruta,
+            ),
+    ) ?? "";
 
 const ZONA =
     "America/Santiago";
@@ -591,6 +606,8 @@ function documentosFirmados(
 export type DatosComprobantePdf = {
     empresa: string;
 
+    logoEmpresa?: Buffer | null;
+
     tituloFormulario: string;
 
     firmante: Fila[];
@@ -723,17 +740,40 @@ export function generarPdfComprobante(
             let xTexto =
                 MARGEN_X;
 
+            /* Logo de RIDS a la izquierda y, al lado, el de la empresa. */
+            const logos: Array<string | Buffer> =
+                [];
+
             if (
                 existsSync(
                     LOGO,
                 )
             ) {
+                logos.push(
+                    LOGO,
+                );
+            }
+
+            if (
+                datos.logoEmpresa
+            ) {
+                logos.push(
+                    datos.logoEmpresa,
+                );
+            }
+
+            const anchoLogo =
+                logos.length > 1
+                    ? 110
+                    : 118;
+
+            for (const logo of logos) {
                 try {
                     doc
                         .roundedRect(
-                            MARGEN_X,
+                            xTexto,
                             24,
-                            118,
+                            anchoLogo,
                             64,
                             8,
                         )
@@ -742,12 +782,12 @@ export function generarPdfComprobante(
                         );
 
                     doc.image(
-                        LOGO,
-                        MARGEN_X + 9,
+                        logo,
+                        xTexto + 9,
                         30,
                         {
                             fit: [
-                                100,
+                                anchoLogo - 18,
                                 52,
                             ],
 
@@ -759,17 +799,25 @@ export function generarPdfComprobante(
                         },
                     );
 
-                    xTexto =
-                        MARGEN_X +
-                        138;
+                    xTexto +=
+                        anchoLogo +
+                        10;
                 } catch (error) {
                     console.warn(
-                        `${LOG} ⚠️ No se pudo cargar el logo`,
+                        `${LOG} ⚠️ No se pudo cargar un logo`,
                         error instanceof Error
                             ? error.message
                             : error,
                     );
                 }
+            }
+
+            if (
+                xTexto >
+                MARGEN_X
+            ) {
+                xTexto +=
+                    10;
             }
 
             const anchoTexto =
@@ -1447,6 +1495,13 @@ export async function enviarComprobanteFirma(
             consentimiento.empresaNombre ??
             "Asesorías RIDS";
 
+        const logoEmpresa =
+            empresaId
+                ? await logoEmpresaPngParaPdf(
+                    empresaId,
+                )
+                : null;
+
         const empresaLegal =
             empresa?.razonSocial?.trim() ||
             empresaNombre;
@@ -1661,6 +1716,8 @@ export async function enviarComprobanteFirma(
             await generarPdfComprobante({
                 empresa:
                     empresaNombre,
+
+                logoEmpresa,
 
                 tituloFormulario:
                     configuracion?.tituloFormulario?.trim() ||

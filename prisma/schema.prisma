@@ -962,6 +962,7 @@ model Tecnico {
   firmaTexto                      String?
   area                            String?
   cargo                           String?
+  puedeEditarAgenda               Boolean                          @default(false)
   empresa                         Empresa?                         @relation(fields: [empresaId], references: [id_empresa])
   tokens                          RefreshToken[]
   historiales                     Historial[]

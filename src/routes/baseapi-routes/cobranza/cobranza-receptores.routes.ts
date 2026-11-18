@@ -17,6 +17,10 @@ import {
 } from "../../../controllers/baseapi/cobranza/cobranza-receptores.controller.js";
 
 import {
+    postSincronizarReceptoresCobranzaCrm,
+} from "../../../controllers/baseapi/receptores-sync-crm.controller.js";
+
+import {
     auth,
 } from "../../../middlewares/auth.js";
 
@@ -55,6 +59,12 @@ router.get(
 router.post(
     "/",
     postReceptorCobranza
+);
+
+/* Sincronizar empresas y contactos del CRM: ?aplicar=1 aplica; sin él, simula. Antes de /:id */
+router.post(
+    "/sincronizar-crm",
+    postSincronizarReceptoresCobranzaCrm
 );
 
 router.get(
