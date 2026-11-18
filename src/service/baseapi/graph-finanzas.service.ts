@@ -23,6 +23,13 @@ export type GraphFinanzasAttachment = {
 
     contentBytes:
     string;
+
+    /** Imagen inline (logo): el HTML la usa con src="cid:<contentId>". */
+    isInline?:
+    boolean;
+
+    contentId?:
+    string;
 };
 
 export type EnviarGraphFinanzasParams = {
@@ -314,6 +321,16 @@ class GraphFinanzasService {
 
                                 contentBytes:
                                     attachment.contentBytes,
+
+                                ...(attachment.isInline
+                                    ? {
+                                        isInline:
+                                            true,
+
+                                        contentId:
+                                            attachment.contentId,
+                                    }
+                                    : {}),
                             })
                         ),
                 },

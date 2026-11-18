@@ -262,22 +262,6 @@ export async function obtenerAplicacionesNotasCredito(
                 "56"
         );
 
-    console.log(
-        `[COBRANZA NC] ${empresa.toUpperCase()} notas de débito encontradas en RCV`,
-        {
-            total:
-                notasDebitoRcv.length,
-        }
-    );
-
-    console.log(
-        `[COBRANZA NC] ${empresa.toUpperCase()} notas de crédito encontradas en RCV`,
-        {
-            total:
-                notasCreditoRcv.length,
-        }
-    );
-
     const aplicaciones =
         new Map<
             string,
@@ -473,15 +457,6 @@ export async function obtenerAplicacionesNotasCredito(
             !notaDebitoCache
                 ?.xmlRaw
         ) {
-            console.warn(
-                "[COBRANZA NC] ⚠ Nota de Débito sin XML disponible",
-                {
-                    empresa,
-
-                    folio:
-                        folioNd,
-                }
-            );
 
             continue;
         }
@@ -830,15 +805,6 @@ export async function obtenerAplicacionesNotasCredito(
             !notaCache
                 ?.xmlRaw
         ) {
-            console.warn(
-                "[COBRANZA NC] ⚠ Nota de Crédito sin XML disponible",
-                {
-                    empresa,
-
-                    folio:
-                        folioNc,
-                }
-            );
 
             continue;
         }

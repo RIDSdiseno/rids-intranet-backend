@@ -13,6 +13,11 @@ import {
     getNombreEmpresaCobranza,
 } from "./cobranza-empresa.config.js";
 
+import {
+    adjuntoLogoEmpresa,
+    htmlLogoEmpresa,
+} from "../email-logo-empresa.js";
+
 /* =========================================================
    TYPES
 ========================================================= */
@@ -430,6 +435,26 @@ function construirHtmlCobranza(
     "
 >
 
+       <!-- Nombre a la izquierda, logo a la derecha -->
+    <table
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            border-collapse:collapse;
+        "
+    >
+    <tr>
+
+    <td
+        valign="middle"
+        style="
+            vertical-align:middle;
+        "
+    >
+
     <div
         style="
             font-size:26px;
@@ -452,6 +477,28 @@ function construirHtmlCobranza(
     >
         Gestión de facturación y cobranza
     </div>
+
+    </td>
+
+    <td
+        valign="middle"
+        align="right"
+        style="
+            vertical-align:middle;
+            text-align:right;
+            padding-left:16px;
+            width:1%;
+            white-space:nowrap;
+        "
+    >
+        ${htmlLogoEmpresa(
+        params.empresaKey,
+        empresa
+    )}
+    </td>
+
+    </tr>
+    </table>
 
 </td>
 
@@ -1088,6 +1135,11 @@ export async function enviarCorreoCobranza(
             }
         );
 
+        const logoInline =
+            adjuntoLogoEmpresa(
+                params.empresaKey
+            );
+
         const resultado =
             await graphFinanzasService.sendMail({
                 to,
@@ -1098,8 +1150,13 @@ export async function enviarCorreoCobranza(
                 bodyHtml:
                     html,
 
-                attachments:
-                    params.adjuntoPdf
+                attachments: [
+                    // Logo inline de la cabecera (src="cid:logo-empresa").
+                    ...(logoInline
+                        ? [logoInline]
+                        : []),
+
+                    ...(params.adjuntoPdf
                         ? [
                             {
                                 name:
@@ -1119,7 +1176,8 @@ export async function enviarCorreoCobranza(
                                         ),
                             },
                         ]
-                        : [],
+                        : []),
+                ],
             });
 
         const graphDuracionMs =

@@ -59,10 +59,26 @@ const DUEMINT: Record<string, { fecha: string; pagosMes: [number, number]; porVe
         total: [34_007_437, 53],
         tramos: {
             AL_DIA: [12_356_856, 17],
-            "16_30": [9_820_000, 13],
+            "1_30": [9_820_000, 13],
             "31_60": [5_920_000, 9],
             "61_90": [3_450_000, 6],
             MAS_90: [2_460_000, 8],
+        },
+    },
+
+    // Export Duemint 18-11-2026. Incluye 33-454 (pagado parcial: 9.000 por pagar) en el total.
+    econnet: {
+        fecha: "18-11-2026",
+        pagosMes: [18_202_691, 6],
+        porVencer: [17_300_220, 3],
+        vencido: [13_188_062, 37],
+        total: [30_497_282, 41],
+        tramos: {
+            AL_DIA: [17_300_220, 3],
+            "1_30": [3_993_391, 10],
+            "31_60": [2_798_247, 3],
+            "61_90": [0, 0],
+            MAS_90: [6_396_424, 24],
         },
     },
 };
@@ -151,8 +167,10 @@ async function main() {
     console.log(`  Cobrables (33/34/56):       ${diagnostico.documentosCobrables} (ND solo reversa omitidas ${diagnostico.ndSoloReversa})`);
     console.log(`  NC en RCV / facturas con NC: ${diagnostico.notasCreditoEnRcv} / ${diagnostico.facturasConNc} (compensados ${diagnostico.compensados})${consultaSii ? "" : "  ← si faltan, probar --sii"}`);
     console.log(`  Conciliadas BD / emparejadas: ${diagnostico.conciliadasEnBd} / ${diagnostico.conciliadasEmparejadas}`);
+    console.log(`  NC inferidas (RUT + monto): ${diagnostico.ncInferidas.length}${diagnostico.ncInferidas.length > 0 ? `  → ${diagnostico.ncInferidas.map((i) => `${i.nc}→${i.factura}`).join(" · ")}` : ""}`);
     console.log(`  NC sin aplicar:             ${diagnostico.ncSinAplicar.length}${diagnostico.ncSinAplicar.length > 0 ? "  (detalle con --detalle)" : ""}`);
     console.log(`  Abiertos sin vencimiento:   ${diagnostico.sinVencimiento}`);
+    console.log(`  Con plazo de la empresa:    ${diagnostico.plazoEmpresa}`);
     console.log(`  Origen del vencimiento:     ${Object.entries(diagnostico.origenVencimiento).map(([k, v]) => `${k} ${v}`).join(" · ") || "-"}`);
 
     const desfase = p.length > 0 && p[p.length - 1] !== hoy.slice(0, 7);

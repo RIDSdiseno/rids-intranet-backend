@@ -593,7 +593,7 @@ function estadoDteEsBloqueante(
     );
 }
 
-type ValidarDteAntesDeEnviarParams = {
+export type ValidarDteAntesDeEnviarParams = {
     empresa:
     EmpresaBaseApiKey;
 
@@ -610,7 +610,7 @@ type ValidarDteAntesDeEnviarParams = {
     string;
 };
 
-async function validarDteAntesDeEnviar(
+export async function validarDteAntesDeEnviar(
     params:
         ValidarDteAntesDeEnviarParams
 ) {

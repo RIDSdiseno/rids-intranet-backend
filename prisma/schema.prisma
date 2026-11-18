@@ -1787,6 +1787,34 @@ model RcvConciliacion {
   @@index([empresaKey, tipoRcv, estadoConciliacion])
 }
 
+/// Abono (pago parcial o total) de un documento RCV de ventas. Fase 4a de Finanzas.
+/// Cuando la suma de abonos cubre el saldo (monto − NC), se crea la RcvConciliacion CONCILIADA.
+model RcvAbono {
+  id             Int      @id @default(autoincrement())
+  empresaKey     String
+  tipoRcv        String   @default("ventas")
+  tipoDoc        String
+  folio          String
+  /// Normalizado: 775530502
+  rutContraparte String
+  monto          Int
+  fechaPago      DateTime
+  formaPago      String?
+  observacion    String?
+  /// MANUAL | CARTOLA | DUEMINT
+  origen         String   @default("MANUAL")
+  /// Movimiento bancario de origen (Fase 4b).
+  movimientoId   Int?
+  responsable    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([empresaKey, tipoRcv, tipoDoc, folio])
+  @@index([rutContraparte])
+  @@index([fechaPago])
+  @@index([movimientoId])
+}
+
 model RcvVencimiento {
   id                Int      @id @default(autoincrement())
   empresaKey        String

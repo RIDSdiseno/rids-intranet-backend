@@ -34,7 +34,7 @@ import {
 
 export type EstadoCxc = "PAGADO" | "PENDIENTE" | "VENCIDO" | "COMPENSADO";
 
-export type TramoAntiguedad = "AL_DIA" | "1_15" | "16_30" | "31_60" | "61_90" | "MAS_90";
+export type TramoAntiguedad = "AL_DIA" | "1_30" | "31_60" | "61_90" | "MAS_90";
 
 export type DocumentoCxc = {
     key: string;
@@ -46,8 +46,9 @@ export type DocumentoCxc = {
     fechaEmision: string | null;
     montoOriginal: number;
     montoNotasCredito: number;
-    /** Monto original menos NC (lo que se cobra). */
     saldo: number;
+    montoAbonado: number;
+    abonos: number;
     notasCredito: NotaCreditoAplicada[];
     estado: EstadoCxc;
     fechaVencimiento: string | null;
@@ -57,6 +58,7 @@ export type DocumentoCxc = {
     tramo: TramoAntiguedad | null;
     pagadoAt: string | null;
     formaPago: string | null;
+    vencimientoPactado: string | null;
 };
 
 export type DiagnosticoCxc = {
@@ -74,13 +76,30 @@ export type DiagnosticoCxc = {
     conciliadasSinDocumento: string[];
     sinVencimiento: number;
     origenVencimiento: Record<string, number>;
+    plazoEmpresa: number;
+    ncInferidas: Array<{ nc: string; factura: string; rut: string; monto: number }>;
     ncSinAplicar: Array<{ folio: string; periodo: string; rut: string; razonSocial: string | null; fechaEmision: string | null; monto: number }>;
+};
+
+/** Nota de crédito o débito del RCV y cómo se aplicó. */
+export type NotaCxc = {
+    tipoDoc: "61" | "56";
+    folio: string;
+    rutContraparte: string;
+    razonSocial: string | null;
+    periodo: string;
+    fechaEmision: string | null;
+    monto: number;
+    /** Documento afectado (ej. "33-1245"); null si no se aplicó. */
+    aplicadaA: string | null;
+    metodo: "XML" | "INFERIDA" | "SIN_APLICAR" | "ND_REVERSA" | "ND_COBRABLE";
 };
 
 export type ResultadoDocumentosCxc = {
     empresaKey: EmpresaKey;
     hoy: string;
     documentos: DocumentoCxc[];
+    notas: NotaCxc[];
     diagnostico: DiagnosticoCxc;
 };
 
@@ -220,8 +239,7 @@ function fechaEmisionIso(doc: any): string | null {
 function tramoDe(estado: EstadoCxc, dias: number | null): TramoAntiguedad | null {
     if (estado === "PENDIENTE") return "AL_DIA";
     if (estado !== "VENCIDO" || dias === null) return null;
-    if (dias <= 15) return "1_15";
-    if (dias <= 30) return "16_30";
+    if (dias <= 30) return "1_30";
     if (dias <= 60) return "31_60";
     if (dias <= 90) return "61_90";
     return "MAS_90";
@@ -229,6 +247,103 @@ function tramoDe(estado: EstadoCxc, dias: number | null): TramoAntiguedad | null
 
 function claveDocumento(tipoDoc: string, folio: string, rut: string): string {
     return [tipoDoc, folio, rut].join("|");
+}
+
+/* =========================================================
+   PLAZO POR DEFECTO DE CADA EMPRESA (decisión 18-11-2026, igual que Duemint)
+
+   - RIDS: 30 días desde la emisión. Solo cuando el documento no
+     tiene ningún vencimiento (SIN_FECHA).
+   - ECONNET: día 1 del mes siguiente a la emisión (si se emite el
+     día 1, vence ese mismo día). PRIORITARIO: reemplaza los días de
+     crédito del receptor (RECEPTOR_COBRANZA / DETALLE_EMPRESA) y los
+     vencimientos que el cron guardó calculados por días de crédito
+     (RcvVencimiento DIAS_CREDITO). Se respetan MANUAL, DUEMINT,
+     LEGACY, DTE, DTE_CACHE, RCV y la fecha del propio documento.
+
+   Solo afecta a este resumen. La cobranza automática sigue con su
+   lógica (Fase 5).
+   ========================================================= */
+
+type PlazoEmpresa = { tipo: "DIAS"; dias: number; prioritario: boolean } | { tipo: "DIA_1_MES_SIGUIENTE"; prioritario: boolean };
+
+export const PLAZO_EMPRESA: Record<EmpresaKey, PlazoEmpresa> = {
+    rids: { tipo: "DIAS", dias: 30, prioritario: false },
+    econnet: { tipo: "DIA_1_MES_SIGUIENTE", prioritario: true },
+};
+
+const MS_DIA = 86_400_000;
+
+function isoAUtc(iso: string): number {
+    const [ano, mes, dia] = iso.split("-").map(Number) as [number, number, number];
+    return Date.UTC(ano, mes - 1, dia);
+}
+
+function utcAIso(ms: number): string {
+    return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Vencimiento según el plazo de la empresa (YYYY-MM-DD). */
+export function vencimientoPorPlazo(fechaEmision: string, plazo: PlazoEmpresa): string {
+    const [ano, mes, dia] = fechaEmision.split("-").map(Number) as [number, number, number];
+
+    if (plazo.tipo === "DIAS") return utcAIso(isoAUtc(fechaEmision) + plazo.dias * MS_DIA);
+    if (dia === 1) return fechaEmision;
+
+    return utcAIso(Date.UTC(ano, mes, 1)); // mes es 1-12: Date.UTC(ano, mes, 1) = día 1 del mes siguiente
+}
+
+/* =========================================================
+   NC SIN XML (inferencia RUT + monto)
+
+   BaseAPI no tiene el XML de algunas NC antiguas (404), así que no
+   se sabe a qué factura apuntan. Regla (decisión 17-11-2026):
+   - Grupo = mismo RUT + mismo monto.
+   - Candidatas: facturas 33/34 abiertas (no conciliadas, sin otra
+     NC aplicada), con saldo = monto y emitidas el mismo día o antes
+     que la NC.
+   - Solo se infiere si en el grupo hay tantas candidatas como NC
+     (calce único o par a par). Se asigna en orden de fecha.
+   - Se omiten NC del mismo RUT y monto que una ND del RCV
+     (probable reversa de la NC).
+   ========================================================= */
+
+type NcSinXml = { folio: string; rut: string; monto: number; fecha: string };
+type FacturaCandidata = { key: string; tipoDoc: string; folio: string; rut: string; monto: number; fecha: string };
+
+export function inferirNotasCreditoSinXml(ncs: NcSinXml[], facturas: FacturaCandidata[]) {
+    const asignaciones: Array<{ nc: NcSinXml; factura: FacturaCandidata }> = [];
+    const grupo = (rut: string, monto: number) => `${rut}|${monto}`;
+
+    const ncPorGrupo = new Map<string, NcSinXml[]>();
+    for (const nc of ncs) {
+        const lista = ncPorGrupo.get(grupo(nc.rut, nc.monto)) ?? [];
+        lista.push(nc);
+        ncPorGrupo.set(grupo(nc.rut, nc.monto), lista);
+    }
+
+    for (const [clave, ncsGrupo] of ncPorGrupo) {
+        const candidatas = facturas
+            .filter((f) => grupo(f.rut, f.monto) === clave)
+            .sort((a, b) => a.fecha.localeCompare(b.fecha) || Number(a.folio) - Number(b.folio));
+
+        if (candidatas.length !== ncsGrupo.length) continue;
+
+        const usadas = new Set<string>();
+        const propuestas: Array<{ nc: NcSinXml; factura: FacturaCandidata }> = [];
+
+        for (const nc of ncsGrupo.slice().sort((a, b) => a.fecha.localeCompare(b.fecha) || Number(a.folio) - Number(b.folio))) {
+            const factura = candidatas.find((f) => !usadas.has(f.key) && f.fecha <= nc.fecha);
+            if (!factura) break;
+            usadas.add(factura.key);
+            propuestas.push({ nc, factura });
+        }
+
+        // Todo o nada por grupo.
+        if (propuestas.length === ncsGrupo.length) asignaciones.push(...propuestas);
+    }
+
+    return asignaciones;
 }
 
 /* =========================================================
@@ -361,6 +476,145 @@ export async function obtenerDocumentosCxc(params: {
         if (!conciliacionPorKey.has(key)) conciliacionPorKey.set(key, c);
     }
 
+    /* ---------- Abonos (pagos parciales o totales, Fase 4a) ---------- */
+
+    const abonosBd = await prisma.rcvAbono.findMany({
+        where: { empresaKey, tipoRcv: "ventas" },
+        select: { tipoDoc: true, folio: true, rutContraparte: true, monto: true, fechaPago: true, formaPago: true },
+        orderBy: { fechaPago: "asc" },
+    });
+
+    const abonosPorKey = new Map<string, { total: number; cantidad: number; ultimaFecha: Date; ultimaForma: string | null }>();
+
+    for (const a of abonosBd) {
+        const key = claveDocumento(a.tipoDoc.trim(), a.folio.trim(), normalizarRut(a.rutContraparte));
+        const actual = abonosPorKey.get(key);
+        abonosPorKey.set(key, {
+            total: (actual?.total ?? 0) + a.monto,
+            cantidad: (actual?.cantidad ?? 0) + 1,
+            ultimaFecha: a.fechaPago,
+            ultimaForma: a.formaPago,
+        });
+    }
+
+    /* ---------- Origen de los vencimientos guardados (RcvVencimiento) ---------- */
+
+    const plazo = PLAZO_EMPRESA[empresaKey];
+
+    const origenVencimientoBd = new Map(
+        (
+            await prisma.rcvVencimiento.findMany({
+                where: { empresaKey },
+                select: { tipoDoc: true, folio: true, origenVencimiento: true },
+            })
+        ).map((v) => [`${v.tipoDoc}|${v.folio}`, v.origenVencimiento]),
+    );
+
+    /** Vencimiento final: el de cobranza o el plazo de la empresa según las reglas de PLAZO_EMPRESA. */
+    const resolverVencimiento = (
+        documento: any,
+        estadoCobranza: { fechaVencimientoIso: string | null; diasDiferencia: number | null; origenVencimiento: string },
+    ) => {
+        const fechaEmision = fechaEmisionIso(documento);
+        const origenBd = origenVencimientoBd.get(`${getTipoDoc(documento)}|${getFolio(documento)}`);
+
+        const reemplazar =
+            Boolean(fechaEmision) &&
+            (!estadoCobranza.fechaVencimientoIso ||
+                (plazo.prioritario &&
+                    (estadoCobranza.origenVencimiento === "RECEPTOR_COBRANZA" ||
+                        estadoCobranza.origenVencimiento === "DETALLE_EMPRESA" ||
+                        (estadoCobranza.origenVencimiento === "OVERRIDE" && origenBd === "DIAS_CREDITO"))));
+
+        if (!reemplazar || !fechaEmision) {
+            return {
+                fechaIso: estadoCobranza.fechaVencimientoIso,
+                dias: estadoCobranza.diasDiferencia,
+                origen: estadoCobranza.origenVencimiento === "OVERRIDE" && origenBd ? `OVERRIDE_${origenBd}` : estadoCobranza.origenVencimiento,
+            };
+        }
+
+        const fechaIso = vencimientoPorPlazo(fechaEmision, plazo);
+        return { fechaIso, dias: Math.round((isoAUtc(hoy) - isoAUtc(fechaIso)) / MS_DIA), origen: "PLAZO_EMPRESA" };
+    };
+
+    const vencimientoPagada = (
+        documento: any,
+        estadoSinConciliar: { fechaVencimientoIso: string | null; diasDiferencia: number | null; origenVencimiento: string } | undefined,
+    ) =>
+        resolverVencimiento(documento, estadoSinConciliar ?? { fechaVencimientoIso: null, diasDiferencia: null, origenVencimiento: "SIN_FECHA" })
+            .fechaIso;
+
+    /* ---------- NC sin XML: inferencia RUT + monto ---------- */
+
+    const ncConAplicacion = new Set<string>();
+    for (const aplicacion of aplicaciones.values()) {
+        for (const nc of aplicacion.notasCredito) ncConAplicacion.add([nc.folio, aplicacion.rutContraparte].join("|"));
+    }
+
+    const ncsRcv = unicos.filter((doc) => getTipoDoc(doc) === "61" && getFolio(doc) && getRut(doc));
+    const foliosNc = Array.from(new Set(ncsRcv.map((doc) => Number(getFolio(doc))).filter(Number.isFinite)));
+
+    const ncConXml = new Set(
+        (
+            await prisma.facturaDTE.findMany({
+                where: { empresaAlias: empresaKey, tipoDTE: 61, folio: { in: foliosNc }, xmlRaw: { not: null } },
+                select: { folio: true },
+            })
+        ).map((f) => String(f.folio)),
+    );
+
+    const ndRutMonto = new Set(unicos.filter((doc) => getTipoDoc(doc) === "56").map((doc) => `${getRut(doc)}|${getMontoTotal(doc)}`));
+
+    const ncCandidatas: NcSinXml[] = ncsRcv
+        .filter((doc) => !ncConXml.has(getFolio(doc)) && !ncConAplicacion.has([getFolio(doc), getRut(doc)].join("|")))
+        .filter((doc) => !ndRutMonto.has(`${getRut(doc)}|${getMontoTotal(doc)}`))
+        .map((doc) => ({ folio: getFolio(doc), rut: getRut(doc), monto: getMontoTotal(doc), fecha: fechaEmisionIso(doc) ?? String(doc?.periodoCobranzaOrigen ?? "") }));
+
+    const facturasCandidatas: FacturaCandidata[] = evaluados
+        .map(({ documento }) => documento)
+        .filter((doc) => getTipoDoc(doc) === "33" || getTipoDoc(doc) === "34")
+        .map((doc) => {
+            const tipoDoc = getTipoDoc(doc);
+            const folio = getFolio(doc);
+            const rut = getRut(doc);
+            return { key: claveDocumento(tipoDoc, folio, rut), tipoDoc, folio, rut, monto: getMontoTotal(doc), fecha: fechaEmisionIso(doc) ?? "" };
+        })
+        .filter((f) => f.fecha && !aplicaciones.has(f.key) && !conciliacionPorKey.has(f.key));
+
+    const ncInferidas: DiagnosticoCxc["ncInferidas"] = [];
+
+    for (const { nc, factura } of inferirNotasCreditoSinXml(ncCandidatas, facturasCandidatas)) {
+        aplicaciones.set(factura.key, {
+            tipoDoc: factura.tipoDoc,
+            folio: factura.folio,
+            rutContraparte: factura.rut,
+            anulaCompletamente: false,
+            montoNotasCredito: nc.monto,
+            notasCredito: [{ folio: nc.folio, montoTotal: nc.monto, codigoRef: null, razonRef: "INFERIDA (RUT + monto, sin XML)" }],
+        });
+        ncInferidas.push({ nc: `61-${nc.folio}`, factura: `${factura.tipoDoc}-${factura.folio}`, rut: nc.rut, monto: nc.monto });
+    }
+
+    /* ---------- Vencimiento pactado de las pagadas (comportamiento de pago) ---------- */
+
+    // cobranza-estado no calcula el vencimiento de las conciliadas: se pide aparte ignorando la conciliación.
+    const pagadas = evaluados
+        .filter(
+            ({ documento, estado: e }) =>
+                e.conciliada || conciliacionPorKey.has(claveDocumento(getTipoDoc(documento), getFolio(documento), getRut(documento))),
+        )
+        .map(({ documento }) => ({ ...documento }));
+
+    const estadoPagadas = new Map<string, (typeof evaluados)[number]["estado"]>();
+
+    if (pagadas.length > 0) {
+        const evaluadasPagadas = await obtenerEstadosDocumentosCobranza(pagadas, "ventas", empresaKey, { ignorarConciliacion: true });
+        for (const { documento, estado: e } of evaluadasPagadas) {
+            estadoPagadas.set(claveDocumento(getTipoDoc(documento), getFolio(documento), getRut(documento)), e);
+        }
+    }
+
     /* ---------- Estado por documento ---------- */
 
     const documentos: DocumentoCxc[] = [];
@@ -368,6 +622,7 @@ export async function obtenerDocumentosCxc(params: {
     const origenVencimiento: Record<string, number> = {};
     let compensados = 0;
     let sinVencimiento = 0;
+    let plazoEmpresa = 0;
 
     for (const { documento, estado: estadoCobranza } of evaluados) {
         const tipoDoc = getTipoDoc(documento);
@@ -378,30 +633,37 @@ export async function obtenerDocumentosCxc(params: {
         const montoOriginal = getMontoTotal(documento);
         const aplicacion = aplicaciones.get(key);
         const montoNotasCredito = aplicacion?.anulaCompletamente ? montoOriginal : (aplicacion?.montoNotasCredito ?? 0);
-        const saldo = Math.max(0, montoOriginal - montoNotasCredito);
+        const saldoNc = Math.max(0, montoOriginal - montoNotasCredito);
+        const abonosDoc = abonosPorKey.get(key);
+        const montoAbonado = abonosDoc?.total ?? 0;
+        const pagadoConAbonos = saldoNc > 0 && montoAbonado >= saldoNc;
 
         const conciliacion = conciliacionPorKey.get(key);
         if (conciliacion) emparejadas.add(key);
 
+        const venc = resolverVencimiento(documento, estadoCobranza);
+
         let estado: EstadoCxc;
 
-        if (aplicacion?.anulaCompletamente || (montoOriginal > 0 && saldo <= 0)) {
+        if (aplicacion?.anulaCompletamente || (montoOriginal > 0 && saldoNc <= 0)) {
             estado = "COMPENSADO";
             compensados++;
-        } else if (conciliacion || estadoCobranza.conciliada) {
+        } else if (conciliacion || estadoCobranza.conciliada || pagadoConAbonos) {
             estado = "PAGADO";
-        } else if (estadoCobranza.diasDiferencia !== null && estadoCobranza.diasDiferencia > 0) {
+        } else if (venc.dias !== null && venc.dias > 0) {
             estado = "VENCIDO";
         } else {
             estado = "PENDIENTE";
         }
 
         const abierto = estado === "PENDIENTE" || estado === "VENCIDO";
-        const origen = abierto ? estadoCobranza.origenVencimiento : "-";
+        const origen = abierto ? venc.origen : "-";
+        const saldo = abierto ? Math.max(0, saldoNc - montoAbonado) : saldoNc;
 
         if (abierto) {
             origenVencimiento[origen] = (origenVencimiento[origen] ?? 0) + 1;
-            if (!estadoCobranza.fechaVencimientoIso) sinVencimiento++;
+            if (!venc.fechaIso) sinVencimiento++;
+            if (venc.origen === "PLAZO_EMPRESA") plazoEmpresa++;
         }
 
         documentos.push({
@@ -415,15 +677,25 @@ export async function obtenerDocumentosCxc(params: {
             montoOriginal,
             montoNotasCredito,
             saldo,
+            montoAbonado,
+            abonos: abonosDoc?.cantidad ?? 0,
             notasCredito: aplicacion?.notasCredito ?? [],
             estado,
-            fechaVencimiento: abierto ? estadoCobranza.fechaVencimientoIso : null,
+            fechaVencimiento: abierto ? venc.fechaIso : null,
             origenVencimiento: origen,
-            diasDiferencia: abierto ? estadoCobranza.diasDiferencia : null,
+            diasDiferencia: abierto ? venc.dias : null,
             // Sin vencimiento no entra en la antigüedad (se informa aparte).
-            tramo: abierto && !estadoCobranza.fechaVencimientoIso ? null : tramoDe(estado, estadoCobranza.diasDiferencia),
-            pagadoAt: estado === "PAGADO" && conciliacion?.conciliadoAt ? fechaChileIso(conciliacion.conciliadoAt) : null,
-            formaPago: estado === "PAGADO" ? (conciliacion?.formaPago ?? null) : null,
+            tramo: abierto && !venc.fechaIso ? null : tramoDe(estado, venc.dias),
+            pagadoAt:
+                estado !== "PAGADO"
+                    ? null
+                    : conciliacion?.conciliadoAt
+                        ? fechaChileIso(conciliacion.conciliadoAt)
+                        : abonosDoc
+                            ? fechaChileIso(abonosDoc.ultimaFecha)
+                            : null,
+            vencimientoPactado: estado === "PAGADO" ? vencimientoPagada(documento, estadoPagadas.get(key)) : null,
+            formaPago: estado === "PAGADO" ? (conciliacion?.formaPago ?? abonosDoc?.ultimaForma ?? null) : null,
         });
     }
 
@@ -445,10 +717,52 @@ export async function obtenerDocumentosCxc(params: {
             monto: getMontoTotal(doc),
         }));
 
+    /* ---------- Notas de crédito y débito ---------- */
+
+    const aplicacionPorNc = new Map<string, { factura: string; metodo: "XML" | "INFERIDA" }>();
+    for (const aplicacion of aplicaciones.values()) {
+        for (const nc of aplicacion.notasCredito) {
+            aplicacionPorNc.set(`${nc.folio}|${aplicacion.rutContraparte}`, {
+                factura: `${aplicacion.tipoDoc}-${aplicacion.folio}`,
+                metodo: String(nc.razonRef ?? "").startsWith("INFERIDA") ? "INFERIDA" : "XML",
+            });
+        }
+    }
+
+    const notas: NotaCxc[] = unicos
+        .filter((doc) => getTipoDoc(doc) === "61" || getTipoDoc(doc) === "56")
+        .map((doc) => {
+            const tipoDoc = getTipoDoc(doc) as "61" | "56";
+            const folio = getFolio(doc);
+            const rut = getRut(doc);
+            const aplicada = tipoDoc === "61" ? aplicacionPorNc.get(`${folio}|${rut}`) : undefined;
+
+            const metodo: NotaCxc["metodo"] =
+                tipoDoc === "56"
+                    ? notasDebitoSoloReversa.has(`${folio}|${rut}`)
+                        ? "ND_REVERSA"
+                        : "ND_COBRABLE"
+                    : (aplicada?.metodo ?? "SIN_APLICAR");
+
+            return {
+                tipoDoc,
+                folio,
+                rutContraparte: rut,
+                razonSocial: getRazonSocial(doc),
+                periodo: String(doc?.periodoCobranzaOrigen ?? ""),
+                fechaEmision: fechaEmisionIso(doc),
+                monto: getMontoTotal(doc),
+                aplicadaA: aplicada?.factura ?? null,
+                metodo,
+            };
+        })
+        .sort((a, b) => String(b.fechaEmision).localeCompare(String(a.fechaEmision)));
+
     return {
         empresaKey,
         hoy,
         documentos,
+        notas,
         diagnostico: {
             periodosLeidos: periodos,
             documentosRcv: rcv.length,
@@ -463,6 +777,8 @@ export async function obtenerDocumentosCxc(params: {
             conciliadasSinDocumento: conciliadasSinDocumento.slice(0, 50),
             sinVencimiento,
             origenVencimiento,
+            plazoEmpresa,
+            ncInferidas,
             ncSinAplicar,
         },
     };
@@ -474,8 +790,7 @@ export async function obtenerDocumentosCxc(params: {
 
 const ETIQUETAS_TRAMO: Record<TramoAntiguedad, string> = {
     AL_DIA: "Dentro de plazo",
-    "1_15": "1–15 días",
-    "16_30": "16–30 días",
+    "1_30": "1–30 días",
     "31_60": "31–60 días",
     "61_90": "61–90 días",
     MAS_90: "Más de 90 días",
@@ -504,9 +819,9 @@ export async function obtenerResumenCxc(params: {
     consultaSii?: boolean;
     meses?: number;
     referencia?: Date;
-}): Promise<ResumenCxc & { documentos: DocumentoCxc[] }> {
+}): Promise<ResumenCxc & { documentos: DocumentoCxc[]; notas: NotaCxc[] }> {
     const { meses = 12, ...resto } = params;
-    const { empresaKey, hoy, documentos, diagnostico } = await obtenerDocumentosCxc(resto);
+    const { empresaKey, hoy, documentos, notas, diagnostico } = await obtenerDocumentosCxc(resto);
 
     const mesActual = hoy.slice(0, 7);
     const nuevo = (): Monto => ({ monto: 0, documentos: 0 });
@@ -571,5 +886,6 @@ export async function obtenerResumenCxc(params: {
             .map(([periodo, monto]) => ({ periodo, ...monto })),
         diagnostico,
         documentos,
+        notas,
     };
 }

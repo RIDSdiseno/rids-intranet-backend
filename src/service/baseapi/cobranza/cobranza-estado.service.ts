@@ -1300,7 +1300,8 @@ function resumirAutomatizacionCobranza(
 export async function obtenerEstadosDocumentosCobranza(
     documentos: any[],
     tipoRcv: TipoRcvCobranza,
-    empresaFallback?: EmpresaKey
+    empresaFallback?: EmpresaKey,
+    opciones?: { ignorarConciliacion?: boolean }
 ): Promise<DocumentoCobranzaBatch[]> {
     if (!Array.isArray(documentos) || documentos.length === 0) {
         return [];
@@ -1957,6 +1958,7 @@ export async function obtenerEstadosDocumentosCobranza(
             );
 
         if (
+            !opciones?.ignorarConciliacion &&
             conciliacion
                 ?.estadoConciliacion ===
             "CONCILIADA"
