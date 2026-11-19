@@ -84,12 +84,6 @@ export async function obtenerAplicacionesNotasCredito(params) {
  */
     const notasDebitoRcv = documentos.filter((documento) => getTipoDoc(documento) ===
         "56");
-    console.log(`[COBRANZA NC] ${empresa.toUpperCase()} notas de débito encontradas en RCV`, {
-        total: notasDebitoRcv.length,
-    });
-    console.log(`[COBRANZA NC] ${empresa.toUpperCase()} notas de crédito encontradas en RCV`, {
-        total: notasCreditoRcv.length,
-    });
     const aplicaciones = new Map();
     /*
  * NC que fueron anuladas posteriormente
@@ -197,10 +191,6 @@ export async function obtenerAplicacionesNotasCredito(params) {
         }
         if (!notaDebitoCache
             ?.xmlRaw) {
-            console.warn("[COBRANZA NC] ⚠ Nota de Débito sin XML disponible", {
-                empresa,
-                folio: folioNd,
-            });
             continue;
         }
         let parsedNd;
@@ -361,10 +351,6 @@ export async function obtenerAplicacionesNotasCredito(params) {
         }
         if (!notaCache
             ?.xmlRaw) {
-            console.warn("[COBRANZA NC] ⚠ Nota de Crédito sin XML disponible", {
-                empresa,
-                folio: folioNc,
-            });
             continue;
         }
         let parsed;

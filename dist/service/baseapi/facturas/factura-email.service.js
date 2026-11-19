@@ -1,6 +1,7 @@
 // src/service/baseapi/facturas/factura-email.service.ts
 import { graphFinanzasService, } from "../../baseapi/graph-finanzas.service.js";
 import { getConfigCorreoEmpresa, getNombreEmpresaCobranza, } from "../cobranza/cobranza-empresa.config.js";
+import { adjuntoLogoEmpresa, htmlLogoEmpresa, } from "../email-logo-empresa.js";
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -177,6 +178,26 @@ function construirHtmlFactura(params) {
     "
 >
 
+        <!-- Nombre a la izquierda, logo a la derecha -->
+    <table
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            border-collapse:collapse;
+        "
+    >
+    <tr>
+
+    <td
+        valign="middle"
+        style="
+            vertical-align:middle;
+        "
+    >
+
     <div
         style="
             font-size:26px;
@@ -196,6 +217,25 @@ function construirHtmlFactura(params) {
     >
         Facturación electrónica
     </div>
+
+    </td>
+
+    <td
+        valign="middle"
+        align="right"
+        style="
+            vertical-align:middle;
+            text-align:right;
+            padding-left:16px;
+            width:1%;
+            white-space:nowrap;
+        "
+    >
+        ${htmlLogoEmpresa(params.empresaKey, empresa)}
+    </td>
+
+    </tr>
+    </table>
 
 </td>
 
@@ -671,24 +711,31 @@ export async function enviarCorreoFactura(params) {
                 .GRAPH_FINANZAS_USER,
             to,
         });
+        const logoInline = adjuntoLogoEmpresa(params.empresaKey);
         await graphFinanzasService.sendMail({
             to,
             subject: asunto,
             bodyHtml: html,
-            attachments: params.adjuntoPdf
-                ? [
-                    {
-                        name: params
-                            .adjuntoPdf
-                            .filename,
-                        contentType: "application/pdf",
-                        contentBytes: params
-                            .adjuntoPdf
-                            .content
-                            .toString("base64"),
-                    },
-                ]
-                : [],
+            attachments: [
+                // Logo inline de la cabecera (src="cid:logo-empresa").
+                ...(logoInline
+                    ? [logoInline]
+                    : []),
+                ...(params.adjuntoPdf
+                    ? [
+                        {
+                            name: params
+                                .adjuntoPdf
+                                .filename,
+                            contentType: "application/pdf",
+                            contentBytes: params
+                                .adjuntoPdf
+                                .content
+                                .toString("base64"),
+                        },
+                    ]
+                    : []),
+            ],
         });
         const graphDuracionMs = Date.now() -
             graphInicio;

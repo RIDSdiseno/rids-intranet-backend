@@ -555,7 +555,7 @@ function resumirAutomatizacionCobranza(recordatorios) {
         })),
     };
 }
-export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empresaFallback) {
+export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empresaFallback, opciones) {
     if (!Array.isArray(documentos) || documentos.length === 0) {
         return [];
     }
@@ -833,9 +833,10 @@ export async function obtenerEstadosDocumentosCobranza(documentos, tipoRcv, empr
          * 1. CONCILIACIÓN
          */
         const conciliacion = conciliacionMap.get(conciliacionKey);
-        if (conciliacion
-            ?.estadoConciliacion ===
-            "CONCILIADA") {
+        if (!opciones?.ignorarConciliacion &&
+            conciliacion
+                ?.estadoConciliacion ===
+                "CONCILIADA") {
             resultados.push({
                 documento,
                 estado: {

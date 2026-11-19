@@ -14,6 +14,22 @@ export type ResultadoProcesarEnviosFactura = {
     omitidos: number;
     cancelados: number;
 };
+export type ValidarDteAntesDeEnviarParams = {
+    empresa: EmpresaBaseApiKey;
+    periodo: string;
+    tipoDoc: string;
+    folio: string;
+    rutContraparte: string;
+};
+export declare function validarDteAntesDeEnviar(params: ValidarDteAntesDeEnviarParams): Promise<{
+    valido: boolean;
+    estado: string;
+    motivo: string;
+} | {
+    valido: boolean;
+    estado: string;
+    motivo: null;
+}>;
 export declare function procesarEnviosFactura(options?: ProcesarEnviosFacturaOptions): Promise<ResultadoProcesarEnviosFactura>;
 export declare function procesarRecoveryEnviosFactura(options?: {
     empresa?: EmpresaBaseApiKey;

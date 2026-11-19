@@ -1,6 +1,7 @@
 // src/service/baseapi/cobranza/cobranza-email.service.ts
 import { graphFinanzasService, } from "../../baseapi/graph-finanzas.service.js";
 import { getConfigCorreoEmpresa, getNombreEmpresaCobranza, } from "./cobranza-empresa.config.js";
+import { adjuntoLogoEmpresa, htmlLogoEmpresa, } from "../email-logo-empresa.js";
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -41,6 +42,12 @@ function getTituloCorreo(tipoRecordatorio) {
         case "VENCIDA_30_DIAS":
             return "Factura vencida";
         default:
+            if (tipoRecordatorio.startsWith("VENCIDA_")) {
+                return "Factura vencida";
+            }
+            if (tipoRecordatorio.startsWith("POR_VENCER_")) {
+                return "Factura por vencer";
+            }
             return "Recordatorio de pago";
     }
 }
@@ -91,6 +98,9 @@ export function construirAsuntoCobranza(params) {
         case "VENCE_HOY":
             return `${empresa} - Factura N° ${params.folio} vence hoy`;
         default:
+            if (params.tipoRecordatorio.startsWith("POR_VENCER_")) {
+                return `${empresa} - Recordatorio de vencimiento factura N° ${params.folio}`;
+            }
             return `${empresa} - Recordatorio de pago factura N° ${params.folio}`;
     }
 }
@@ -208,6 +218,26 @@ function construirHtmlCobranza(params) {
     "
 >
 
+       <!-- Nombre a la izquierda, logo a la derecha -->
+    <table
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            border-collapse:collapse;
+        "
+    >
+    <tr>
+
+    <td
+        valign="middle"
+        style="
+            vertical-align:middle;
+        "
+    >
+
     <div
         style="
             font-size:26px;
@@ -228,6 +258,25 @@ function construirHtmlCobranza(params) {
     >
         Gestión de facturación y cobranza
     </div>
+
+    </td>
+
+    <td
+        valign="middle"
+        align="right"
+        style="
+            vertical-align:middle;
+            text-align:right;
+            padding-left:16px;
+            width:1%;
+            white-space:nowrap;
+        "
+    >
+        ${htmlLogoEmpresa(params.empresaKey, empresa)}
+    </td>
+
+    </tr>
+    </table>
 
 </td>
 
@@ -381,7 +430,7 @@ function construirHtmlCobranza(params) {
                     color:#64748B;
                 "
             >
-                Monto total
+                Saldo pendiente
             </td>
 
             <td
@@ -650,6 +699,248 @@ function construirHtmlCobranza(params) {
 </html>
 `;
 }
+const NOMBRE_TIPO_DOC_COBRANZA = {
+    "33": "Factura",
+    "34": "Factura exenta",
+    "56": "Nota de débito",
+};
+export function nombreDocumentoCobranza(tipoDoc, folio) {
+    return `${NOMBRE_TIPO_DOC_COBRANZA[tipoDoc] ?? `DTE ${tipoDoc}`} N° ${folio}`;
+}
+function textoEstadoFactura(diasDiferencia) {
+    if (diasDiferencia < 0) {
+        const dias = Math.abs(diasDiferencia);
+        return `Vence en ${dias} día${dias === 1 ? "" : "s"}`;
+    }
+    if (diasDiferencia === 0) {
+        return "Vence hoy";
+    }
+    return `Vencida hace ${diasDiferencia} día${diasDiferencia === 1 ? "" : "s"}`;
+}
+export function construirAsuntoCobranzaConsolidado(params) {
+    const empresa = getNombreEmpresaCobranza(params.empresaKey);
+    const tipo = params.facturas.every((f) => f.diasDiferencia < 0)
+        ? "Recordatorio de vencimiento"
+        : "Recordatorio de pago";
+    if (params.facturas.length > 4) {
+        return `${empresa} - ${tipo} de ${params.facturas.length} facturas`;
+    }
+    return `${empresa} - ${tipo} facturas N° ${params.facturas.map((f) => f.folio).join(", ")}`;
+}
+function construirHtmlCobranzaConsolidado(params) {
+    const config = getConfigCorreoEmpresa(params.empresaKey);
+    const empresa = config.nombre;
+    const datosPago = config.datosPago;
+    const nombre = params.nombreDestino?.trim() || "Estimado(a)";
+    const titulo = params.facturas.every((f) => f.diasDiferencia < 0)
+        ? "Facturas por vencer"
+        : "Recordatorio de pago";
+    const totalAviso = params.facturas.reduce((total, f) => total + f.saldo, 0);
+    const celda = "padding:10px 12px;border-bottom:1px solid #E5E7EB;";
+    const encabezado = "padding:10px 12px;background:#F8FAFC;border-bottom:1px solid #E5E7EB;font-weight:600;color:#64748B;font-size:12px;text-align:left;";
+    const filas = params.facturas
+        .map((f) => `
+        <tr>
+            <td style="${celda}font-weight:700;color:#0F172A;">${escaparHtml(nombreDocumentoCobranza(f.tipoDoc, f.folio))}</td>
+            <td style="${celda}color:#0F172A;">${escaparHtml(formatearFechaChile(f.fechaVencimiento))}</td>
+            <td style="${celda}color:${f.diasDiferencia > 0 ? "#B91C1C" : "#334155"};">${escaparHtml(textoEstadoFactura(f.diasDiferencia))}</td>
+            <td style="${celda}text-align:right;font-weight:700;color:#0F172A;white-space:nowrap;">${escaparHtml(formatearMontoClp(f.saldo))}</td>
+        </tr>`)
+        .join("");
+    const datosPagoHtml = [
+        renderDatoPago("Beneficiario", datosPago.beneficiario),
+        renderDatoPago("RUT", datosPago.rut),
+        renderDatoPago("Banco", datosPago.banco),
+        renderDatoPago("Tipo de cuenta", datosPago.tipoCuenta),
+        renderDatoPago("N° de cuenta", datosPago.numeroCuenta),
+        renderDatoPago("Correo", datosPago.emailPago),
+    ]
+        .filter(Boolean)
+        .join("");
+    const adjuntosHtml = params.adjuntos.length > 0 || params.documentosSinAdjunto.length > 0
+        ? `
+    <div style="margin-top:24px;padding:14px 16px;border:1px dashed #CBD5E1;background:#F8FAFC;border-radius:10px;font-size:13px;line-height:1.55;color:#475569;">
+        ${params.adjuntos.length > 0
+            ? `<strong>Documentos adjuntos</strong><br />${params.adjuntos.map((a) => escaparHtml(a.filename)).join("<br />")}`
+            : ""}
+        ${params.documentosSinAdjunto.length > 0
+            ? `${params.adjuntos.length > 0 ? "<br /><br />" : ""}No se adjuntaron: ${escaparHtml(params.documentosSinAdjunto.join(", "))}. Puede solicitarlos respondiendo este correo.`
+            : ""}
+    </div>`
+        : "";
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body style="margin:0;padding:0;background:#E9EEF3;font-family:Arial,Helvetica,sans-serif;color:#1F2937;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#E9EEF3;border-collapse:collapse;">
+<tr>
+<td align="center" style="padding:30px 12px;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:650px;background:#FFFFFF;border-collapse:separate;border-spacing:0;border-radius:14px;overflow:hidden;border:1px solid #DDE3EA;">
+
+<!-- CABECERA -->
+<tr>
+<td style="padding:30px 32px 24px;background:#FFFFFF;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+    <tr>
+        <td valign="middle" style="vertical-align:middle;">
+            <div style="font-size:26px;font-weight:800;color:#111827;line-height:1.2;">${escaparHtml(empresa)}</div>
+            <div style="margin-top:6px;font-size:13px;color:#64748B;">Gestión de facturación y cobranza</div>
+        </td>
+        <td valign="middle" align="right" style="vertical-align:middle;text-align:right;padding-left:16px;width:1%;white-space:nowrap;">
+            ${htmlLogoEmpresa(params.empresaKey, empresa)}
+        </td>
+    </tr>
+    </table>
+</td>
+</tr>
+
+<!-- BANNER -->
+<tr>
+<td style="padding:18px 32px;background:${config.colorPrimario};color:#FFFFFF;">
+    <div style="font-size:22px;font-weight:700;line-height:1.25;">${escaparHtml(titulo)}</div>
+</td>
+</tr>
+
+<!-- CONTENIDO -->
+<tr>
+<td style="padding:30px 32px;font-size:14px;line-height:1.65;">
+    <p style="margin:0 0 18px;color:#334155;">${escaparHtml(nombre)}:</p>
+    <p style="margin:0 0 18px;color:#334155;">
+        Junto con saludar, enviamos este recordatorio relacionado con los siguientes documentos${params.razonSocial ? ` de <strong>${escaparHtml(params.razonSocial)}</strong>` : ""}:
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:22px 0 12px;border-collapse:separate;border-spacing:0;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;font-size:13px;">
+        <tr>
+            <th style="${encabezado}">Documento</th>
+            <th style="${encabezado}">Vencimiento</th>
+            <th style="${encabezado}">Estado</th>
+            <th style="${encabezado}text-align:right;">Saldo pendiente</th>
+        </tr>
+        ${filas}
+        <tr>
+            <td colspan="3" style="padding:12px;background:#F8FAFC;font-weight:700;color:#334155;">Total de este aviso</td>
+            <td style="padding:12px;background:#F8FAFC;text-align:right;font-size:16px;font-weight:800;color:#0F172A;white-space:nowrap;">${escaparHtml(formatearMontoClp(totalAviso))}</td>
+        </tr>
+    </table>
+
+    <div style="margin:20px 0 28px;padding:14px 16px;background:${config.colorFondoSuave};border:1px solid ${config.colorBorde};border-radius:10px;color:#334155;font-size:14px;line-height:1.6;">
+        Saldo total pendiente con ${escaparHtml(empresa)} a la fecha:
+        <strong>${escaparHtml(formatearMontoClp(params.totalCliente.saldo))}</strong>
+        (${params.totalCliente.documentos} documento${params.totalCliente.documentos === 1 ? "" : "s"}).
+    </div>
+
+    ${datosPagoHtml
+        ? `
+    <div style="margin-top:28px;font-size:16px;font-weight:700;color:#111827;">Datos de pago</div>
+    <div style="margin-top:5px;font-size:12px;color:#64748B;">Puede realizar el pago mediante transferencia utilizando los siguientes datos:</div>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin-top:14px;border-collapse:separate;border-spacing:0;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
+        ${datosPagoHtml}
+    </table>`
+        : ""}
+
+    ${datosPago.observacion?.trim()
+        ? `
+    <div style="margin-top:12px;padding:12px 14px;background:#F8FAFC;border:1px solid #E5E7EB;border-radius:8px;font-size:12px;line-height:1.55;color:#64748B;">${escaparHtml(datosPago.observacion)}</div>`
+        : ""}
+
+    ${adjuntosHtml}
+
+    <p style="margin:28px 0 0;color:#334155;">
+        Si el pago ya fue realizado, por favor desestime este mensaje o responda este correo adjuntando el comprobante correspondiente.
+    </p>
+    <p style="margin:18px 0 0;color:#334155;">
+        Saludos cordiales,<br />
+        <strong>${escaparHtml(empresa)}</strong>
+    </p>
+</td>
+</tr>
+
+<!-- FOOTER -->
+<tr>
+<td style="padding:20px 32px;background:#F8FAFC;border-top:1px solid #E5E7EB;color:#64748B;font-size:12px;line-height:1.6;">
+    <strong style="color:#475569;">${escaparHtml(empresa)}</strong>
+    ${config.correo ? `<br />${escaparHtml(config.correo)}` : ""}
+    ${config.telefono ? `<br />${escaparHtml(config.telefono)}` : ""}
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
+`;
+}
+export async function enviarCorreoCobranzaConsolidado(params) {
+    const folios = params.facturas.map((f) => `${f.tipoDoc}-${f.folio}`).join(", ");
+    try {
+        const emailDestino = params.emailDestino.trim().toLowerCase();
+        if (!emailDestino) {
+            return { ok: false, error: "El destinatario no tiene email" };
+        }
+        if (params.facturas.length === 0) {
+            return { ok: false, error: "Correo consolidado sin facturas" };
+        }
+        /*
+         * Mismas guardas que enviarCorreoCobranza:
+         * COBRANZA_TEST_EMAIL redirige todo; sin ella, se exige COBRANZA_LIVE_SEND=true.
+         */
+        const testEmail = process.env.COBRANZA_TEST_EMAIL?.trim().toLowerCase();
+        const envioRealHabilitado = String(process.env.COBRANZA_LIVE_SEND ?? "").trim().toLowerCase() === "true";
+        if (!testEmail && !envioRealHabilitado) {
+            throw new Error("Envío real de cobranza bloqueado: configura COBRANZA_TEST_EMAIL o COBRANZA_LIVE_SEND=true.");
+        }
+        const to = testEmail || emailDestino;
+        const asunto = construirAsuntoCobranzaConsolidado({
+            empresaKey: params.empresaKey,
+            facturas: params.facturas,
+        });
+        const html = construirHtmlCobranzaConsolidado(params);
+        const logoInline = adjuntoLogoEmpresa(params.empresaKey);
+        console.log("[COBRANZA EMAIL] 📤 Correo consolidado", {
+            empresa: params.empresaKey,
+            documentos: folios,
+            destinatarioOriginal: emailDestino,
+            destinatarioReal: to,
+            modoPrueba: Boolean(testEmail),
+            adjuntos: params.adjuntos.length,
+            bytesAdjuntos: params.adjuntos.reduce((total, a) => total + a.content.length, 0),
+            sinAdjunto: params.documentosSinAdjunto,
+            asunto,
+        });
+        await graphFinanzasService.sendMail({
+            to,
+            subject: asunto,
+            bodyHtml: html,
+            attachments: [
+                ...(logoInline ? [logoInline] : []),
+                ...params.adjuntos.map((a) => ({
+                    name: a.filename,
+                    contentType: "application/pdf",
+                    contentBytes: a.content.toString("base64"),
+                })),
+            ],
+        });
+        console.log("[COBRANZA EMAIL] ✅ Correo consolidado enviado", {
+            documentos: folios,
+            destinatarioReal: to,
+        });
+        return { ok: true };
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[COBRANZA EMAIL] ❌ Error enviando correo consolidado", {
+            documentos: folios,
+            email: params.emailDestino,
+            error: message,
+        });
+        return { ok: false, error: message };
+    }
+}
 /* =========================================================
    ENVÍO
 ========================================================= */
@@ -750,24 +1041,31 @@ export async function enviarCorreoCobranza(params) {
                 .GRAPH_FINANZAS_USER,
             to,
         });
+        const logoInline = adjuntoLogoEmpresa(params.empresaKey);
         const resultado = await graphFinanzasService.sendMail({
             to,
             subject: asunto,
             bodyHtml: html,
-            attachments: params.adjuntoPdf
-                ? [
-                    {
-                        name: params
-                            .adjuntoPdf
-                            .filename,
-                        contentType: "application/pdf",
-                        contentBytes: params
-                            .adjuntoPdf
-                            .content
-                            .toString("base64"),
-                    },
-                ]
-                : [],
+            attachments: [
+                // Logo inline de la cabecera (src="cid:logo-empresa").
+                ...(logoInline
+                    ? [logoInline]
+                    : []),
+                ...(params.adjuntoPdf
+                    ? [
+                        {
+                            name: params
+                                .adjuntoPdf
+                                .filename,
+                            contentType: "application/pdf",
+                            contentBytes: params
+                                .adjuntoPdf
+                                .content
+                                .toString("base64"),
+                        },
+                    ]
+                    : []),
+            ],
         });
         const graphDuracionMs = Date.now() -
             graphInicio;

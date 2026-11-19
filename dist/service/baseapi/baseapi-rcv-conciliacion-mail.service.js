@@ -1,4 +1,5 @@
 import { graphFinanzasService, } from "./graph-finanzas.service.js";
+import { adjuntoLogoEmpresa, htmlLogoEmpresa, } from "./email-logo-empresa.js";
 function escapeHtml(value) {
     return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -42,6 +43,8 @@ export async function enviarCorreoConciliacionRcv(params) {
     const { to, conciliacion } = params;
     const subject = `Documento conciliado - Folio ${conciliacion.folio}`;
     const empresaNombre = translateEmpresa(conciliacion.empresaKey);
+    const logoHtml = htmlLogoEmpresa(conciliacion.empresaKey, empresaNombre, 44);
+    const logoInline = adjuntoLogoEmpresa(conciliacion.empresaKey);
     function fila(label, valor, destacado = false) {
         return `
             <tr>
@@ -56,6 +59,7 @@ export async function enviarCorreoConciliacionRcv(params) {
                 <tr>
                     <td align="center">
                         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #e2e8f0;">
+                            ${logoHtml ? `<tr><td align="right" style="padding:22px 28px 0; text-align:right;">${logoHtml}</td></tr>` : ""}
                             <tr>
                                 <td style="background:#059669; padding:22px 28px; color:#ffffff;">
                                     <h2 style="margin:0; font-size:19px; font-weight:700;">Documento conciliado</h2>
@@ -129,6 +133,13 @@ export async function enviarCorreoConciliacionRcv(params) {
         to,
         subject,
         bodyHtml: html,
+        ...(logoInline
+            ? {
+                attachments: [
+                    logoInline,
+                ],
+            }
+            : {}),
     });
     console.log("[CONCILIACION MAIL] ✅ Correo enviado por Microsoft Graph", {
         from: process.env

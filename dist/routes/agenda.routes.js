@@ -1,19 +1,18 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
 import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, crearVisitasManualLote, eliminarVisitasLote, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
-const ROLES_AGENDA_ADMIN = ["ADMINISTRACION", "ADMIN"];
-function requireAgendaAdmin(req, res, next) {
-    const user = req.user;
-    const rol = String(user?.rol ?? "").toUpperCase();
-    if (!user || !ROLES_AGENDA_ADMIN.includes(rol)) {
-        return res.status(403).json({
-            error: "No tienes permisos para crear o editar agenda.",
-        });
-    }
-    next();
-    return;
-}
+import { requireAgendaEditor, getPermisosAgenda, } from "../middlewares/agenda-editores.js";
+/*
+ * Crear, editar y eliminar visitas (incluidas malla, lotes y reasignación de técnicos):
+ * solo técnicos activos con Tecnico.puedeEditarAgenda = true. Antes: rol ADMIN / ADMINISTRACION.
+ * Se mantiene el nombre para no tocar cada ruta.
+ */
+const requireAgendaAdmin = requireAgendaEditor;
 export const agendaRouter = Router();
+/* Permisos del usuario actual: el frontend muestra u oculta crear / editar / eliminar */
+agendaRouter.get("/permisos", (req, res, next) => {
+    Promise.resolve(getPermisosAgenda(req, res)).catch(next);
+});
 // --- Acciones especiales (antes de los comodines :id) ---
 agendaRouter.post("/generar", requireAgendaAdmin, (req, res, next) => {
     Promise.resolve(generarMalla(req, res)).catch(next);

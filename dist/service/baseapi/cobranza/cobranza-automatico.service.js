@@ -4,6 +4,7 @@ import { consultarVentasRcvBaseApi, } from "../baseapi-rcv.service.js";
 import { consultarDtePorFolioBaseApi, } from "../baseapi-dte.service.js";
 import { obtenerEstadosDocumentosCobranza, } from "./cobranza-estado.service.js";
 import { obtenerAplicacionesNotasCredito, } from "./cobranza-notas-credito.service.js";
+import { obtenerCalculo, } from "../../../controllers/baseapi/baseapi-finanzas-cxc.controller.js";
 function normalizarOrigenVencimiento(origen) {
     const valor = String(origen ??
         "")
@@ -2147,6 +2148,350 @@ async function procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendient
     };
 }
 /* =========================================================
+   FASE 5a · PREPARACIÓN DESDE EL NÚCLEO CxC
+
+   Fuente: obtenerCalculo (cxc-documentos.service), el mismo
+   cálculo de la pestaña Facturas:
+   - saldo = monto − NC (XML e inferidas) − abonos
+   - vencimiento con PLAZO_EMPRESA
+   - todos los documentos abiertos (no solo el mes en curso)
+
+   Reglas (decisiones 19-11-2026):
+   - etapas de RcvCobranzaConfig (diasPorVencer / diasVencidos);
+   - después de la última etapa vencida, repetir cada 15 días;
+   - saldo mínimo 10.000;
+   - una etapa se prepara hasta 3 días después de su fecha
+     (recupera días sin servidor sin generar una ráfaga de
+     correos atrasados al activar la fase).
+
+   Se mantienen la cola RcvRecordatorioEnvio, los destinatarios
+   (resolverDestinatariosCobranza) y el control de duplicados.
+========================================================= */
+/** Saldo mínimo para recordatorios automáticos (CLP). */
+export const SALDO_MINIMO_COBRANZA_AUTO = 10_000;
+/** Después de la última etapa de diasVencidos se repite cada N días. */
+const REPETIR_VENCIDA_CADA_DIAS = 15;
+/** Una etapa se puede preparar hasta N días después de su fecha. */
+const DIAS_RECUPERACION_ETAPA = 3;
+/** Más allá de estos días de vencida no hay recordatorios automáticos (decisión 19-11-2026). */
+export const MAX_DIAS_VENCIDA_COBRANZA_AUTO = 180;
+function fechaChileIsoCxc(fecha = new Date()) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Santiago",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(fecha);
+}
+/**
+ * Etapa de recordatorio para un documento.
+ * diasDiferencia: > 0 días vencido, < 0 faltan días, 0 vence hoy.
+ */
+export function getEtapaRecordatorioCxc(diasDiferencia, diasPorVencer, diasVencidos, opciones = {}) {
+    if (!Number.isFinite(diasDiferencia)) {
+        return null;
+    }
+    if (!opciones.ignorarTope &&
+        diasDiferencia > MAX_DIAS_VENCIDA_COBRANZA_AUTO) {
+        return null;
+    }
+    if (diasDiferencia === 0) {
+        return diasVencidos.includes(0)
+            ? "VENCE_HOY"
+            : null;
+    }
+    let etapas;
+    if (diasDiferencia < 0) {
+        etapas =
+            diasPorVencer.filter((dias) => Number.isFinite(dias) &&
+                dias < 0);
+    }
+    else {
+        etapas =
+            diasVencidos.filter((dias) => Number.isFinite(dias) &&
+                dias > 0);
+        const ultima = etapas.length > 0
+            ? Math.max(...etapas)
+            : 0;
+        if (ultima > 0) {
+            for (let etapa = ultima + REPETIR_VENCIDA_CADA_DIAS; etapa <= diasDiferencia; etapa += REPETIR_VENCIDA_CADA_DIAS) {
+                etapas.push(etapa);
+            }
+        }
+    }
+    const aplicables = etapas.filter((etapa) => etapa <= diasDiferencia &&
+        (opciones.exacto
+            ? etapa === diasDiferencia
+            : diasDiferencia - etapa <= DIAS_RECUPERACION_ETAPA));
+    if (aplicables.length === 0) {
+        return null;
+    }
+    const etapa = Math.max(...aplicables);
+    return etapa < 0
+        ? `POR_VENCER_${Math.abs(etapa)}_DIAS`
+        : `VENCIDA_${etapa}_DIAS`;
+}
+/**
+ * El núcleo solo lee la caché del RCV y la caché nunca vence:
+ * antes de preparar se refresca el mes en curso (y, los primeros
+ * 5 días del mes, también el anterior).
+ */
+async function refrescarRcvVigente(empresa) {
+    const [ano, mes, dia] = fechaChileIsoCxc()
+        .split("-")
+        .map(Number);
+    const periodos = [
+        { ano, mes },
+    ];
+    if (dia <= 5) {
+        periodos.push(mes === 1
+            ? { ano: ano - 1, mes: 12 }
+            : { ano, mes: mes - 1 });
+    }
+    for (const periodo of periodos) {
+        try {
+            await consultarVentasRcvBaseApi({
+                empresa,
+                mes: periodo.mes,
+                ano: periodo.ano,
+                forceRefresh: true,
+            });
+            console.log(`[COBRANZA AUTO] 🔄 ${empresa.toUpperCase()} RCV ${periodo.ano}-${String(periodo.mes).padStart(2, "0")} actualizado`);
+        }
+        catch (error) {
+            console.error(`[COBRANZA AUTO] ⚠ ${empresa.toUpperCase()} no se pudo actualizar el RCV ${periodo.ano}-${periodo.mes}; se usa la caché`, error instanceof Error
+                ? error.message
+                : String(error));
+        }
+    }
+}
+function candidatoDesdeDocumentoCxc(empresa, doc, fechaVencimiento, diasDiferencia, tipoRecordatorio) {
+    return {
+        empresaKey: empresa,
+        tipoRcv: "ventas",
+        tipoDoc: doc.tipoDoc,
+        folio: doc.folio,
+        rutContraparte: doc.rutContraparte,
+        razonSocial: doc.razonSocial,
+        montoTotal: doc.saldo,
+        montoOriginal: doc.montoOriginal,
+        montoNotasCredito: doc.montoNotasCredito,
+        montoPendiente: doc.saldo,
+        notasCreditoAplicadas: [],
+        fechaVencimiento,
+        diasDiferencia,
+        origenVencimiento: doc.origenVencimiento,
+        diasCredito: null,
+        estadoPago: diasDiferencia > 0
+            ? "VENCIDA"
+            : "PENDIENTE",
+        tipoRecordatorio,
+        yaEnviado: false,
+        recordatoriosPendientes: 0,
+        recordatoriosEnviados: 0,
+        recordatoriosError: 0,
+        periodoOrigen: doc.periodo,
+        empresaClienteId: null,
+        empresaClienteNombre: null,
+        destinatarios: [],
+        tieneDestinatarioCobranza: false,
+    };
+}
+/**
+ * Qué facturas llegan a una etapa hoy y en los próximos días.
+ * - Hoy: mismas reglas que la preparación (con la ventana de recuperación) y el estado de envío.
+ * - Días siguientes: solo la etapa exacta de ese día (sin ventana), para no repetir facturas.
+ * - Excluidos: facturas que llegarían a una etapa pero quedan fuera por saldo mínimo o por el tope de días.
+ * No refresca el RCV ni registra nada.
+ */
+export async function calendarioCobranzaCxc(empresa, diasAdelante) {
+    const config = await prisma.rcvCobranzaConfig.findUnique({
+        where: {
+            empresaKey: empresa,
+        },
+    });
+    if (!config) {
+        throw new Error("No existe configuración RcvCobranzaConfig para esta empresa");
+    }
+    const { data, } = await obtenerCalculo(empresa, false);
+    const abiertos = data.documentos.filter((doc) => (doc.estado === "PENDIENTE" || doc.estado === "VENCIDO") &&
+        Boolean(doc.tipoDoc && doc.folio && doc.rutContraparte) &&
+        Boolean(doc.fechaVencimiento) &&
+        doc.diasDiferencia !== null);
+    const hoy = fechaChileIsoCxc();
+    const [ano, mes, dia] = hoy
+        .split("-")
+        .map(Number);
+    const dias = [];
+    for (let desplazamiento = 0; desplazamiento <= Math.max(0, Math.min(diasAdelante, 31)); desplazamiento++) {
+        const fecha = new Date(Date.UTC(ano, mes - 1, dia + desplazamiento))
+            .toISOString()
+            .slice(0, 10);
+        const candidatos = [];
+        const excluidos = [];
+        for (const doc of abiertos) {
+            const fechaVencimiento = doc.fechaVencimiento;
+            const diasDia = doc.diasDiferencia + desplazamiento;
+            const tipoRecordatorio = getEtapaRecordatorioCxc(diasDia, config.diasPorVencer, config.diasVencidos, {
+                ignorarTope: true,
+                exacto: desplazamiento > 0,
+            });
+            if (!tipoRecordatorio) {
+                continue;
+            }
+            const motivo = diasDia > MAX_DIAS_VENCIDA_COBRANZA_AUTO
+                ? "SOBRE_TOPE"
+                : doc.saldo < SALDO_MINIMO_COBRANZA_AUTO
+                    ? "BAJO_MINIMO"
+                    : null;
+            if (motivo) {
+                excluidos.push({
+                    tipoDoc: doc.tipoDoc,
+                    folio: doc.folio,
+                    rutContraparte: doc.rutContraparte,
+                    razonSocial: doc.razonSocial,
+                    saldo: doc.saldo,
+                    fechaVencimiento,
+                    diasDiferencia: diasDia,
+                    tipoRecordatorio,
+                    motivo,
+                });
+                continue;
+            }
+            candidatos.push(candidatoDesdeDocumentoCxc(empresa, doc, fechaVencimiento, diasDia, tipoRecordatorio));
+        }
+        dias.push({
+            fecha,
+            desplazamiento,
+            candidatos,
+            excluidos,
+        });
+    }
+    const todos = dias.flatMap((d) => d.candidatos);
+    await resolverDestinatariosCobranza(todos);
+    const deHoy = dias[0]?.candidatos ?? [];
+    await cargarEstadoRecordatorios(empresa, deHoy);
+    return dias;
+}
+async function prepararEmpresaCobranzaCxc(empresa, registrarPendientes, refrescarRcv) {
+    const inicioEmpresa = Date.now();
+    const vacio = {
+        documentosAnalizados: 0,
+        confirmadosOmitidos: 0,
+        sinFechaVencimiento: 0,
+        sinIdentificacion: 0,
+        candidatos: 0,
+        yaEnviados: 0,
+        pendientesEnvio: 0,
+        candidatosConDestinatario: 0,
+        candidatosSinDestinatario: 0,
+        detalle: [],
+    };
+    const config = await prisma.rcvCobranzaConfig.findUnique({
+        where: {
+            empresaKey: empresa,
+        },
+    });
+    if (!config) {
+        return {
+            empresa,
+            configurada: false,
+            activa: false,
+            envioAutomatico: false,
+            ...vacio,
+            error: "No existe configuración RcvCobranzaConfig para esta empresa",
+        };
+    }
+    if (!config.activo) {
+        console.log(`[COBRANZA AUTO] ⏭ ${empresa.toUpperCase()} automatización desactivada`);
+        return {
+            empresa,
+            configurada: true,
+            activa: false,
+            envioAutomatico: config.envioAutomatico,
+            ...vacio,
+        };
+    }
+    if (refrescarRcv) {
+        await refrescarRcvVigente(empresa);
+    }
+    /*
+     * refrescar = true: recalcula y deja la caché de 5 min al día
+     * (la pestaña Facturas ve lo mismo que la cobranza).
+     */
+    const { data, } = await obtenerCalculo(empresa, true);
+    let confirmadosOmitidos = 0;
+    let sinFechaVencimiento = 0;
+    let sinIdentificacion = 0;
+    let bajoMinimo = 0;
+    const candidatos = [];
+    for (const doc of data.documentos) {
+        if (doc.estado === "PAGADO" ||
+            doc.estado === "COMPENSADO") {
+            confirmadosOmitidos++;
+            continue;
+        }
+        if (!doc.tipoDoc ||
+            !doc.folio ||
+            !doc.rutContraparte) {
+            sinIdentificacion++;
+            continue;
+        }
+        if (doc.saldo < SALDO_MINIMO_COBRANZA_AUTO) {
+            bajoMinimo++;
+            continue;
+        }
+        if (!doc.fechaVencimiento ||
+            doc.diasDiferencia === null) {
+            sinFechaVencimiento++;
+            continue;
+        }
+        const tipoRecordatorio = getEtapaRecordatorioCxc(doc.diasDiferencia, config.diasPorVencer, config.diasVencidos);
+        if (!tipoRecordatorio) {
+            continue;
+        }
+        candidatos.push(candidatoDesdeDocumentoCxc(empresa, doc, doc.fechaVencimiento, doc.diasDiferencia, tipoRecordatorio));
+    }
+    await resolverDestinatariosCobranza(candidatos);
+    if (registrarPendientes) {
+        await registrarRecordatoriosPendientes(empresa, candidatos);
+    }
+    await cargarEstadoRecordatorios(empresa, candidatos);
+    const candidatosConDestinatario = candidatos.filter((candidato) => candidato.tieneDestinatarioCobranza).length;
+    const yaEnviados = candidatos.filter((candidato) => candidato.yaEnviado).length;
+    const pendientesEnvio = candidatos.filter((candidato) => candidato.tieneDestinatarioCobranza &&
+        !candidato.yaEnviado).length;
+    console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} resumen (núcleo CxC)`, {
+        documentos: data.documentos.length,
+        confirmadosOmitidos,
+        bajoMinimo,
+        sinFechaVencimiento,
+        sinIdentificacion,
+        candidatos: candidatos.length,
+        candidatosConDestinatario,
+        yaEnviados,
+        pendientesEnvio,
+        registrarPendientes,
+    });
+    logTiempo(`Empresa ${empresa.toUpperCase()} (núcleo CxC)`, inicioEmpresa);
+    return {
+        empresa,
+        configurada: true,
+        activa: config.activo,
+        envioAutomatico: config.envioAutomatico,
+        documentosAnalizados: data.documentos.length,
+        confirmadosOmitidos,
+        sinFechaVencimiento,
+        sinIdentificacion,
+        candidatos: candidatos.length,
+        yaEnviados,
+        pendientesEnvio,
+        detalle: candidatos,
+        candidatosConDestinatario,
+        candidatosSinDestinatario: candidatos.length - candidatosConDestinatario,
+    };
+}
+/* =========================================================
    PROCESO PRINCIPAL
 ========================================================= */
 export async function procesarCobranzaAutomatica(options) {
@@ -2154,6 +2499,10 @@ export async function procesarCobranzaAutomatica(options) {
     const registrarPendientes = options
         ?.registrarPendientes ??
         false;
+    const motor = options?.motor ??
+        "CXC";
+    const refrescarRcv = options?.refrescarRcv ??
+        registrarPendientes;
     const mesesAnalizar = Math.max(1, Math.min(Number(options?.mesesAnalizar ??
         12), 24));
     const empresas = options?.empresas ??
@@ -2175,7 +2524,9 @@ export async function procesarCobranzaAutomatica(options) {
         try {
             console.log("[COBRANZA AUTO] ----------------------------------------");
             console.log(`[COBRANZA AUTO] Analizando ${empresa.toUpperCase()}`);
-            const resultado = await procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendientes);
+            const resultado = motor === "LEGACY"
+                ? await procesarEmpresaCobranza(empresa, mesesAnalizar, registrarPendientes)
+                : await prepararEmpresaCobranzaCxc(empresa, registrarPendientes, refrescarRcv);
             resultados.push(resultado);
             console.log(`[COBRANZA AUTO] ${empresa.toUpperCase()} finalizado`, {
                 documentos: resultado.documentosAnalizados,

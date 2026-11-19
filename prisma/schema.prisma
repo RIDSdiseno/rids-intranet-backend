@@ -1815,6 +1815,60 @@ model RcvAbono {
   @@index([movimientoId])
 }
 
+/// Pago recibido según la cartola del banco (Fase 4b). Uno por transferencia.
+model MovimientoBancario {
+  id             Int                            @id @default(autoincrement())
+  /// Empresa dueña de la cuenta que recibió el pago: rids | econnet
+  empresaKey     String
+  banco          String                         @default("ITAU")
+  fechaPago      DateTime
+  /// Normalizado: 94047692
+  rutPagador     String?
+  nombrePagador  String?
+  producto       String?
+  referencia     String?
+  medioPago      String?
+  estadoBanco    String?
+  monto          Int
+  /// Evita cargar dos veces el mismo pago (empresa, fecha y hora, RUT, monto, referencia).
+  huella         String                         @unique
+  /// PENDIENTE | CONCILIADO | DESCARTADO
+  estado         String                         @default("PENDIENTE")
+  /// TRASPASO_EMPRESAS | PASARELA | NO_ES_CLIENTE | OTRO
+  motivoDescarte String?
+  observacion    String?
+  archivo        String?
+  responsable    String?
+  conciliadoAt   DateTime?
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @updatedAt
+  asignaciones   MovimientoBancarioAsignacion[]
+
+  @@index([empresaKey, estado])
+  @@index([rutPagador])
+  @@index([fechaPago])
+}
+
+/// Factura a la que se asignó (parte de) un movimiento bancario.
+model MovimientoBancarioAsignacion {
+  id             Int                @id @default(autoincrement())
+  movimientoId   Int
+  empresaKey     String
+  tipoDoc        String
+  folio          String
+  rutContraparte String
+  monto          Int
+  /// ABONO: creó un RcvAbono · VINCULO: la factura ya estaba pagada, solo se vincula.
+  tipo           String
+  abonoId        Int?
+  createdAt      DateTime           @default(now())
+  movimiento     MovimientoBancario @relation(fields: [movimientoId], references: [id])
+
+  @@index([movimientoId])
+  @@index([empresaKey, tipoDoc, folio])
+  @@index([rutContraparte])
+}
+
 model RcvVencimiento {
   id                Int      @id @default(autoincrement())
   empresaKey        String

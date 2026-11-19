@@ -10,6 +10,7 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "../../lib/prisma.js";
 import { evaluarCompletitudFichasEmpresas, CHECKLIST_LABELS, FICHA_TECNICA_LABELS, } from "./empresa-ficha-completitud.service.js";
+import { obtenerVisitasCrmFichaTecnica, } from "./ficha-tecnica-crm.service.js";
 /* =========================================================
    ESTILO
 ========================================================= */
@@ -141,6 +142,19 @@ function nombreArchivoSeguro(nombre) {
         .replace(/^_+|_+$/g, "")
         .slice(0, 60) || "empresa";
 }
+/** Texto de la última / próxima visita para el PDF (se calculan, no se leen de la ficha). */
+function textoVisitas(visitas) {
+    const { ultima, proxima } = visitas;
+    return {
+        fechaUltimaVisita: ultima
+            ? `${ultima.fecha}${ultima.tecnico ? ` · ${ultima.tecnico}` : ""}`
+            : "Sin visitas completadas",
+        proximaVisitaProgramada: proxima
+            ? `${proxima.fecha}${proxima.hora ? ` ${proxima.hora}` : ""}` +
+                `${proxima.tecnicos.length ? ` · ${proxima.tecnicos.join(", ")}` : ""}`
+            : "Sin visitas agendadas",
+    };
+}
 /* =========================================================
    DATOS
 ========================================================= */
@@ -199,15 +213,19 @@ export async function generarFichaEmpresaPdf(empresaId, opciones) {
     if (!datos) {
         return null;
     }
-    const completitud = (await evaluarCompletitudFichasEmpresas([empresaId])).get(empresaId) ?? null;
-    const buffer = await construirPdf(datos, completitud, opciones);
+    const [completitudes, visitas] = await Promise.all([
+        evaluarCompletitudFichasEmpresas([empresaId]),
+        obtenerVisitasCrmFichaTecnica(empresaId),
+    ]);
+    const completitud = completitudes.get(empresaId) ?? null;
+    const buffer = await construirPdf(datos, completitud, opciones, visitas);
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date());
     return {
         buffer,
         nombreArchivo: `Ficha_${nombreArchivoSeguro(datos.nombre)}_${hoy}.pdf`,
     };
 }
-function construirPdf(e, completitud, opciones) {
+function construirPdf(e, completitud, opciones, visitas) {
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({
             size: "A4",
@@ -520,9 +538,14 @@ function construirPdf(e, completitud, opciones) {
         const ft = e.fichaTecnicaEmpresa;
         if (ft) {
             const labels = { ...FICHA_TECNICA_LABELS, ...FICHA_TECNICA_EXTRA };
+            /* Última y próxima visita: desde Visitas y Agenda, no desde la ficha */
+            const calculadas = textoVisitas(visitas);
             for (const grupo of GRUPOS_FICHA_TECNICA) {
                 subtitulo(grupo.titulo);
-                grilla(grupo.campos.map((c) => [labels[c] ?? c, ft[c]]));
+                grilla(grupo.campos.map((c) => [
+                    labels[c] ?? c,
+                    (c in calculadas ? calculadas[c] : ft[c]),
+                ]));
             }
         }
         else {

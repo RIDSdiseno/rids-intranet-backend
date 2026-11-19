@@ -3,6 +3,9 @@ export type GraphFinanzasAttachment = {
     name: string;
     contentType: string;
     contentBytes: string;
+    /** Imagen inline (logo): el HTML la usa con src="cid:<contentId>". */
+    isInline?: boolean;
+    contentId?: string;
 };
 export type EnviarGraphFinanzasParams = {
     to: string | string[];

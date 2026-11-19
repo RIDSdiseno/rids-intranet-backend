@@ -18,12 +18,16 @@ import { EstadoConsentimientoDatos, Prisma, TipoEventoConsentimientoDatos, } fro
 import { prisma, } from "../../lib/prisma.js";
 import { PROTECCION_DATOS_DOCUMENTOS_BUCKET, supabaseAdmin, } from "../../lib/supabase/supabase.js";
 import { sendEmail, } from "../correos-masivos/masivos-email-sender.service.js";
+import { logoEmpresaPngParaPdf, } from "../empresas/empresa-logo.service.js";
 /* =========================================================
    CONFIG
    ========================================================= */
 const LOG = "[PROTECCION DATOS] Comprobante";
-/** Si el archivo no existe, el PDF se genera sin logo. */
-const LOGO = path.resolve(process.cwd(), "src/assets/logo-rids.png");
+/** Si el archivo no existe, el PDF se genera sin logo de RIDS. */
+const LOGO = [
+    path.resolve(process.cwd(), "src/assets/logo-rids.png"),
+    path.resolve(process.cwd(), "assets/logo-rids.png"),
+].find((ruta) => existsSync(ruta)) ?? "";
 const ZONA = "America/Santiago";
 const CORREO_DERECHOS_DEFECTO = "soporte@rids.cl";
 function secretoComprobante() {
@@ -305,28 +309,44 @@ export function generarPdfComprobante(datos) {
             .rect(0, 0, PAGINA.ancho, 112)
             .fill(COLOR.banda);
         let xTexto = MARGEN_X;
+        /* Logo de RIDS a la izquierda y, al lado, el de la empresa. */
+        const logos = [];
         if (existsSync(LOGO)) {
+            logos.push(LOGO);
+        }
+        if (datos.logoEmpresa) {
+            logos.push(datos.logoEmpresa);
+        }
+        const anchoLogo = logos.length > 1
+            ? 110
+            : 118;
+        for (const logo of logos) {
             try {
                 doc
-                    .roundedRect(MARGEN_X, 24, 118, 64, 8)
+                    .roundedRect(xTexto, 24, anchoLogo, 64, 8)
                     .fill("#FFFFFF");
-                doc.image(LOGO, MARGEN_X + 9, 30, {
+                doc.image(logo, xTexto + 9, 30, {
                     fit: [
-                        100,
+                        anchoLogo - 18,
                         52,
                     ],
                     align: "center",
                     valign: "center",
                 });
-                xTexto =
-                    MARGEN_X +
-                        138;
+                xTexto +=
+                    anchoLogo +
+                        10;
             }
             catch (error) {
-                console.warn(`${LOG} ⚠️ No se pudo cargar el logo`, error instanceof Error
+                console.warn(`${LOG} ⚠️ No se pudo cargar un logo`, error instanceof Error
                     ? error.message
                     : error);
             }
+        }
+        if (xTexto >
+            MARGEN_X) {
+            xTexto +=
+                10;
         }
         const anchoTexto = PAGINA.ancho -
             MARGEN_X -
@@ -623,6 +643,9 @@ export async function enviarComprobanteFirma(consentimientoId) {
         const empresaNombre = empresa?.nombre ??
             consentimiento.empresaNombre ??
             "Asesorías RIDS";
+        const logoEmpresa = empresaId
+            ? await logoEmpresaPngParaPdf(empresaId)
+            : null;
         const empresaLegal = empresa?.razonSocial?.trim() ||
             empresaNombre;
         const correoDerechos = correoDerechosEmpresa(empresa?.leypdFicha?.datos);
@@ -719,6 +742,7 @@ export async function enviarComprobanteFirma(consentimientoId) {
         ];
         const pdf = await generarPdfComprobante({
             empresa: empresaNombre,
+            logoEmpresa,
             tituloFormulario: configuracion?.tituloFormulario?.trim() ||
                 consentimiento.campania.tituloDocumento,
             firmante,

@@ -319,7 +319,7 @@ export async function getEquipoAgentDashboard(req, res) {
             ? horasSinConexionEnv
             : 384;
         const versionRecomendada = process.env.AGENT_RECOMMENDED_VERSION?.trim() ??
-            "8.0.0";
+            "11.0.0";
         const { desde, hasta } = getChileMonthRange(year, month);
         const andConditions = [
             {

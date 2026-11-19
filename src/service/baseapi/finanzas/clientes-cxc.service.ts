@@ -90,7 +90,8 @@ export type ClienteCxcFila = {
     porCobrar: number;
     vencido: number;
     maxDiasVencido: number;
-     puntualidad: {
+    totalContactos: number;
+    puntualidad: {
         estado: ResumenPuntualidad["estado"];
         score: number | null;
         totalEvaluados: number;
@@ -310,6 +311,7 @@ function armarFila(rut: string, receptores: Receptores, docsPorEmpresa: Record<E
         porCobrar: (porEmpresa.rids?.porCobrar ?? 0) + (porEmpresa.econnet?.porCobrar ?? 0),
         vencido: (porEmpresa.rids?.vencido ?? 0) + (porEmpresa.econnet?.vencido ?? 0),
         maxDiasVencido: Math.max(porEmpresa.rids?.maxDiasVencido ?? 0, porEmpresa.econnet?.maxDiasVencido ?? 0),
+        totalContactos: new Set([...(rf?.contactos ?? []), ...(rc?.contactos ?? [])].map((c) => normalizarEmail(c.email))).size,
         puntualidad: resumenPuntualidadFila(docsPorEmpresa),
     };
 }

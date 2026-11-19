@@ -267,7 +267,7 @@ function estadoDteEsBloqueante(estado) {
     ];
     return palabrasBloqueantes.some((palabra) => valor.includes(palabra));
 }
-async function validarDteAntesDeEnviar(params) {
+export async function validarDteAntesDeEnviar(params) {
     const { empresa, periodo, tipoDoc, folio, rutContraparte, } = params;
     /*
      * IMPORTANTE:

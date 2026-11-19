@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma.js";
 import { Prisma } from "@prisma/client";
+import { obtenerDatosCrmFichaTecnica, obtenerVisitasCrmFichaTecnica, } from "../../service/empresas/ficha-tecnica-crm.service.js";
 /* =====================================================
    FICHA EMPRESA (BÁSICA)
 ===================================================== */
@@ -241,7 +242,29 @@ export async function obtenerFichaTecnicaEmpresa(req, res) {
             },
         });
     }
-    return res.status(200).json(ficha);
+    /* Última y próxima visita: se calculan desde Visita y AgendaVisita (no se guardan) */
+    const visitasCrm = await obtenerVisitasCrmFichaTecnica(empresaId);
+    return res.status(200).json({ ...ficha, visitasCrm });
+}
+/* =====================================================
+   FICHA TÉCNICA: DATOS DESDE EL CRM (sugerencias)
+   GET /ficha-empresa/:empresaId/ficha-tecnica/datos-crm
+===================================================== */
+export async function obtenerDatosCrmFichaTecnicaController(req, res) {
+    const empresaId = Number(req.params.empresaId);
+    if (!Number.isInteger(empresaId) || empresaId <= 0) {
+        return res.status(400).json({ message: "empresaId inválido" });
+    }
+    try {
+        return res.status(200).json(await obtenerDatosCrmFichaTecnica(empresaId));
+    }
+    catch (error) {
+        if (error instanceof Error && error.message === "EMPRESA_NO_ENCONTRADA") {
+            return res.status(404).json({ message: "Empresa no encontrada" });
+        }
+        console.error("Error obteniendo datos del CRM para la ficha técnica:", error);
+        return res.status(500).json({ message: "No se pudieron obtener los datos del CRM" });
+    }
 }
 /* ===================== FICHA TÉCNICA EMPRESA ===================== */
 export async function upsertFichaTecnicaEmpresa(req, res) {
@@ -256,12 +279,7 @@ export async function upsertFichaTecnicaEmpresa(req, res) {
             update: {
                 tecnicoPrincipal: body.tecnicoPrincipal ?? null,
                 tecnicosRespaldo: body.tecnicosRespaldo ?? null,
-                fechaUltimaVisita: body.fechaUltimaVisita
-                    ? new Date(body.fechaUltimaVisita)
-                    : null,
-                proximaVisitaProgramada: body.proximaVisitaProgramada
-                    ? new Date(body.proximaVisitaProgramada)
-                    : null,
+                /* fechaUltimaVisita y proximaVisitaProgramada ya no se editan: se calculan (ficha-tecnica-crm.service) */
                 observacionesVisita: body.observacionesVisita ?? null,
                 pcsNotebooks: body.pcsNotebooks ?? null,
                 servidores: body.servidores ?? null,
@@ -291,12 +309,6 @@ export async function upsertFichaTecnicaEmpresa(req, res) {
                 empresaId,
                 tecnicoPrincipal: body.tecnicoPrincipal ?? null,
                 tecnicosRespaldo: body.tecnicosRespaldo ?? null,
-                fechaUltimaVisita: body.fechaUltimaVisita
-                    ? new Date(body.fechaUltimaVisita)
-                    : null,
-                proximaVisitaProgramada: body.proximaVisitaProgramada
-                    ? new Date(body.proximaVisitaProgramada)
-                    : null,
                 observacionesVisita: body.observacionesVisita ?? null,
                 pcsNotebooks: body.pcsNotebooks ?? null,
                 servidores: body.servidores ?? null,

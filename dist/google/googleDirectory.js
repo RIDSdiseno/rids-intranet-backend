@@ -34,12 +34,6 @@ export function getDirectoryClient(domain) {
         throw new Error("GOOGLE_PRIVATE_KEY inválida o mal formateada");
     }
     const subject = subjectForDomain(domain);
-    console.log("GOOGLE domain:", domain);
-    console.log("GOOGLE subject:", subject);
-    console.log("GOOGLE_CLIENT_EMAIL:", process.env.GOOGLE_CLIENT_EMAIL);
-    console.log("PRIVATE KEY EXISTS:", !!process.env.GOOGLE_PRIVATE_KEY);
-    console.log("PRIVATE KEY START:", (process.env.GOOGLE_PRIVATE_KEY || "").slice(0, 35));
-    console.log("PRIVATE KEY END:", (process.env.GOOGLE_PRIVATE_KEY || "").slice(-35));
     const auth = new google.auth.JWT({
         email: clientEmail,
         key: privateKey,

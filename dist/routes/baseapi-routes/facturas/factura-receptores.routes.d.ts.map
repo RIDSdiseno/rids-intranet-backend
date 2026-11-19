@@ -1,1 +1,1 @@
-{"version":3,"file":"factura-receptores.routes.d.ts","sourceRoot":"","sources":["../../../../src/routes/baseapi-routes/facturas/factura-receptores.routes.ts"],"names":[],"mappings":"AAwBA,QAAA,MAAM,MAAM,4CACA,CAAC;AAgEb,eAAe,MAAM,CAAC"}
+{"version":3,"file":"factura-receptores.routes.d.ts","sourceRoot":"","sources":["../../../../src/routes/baseapi-routes/facturas/factura-receptores.routes.ts"],"names":[],"mappings":"AA4BA,QAAA,MAAM,MAAM,4CACA,CAAC;AAqEb,eAAe,MAAM,CAAC"}

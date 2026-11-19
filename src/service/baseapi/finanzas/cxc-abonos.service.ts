@@ -151,7 +151,10 @@ export async function registrarAbonoCxc(params: {
     formaPago: string | null;
     observacion: string | null;
     responsable: string | null;
-}): Promise<{ pagos: PagosDocumentoCxc; conciliada: boolean }> {
+    /** Fase 4b: abono creado al conciliar un movimiento de la cartola. */
+    origen?: "MANUAL" | "CARTOLA";
+    movimientoId?: number | null;
+}): Promise<{ pagos: PagosDocumentoCxc; conciliada: boolean; abonoId: number }> {
     const { empresaKey, documento: doc } = params;
     validarFactura(doc);
 
@@ -174,14 +177,15 @@ export async function registrarAbonoCxc(params: {
         throw new AbonoCxcError(`El monto supera lo pendiente (${actual.pendiente.toLocaleString("es-CL")}).`);
     }
 
-    await prisma.rcvAbono.create({
+    const abono = await prisma.rcvAbono.create({
         data: {
             ...whereDocumento(empresaKey, doc),
             monto: params.monto,
             fechaPago: fechaPagoADate(params.fechaPago),
             formaPago: params.formaPago,
             observacion: params.observacion,
-            origen: "MANUAL",
+            origen: params.origen ?? "MANUAL",
+            movimientoId: params.movimientoId ?? null,
             responsable: params.responsable,
         },
     });
@@ -207,7 +211,7 @@ export async function registrarAbonoCxc(params: {
         });
     }
 
-    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa };
+    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa, abonoId: abono.id };
 }
 
 /* =========================================================
@@ -218,6 +222,8 @@ export async function eliminarAbonoCxc(params: {
     empresaKey: EmpresaKey;
     documento: DocumentoAbonoCxc;
     abonoId: number;
+    /** true solo desde la conciliación bancaria (deshacer un movimiento). */
+    desdeMovimiento?: boolean;
 }): Promise<{ pagos: PagosDocumentoCxc; desconciliada: boolean }> {
     const { empresaKey, documento: doc } = params;
     validarFactura(doc);
@@ -225,7 +231,7 @@ export async function eliminarAbonoCxc(params: {
     const abono = await prisma.rcvAbono.findFirst({ where: { id: params.abonoId, ...whereDocumento(empresaKey, doc) } });
     if (!abono) throw new AbonoCxcError("El abono no existe o no corresponde a esta factura.");
 
-    if (abono.movimientoId) {
+    if (abono.movimientoId && !params.desdeMovimiento) {
         throw new AbonoCxcError("Este abono viene de un movimiento bancario: se deshace desde la conciliación bancaria.");
     }
 

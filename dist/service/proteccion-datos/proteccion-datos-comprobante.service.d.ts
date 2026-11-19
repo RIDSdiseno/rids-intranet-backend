@@ -18,6 +18,7 @@ type Fila = {
 };
 export type DatosComprobantePdf = {
     empresa: string;
+    logoEmpresa?: Buffer | null;
     tituloFormulario: string;
     firmante: Fila[];
     registro: Fila[];

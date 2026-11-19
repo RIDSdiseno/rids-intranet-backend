@@ -117,6 +117,12 @@ class GraphFinanzasService {
                     name: attachment.name,
                     contentType: attachment.contentType,
                     contentBytes: attachment.contentBytes,
+                    ...(attachment.isInline
+                        ? {
+                            isInline: true,
+                            contentId: attachment.contentId,
+                        }
+                        : {}),
                 })),
             },
             saveToSentItems: true,

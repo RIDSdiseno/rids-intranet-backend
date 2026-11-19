@@ -63,7 +63,9 @@ type DocumentoCobranzaBatch = {
     estado: EstadoDocumentoCobranza;
     automatizacion: ResumenAutomatizacionCobranza;
 };
-export declare function obtenerEstadosDocumentosCobranza(documentos: any[], tipoRcv: TipoRcvCobranza, empresaFallback?: EmpresaKey): Promise<DocumentoCobranzaBatch[]>;
+export declare function obtenerEstadosDocumentosCobranza(documentos: any[], tipoRcv: TipoRcvCobranza, empresaFallback?: EmpresaKey, opciones?: {
+    ignorarConciliacion?: boolean;
+}): Promise<DocumentoCobranzaBatch[]>;
 export declare function anotarDocumentosCobranza(documentos: any[], tipoRcv: TipoRcvCobranza, empresaFallback?: EmpresaKey): Promise<any[]>;
 export {};
 //# sourceMappingURL=cobranza-estado.service.d.ts.map
