@@ -12,6 +12,8 @@ import { clientesRouter } from "./routes/clientes.routes.js";
 import reportesRouter from "./routes/reportes-routes/reportes.routes.js";
 import { detalleEmpresaRouter } from "./routes/routes-empresas/detalle-empresa.routes.js";
 import { empresasRouter } from "./routes/routes-empresas/empresas.routes.js";
+import { gruposEmpresaRouter } from "./routes/routes-empresas/grupos-empresa.routes.js";
+import { portalClienteRouter } from "./routes/routes-empresas/portal-cliente.routes.js";
 import empresaLogoRouter from "./routes/routes-empresas/empresa-logo.routes.js";
 import mantencionesRemotasRouter from "./routes/mantencionesRemotas.routes.js";
 
@@ -206,6 +208,8 @@ api.use("/equipos-adicionales", equipoAdicionalRoutes);
 api.use("/clientes", clientesRouter);
 api.use("/detalle-empresa", detalleEmpresaRouter);
 api.use("/empresas", empresasRouter);
+api.use("/grupos-empresa", gruposEmpresaRouter);
+api.use("/portal", portalClienteRouter);
 api.use("/ficha-empresa", fichaEmpresasRouter);
 api.use("/empresas-logo", empresaLogoRouter);
 api.use("/mantenciones-remotas", mantencionesRemotasRouter);

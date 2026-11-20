@@ -59,11 +59,23 @@ model Empresa {
   campaniasProteccionDatos CampaniaProteccionDatos[]
   telefoniaParlantes       TelefoniaParlante[]
   telefoniaUsuarios        TelefoniaUsuario[]
+  grupoId                  Int?
+  grupo                    GrupoEmpresa?             @relation(fields: [grupoId], references: [id])
 
   @@index([isActive])
+  @@index([grupoId])
   @@index([deactivatedAt])
   @@index([recibeCobranza])
   @@index([recibeFacturas])
+}
+
+model GrupoEmpresa {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique
+  descripcion String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  empresas    Empresa[]
 }
 
 model EmpresaAliasOutlook {
@@ -963,6 +975,7 @@ model Tecnico {
   area                            String?
   cargo                           String?
   puedeEditarAgenda               Boolean                          @default(false)
+  verTodoGrupo                    Boolean                          @default(false)
   empresa                         Empresa?                         @relation(fields: [empresaId], references: [id_empresa])
   tokens                          RefreshToken[]
   historiales                     Historial[]
@@ -1208,8 +1221,9 @@ model CotizacionGestioo {
   tecnicoId             Int?
   ordenGenerada         Boolean                 @default(false)
   oportunidadVentaId    Int?
-  tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
+    tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
+  secciones             CotizacionSeccionGestioo[]
   entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
   facturas              Factura[]
   trabajos              DetalleTrabajoGestioo[]
@@ -1281,14 +1295,31 @@ model CotizacionItemGestioo {
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
-  equipoId          Int?              @unique
+    equipoId          Int?              @unique
   productoId        Int?
+  seccionId         Int?
+  seccion           CotizacionSeccionGestioo? @relation(fields: [seccionId], references: [id], onDelete: SetNull)
   cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
   producto          ProductoGestioo?  @relation(fields: [productoId], references: [id], onDelete: SetNull)
   equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
-
+ 
   @@index([productoId])
   @@index([equipoId])
+  @@index([seccionId])
+}
+
+/// Secciones de una cotización (agrupan ítems en pantalla y en el PDF).
+model CotizacionSeccionGestioo {
+  id           Int                     @id @default(autoincrement())
+  cotizacionId Int
+  nombre       String
+  descripcion  String?
+  orden        Int                     @default(0)
+  createdAt    DateTime                @default(now())
+  cotizacion   CotizacionGestioo       @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  items        CotizacionItemGestioo[]
+
+  @@index([cotizacionId])
 }
 
 model Entrega {

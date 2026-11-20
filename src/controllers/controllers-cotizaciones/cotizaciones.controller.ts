@@ -21,6 +21,51 @@ export function generarSKU(): string {
     return `SKU-${random}`;
 }
 
+/* =====================================================
+      SECCIONES DE COTIZACIÓN
+   El frontend envía `secciones: [{ id, nombre, descripcion }]`
+   y cada ítem con `seccionId` = el `id` de su sección.
+   - En CREATE todos los ids son temporales.
+   - En UPDATE, un id que ya existe en la cotización se actualiza;
+     cualquier otro se crea. Las que no vienen se eliminan
+     (sus ítems quedan sin sección).
+   - Ítems sin sección (seccionId null) = cotizaciones antiguas:
+     se muestran sin título.
+===================================================== */
+const ORDEN_SECCIONES = [{ orden: "asc" as const }, { id: "asc" as const }];
+
+interface SeccionPayload {
+    clave: number | null;
+    nombre: string;
+    descripcion: string | null;
+    orden: number;
+}
+
+function parseSecciones(raw: unknown): SeccionPayload[] | undefined {
+    if (!Array.isArray(raw)) return undefined;
+
+    return raw.map((s: any, idx: number) => {
+        const clave = Number(s?.id);
+        const nombre = String(s?.nombre ?? "").trim().slice(0, 150);
+        const descripcion = String(s?.descripcion ?? "").trim().slice(0, 1000);
+
+        return {
+            clave: s?.id !== undefined && s?.id !== null && Number.isFinite(clave) ? clave : null,
+            nombre: nombre || `Sección ${idx + 1}`,
+            descripcion: descripcion || null,
+            orden: idx,
+        };
+    });
+}
+
+/** Traduce el seccionId que mandó el frontend al id real de la BD (o null). */
+function resolverSeccionId(raw: unknown, mapa: Map<number, number>): number | null {
+    if (raw === undefined || raw === null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return mapa.get(n) ?? null;
+}
+
 function mapEstadoSimpleAPIToEnum(estado: string): EstadoDTE {
     const normalized = estado.toUpperCase();
 
@@ -230,6 +275,7 @@ export async function getCotizacionesPaginadas(req: Request, res: Response) {
                         },
                     },
                     _count: { select: { items: true, facturas: true } },
+                    secciones: { orderBy: ORDEN_SECCIONES },
                 },
             }),
             prisma.cotizacionGestioo.count({ where }),
@@ -355,6 +401,7 @@ export async function getCotizaciones(req: Request, res: Response) {
             orderBy: { id: "desc" },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     orderBy: { id: "asc" },
                     include: {
@@ -402,6 +449,7 @@ export async function getCotizacionById(req: Request, res: Response) {
             where: { id },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     orderBy: { id: "asc" },
                     include: {
@@ -476,107 +524,137 @@ export async function createCotizacion(req: Request, res: Response) {
         data.total =
             totalesCalculados.total;
 
-        const nueva = await prisma.cotizacionGestioo.create({
-            data: {
-                ...data,
-                comentariosCotizacion: req.body.comentariosCotizacion ?? null,
-                imagen: req.body.imagen ?? null,
-                tecnicoId: userId,
+        const secciones = parseSecciones(req.body.secciones) ?? [];
 
-                items: {
-                    create: items.map((i: any) => {
-                        const precioCLP =
-                            redondearDinero(
-                                parseDecimalInput(
-                                    i.precioOriginalCLP ??
-                                    i.precio,
-                                    0
-                                )
-                            );
-
-                        return {
-                            tipo: i.tipo,
-
-                            // TEXTO
-                            nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                            descripcion:
-                                i.descripcion?.trim() && i.descripcion.trim() !== ""
-                                    ? i.descripcion.trim()
-                                    : "", // <-- Cambiar null por string vacío
-
-                            cantidad:
-                                normalizarCantidad(
-                                    i.cantidad
-                                ),
-
-                            precio:
-                                precioCLP,
-
-                            precioOriginalCLP:
-                                precioCLP,
-
-                            precioCosto:
-                                i.precioCosto != null
-                                    ? redondearDinero(
-                                        parseDecimalInput(
-                                            i.precioCosto,
-                                            0
-                                        )
-                                    )
-                                    : null,
-
-                            porcGanancia:
-                                i.porcGanancia != null
-                                    ? normalizarGanancia(
-                                        i.porcGanancia
-                                    )
-                                    : null,
-
-                            tieneDescuento:
-                                Boolean(
-                                    i.tieneDescuento
-                                ),
-
-                            porcentaje:
-                                i.tieneDescuento
-                                    ? normalizarDescuento(
-                                        i.porcentaje
-                                    )
-                                    : 0,
-
-                            tieneIVA:
-                                Boolean(
-                                    i.tieneIVA
-                                ),
-
-                            // OTROS
-                            sku:
-                                i.sku && i.sku.trim() !== ""
-                                    ? i.sku
-                                    : generarSKU(),
-                            imagen: i.imagen ?? null,
-
-                            productoId:
-                                i.productoId != null
-                                    ? Number(i.productoId)
-                                    : null,
-
-                            equipoId: i.equipoId ? Number(i.equipoId) : null,
-                        };
-                    }),
+        const nueva = await prisma.$transaction(async (tx) => {
+            const creada = await tx.cotizacionGestioo.create({
+                data: {
+                    ...data,
+                    comentariosCotizacion: req.body.comentariosCotizacion ?? null,
+                    imagen: req.body.imagen ?? null,
+                    tecnicoId: userId,
                 },
-            },
-            include: {
-                entidad: true,
-                items: true,
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+            });
+
+            /* Secciones: clave temporal del frontend → id real */
+            const mapaSecciones = new Map<number, number>();
+
+            for (const seccion of secciones) {
+                const creadaSeccion = await tx.cotizacionSeccionGestioo.create({
+                    data: {
+                        cotizacionId: creada.id,
+                        nombre: seccion.nombre,
+                        descripcion: seccion.descripcion,
+                        orden: seccion.orden,
+                    },
+                });
+
+                if (seccion.clave !== null) {
+                    mapaSecciones.set(seccion.clave, creadaSeccion.id);
+                }
+            }
+
+            await tx.cotizacionItemGestioo.createMany({
+                data: items.map((i: any) => {
+                    const precioCLP =
+                        redondearDinero(
+                            parseDecimalInput(
+                                i.precioOriginalCLP ??
+                                i.precio,
+                                0
+                            )
+                        );
+
+                    return {
+                        cotizacionId: creada.id,
+                        seccionId: resolverSeccionId(i.seccionId, mapaSecciones),
+
+                        tipo: i.tipo,
+
+                        // TEXTO
+                        nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
+                        descripcion:
+                            i.descripcion?.trim() && i.descripcion.trim() !== ""
+                                ? i.descripcion.trim()
+                                : "", // <-- Cambiar null por string vacío
+
+                        cantidad:
+                            normalizarCantidad(
+                                i.cantidad
+                            ),
+
+                        precio:
+                            precioCLP,
+
+                        precioOriginalCLP:
+                            precioCLP,
+
+                        precioCosto:
+                            i.precioCosto != null
+                                ? redondearDinero(
+                                    parseDecimalInput(
+                                        i.precioCosto,
+                                        0
+                                    )
+                                )
+                                : null,
+
+                        porcGanancia:
+                            i.porcGanancia != null
+                                ? normalizarGanancia(
+                                    i.porcGanancia
+                                )
+                                : null,
+
+                        tieneDescuento:
+                            Boolean(
+                                i.tieneDescuento
+                            ),
+
+                        porcentaje:
+                            i.tieneDescuento
+                                ? normalizarDescuento(
+                                    i.porcentaje
+                                )
+                                : 0,
+
+                        tieneIVA:
+                            Boolean(
+                                i.tieneIVA
+                            ),
+
+                        // OTROS
+                        sku:
+                            i.sku && i.sku.trim() !== ""
+                                ? i.sku
+                                : generarSKU(),
+                        imagen: i.imagen ?? null,
+
+                        productoId:
+                            i.productoId != null
+                                ? Number(i.productoId)
+                                : null,
+
+                        equipoId: i.equipoId ? Number(i.equipoId) : null,
+                    };
+                }),
+            });
+
+            return tx.cotizacionGestioo.findUniqueOrThrow({
+                where: { id: creada.id },
+                include: {
+                    entidad: true,
+                    items: { orderBy: { id: "asc" } },
+                    secciones: { orderBy: ORDEN_SECCIONES },
+                    tecnico: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                        },
                     },
                 },
-            },
+            });
         });
 
         return res.status(201).json({ data: nueva });
@@ -601,6 +679,7 @@ export async function updateCotizacion(req: Request, res: Response) {
             where: { id },
             include: {
                 items: true,
+                secciones: { select: { id: true } },
             },
         });
 
@@ -617,6 +696,9 @@ export async function updateCotizacion(req: Request, res: Response) {
         }
 
         const data = normalizeCotizacionData(rest);
+
+        /* undefined = no se tocan secciones ni el seccionId de los ítems */
+        const secciones = parseSecciones(req.body.secciones);
 
         if (Array.isArray(items)) {
             const totalesCalculados =
@@ -653,6 +735,64 @@ export async function updateCotizacion(req: Request, res: Response) {
                     }),
                 },
             });
+
+            // 1.5️⃣ Sincronizar secciones (solo si vienen en el body)
+            let mapaSecciones: Map<number, number> | null = null;
+
+            if (secciones !== undefined) {
+                mapaSecciones = new Map<number, number>();
+
+                const idsSeccionesBD = new Set(existe.secciones.map((sec) => sec.id));
+                const idsQueSiguen = new Set<number>();
+
+                for (const seccion of secciones) {
+                    if (seccion.clave !== null && idsSeccionesBD.has(seccion.clave)) {
+                        await tx.cotizacionSeccionGestioo.update({
+                            where: { id: seccion.clave },
+                            data: {
+                                nombre: seccion.nombre,
+                                descripcion: seccion.descripcion,
+                                orden: seccion.orden,
+                            },
+                        });
+                        mapaSecciones.set(seccion.clave, seccion.clave);
+                        idsQueSiguen.add(seccion.clave);
+                    } else {
+                        const creadaSeccion = await tx.cotizacionSeccionGestioo.create({
+                            data: {
+                                cotizacionId: id,
+                                nombre: seccion.nombre,
+                                descripcion: seccion.descripcion,
+                                orden: seccion.orden,
+                            },
+                        });
+                        if (seccion.clave !== null) {
+                            mapaSecciones.set(seccion.clave, creadaSeccion.id);
+                        }
+                    }
+                }
+
+                const idsSeccionesAEliminar = [...idsSeccionesBD].filter(
+                    (seccionId) => !idsQueSiguen.has(seccionId)
+                );
+
+                if (idsSeccionesAEliminar.length > 0) {
+                    /* relationMode = "prisma": se desvinculan los ítems a mano */
+                    await tx.cotizacionItemGestioo.updateMany({
+                        where: { cotizacionId: id, seccionId: { in: idsSeccionesAEliminar } },
+                        data: { seccionId: null },
+                    });
+
+                    await tx.cotizacionSeccionGestioo.deleteMany({
+                        where: { cotizacionId: id, id: { in: idsSeccionesAEliminar } },
+                    });
+                }
+            }
+
+            const seccionDeItem = (i: any) =>
+                mapaSecciones
+                    ? { seccionId: resolverSeccionId(i.seccionId, mapaSecciones) }
+                    : {};
 
             // 2️⃣ Si se incluyen items, procesar actualizaciones, eliminaciones y creaciones
             if (items !== undefined) {
@@ -751,6 +891,7 @@ export async function updateCotizacion(req: Request, res: Response) {
                             sku: i.sku?.trim() || generarSKU(),
                             imagen: i.imagen ?? null,
                             equipoId: i.equipoId ? Number(i.equipoId) : null,
+                            ...seccionDeItem(i),
                         },
                     });
                 }
@@ -775,6 +916,8 @@ export async function updateCotizacion(req: Request, res: Response) {
                             return {
                                 cotizacionId:
                                     id,
+
+                                ...seccionDeItem(i),
 
                                 tipo:
                                     i.tipo,
@@ -866,6 +1009,7 @@ export async function updateCotizacion(req: Request, res: Response) {
             where: { id },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     include: {
                         equipo: {

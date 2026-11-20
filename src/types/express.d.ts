@@ -8,6 +8,7 @@ declare module "express-serve-static-core" {
       id: number;
       rol: string;
       empresaId: number | null;
+      empresaIdPropia?: number | null;
       email: string | null;
     };
   }

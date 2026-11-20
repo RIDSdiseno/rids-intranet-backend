@@ -6,7 +6,8 @@ import {
     uploadReporteSupabase,
     convertDocxToPdf,
     previewDocxToPdf,
-    enviarInformeResumenCorreo
+    enviarInformeResumenCorreo,
+    verReporteComoPdf
 } from "../../controllers/controllers-reportes/reportes-upload.controller.js";
 
 import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
@@ -18,6 +19,7 @@ router.get("/history", auth(), onlyOwnEmpresa(), listHistorialReportes);
 router.post("/upload", auth(), uploadReporteSupabase);
 router.post("/convert-pdf", auth(), convertDocxToPdf);
 router.post("/enviar-informe-resumen", auth(), enviarInformeResumenCorreo);
-router.post("/preview-docx-pdf", previewDocxToPdf);
+router.post("/preview-docx-pdf", auth(), previewDocxToPdf);
+router.get("/:id/pdf", auth(), onlyOwnEmpresa(), verReporteComoPdf);
 
 export default router;

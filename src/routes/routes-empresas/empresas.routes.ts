@@ -32,6 +32,10 @@ import {
   postVincularEntidadAutomaticamente,
 } from "../../controllers/controllers-empresas/empresa-entidad.controller.js";
 
+import {
+  asignarGrupoEmpresa,
+} from "../../controllers/controllers-empresas/grupos-empresa.controller.js";
+
 import { onlyRole } from "../../middlewares/roles.js";
 import { auth } from "../../middlewares/auth.js";
 
@@ -90,6 +94,15 @@ empresasRouter.patch(
 empresasRouter.get(
   "/:empresaId/equipos",
   getEquiposByEmpresa
+);
+
+/*
+ * Asignar / quitar el grupo de la empresa (solo ADMIN).
+ */
+empresasRouter.patch(
+  "/:id/grupo",
+  onlyRole("ADMIN","ADMINISTRACION"),
+  asignarGrupoEmpresa
 );
 
 empresasRouter.get(

@@ -113,6 +113,7 @@ const corsOptions: cors.CorsOptions = {
     "Cache-Control",
     "Pragma",
     "Expires",
+    "X-Empresa-Id",
   ],
   optionsSuccessStatus: 204,
 };

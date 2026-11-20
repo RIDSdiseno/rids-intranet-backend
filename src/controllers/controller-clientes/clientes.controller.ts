@@ -2,6 +2,7 @@
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
+import { invalidarAlcanceClientes } from "../../service/empresas/alcance-cliente.service.js";
 
 function parsePositiveInt(value: unknown): number | null {
     const n = Number(value);
@@ -54,10 +55,12 @@ export async function listClientes(req: Request, res: Response): Promise<void> {
                 rol: true,
                 status: true,
                 empresaId: true,
+                verTodoGrupo: true,
                 empresa: {
                     select: {
                         id_empresa: true,
                         nombre: true,
+                        grupo: { select: { id: true, nombre: true } },
                         detalleEmpresa: {
                             select: {
                                 rut: true,
@@ -110,10 +113,12 @@ export async function getClienteById(req: Request, res: Response): Promise<void>
                 rol: true,
                 status: true,
                 empresaId: true,
+                verTodoGrupo: true,
                 empresa: {
                     select: {
                         id_empresa: true,
                         nombre: true,
+                        grupo: { select: { id: true, nombre: true } },
                         detalleEmpresa: {
                             select: {
                                 rut: true,
@@ -153,6 +158,7 @@ export async function createCliente(req: Request, res: Response): Promise<void> 
         const email = normalizeEmail(req.body.email);
         const password = String(req.body.password ?? "");
         const empresaId = parsePositiveInt(req.body.empresaId);
+        const verTodoGrupo = req.body.verTodoGrupo === true;
 
         if (!nombre || !email || !password || !empresaId) {
             res.status(400).json({
@@ -228,6 +234,7 @@ export async function createCliente(req: Request, res: Response): Promise<void> 
                 empresaId,
                 rol: "CLIENTE",
                 status: true,
+                verTodoGrupo,
             },
             select: {
                 id_tecnico: true,
@@ -236,10 +243,12 @@ export async function createCliente(req: Request, res: Response): Promise<void> 
                 rol: true,
                 status: true,
                 empresaId: true,
+                verTodoGrupo: true,
                 empresa: {
                     select: {
                         id_empresa: true,
                         nombre: true,
+                        grupo: { select: { id: true, nombre: true } },
                         detalleEmpresa: {
                             select: {
                                 rut: true,
@@ -318,6 +327,9 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
         const status =
             typeof req.body.status === "boolean" ? req.body.status : undefined;
 
+        const verTodoGrupo =
+            typeof req.body.verTodoGrupo === "boolean" ? req.body.verTodoGrupo : undefined;
+
         if (nombre !== undefined && !nombre) {
             res.status(400).json({
                 ok: false,
@@ -379,6 +391,7 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
             email?: string;
             empresaId?: number;
             status?: boolean;
+            verTodoGrupo?: boolean;
             passwordHash?: string;
         } = {};
 
@@ -386,6 +399,7 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
         if (email !== undefined) data.email = email;
         if (empresaId !== undefined && empresaId !== null) data.empresaId = empresaId;
         if (status !== undefined) data.status = status;
+        if (verTodoGrupo !== undefined) data.verTodoGrupo = verTodoGrupo;
 
         if (password && password.trim().length > 0) {
             if (password.length < 6) {
@@ -411,10 +425,12 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
                 rol: true,
                 status: true,
                 empresaId: true,
+                verTodoGrupo: true,
                 empresa: {
                     select: {
                         id_empresa: true,
                         nombre: true,
+                        grupo: { select: { id: true, nombre: true } },
                         detalleEmpresa: {
                             select: {
                                 rut: true,
@@ -424,6 +440,8 @@ export async function updateCliente(req: Request, res: Response): Promise<void> 
                 },
             },
         });
+
+        invalidarAlcanceClientes();
 
         res.json({
             ok: true,
@@ -507,10 +525,12 @@ export async function deleteCliente(req: Request, res: Response): Promise<void> 
                 rol: true,
                 status: true,
                 empresaId: true,
+                verTodoGrupo: true,
                 empresa: {
                     select: {
                         id_empresa: true,
                         nombre: true,
+                        grupo: { select: { id: true, nombre: true } },
                         detalleEmpresa: {
                             select: {
                                 rut: true,
@@ -530,6 +550,8 @@ export async function deleteCliente(req: Request, res: Response): Promise<void> 
                 revokedAt: new Date(),
             },
         });
+
+        invalidarAlcanceClientes();
 
         res.json({
             ok: true,

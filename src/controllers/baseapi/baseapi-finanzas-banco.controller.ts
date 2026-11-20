@@ -134,6 +134,7 @@ export async function postConfirmarMovimiento(req: Request, res: Response) {
             })),
             docs: await docsEmpresa(empresaKey),
             responsable: await responsable(req),
+            avisarCliente: body(req).avisarCliente !== false,
         });
 
         invalidarCacheCxc(empresaKey);
@@ -148,7 +149,13 @@ export async function postConfirmarPerfectos(req: Request, res: Response) {
         const empresaKey = parseEmpresa(body(req).empresa);
         const ids = Array.isArray(body(req).ids) ? (body(req).ids as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
 
-        const data = await confirmarPerfectos({ empresaKey, ids, docs: await docsEmpresa(empresaKey, true), responsable: await responsable(req) });
+        const data = await confirmarPerfectos({
+            empresaKey,
+            ids,
+            docs: await docsEmpresa(empresaKey, true),
+            responsable: await responsable(req),
+            avisarCliente: body(req).avisarCliente !== false,
+        });
 
         invalidarCacheCxc(empresaKey);
         return res.json({ ok: true, data });

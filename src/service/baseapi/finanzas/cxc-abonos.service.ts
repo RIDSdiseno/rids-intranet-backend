@@ -14,6 +14,8 @@ import type { EmpresaKey } from "../cobranza/cobranza-estado.service.js";
 
 import { conciliarDocumentoRcv, desconciliarDocumentoRcv } from "../baseapi-rcv-conciliacion.service.js";
 
+import { notificarPagoRecibido, type ResultadoAvisoPago } from "../cobranza/pago-recibido.service.js";
+
 /* =========================================================
    TYPES
 ========================================================= */
@@ -154,7 +156,9 @@ export async function registrarAbonoCxc(params: {
     /** Fase 4b: abono creado al conciliar un movimiento de la cartola. */
     origen?: "MANUAL" | "CARTOLA";
     movimientoId?: number | null;
-}): Promise<{ pagos: PagosDocumentoCxc; conciliada: boolean; abonoId: number }> {
+    /** Si la factura queda pagada, enviar «Pago recibido» a los contactos de Cobranza. */
+    avisarCliente?: boolean;
+}): Promise<{ pagos: PagosDocumentoCxc; conciliada: boolean; abonoId: number; aviso: ResultadoAvisoPago | null }> {
     const { empresaKey, documento: doc } = params;
     validarFactura(doc);
 
@@ -211,7 +215,23 @@ export async function registrarAbonoCxc(params: {
         });
     }
 
-    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa, abonoId: abono.id };
+    // «Pago recibido»: solo cuando la factura queda pagada y se pidió avisar.
+    const aviso =
+        completa && params.avisarCliente
+            ? await notificarPagoRecibido({
+                empresaKey,
+                tipoDoc: doc.tipoDoc,
+                folio: doc.folio,
+                rutContraparte: doc.rutContraparte,
+                razonSocial: doc.razonSocial,
+                montoFactura: actual.saldoNc,
+                montoPago: params.monto,
+                fechaPago: params.fechaPago,
+                formaPago: params.formaPago,
+            })
+            : null;
+
+    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa, abonoId: abono.id, aviso };
 }
 
 /* =========================================================

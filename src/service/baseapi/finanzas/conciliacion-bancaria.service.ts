@@ -22,6 +22,7 @@ import type { EmpresaKey } from "../cobranza/cobranza-estado.service.js";
 
 import { leerCartolaItau, type PagoCartola } from "./cartola-itau.parser.js";
 import { eliminarAbonoCxc, registrarAbonoCxc } from "./cxc-abonos.service.js";
+import { notificarPagoRecibido } from "../cobranza/pago-recibido.service.js";
 
 /* =========================================================
    TYPES
@@ -658,6 +659,8 @@ export async function confirmarMovimiento(params: {
     asignaciones: Array<{ tipoDoc: string; folio: string; rutContraparte: string; monto: number }>;
     docs: DocumentoBanco[];
     responsable: string | null;
+    /** Avisar «Pago recibido» de las facturas que queden pagadas (después de confirmar todo el movimiento). */
+    avisarCliente?: boolean;
 }) {
     const { empresaKey, docs } = params;
     const mov = await obtenerMovimiento(empresaKey, params.movimientoId);
@@ -693,6 +696,7 @@ export async function confirmarMovimiento(params: {
 
     const fechaPago = fechaChile(mov.fechaPago);
     const creados: Array<{ doc: DocumentoBanco; abonoId: number }> = [];
+    const pagadas: Array<{ doc: DocumentoBanco; monto: number }> = [];
 
     try {
         for (const item of items) {
@@ -712,6 +716,7 @@ export async function confirmarMovimiento(params: {
                 });
                 abonoId = resultado.abonoId;
                 creados.push({ doc: item.doc, abonoId });
+                if (resultado.conciliada) pagadas.push({ doc: item.doc, monto: item.monto });
             }
 
             await prisma.movimientoBancarioAsignacion.create({
@@ -741,11 +746,33 @@ export async function confirmarMovimiento(params: {
         data: { estado: "CONCILIADO", conciliadoAt: new Date(), responsable: params.responsable, motivoDescarte: null },
     });
 
-    return { abonos: creados.length, vinculos: items.length - creados.length };
+    // «Pago recibido»: al final, para no avisar si el movimiento se deshace por un error.
+    let avisosEnviados = 0;
+    const avisosOmitidos: string[] = [];
+
+    if (params.avisarCliente) {
+        for (const p of pagadas) {
+            const aviso = await notificarPagoRecibido({
+                empresaKey,
+                tipoDoc: p.doc.tipoDoc,
+                folio: p.doc.folio,
+                rutContraparte: p.doc.rutContraparte,
+                razonSocial: p.doc.razonSocial,
+                montoFactura: p.doc.montoOriginal - p.doc.montoNotasCredito,
+                montoPago: p.monto,
+                fechaPago,
+                formaPago: "TRANSFERENCIA",
+            });
+            avisosEnviados += aviso.enviados.length;
+            if (aviso.enviados.length === 0) avisosOmitidos.push(`${p.doc.tipoDoc}-${p.doc.folio}: ${aviso.omitido ?? aviso.errores[0]?.error ?? "sin envío"}`);
+        }
+    }
+
+    return { abonos: creados.length, vinculos: items.length - creados.length, pagadas: pagadas.length, avisosEnviados, avisosOmitidos };
 }
 
 /** Confirma en bloque los pendientes cuya propuesta es PERFECTO o YA_PAGADA (con la propuesta recalculada). */
-export async function confirmarPerfectos(params: { empresaKey: EmpresaKey; ids: number[]; docs: DocumentoBanco[]; responsable: string | null }) {
+export async function confirmarPerfectos(params: { empresaKey: EmpresaKey; ids: number[]; docs: DocumentoBanco[]; responsable: string | null; avisarCliente?: boolean }) {
     const { movimientos } = await listarMovimientos({ empresaKey: params.empresaKey, docs: params.docs });
     const elegibles = movimientos.filter(
         (m) =>
@@ -755,6 +782,7 @@ export async function confirmarPerfectos(params: { empresaKey: EmpresaKey; ids: 
     );
 
     let confirmados = 0;
+    let avisosEnviados = 0;
     const errores: Array<{ id: number; error: string }> = [];
     // Las facturas usadas en este lote no se repiten en otro movimiento del mismo lote.
     const usadas = new Set<string>();
@@ -768,21 +796,23 @@ export async function confirmarPerfectos(params: { empresaKey: EmpresaKey; ids: 
         }
 
         try {
-            await confirmarMovimiento({
+            const r = await confirmarMovimiento({
                 empresaKey: params.empresaKey,
                 movimientoId: m.id,
                 asignaciones: asignaciones.map((a) => ({ tipoDoc: a.tipoDoc, folio: a.folio, rutContraparte: a.rutContraparte, monto: a.monto })),
                 docs: params.docs,
                 responsable: params.responsable,
+                avisarCliente: params.avisarCliente ?? false,
             });
             claves.forEach((k) => usadas.add(k));
             confirmados++;
+            avisosEnviados += r.avisosEnviados;
         } catch (error) {
             errores.push({ id: m.id, error: error instanceof Error ? error.message : String(error) });
         }
     }
 
-    return { confirmados, errores };
+    return { confirmados, errores, avisosEnviados };
 }
 
 /* =========================================================
