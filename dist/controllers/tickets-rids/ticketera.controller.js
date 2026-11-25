@@ -808,6 +808,8 @@ export async function listTickets(req, res) {
                     messages: {
                         some: {
                             bodyText: { contains: searchValue, mode: "insensitive" },
+                            /* CLIENTE: la búsqueda no mira notas internas */
+                            ...(isCliente ? { isInternal: false } : {}),
                         },
                     },
                 },
@@ -994,6 +996,13 @@ export async function getTicketById(req, res) {
         const agentId = req.user?.id ?? null;
         const isCliente = user?.rol === "CLIENTE";
         let ticketFinal = ticket;
+        /* CLIENTE: sin notas internas ni sus adjuntos (antes solo las ocultaba el frontend) */
+        if (isCliente) {
+            ticketFinal = {
+                ...ticket,
+                messages: ticket.messages.filter((m) => !m.isInternal),
+            };
+        }
         if (!isCliente) {
             const tecnicoActual = agentId
                 ? await prisma.tecnico.findUnique({
@@ -1133,6 +1142,19 @@ export async function updateTicket(req, res) {
             return res.status(404).json({
                 ok: false,
                 message: "Ticket no encontrado",
+            });
+        }
+        /*
+ * PENDING pausa el SLA (también el de primera respuesta).
+ * Solo se permite si ya hubo una respuesta pública al cliente
+ * en el ciclo actual (firstResponseAt; la reapertura por correo lo limpia).
+ */
+        if (status === TicketStatus.PENDING &&
+            ticket.status !== TicketStatus.PENDING &&
+            !ticket.firstResponseAt) {
+            return res.status(409).json({
+                ok: false,
+                message: "Responde al cliente antes de dejar el ticket en Pendiente. Pendiente pausa el SLA y es solo para cuando se espera una respuesta del cliente.",
             });
         }
         const isTryingToAssign = assigneeId !== undefined && assigneeId !== ticket.assigneeId;
@@ -1459,6 +1481,14 @@ export async function downloadTicketAttachment(req, res) {
                 message: "Adjunto no encontrado",
             });
         }
+        /* CLIENTE: solo adjuntos de tickets de su empresa y que no sean de notas internas */
+        const usuario = req.user;
+        if (usuario?.rol === "CLIENTE") {
+            if (att.message.ticket.empresaId !== usuario.empresaId ||
+                att.message.isInternal) {
+                return res.status(403).json({ ok: false, message: "No autorizado" });
+            }
+        }
         if (!att.url) {
             return res.status(404).json({
                 ok: false,
@@ -1575,10 +1605,25 @@ export async function bulkUpdateTickets(req, res) {
                 assigneeId: true,
                 // Necesario para saber si realmente cambió a PENDING o salió de PENDING.
                 status: true,
+                // Necesario para impedir PENDING sin respuesta al cliente.
+                firstResponseAt: true,
                 resolvedAt: true,
                 closedAt: true,
             },
         });
+        /* PENDING pausa el SLA: solo si ya hubo respuesta pública al cliente. */
+        if (status === TicketStatus.PENDING) {
+            const sinRespuesta = ticketsBefore
+                .filter((t) => t.status !== TicketStatus.PENDING &&
+                !t.firstResponseAt)
+                .map((t) => `#${t.id}`);
+            if (sinRespuesta.length > 0) {
+                return res.status(409).json({
+                    ok: false,
+                    message: `Responde al cliente antes de dejar estos tickets en Pendiente: ${sinRespuesta.join(", ")}. Pendiente pausa el SLA y es solo para cuando se espera una respuesta del cliente.`,
+                });
+            }
+        }
         const now = new Date();
         await prisma.$transaction(async (tx) => {
             for (const ticket of ticketsBefore) {
@@ -1877,11 +1922,15 @@ export async function getTicketsHomeSummary(req, res) {
                 ...(to ? { lt: to } : {}),
             }
             : undefined;
+        /* CLIENTE: solo conteos de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+        const usuario = req.user;
+        const filtroEmpresa = usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
         const [recibidos, cerrados, resueltos] = await Promise.all([
             prisma.ticket.count({
                 where: {
                     deletedAt: null,
                     ...(dateFilter ? { createdAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
             prisma.ticket.count({
@@ -1889,6 +1938,7 @@ export async function getTicketsHomeSummary(req, res) {
                     deletedAt: null,
                     status: "CLOSED",
                     ...(dateFilter ? { closedAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
             prisma.ticket.count({
@@ -1896,6 +1946,7 @@ export async function getTicketsHomeSummary(req, res) {
                     deletedAt: null,
                     status: "RESOLVED",
                     ...(dateFilter ? { resolvedAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
         ]);

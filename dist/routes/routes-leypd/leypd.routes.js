@@ -1,6 +1,6 @@
 // src/routes/routes-leypd/leypd.routes.ts
 import { Router, } from "express";
-import { auth, } from "../../middlewares/auth.js";
+import { auth, validarEmpresaParam } from "../../middlewares/auth.js";
 import { onlyRole, } from "../../middlewares/roles.js";
 import { listarLeypd, obtenerEmpresaLeypd, actualizarElementoLeypdController, } from "../../controllers/controllers-leypd/leypd.controller.js";
 import { getFichaLeypdInterna, putFichaLeypdInterna, postEnlaceFichaLeypd, postRevocarEnlaceFichaLeypd, getMiFichaLeypd, putMiFichaLeypd, getFichaLeypdPdf, } from "../../controllers/controllers-leypd/leypd-ficha.controller.js";
@@ -9,6 +9,7 @@ import { getConsentimientosElementoLeypd, } from "../../controllers/controllers-
 import { getSharepointLeypd, postSincronizarSharepointLeypd, postSincronizarTodasSharepointLeypd, postVincularSharepointLeypd, } from "../../controllers/controllers-leypd/leypd-sharepoint.controller.js";
 import { getExpedienteLeypdPdf, } from "../../controllers/controllers-leypd/leypd-expediente.controller.js";
 const router = Router();
+router.param("empresaId", validarEmpresaParam);
 /* =====================================================
    PORTAL CLIENTE
    IMPORTANTE: antes de /:empresaId

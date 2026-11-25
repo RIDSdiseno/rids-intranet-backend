@@ -10,7 +10,9 @@ const router = Router();
 router.get("/ventas", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), getVentasRcvBaseApi);
 router.get("/ventas/anual", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), getVentasRcvAnualBaseApi);
 router.get("/compras", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), getComprasRcvBaseApi);
-router.get("/dashboard", auth(), onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"), getBaseApiRcvDashboardController);
+router.get("/dashboard", auth(), 
+/* Sin CLIENTE: el dashboard no filtra por cliente (mostraba el RCV completo de RIDS) */
+onlyRole("ADMINISTRACION", "VENTAS"), getBaseApiRcvDashboardController);
 // Lectura de conciliación: solo ADMINISTRACION (pestaña restringida a administradores)
 router.get("/conciliacion", auth(), onlyRole("ADMINISTRACION", "VENTAS"), getConciliacionRcv);
 // Puntualidad de cliente: visible para quienes gestionan cobranza

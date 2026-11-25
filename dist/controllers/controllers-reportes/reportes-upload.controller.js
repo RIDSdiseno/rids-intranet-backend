@@ -21,91 +21,109 @@ function eliminarArchivoTemporal(path) {
         console.warn(`[LibreOffice] No fue posible eliminar el archivo temporal: ${path}`, error);
     }
 }
-// ─── DOCX → SharePoint + Supabase ────────────────────────────────────────
+// ─── DOCX → Supabase (obligatorio) + SharePoint (opcional) ──────────────────
+/*
+ * Guarda Word normal (tipo DOCX) y Word IA (tipo DOCX_IA).
+ * - Supabase es la copia principal: si falla, no se registra nada.
+ * - SharePoint (Power Automate) ya no bloquea: si falla, el reporte igual
+ *   queda en el historial con estado SIN_SHAREPOINT.
+ * - Cada guardado es una versión nueva: el archivo en Supabase lleva un
+ *   prefijo de fecha para no pisar versiones anteriores.
+ */
 export async function uploadReporteDocx(req, res) {
     try {
         const { fileName, empresaId, empresa, periodo, tipo, fileBase64 } = req.body;
         if (!fileName || !empresa || !fileBase64) {
             return res.status(400).json({ ok: false, message: "fileName, empresa y fileBase64 son obligatorios" });
         }
-        const sharepointPath = resolveSharepointPathReporte(empresa);
-        if (!sharepointPath) {
-            return res.status(400).json({ ok: false, message: `No existe ruta SharePoint para ${empresa}` });
-        }
         const sizeMb = Buffer.byteLength(fileBase64, "base64") / (1024 * 1024);
         if (sizeMb > 20) {
             return res.status(413).json({ ok: false, message: "Archivo demasiado grande" });
         }
-        // 1. Enviar a Power Automate
-        const response = await fetch(process.env.POWER_AUTOMATE_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fileName, fileBase64, sharepointPath }),
+        const tipoFinal = tipo === "DOCX_IA" ? "DOCX_IA" : "DOCX";
+        // 1. Supabase (obligatorio)
+        const bucket = process.env.SUPABASE_BUCKET_REPORTES || "reportes";
+        const bufferDocx = Buffer.from(fileBase64, "base64");
+        const safeEmpresa = empresa.replace(/\s+/g, "_").replace(/[^\w-]/g, "");
+        const safePeriodo = (periodo || "Periodo").replace(/\s+/g, "_").replace(/[^\w-]/g, "");
+        const supabaseStoragePath = `${safeEmpresa}/${safePeriodo}/${Date.now()}_${fileName}`;
+        const { error: uploadError } = await supabaseAdmin.storage
+            .from(bucket)
+            .upload(supabaseStoragePath, bufferDocx, {
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            upsert: false,
         });
-        const responseText = await response.text();
-        if (!response.ok) {
-            throw new Error(`Power Automate failed (${response.status}): ${responseText}`);
+        if (uploadError) {
+            console.error("❌ uploadReporteDocx Supabase:", uploadError);
+            return res.status(500).json({ ok: false, message: "No se pudo guardar el Word en el almacenamiento" });
         }
-        if (response.status === 202 || !responseText) {
-            throw new Error("Power Automate no devolvió URL. El flujo debe responder con status 200 y urlArchivo.");
+        const { data: publicData } = supabaseAdmin.storage
+            .from(bucket)
+            .getPublicUrl(supabaseStoragePath);
+        const supabaseUrl = publicData?.publicUrl ?? null;
+        // 2. SharePoint vía Power Automate (no crítico)
+        const sharepointPath = resolveSharepointPathReporte(empresa);
+        let sharepointUrl = null;
+        let avisoSharepoint = null;
+        if (!sharepointPath) {
+            avisoSharepoint = `No existe ruta SharePoint para ${empresa}`;
         }
-        // 2. Parsear respuesta UNA sola vez
-        let powerAutomateJson = null;
-        try {
-            powerAutomateJson = JSON.parse(responseText);
+        else if (!process.env.POWER_AUTOMATE_URL) {
+            avisoSharepoint = "POWER_AUTOMATE_URL no está configurada";
         }
-        catch {
-            throw new Error("Power Automate no devolvió un JSON válido.");
+        else {
+            try {
+                const response = await fetch(process.env.POWER_AUTOMATE_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ fileName, fileBase64, sharepointPath }),
+                });
+                const responseText = await response.text();
+                if (!response.ok) {
+                    throw new Error(`Power Automate failed (${response.status}): ${responseText.slice(0, 300)}`);
+                }
+                const powerAutomateJson = responseText ? JSON.parse(responseText) : null;
+                sharepointUrl =
+                    powerAutomateJson?.urlArchivo ||
+                        powerAutomateJson?.webUrl ||
+                        powerAutomateJson?.url ||
+                        null;
+                if (!sharepointUrl) {
+                    avisoSharepoint = "Power Automate no devolvió la URL del archivo";
+                }
+            }
+            catch (err) {
+                console.error("⚠️ uploadReporteDocx SharePoint (no crítico):", err);
+                avisoSharepoint = "No se pudo subir a SharePoint";
+            }
         }
-        const sharepointUrl = powerAutomateJson?.urlArchivo ||
-            powerAutomateJson?.webUrl ||
-            powerAutomateJson?.url ||
-            null;
-        if (!sharepointUrl) {
-            throw new Error("Power Automate no devolvió una URL de archivo.");
-        }
-        // 3. Subir también a Supabase (no crítico)
-        let supabaseUrl = null;
-        let supabaseStoragePath = null;
-        try {
-            const bucket = process.env.SUPABASE_BUCKET_REPORTES || "reportes";
-            const bufferDocx = Buffer.from(fileBase64, "base64");
-            const safeEmpresa = empresa.replace(/\s+/g, "_").replace(/[^\w-]/g, "");
-            const safePeriodo = (periodo || "Periodo").replace(/\s+/g, "_").replace(/[^\w-]/g, "");
-            supabaseStoragePath = `${safeEmpresa}/${safePeriodo}/${fileName}`;
-            await supabaseAdmin.storage.from(bucket).upload(supabaseStoragePath, bufferDocx, {
-                contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                upsert: true,
-            });
-            const { data: publicData } = supabaseAdmin.storage
-                .from(bucket)
-                .getPublicUrl(supabaseStoragePath);
-            supabaseUrl = publicData?.publicUrl ?? null;
-        }
-        catch (err) {
-            console.error("⚠️ Supabase upload (non-critical):", err);
-        }
-        // 4. Guardar en BD — Supabase URL tiene prioridad para acceso externo
-        await prisma.reporteGenerado.create({
+        // 3. Registro en el historial
+        const registro = await prisma.reporteGenerado.create({
             data: {
                 empresaId: empresaId ? Number(empresaId) : null,
                 empresaNombre: empresa,
                 periodo: periodo || "Periodo",
-                tipo: tipo || "DOCX",
+                tipo: tipoFinal,
                 nombreArchivo: fileName,
                 urlArchivo: supabaseUrl ?? sharepointUrl,
-                sharepointPath: sharepointPath,
+                sharepointPath: sharepointPath ?? null,
                 storagePath: supabaseStoragePath,
                 generadoPorId: req.user?.id ?? null,
                 generadoPor: req.user?.nombre ?? req.user?.email ?? null,
-                estado: "GENERADO",
+                estado: sharepointUrl ? "GENERADO" : "SIN_SHAREPOINT",
             },
         });
-        return res.json({ ok: true, urlArchivo: supabaseUrl ?? sharepointUrl });
+        return res.json({
+            ok: true,
+            id: registro.id,
+            urlArchivo: supabaseUrl ?? sharepointUrl,
+            sharepoint: Boolean(sharepointUrl),
+            avisoSharepoint,
+        });
     }
     catch (err) {
         console.error("❌ uploadReporteDocx error:", err);
-        return res.status(500).json({ ok: false, message: "Error enviando reporte a SharePoint" });
+        return res.status(500).json({ ok: false, message: "Error guardando el reporte" });
     }
 }
 // ─── Historial ────────────────────────────────────────────────────────────
@@ -149,13 +167,14 @@ export async function uploadReporteSupabase(req, res) {
         const buffer = Buffer.from(fileBase64, "base64");
         const safeEmpresa = empresa.replace(/\s+/g, "_").replace(/[^\w-]/g, "");
         const safePeriodo = (periodo || "Periodo").replace(/\s+/g, "_").replace(/[^\w-]/g, "");
-        const storagePath = `${safeEmpresa}/${safePeriodo}/${fileName}`;
+        // Prefijo de fecha: cada guardado es una versión y no pisa la anterior
+        const storagePath = `${safeEmpresa}/${safePeriodo}/${Date.now()}_${fileName}`;
         const contentType = fileName.endsWith(".docx")
             ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             : "application/pdf";
         const { error: uploadError } = await supabaseAdmin.storage
             .from(bucket)
-            .upload(storagePath, buffer, { contentType, upsert: true });
+            .upload(storagePath, buffer, { contentType, upsert: false });
         if (uploadError)
             throw uploadError;
         const { data: publicData } = supabaseAdmin.storage
@@ -442,6 +461,79 @@ export async function convertDocxToPdf(req, res) {
     }
 }
 // Envía el informe resumido generado desde el frontend como adjunto PDF.
+// ─── Ver un Word del historial como PDF (conversión al abrir) ───────────────
+/*
+ * Convierte un DOCX a PDF con LibreOffice (una sola ejecución, perfil
+ * temporal propio). Lanza error si LibreOffice no genera el PDF.
+ */
+async function convertirDocxBufferAPdf(buffer, fileName) {
+    const safeName = fileName.replace(/\s+/g, "_").replace(/[^\w.-]/g, "") || "reporte.docx";
+    const unique = `${Date.now()}_${Math.round(Math.random() * 100000)}`;
+    const { profileDir, profileArgument } = crearPerfilTemporalLibreOffice(unique);
+    const tmpDocx = join(tmpdir(), `${unique}_${safeName.replace(/\.docx$/i, "")}.docx`);
+    const pdfPath = tmpDocx.replace(/\.docx$/i, ".pdf");
+    try {
+        writeFileSync(tmpDocx, buffer);
+        await execFileAsync(obtenerLibreOfficePath(), ["--headless", profileArgument, "--convert-to", "pdf", "--outdir", tmpdir(), tmpDocx], {
+            timeout: 60_000,
+            env: {
+                ...process.env,
+                HOME: process.env.HOME ||
+                    (process.platform === "win32" ? process.env.USERPROFILE : "/tmp"),
+            },
+        });
+        if (!existsSync(pdfPath)) {
+            throw new Error("LibreOffice terminó, pero no generó el PDF.");
+        }
+        return readFileSync(pdfPath);
+    }
+    finally {
+        eliminarArchivoTemporal(tmpDocx);
+        eliminarArchivoTemporal(pdfPath);
+        eliminarDirectorioTemporal(profileDir);
+    }
+}
+/* GET /reportes-upload/:id/pdf → PDF (application/pdf) del reporte guardado */
+export async function verReporteComoPdf(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({ ok: false, message: "ID inválido" });
+        }
+        const reporte = await prisma.reporteGenerado.findUnique({ where: { id } });
+        if (!reporte) {
+            return res.status(404).json({ ok: false, message: "Reporte no encontrado" });
+        }
+        const user = req.user;
+        if (user?.rol === "CLIENTE" && reporte.empresaId !== user.empresaId) {
+            return res.status(403).json({ ok: false, message: "No tienes acceso a este reporte" });
+        }
+        if (!reporte.storagePath) {
+            return res.status(409).json({
+                ok: false,
+                code: "SIN_COPIA_LOCAL",
+                message: "Este reporte solo está en SharePoint; no hay copia para convertir.",
+            });
+        }
+        const bucket = process.env.SUPABASE_BUCKET_REPORTES || "reportes";
+        const { data, error } = await supabaseAdmin.storage.from(bucket).download(reporte.storagePath);
+        if (error || !data) {
+            console.error("❌ verReporteComoPdf download:", error);
+            return res.status(404).json({ ok: false, message: "No se encontró el archivo del reporte" });
+        }
+        const buffer = Buffer.from(await data.arrayBuffer());
+        const esDocx = reporte.nombreArchivo.toLowerCase().endsWith(".docx");
+        const pdfBuffer = esDocx ? await convertirDocxBufferAPdf(buffer, reporte.nombreArchivo) : buffer;
+        const nombrePdf = reporte.nombreArchivo.replace(/\.docx$/i, ".pdf");
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(nombrePdf)}`);
+        return res.send(pdfBuffer);
+    }
+    catch (error) {
+        console.error("❌ verReporteComoPdf error:", error);
+        return res.status(500).json({ ok: false, message: "No se pudo convertir el reporte a PDF" });
+    }
+}
 export async function enviarInformeResumenCorreo(req, res) {
     try {
         const { destinatario, destinatarios, cc, asunto, mensaje, fileName, mimeType, fileBase64, empresa, periodo, tipo, } = req.body;

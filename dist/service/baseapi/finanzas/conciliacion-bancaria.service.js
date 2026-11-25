@@ -18,6 +18,7 @@
 import { prisma } from "../../../lib/prisma.js";
 import { leerCartolaItau } from "./cartola-itau.parser.js";
 import { eliminarAbonoCxc, registrarAbonoCxc } from "./cxc-abonos.service.js";
+import { notificarPagoRecibido } from "../cobranza/pago-recibido.service.js";
 /** Prefijo de la observación de los movimientos importados como posible duplicado (la pantalla lo usa para marcarlos). */
 export const PREFIJO_POSIBLE_DUPLICADO = "Posible duplicado";
 export class BancoError extends Error {
@@ -493,6 +494,7 @@ export async function confirmarMovimiento(params) {
     }
     const fechaPago = fechaChile(mov.fechaPago);
     const creados = [];
+    const pagadas = [];
     try {
         for (const item of items) {
             let abonoId = null;
@@ -510,6 +512,8 @@ export async function confirmarMovimiento(params) {
                 });
                 abonoId = resultado.abonoId;
                 creados.push({ doc: item.doc, abonoId });
+                if (resultado.conciliada)
+                    pagadas.push({ doc: item.doc, monto: item.monto });
             }
             await prisma.movimientoBancarioAsignacion.create({
                 data: {
@@ -537,7 +541,28 @@ export async function confirmarMovimiento(params) {
         where: { id: mov.id },
         data: { estado: "CONCILIADO", conciliadoAt: new Date(), responsable: params.responsable, motivoDescarte: null },
     });
-    return { abonos: creados.length, vinculos: items.length - creados.length };
+    // «Pago recibido»: al final, para no avisar si el movimiento se deshace por un error.
+    let avisosEnviados = 0;
+    const avisosOmitidos = [];
+    if (params.avisarCliente) {
+        for (const p of pagadas) {
+            const aviso = await notificarPagoRecibido({
+                empresaKey,
+                tipoDoc: p.doc.tipoDoc,
+                folio: p.doc.folio,
+                rutContraparte: p.doc.rutContraparte,
+                razonSocial: p.doc.razonSocial,
+                montoFactura: p.doc.montoOriginal - p.doc.montoNotasCredito,
+                montoPago: p.monto,
+                fechaPago,
+                formaPago: "TRANSFERENCIA",
+            });
+            avisosEnviados += aviso.enviados.length;
+            if (aviso.enviados.length === 0)
+                avisosOmitidos.push(`${p.doc.tipoDoc}-${p.doc.folio}: ${aviso.omitido ?? aviso.errores[0]?.error ?? "sin envío"}`);
+        }
+    }
+    return { abonos: creados.length, vinculos: items.length - creados.length, pagadas: pagadas.length, avisosEnviados, avisosOmitidos };
 }
 /** Confirma en bloque los pendientes cuya propuesta es PERFECTO o YA_PAGADA (con la propuesta recalculada). */
 export async function confirmarPerfectos(params) {
@@ -546,6 +571,7 @@ export async function confirmarPerfectos(params) {
         (params.ids.length === 0 || params.ids.includes(m.id)) &&
         (m.propuesta?.tipo === "PERFECTO" || m.propuesta?.tipo === "YA_PAGADA"));
     let confirmados = 0;
+    let avisosEnviados = 0;
     const errores = [];
     // Las facturas usadas en este lote no se repiten en otro movimiento del mismo lote.
     const usadas = new Set();
@@ -557,21 +583,23 @@ export async function confirmarPerfectos(params) {
             continue;
         }
         try {
-            await confirmarMovimiento({
+            const r = await confirmarMovimiento({
                 empresaKey: params.empresaKey,
                 movimientoId: m.id,
                 asignaciones: asignaciones.map((a) => ({ tipoDoc: a.tipoDoc, folio: a.folio, rutContraparte: a.rutContraparte, monto: a.monto })),
                 docs: params.docs,
                 responsable: params.responsable,
+                avisarCliente: params.avisarCliente ?? false,
             });
             claves.forEach((k) => usadas.add(k));
             confirmados++;
+            avisosEnviados += r.avisosEnviados;
         }
         catch (error) {
             errores.push({ id: m.id, error: error instanceof Error ? error.message : String(error) });
         }
     }
-    return { confirmados, errores };
+    return { confirmados, errores, avisosEnviados };
 }
 /* =========================================================
    DESHACER / DESCARTAR / RESTAURAR

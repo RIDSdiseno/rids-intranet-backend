@@ -1,16 +1,22 @@
 // routes/solicitantes.routes.ts
 import { Router } from "express";
 import { listSolicitantes, listSolicitantesByEmpresa, listSolicitantesMailer, solicitantesMetrics, createSolicitante, checkSolicitanteEmail, getSolicitanteById, updateSolicitante, deleteSolicitante, getSolicitantesDashboardMensual, getSolicitantesEliminadosDetalle, getSolicitantesNuevosDetalle, exportSolicitantes } from "../controllers/solicitantes.controller.js";
-import { auth } from "../middlewares/auth.js";
+import { auth, soloLecturaCliente } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
 export const solicitantesRouter = Router();
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 solicitantesRouter.use(auth());
+/* CLIENTE: solo lectura (crear, editar y borrar son internos; el frontend ya lo
+   restringía con canManage = !isCliente). También corta para CLIENTE el POST
+   /solicitantes/cleanup/no-cuenta, que cae a solicitantesMaintenance.routes. */
+solicitantesRouter.use(soloLecturaCliente);
 solicitantesRouter.get("/", asyncHandler(listSolicitantes));
 solicitantesRouter.get("/export", asyncHandler(exportSolicitantes));
 solicitantesRouter.get("/mailer", asyncHandler(listSolicitantesMailer));
 solicitantesRouter.get("/by-empresa", asyncHandler(listSolicitantesByEmpresa));
 solicitantesRouter.get("/metrics", asyncHandler(solicitantesMetrics));
-solicitantesRouter.get("/check-email", asyncHandler(checkSolicitanteEmail));
+/* Solo internos: responde a qué empresa pertenece cualquier correo */
+solicitantesRouter.get("/check-email", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), asyncHandler(checkSolicitanteEmail));
 solicitantesRouter.post("/", asyncHandler(createSolicitante));
 solicitantesRouter.get("/dashboard/mensual", asyncHandler(getSolicitantesDashboardMensual));
 solicitantesRouter.get("/dashboard/nuevos", asyncHandler(getSolicitantesNuevosDetalle));

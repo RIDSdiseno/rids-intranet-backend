@@ -142,6 +142,7 @@ export declare function crearOportunidad(actorId: number, payload: CrearOportuni
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -157,7 +158,6 @@ export declare function crearOportunidad(actorId: number, payload: CrearOportuni
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: Prisma.Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;
@@ -204,6 +204,7 @@ export declare function listarOportunidades(filtros: FiltrosOportunidadInput): P
         moneda: import("@prisma/client").$Enums.MonedaGestioo;
         entidadId: number | null;
         prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+        orden: number;
         codigo: string;
         etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
         proyecto: string | null;
@@ -219,7 +220,6 @@ export declare function listarOportunidades(filtros: FiltrosOportunidadInput): P
         motivoPerdida: string | null;
         fechaCierre: Date | null;
         montoFinal: Prisma.Decimal | null;
-        orden: number;
         desactivadoAt: Date | null;
         comentariosInternos: string | null;
         condicionesEspeciales: string | null;
@@ -266,6 +266,7 @@ export declare function obtenerFunnel(): Promise<{
         id: number;
     } | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -274,7 +275,6 @@ export declare function obtenerFunnel(): Promise<{
     fechaProximaAccion: Date | null;
     fechaUltimoContacto: Date | null;
     fechaCierre: Date | null;
-    orden: number;
     fechaProbableCierre: Date | null;
 }[]>;
 export declare function obtenerDashboardFunnel(filtros: FiltrosDashboardInput): Promise<{
@@ -502,6 +502,7 @@ export declare function obtenerOportunidadPorId(id: number): Promise<{
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -517,7 +518,6 @@ export declare function obtenerOportunidadPorId(id: number): Promise<{
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: Prisma.Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;
@@ -550,6 +550,7 @@ export declare function editarOportunidad(id: number, payload: EditarOportunidad
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -565,7 +566,6 @@ export declare function editarOportunidad(id: number, payload: EditarOportunidad
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: Prisma.Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;
@@ -598,6 +598,7 @@ export declare function cambiarEtapaOportunidad(id: number, actorId: number | nu
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -613,7 +614,6 @@ export declare function cambiarEtapaOportunidad(id: number, actorId: number | nu
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: Prisma.Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;
@@ -646,6 +646,7 @@ export declare function reordenarOportunidad(id: number, nuevoOrden: number): Pr
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -661,7 +662,6 @@ export declare function reordenarOportunidad(id: number, nuevoOrden: number): Pr
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: Prisma.Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;
@@ -695,6 +695,7 @@ export declare function desactivarOportunidad(id: number): Promise<{
         moneda: import("@prisma/client").$Enums.MonedaGestioo;
         entidadId: number | null;
         prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+        orden: number;
         codigo: string;
         etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
         proyecto: string | null;
@@ -710,7 +711,6 @@ export declare function desactivarOportunidad(id: number): Promise<{
         motivoPerdida: string | null;
         fechaCierre: Date | null;
         montoFinal: Prisma.Decimal | null;
-        orden: number;
         desactivadoAt: Date | null;
         comentariosInternos: string | null;
         condicionesEspeciales: string | null;
@@ -855,6 +855,7 @@ export declare function crearOportunidadDesdeCotizacion(cotizacionId: number, ac
         moneda: import("@prisma/client").$Enums.MonedaGestioo;
         entidadId: number | null;
         prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+        orden: number;
         codigo: string;
         etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
         proyecto: string | null;
@@ -870,7 +871,6 @@ export declare function crearOportunidadDesdeCotizacion(cotizacionId: number, ac
         motivoPerdida: string | null;
         fechaCierre: Date | null;
         montoFinal: Prisma.Decimal | null;
-        orden: number;
         desactivadoAt: Date | null;
         comentariosInternos: string | null;
         condicionesEspeciales: string | null;

@@ -138,6 +138,7 @@ export declare function convertirMercadoPublicoAFunnel(id: number, actorId: numb
         moneda: import("@prisma/client").$Enums.MonedaGestioo;
         entidadId: number | null;
         prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+        orden: number;
         codigo: string;
         etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
         proyecto: string | null;
@@ -153,7 +154,6 @@ export declare function convertirMercadoPublicoAFunnel(id: number, actorId: numb
         motivoPerdida: string | null;
         fechaCierre: Date | null;
         montoFinal: Prisma.Decimal | null;
-        orden: number;
         desactivadoAt: Date | null;
         comentariosInternos: string | null;
         condicionesEspeciales: string | null;

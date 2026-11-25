@@ -1,1 +1,1 @@
-{"version":3,"file":"taller-historial.controller.d.ts","sourceRoot":"","sources":["../../src/controllers/taller-historial.controller.ts"],"names":[],"mappings":"AAQA,OAAO,KAAK,EAAE,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAgFjD,wBAAsB,uBAAuB,CAAC,GAAG,EAAE,OAAO,EAAE,GAAG,EAAE,QAAQ,+CAoSxE"}
+{"version":3,"file":"taller-historial.controller.d.ts","sourceRoot":"","sources":["../../src/controllers/taller-historial.controller.ts"],"names":[],"mappings":"AAQA,OAAO,KAAK,EAAE,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAsGjD,wBAAsB,uBAAuB,CAAC,GAAG,EAAE,OAAO,EAAE,GAAG,EAAE,QAAQ,+CA2SxE"}

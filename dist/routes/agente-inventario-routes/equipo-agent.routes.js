@@ -8,11 +8,11 @@ const router = Router();
  * Se protege con x-agent-api-key dentro del controller.
  */
 router.post("/inventory", receiveEquipoAgentInventory);
-router.get("/dashboard", auth(false), getEquipoAgentDashboard);
+router.get("/dashboard", auth(), getEquipoAgentDashboard);
 /**
  * Protegido para el CRM.
  */
-router.get("/", auth(false), onlyOwnEmpresa(), listEquiposAgent);
-router.get("/:id", auth(false), onlyOwnEmpresa(), getEquipoAgentById);
+router.get("/", auth(), onlyOwnEmpresa(), listEquiposAgent);
+router.get("/:id", auth(), onlyOwnEmpresa(), getEquipoAgentById);
 export default router;
 //# sourceMappingURL=equipo-agent.routes.js.map

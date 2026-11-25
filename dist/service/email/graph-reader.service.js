@@ -542,10 +542,19 @@ class GraphReaderService {
             return;
         }
         /* =============================
-           7️⃣ DETECTAR INTERNOS (MULTI DOMINIO)
-        ============================= */
-        const internalDomains = ['rids.cl'];
-        const isInternal = internalDomains.some(d => fromEmail.endsWith(`@${d}`));
+   7️⃣ REMITENTES INTERNOS EXCLUIDOS
+   Cualquier casilla @rids.cl puede crear tickets,
+   salvo las casillas de sistema listadas aquí
+   (correos automáticos del CRM, notificaciones, etc.).
+   soporte@ ya se ignora más arriba (fromEmail === supportEmail).
+============================= */
+        const blockedInternalSenders = [
+        // "facturacion@rids.cl",
+        ];
+        if (blockedInternalSenders.includes(fromEmail)) {
+            //console.log(`⏭️ Ignorado: casilla interna excluida (${fromEmail})`);
+            return;
+        }
         /* =============================
            8️⃣ CONSTRUIR DATA
         ============================= */
@@ -568,17 +577,6 @@ class GraphReaderService {
            9️⃣ BUSCAR TICKET
         ============================= */
         const existingTicket = await this.findExistingTicket(emailData);
-        const allowedInternalCreators = [
-            "carenas@rids.cl",
-            "diseno@rids.cl",
-            "soporte@rids.cl"
-        ].map(e => e.trim().toLowerCase());
-        if (isInternal &&
-            !existingTicket &&
-            !allowedInternalCreators.includes(fromEmail)) {
-            //console.log(`⏭️ Ignorado interno sin ticket (${fromEmail})`);
-            return;
-        }
         /* =============================
            🔟 ADJUNTOS
         ============================= */

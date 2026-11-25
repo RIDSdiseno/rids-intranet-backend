@@ -118,6 +118,7 @@ export declare function obtenerDatosInformeOportunidad(oportunidadId: number): P
     moneda: import("@prisma/client").$Enums.MonedaGestioo;
     entidadId: number | null;
     prioridad: import("@prisma/client").$Enums.PrioridadOportunidadVenta;
+    orden: number;
     codigo: string;
     etapa: import("@prisma/client").$Enums.EtapaOportunidadVenta;
     proyecto: string | null;
@@ -133,7 +134,6 @@ export declare function obtenerDatosInformeOportunidad(oportunidadId: number): P
     motivoPerdida: string | null;
     fechaCierre: Date | null;
     montoFinal: import("@prisma/client/runtime/library").Decimal | null;
-    orden: number;
     desactivadoAt: Date | null;
     comentariosInternos: string | null;
     condicionesEspeciales: string | null;

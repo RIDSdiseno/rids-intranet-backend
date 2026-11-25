@@ -15,6 +15,7 @@ const CAMPOS = {
     tipoTrabajo: "Tipo de trabajo",
     descripcion: "Descripción",
     notas: "Notas",
+    detalleTrabajo: "Detalle del trabajo",
     tecnicoId: "Técnico",
     entidadId: "Cliente",
     equipoId: "Equipo",
@@ -34,6 +35,19 @@ const DESTINOS = {
     BAJA: "Baja",
     VENTA_EMPRESA: "Venta a empresa",
 };
+/** Agrega `detalle` solo si hay texto (exactOptionalPropertyTypes: nunca undefined). */
+function detalleDe(area, texto) {
+    if (typeof texto !== "string" || !texto.trim())
+        return {};
+    return {
+        detalle: {
+            label: String(area ?? "").toUpperCase() === "SALIDA"
+                ? "Trabajo realizado / motivo de salida"
+                : "Análisis de entrada / trabajo a realizar",
+            texto: texto.trim(),
+        },
+    };
+}
 function esPrimitivo(v) {
     return v === null || ["string", "number", "boolean"].includes(typeof v);
 }
@@ -76,6 +90,7 @@ export async function getHistorialOrdenTaller(req, res) {
                 numeroOrden: true,
                 destinoEquipo: true,
                 destinoEquipoNota: true,
+                detalleTrabajo: true,
                 firmaEntradaAt: true,
                 nombreFirmanteEntrada: true,
                 tecnico: { select: { nombre: true } },
@@ -164,6 +179,9 @@ export async function getHistorialOrdenTaller(req, res) {
                         changes.destinoEquipo && changes.area === "SALIDA"
                             ? `Destino: ${mostrar("destinoEquipo", changes.destinoEquipo)}`
                             : null,
+                        typeof changes.destinoEquipoNota === "string" && changes.area === "SALIDA"
+                            ? changes.destinoEquipoNota.trim() || null
+                            : null,
                     ]
                         .filter(Boolean)
                         .join(" · ") || null,
@@ -173,6 +191,7 @@ export async function getHistorialOrdenTaller(req, res) {
                     area: changes.area ?? area,
                     cambios: [],
                     reconstruido: false,
+                    ...detalleDe(changes.area ?? area, changes.detalleTrabajo),
                 });
                 continue;
             }
@@ -259,6 +278,7 @@ export async function getHistorialOrdenTaller(req, res) {
                         area: r.area,
                         cambios: [],
                         reconstruido: true,
+                        ...detalleDe(r.area, r.detalleTrabajo),
                     });
                 }
                 else {
@@ -273,6 +293,7 @@ export async function getHistorialOrdenTaller(req, res) {
                         area: r.area,
                         cambios: [],
                         reconstruido: true,
+                        ...detalleDe(r.area, r.detalleTrabajo),
                     });
                 }
             }

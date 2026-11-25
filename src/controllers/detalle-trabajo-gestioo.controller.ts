@@ -16,6 +16,34 @@ function estadoEquipoPorArea(area?: string | null): EstadoEquipo | null {
     return null;
 }
 
+/* Destinos de taller que implican que el equipo se vendió */
+const DESTINOS_VENTA = new Set<string>([
+    DestinoEquipoTaller.VENTA,
+    DestinoEquipoTaller.VENTA_EMPRESA,
+]);
+
+/*
+ * En una SALIDA con destino Venta o Venta empresa, el equipo queda VENDIDO.
+ * Solo reemplaza el estado por defecto (ACTIVO o sin estado): si se eligió
+ * otro estado a mano (ej. DADO_DE_BAJA), se respeta.
+ */
+function estadoEquipoSegunDestino(
+    area: string | null | undefined,
+    destino: string | null | undefined,
+    estado: EstadoEquipo | null,
+): EstadoEquipo | null {
+    if (
+        area === "SALIDA" &&
+        destino &&
+        DESTINOS_VENTA.has(destino) &&
+        (!estado || estado === EstadoEquipo.ACTIVO)
+    ) {
+        return EstadoEquipo.VENDIDO;
+    }
+
+    return estado;
+}
+
 // Función para generar número de orden único por año, con formato "OT-YYYY-XXXX", donde XXXX es un contador secuencial que se reinicia cada año. Consulta la última orden creada para el año actual y genera el siguiente número en secuencia.
 async function generarNumeroOrdenOT(): Promise<string> {
     const year = new Date().getFullYear();
@@ -293,11 +321,17 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                 });
             }
 
-            // Actualizar estado del equipo
-            if (equipoIdFinal && estadoEquipoFinal) {
+            // Actualizar estado del equipo (VENDIDO si la salida es por venta)
+            const estadoEquipoGuardar = estadoEquipoSegunDestino(
+                data.area,
+                destinoEquipoSolicitado,
+                estadoEquipoFinal,
+            );
+
+            if (equipoIdFinal && estadoEquipoGuardar) {
                 await tx.equipo.update({
                     where: { id_equipo: equipoIdFinal },
-                    data: { estado: estadoEquipoFinal },
+                    data: { estado: estadoEquipoGuardar },
                 });
             }
 
@@ -699,8 +733,13 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
                     : null;
         }
 
-        const estadoEquipoFinal =
-            estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
+        /* VENDIDO si la salida es por venta (ver estadoEquipoSegunDestino) */
+        const estadoEquipoFinal = estadoEquipoSegunDestino(
+            data.area,
+            destinoEquipoFinal,
+            (estadoEquipoSolicitado as EstadoEquipo | null) ??
+            estadoEquipoPorArea(data.area),
+        );
 
         const detalleActualizado = await prisma.$transaction(async (tx) => {
             if (

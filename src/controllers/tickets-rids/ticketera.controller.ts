@@ -1547,6 +1547,22 @@ export async function updateTicket(req: Request, res: Response) {
             });
         }
 
+        /*
+ * PENDING pausa el SLA (también el de primera respuesta).
+ * Solo se permite si ya hubo una respuesta pública al cliente
+ * en el ciclo actual (firstResponseAt; la reapertura por correo lo limpia).
+ */
+        if (
+            status === TicketStatus.PENDING &&
+            ticket.status !== TicketStatus.PENDING &&
+            !ticket.firstResponseAt
+        ) {
+            return res.status(409).json({
+                ok: false,
+                message: "Responde al cliente antes de dejar el ticket en Pendiente. Pendiente pausa el SLA y es solo para cuando se espera una respuesta del cliente.",
+            });
+        }
+
         const isTryingToAssign =
             assigneeId !== undefined && assigneeId !== ticket.assigneeId;
 
@@ -2099,10 +2115,31 @@ export async function bulkUpdateTickets(req: Request, res: Response) {
                 // Necesario para saber si realmente cambió a PENDING o salió de PENDING.
                 status: true,
 
+                // Necesario para impedir PENDING sin respuesta al cliente.
+                firstResponseAt: true,
+
                 resolvedAt: true,
                 closedAt: true,
             },
         });
+
+        /* PENDING pausa el SLA: solo si ya hubo respuesta pública al cliente. */
+        if (status === TicketStatus.PENDING) {
+            const sinRespuesta = ticketsBefore
+                .filter(
+                    (t) =>
+                        t.status !== TicketStatus.PENDING &&
+                        !t.firstResponseAt,
+                )
+                .map((t) => `#${t.id}`);
+
+            if (sinRespuesta.length > 0) {
+                return res.status(409).json({
+                    ok: false,
+                    message: `Responde al cliente antes de dejar estos tickets en Pendiente: ${sinRespuesta.join(", ")}. Pendiente pausa el SLA y es solo para cuando se espera una respuesta del cliente.`,
+                });
+            }
+        }
 
         const now = new Date();
 

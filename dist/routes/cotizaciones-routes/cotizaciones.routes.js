@@ -1,14 +1,12 @@
 // src/routes/cotizaciones-routes/cotizaciones.routes.ts
 import { Router } from "express";
-import { auth } from "../../middlewares/auth.js";
-import { onlyRole } from "../../middlewares/roles.js";
-import { onlyOwnEmpresa } from "../../middlewares/auth.js";
+import { auth, requireAuth, soloLecturaCliente } from "../../middlewares/auth.js";
 import { getCotizaciones, getCotizacionById, createCotizacion, updateCotizacion, deleteCotizacion, getCotizacionesPaginadas, facturarCotizacion, anularFactura, pagarFactura, cambiarEstadoFactura, vincularEquipoAItem, } from "../../controllers/controllers-cotizaciones/cotizaciones.controller.js";
 import { listCotizacionesEnviadas, createCotizacionEnvio, deleteCotizacionEnvio } from "../../controllers/controllers-cotizaciones/cotizaciones-enviadas.controller.js";
 const cotizacionesRouter = Router();
-const ROLES_INTERNOS = ["ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"];
-const ROLES_ADMIN = ["ADMIN", "ADMINISTRACION"];
-const ROLES_FACTURA = ["ADMIN", "ADMINISTRACION", "VENTAS"];
+/* Exige sesión (antes casi todo era público) y deja al CLIENTE en solo lectura */
+cotizacionesRouter.use(requireAuth);
+cotizacionesRouter.use(soloLecturaCliente);
 // ── Rutas de solo lectura — CLIENTE puede acceder (filtrado en controller) ───
 cotizacionesRouter.get("/", getCotizaciones);
 cotizacionesRouter.patch("/items/:itemId/equipo", vincularEquipoAItem);

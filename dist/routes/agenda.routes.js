@@ -1,5 +1,7 @@
 // src/routes/agenda.routes.ts
 import { Router } from "express";
+import { requireAuth } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
 import { generarMalla, getAgenda, getAgendaDesdeOutlookController, syncAgendaOutlook, listarEmpresasAgenda, updateVisita, eliminarVisita, reprogramarTecnicos, eliminarMalla, crearVisitaManual, crearVisitasManualLote, eliminarVisitasLote, enviarNotaAgenda, } from "../controllers/agenda.controller.js";
 import { requireAgendaEditor, getPermisosAgenda, } from "../middlewares/agenda-editores.js";
 /*
@@ -9,6 +11,9 @@ import { requireAgendaEditor, getPermisosAgenda, } from "../middlewares/agenda-e
  */
 const requireAgendaAdmin = requireAgendaEditor;
 export const agendaRouter = Router();
+/* Antes las lecturas y el envío de notas no exigían sesión. Agenda: solo internos */
+agendaRouter.use(requireAuth);
+agendaRouter.use(onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"));
 /* Permisos del usuario actual: el frontend muestra u oculta crear / editar / eliminar */
 agendaRouter.get("/permisos", (req, res, next) => {
     Promise.resolve(getPermisosAgenda(req, res)).catch(next);

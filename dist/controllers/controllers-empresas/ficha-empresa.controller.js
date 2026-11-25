@@ -27,6 +27,7 @@ export async function obtenerFichaEmpresaCompleta(req, res) {
         where: { id_empresa: empresaId },
         include: {
             detalleEmpresa: true,
+            grupo: { select: { id: true, nombre: true } },
         },
     });
     if (!empresa) {

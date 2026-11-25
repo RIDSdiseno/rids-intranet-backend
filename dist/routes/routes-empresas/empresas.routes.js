@@ -5,9 +5,11 @@ import { getEquiposByEmpresa, } from "../../controllers/equipos.controller.js";
 import { getEmpresaDashboard, } from "../../controllers/controllers-empresas/dashboard-empresa.controller.js";
 import { getSoporteMensualPorEmpresa, } from "../../controllers/controllers-empresas/soporte-mensual-empresas-table.controller.js";
 import { getRelacionEmpresaEntidades, getEntidadesDisponiblesEmpresa, patchVincularEntidadEmpresa, deleteVinculoEntidadEmpresa, postVincularEntidadAutomaticamente, } from "../../controllers/controllers-empresas/empresa-entidad.controller.js";
+import { asignarGrupoEmpresa, } from "../../controllers/controllers-empresas/grupos-empresa.controller.js";
 import { onlyRole } from "../../middlewares/roles.js";
-import { auth } from "../../middlewares/auth.js";
+import { auth, validarEmpresaParam } from "../../middlewares/auth.js";
 export const empresasRouter = Router();
+empresasRouter.param("empresaId", validarEmpresaParam);
 /*
  * Todas las rutas de este router requieren autenticación.
  */
@@ -30,6 +32,10 @@ empresasRouter.patch("/:id/status", onlyRole("ADMIN", "ADMINISTRACION"), updateE
  * Rutas relacionadas con una empresa.
  */
 empresasRouter.get("/:empresaId/equipos", getEquiposByEmpresa);
+/*
+ * Asignar / quitar el grupo de la empresa (solo ADMIN).
+ */
+empresasRouter.patch("/:id/grupo", onlyRole("ADMIN", "ADMINISTRACION"), asignarGrupoEmpresa);
 empresasRouter.get("/:id/dashboard", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), getEmpresaDashboard);
 empresasRouter.get("/:id/indicadores", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS", "CLIENTE"), getEmpresaIndicadores);
 /* =====================================================

@@ -154,7 +154,7 @@ function obtenerExpectedTokenMantGeneral() {
     return (process.env.AGENT_TOKEN ||
         process.env.RIDS_AGENT_TOKEN ||
         process.env.MANT_GENERAL_TOKEN ||
-        "test123");
+        "");
 }
 function validarTokenMantGeneral(req) {
     const token = obtenerTokenMantGeneral(req);

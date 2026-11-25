@@ -21,7 +21,7 @@ function clampDate(date, min, max) {
         return max;
     return date;
 }
-function getPendingPauseMs(ticket, from, until) {
+export function getPendingPauseMs(ticket, from, until) {
     const events = Array.isArray(ticket.events) ? ticket.events : [];
     const statusEvents = events
         .filter((event) => event.type === TicketEventType.STATUS_CHANGED &&
@@ -66,8 +66,12 @@ function getPendingPauseMs(ticket, from, until) {
     }
     return pauseMs;
 }
-function diffMinutes(a, b) {
-    return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
+/**
+ * Minutos NETOS entre a y b: descuenta el tiempo que el ticket
+ * estuvo en PENDING dentro de ese tramo (pauseMs).
+ */
+function netDiffMinutes(a, b, pauseMs) {
+    return Math.max(0, Math.round((b.getTime() - a.getTime() - pauseMs) / 60000));
 }
 function getAssignedAt(ticket) {
     /*
@@ -292,7 +296,7 @@ export function buildTicketSla(ticket, slaConfig) {
             dueAt: firstResponseDueAt,
             at: firstResponseEndAt,
             elapsedMinutes: firstResponseEndAt
-                ? diffMinutes(firstResponseStartAt, firstResponseEndAt)
+                ? netDiffMinutes(firstResponseStartAt, firstResponseEndAt, firstResponsePauseMs)
                 : null,
             status: firstResponseStatus,
             remainingMinutes: firstResponseEndAt
@@ -303,7 +307,7 @@ export function buildTicketSla(ticket, slaConfig) {
             dueAt: resolutionDueAt,
             at: resolutionEndAt,
             elapsedMinutes: resolutionEndAt
-                ? diffMinutes(resolutionStartAt, resolutionEndAt)
+                ? netDiffMinutes(resolutionStartAt, resolutionEndAt, resolutionPauseMs)
                 : null,
             status: resolutionStatus,
             remainingMinutes: resolutionEndAt

@@ -80,6 +80,7 @@ export async function getEmpresas(req, res) {
                 dominios: true,
                 isActive: true,
                 deactivatedAt: true,
+                grupo: { select: { id: true, nombre: true } },
             },
             orderBy: { nombre: "asc" },
         });
@@ -192,6 +193,7 @@ export async function getEmpresas(req, res) {
                     dominioPrincipal: e.dominios?.[0] ?? null,
                     isActive: e.isActive,
                     deactivatedAt: e.deactivatedAt,
+                    grupo: e.grupo ?? null,
                     detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
                     solicitantes: solicitantesEmp,
                     estadisticas: {
@@ -223,6 +225,7 @@ export async function getEmpresas(req, res) {
                     dominioPrincipal: e.dominios?.[0] ?? null,
                     isActive: e.isActive,
                     deactivatedAt: e.deactivatedAt,
+                    grupo: e.grupo ?? null,
                 })),
                 total: empresasBase.length,
             });
@@ -338,6 +341,7 @@ export async function getEmpresas(req, res) {
             dominioPrincipal: e.dominios?.[0] ?? null,
             isActive: e.isActive,
             deactivatedAt: e.deactivatedAt,
+            grupo: e.grupo ?? null,
             detalleEmpresa: detallePorEmpresa.get(e.id_empresa) ?? null,
             estadisticas: {
                 totalSolicitantes: solMap.get(e.id_empresa) ?? 0,
@@ -559,6 +563,7 @@ export async function getEmpresaById(req, res) {
                 dominios: true,
                 isActive: true,
                 deactivatedAt: true,
+                grupo: { select: { id: true, nombre: true } },
             },
         });
         if (!empresa) {

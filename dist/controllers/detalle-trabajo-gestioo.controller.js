@@ -11,6 +11,25 @@ function estadoEquipoPorArea(area) {
         return EstadoEquipo.ACTIVO;
     return null;
 }
+/* Destinos de taller que implican que el equipo se vendió */
+const DESTINOS_VENTA = new Set([
+    DestinoEquipoTaller.VENTA,
+    DestinoEquipoTaller.VENTA_EMPRESA,
+]);
+/*
+ * En una SALIDA con destino Venta o Venta empresa, el equipo queda VENDIDO.
+ * Solo reemplaza el estado por defecto (ACTIVO o sin estado): si se eligió
+ * otro estado a mano (ej. DADO_DE_BAJA), se respeta.
+ */
+function estadoEquipoSegunDestino(area, destino, estado) {
+    if (area === "SALIDA" &&
+        destino &&
+        DESTINOS_VENTA.has(destino) &&
+        (!estado || estado === EstadoEquipo.ACTIVO)) {
+        return EstadoEquipo.VENDIDO;
+    }
+    return estado;
+}
 // Función para generar número de orden único por año, con formato "OT-YYYY-XXXX", donde XXXX es un contador secuencial que se reinicia cada año. Consulta la última orden creada para el año actual y genera el siguiente número en secuencia.
 async function generarNumeroOrdenOT() {
     const year = new Date().getFullYear();
@@ -148,6 +167,15 @@ export async function createDetalleTrabajo(req, res) {
                 error: "Debe confirmar el destino del equipo antes de registrar la salida.",
             });
         }
+        /* Detalle del trabajo: opcional en ENTRADA, obligatorio en SALIDA */
+        const detalleTrabajo = typeof data.detalleTrabajo === "string" && data.detalleTrabajo.trim()
+            ? data.detalleTrabajo.trim()
+            : null;
+        if (data.area === "SALIDA" && !detalleTrabajo) {
+            return res.status(400).json({
+                error: "Debe detallar el trabajo realizado o el motivo de salida.",
+            });
+        }
         const trabajoFinal = await prisma.$transaction(async (tx) => {
             // Si es SALIDA, cerrar únicamente la ENTRADA
             // perteneciente a esta misma orden/grupo.
@@ -182,6 +210,7 @@ export async function createDetalleTrabajo(req, res) {
                     tipoTrabajo: data.tipoTrabajo || "General",
                     descripcion: data.descripcion ?? null,
                     notas: data.notas ?? null,
+                    detalleTrabajo,
                     area: data.area ?? "ENTRADA",
                     estado: data.area === "SALIDA"
                         ? "COMPLETADA"
@@ -207,11 +236,12 @@ export async function createDetalleTrabajo(req, res) {
                     data: { ordenGrupoId: nuevoTrabajo.id },
                 });
             }
-            // Actualizar estado del equipo
-            if (equipoIdFinal && estadoEquipoFinal) {
+            // Actualizar estado del equipo (VENDIDO si la salida es por venta)
+            const estadoEquipoGuardar = estadoEquipoSegunDestino(data.area, destinoEquipoSolicitado, estadoEquipoFinal);
+            if (equipoIdFinal && estadoEquipoGuardar) {
                 await tx.equipo.update({
                     where: { id_equipo: equipoIdFinal },
-                    data: { estado: estadoEquipoFinal },
+                    data: { estado: estadoEquipoGuardar },
                 });
             }
             return tx.detalleTrabajoGestioo.findUnique({
@@ -278,6 +308,12 @@ export async function getDetallesTrabajo(req, res) {
                         },
                         {
                             descripcion: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            detalleTrabajo: {
                                 contains: search,
                                 mode: "insensitive",
                             },
@@ -465,6 +501,17 @@ export async function updateDetalleTrabajo(req, res) {
                 error: "Debe confirmar el destino del equipo antes de registrar la salida.",
             });
         }
+        /* Detalle del trabajo: si no viene en el body se conserva; en SALIDA es obligatorio */
+        const detalleTrabajoFinal = data.detalleTrabajo !== undefined
+            ? typeof data.detalleTrabajo === "string" && data.detalleTrabajo.trim()
+                ? data.detalleTrabajo.trim()
+                : null
+            : existing.detalleTrabajo;
+        if ((data.area ?? existing.area) === "SALIDA" && !detalleTrabajoFinal) {
+            return res.status(400).json({
+                error: "Debe detallar el trabajo realizado o el motivo de salida.",
+            });
+        }
         // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData = {
             tipoTrabajo: data.tipoTrabajo,
@@ -474,6 +521,7 @@ export async function updateDetalleTrabajo(req, res) {
                 : data.estado ?? existing.estado,
             prioridad: data.prioridad,
             notas: data.notas ?? null,
+            detalleTrabajo: detalleTrabajoFinal,
             area: data.area,
             fecha: data.fecha ? new Date(data.fecha) : existing.fecha,
             ordenGrupoId: existing.ordenGrupoId,
@@ -520,7 +568,9 @@ export async function updateDetalleTrabajo(req, res) {
                     ? data.destinoEquipoNota.trim()
                     : null;
         }
-        const estadoEquipoFinal = estadoEquipoSolicitado ?? estadoEquipoPorArea(data.area);
+        /* VENDIDO si la salida es por venta (ver estadoEquipoSegunDestino) */
+        const estadoEquipoFinal = estadoEquipoSegunDestino(data.area, destinoEquipoFinal, estadoEquipoSolicitado ??
+            estadoEquipoPorArea(data.area));
         const detalleActualizado = await prisma.$transaction(async (tx) => {
             if (data.area === "SALIDA" &&
                 existing.area !== "SALIDA") {

@@ -29,7 +29,7 @@ function clampDate(date: Date, min: Date, max: Date) {
     return date;
 }
 
-function getPendingPauseMs(
+export function getPendingPauseMs(
     ticket: {
         status?: TicketStatus | string | null;
         events?: Array<{
@@ -115,8 +115,15 @@ function getPendingPauseMs(
     return pauseMs;
 }
 
-function diffMinutes(a: Date, b: Date) {
-    return Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000));
+/**
+ * Minutos NETOS entre a y b: descuenta el tiempo que el ticket
+ * estuvo en PENDING dentro de ese tramo (pauseMs).
+ */
+function netDiffMinutes(a: Date, b: Date, pauseMs: number) {
+    return Math.max(
+        0,
+        Math.round((b.getTime() - a.getTime() - pauseMs) / 60000),
+    );
 }
 
 function getAssignedAt(ticket: {
@@ -615,12 +622,12 @@ export function buildTicketSla(
 
             elapsedMinutes:
                 firstResponseEndAt
-                    ? diffMinutes(
+                    ? netDiffMinutes(
                         firstResponseStartAt,
                         firstResponseEndAt,
+                        firstResponsePauseMs,
                     )
                     : null,
-
             status:
                 firstResponseStatus,
 
@@ -642,9 +649,10 @@ export function buildTicketSla(
 
             elapsedMinutes:
                 resolutionEndAt
-                    ? diffMinutes(
+                    ? netDiffMinutes(
                         resolutionStartAt,
                         resolutionEndAt,
+                        resolutionPauseMs,
                     )
                     : null,
 

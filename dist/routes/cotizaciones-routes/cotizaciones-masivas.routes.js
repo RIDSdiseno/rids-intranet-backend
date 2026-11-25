@@ -1,8 +1,11 @@
 // src/routes/cotizaciones-routes/cotizaciones-masivas.routes.ts
 import { Router } from "express";
 import { auth } from "../../middlewares/auth.js";
+import { onlyRole } from "../../middlewares/roles.js";
 import { listarPlantillasMasivas, crearPlantillaMasiva, generarCotizacionesDesdePlantilla, desactivarPlantillaMasiva, createCotizacionesMasivas, actualizarPlantillaMasiva } from "../../controllers/controllers-cotizaciones/cotizaciones-masivas.controller.js";
 const router = Router();
+/* Plantillas y generación masiva: solo internos */
+router.use(onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"));
 router.get("/", auth(true), listarPlantillasMasivas);
 router.post("/", auth(true), crearPlantillaMasiva);
 router.post("/generar-directo", auth(true), createCotizacionesMasivas);

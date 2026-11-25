@@ -4,5 +4,6 @@ export declare function listHistorialReportes(req: Request, res: Response): Prom
 export declare function uploadReporteSupabase(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function previewDocxToPdf(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function convertDocxToPdf(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function verReporteComoPdf(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function enviarInformeResumenCorreo(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 //# sourceMappingURL=reportes-upload.controller.d.ts.map

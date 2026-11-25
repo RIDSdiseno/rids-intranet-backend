@@ -136,9 +136,14 @@ export declare function confirmarMovimiento(params: {
     }>;
     docs: DocumentoBanco[];
     responsable: string | null;
+    /** Avisar «Pago recibido» de las facturas que queden pagadas (después de confirmar todo el movimiento). */
+    avisarCliente?: boolean;
 }): Promise<{
     abonos: number;
     vinculos: number;
+    pagadas: number;
+    avisosEnviados: number;
+    avisosOmitidos: string[];
 }>;
 /** Confirma en bloque los pendientes cuya propuesta es PERFECTO o YA_PAGADA (con la propuesta recalculada). */
 export declare function confirmarPerfectos(params: {
@@ -146,12 +151,14 @@ export declare function confirmarPerfectos(params: {
     ids: number[];
     docs: DocumentoBanco[];
     responsable: string | null;
+    avisarCliente?: boolean;
 }): Promise<{
     confirmados: number;
     errores: {
         id: number;
         error: string;
     }[];
+    avisosEnviados: number;
 }>;
 export declare function deshacerMovimiento(params: {
     empresaKey: EmpresaKey;

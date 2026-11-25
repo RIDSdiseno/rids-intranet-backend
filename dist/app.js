@@ -85,6 +85,7 @@ const corsOptions = {
         "Cache-Control",
         "Pragma",
         "Expires",
+        "X-Empresa-Id",
     ],
     optionsSuccessStatus: 204,
 };

@@ -52,6 +52,7 @@ export async function postAbonoCxc(req, res) {
             formaPago: body.formaPago ? String(body.formaPago) : null,
             observacion: body.observacion ? String(body.observacion).trim() || null : null,
             responsable: await responsable(req),
+            avisarCliente: body.avisarCliente === true,
         });
         invalidarCacheCxc(empresaKey);
         return res.json({ ok: true, data: resultado });

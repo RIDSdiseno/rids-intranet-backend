@@ -7,6 +7,42 @@ export function generarSKU() {
     const random = Math.floor(100000 + Math.random() * 900000); // 6 dígitos
     return `SKU-${random}`;
 }
+/* =====================================================
+      SECCIONES DE COTIZACIÓN
+   El frontend envía `secciones: [{ id, nombre, descripcion }]`
+   y cada ítem con `seccionId` = el `id` de su sección.
+   - En CREATE todos los ids son temporales.
+   - En UPDATE, un id que ya existe en la cotización se actualiza;
+     cualquier otro se crea. Las que no vienen se eliminan
+     (sus ítems quedan sin sección).
+   - Ítems sin sección (seccionId null) = cotizaciones antiguas:
+     se muestran sin título.
+===================================================== */
+const ORDEN_SECCIONES = [{ orden: "asc" }, { id: "asc" }];
+function parseSecciones(raw) {
+    if (!Array.isArray(raw))
+        return undefined;
+    return raw.map((s, idx) => {
+        const clave = Number(s?.id);
+        const nombre = String(s?.nombre ?? "").trim().slice(0, 150);
+        const descripcion = String(s?.descripcion ?? "").trim().slice(0, 1000);
+        return {
+            clave: s?.id !== undefined && s?.id !== null && Number.isFinite(clave) ? clave : null,
+            nombre: nombre || `Sección ${idx + 1}`,
+            descripcion: descripcion || null,
+            orden: idx,
+        };
+    });
+}
+/** Traduce el seccionId que mandó el frontend al id real de la BD (o null). */
+function resolverSeccionId(raw, mapa) {
+    if (raw === undefined || raw === null || raw === "")
+        return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n))
+        return null;
+    return mapa.get(n) ?? null;
+}
 function mapEstadoSimpleAPIToEnum(estado) {
     const normalized = estado.toUpperCase();
     switch (normalized) {
@@ -182,6 +218,7 @@ export async function getCotizacionesPaginadas(req, res) {
                         },
                     },
                     _count: { select: { items: true, facturas: true } },
+                    secciones: { orderBy: ORDEN_SECCIONES },
                 },
             }),
             prisma.cotizacionGestioo.count({ where }),
@@ -260,11 +297,17 @@ export async function getCotizaciones(req, res) {
                 where.fecha.lte = new Date(String(fechaHasta));
             }
         }
+        /* CLIENTE: solo cotizaciones de su empresa (igual que /paginacion) */
+        const usuario = req.user;
+        if (usuario?.rol === "CLIENTE") {
+            where.entidad = { is: { empresaId: Number(usuario.empresaId) } };
+        }
         const rows = await prisma.cotizacionGestioo.findMany({
             where,
             orderBy: { id: "desc" },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     orderBy: { id: "asc" },
                     include: {
@@ -309,6 +352,7 @@ export async function getCotizacionById(req, res) {
             where: { id },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     orderBy: { id: "asc" },
                     include: {
@@ -367,61 +411,85 @@ export async function createCotizacion(req, res) {
             totalesCalculados.iva;
         data.total =
             totalesCalculados.total;
-        const nueva = await prisma.cotizacionGestioo.create({
-            data: {
-                ...data,
-                comentariosCotizacion: req.body.comentariosCotizacion ?? null,
-                imagen: req.body.imagen ?? null,
-                tecnicoId: userId,
-                items: {
-                    create: items.map((i) => {
-                        const precioCLP = redondearDinero(parseDecimalInput(i.precioOriginalCLP ??
-                            i.precio, 0));
-                        return {
-                            tipo: i.tipo,
-                            // TEXTO
-                            nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
-                            descripcion: i.descripcion?.trim() && i.descripcion.trim() !== ""
-                                ? i.descripcion.trim()
-                                : "", // <-- Cambiar null por string vacío
-                            cantidad: normalizarCantidad(i.cantidad),
-                            precio: precioCLP,
-                            precioOriginalCLP: precioCLP,
-                            precioCosto: i.precioCosto != null
-                                ? redondearDinero(parseDecimalInput(i.precioCosto, 0))
-                                : null,
-                            porcGanancia: i.porcGanancia != null
-                                ? normalizarGanancia(i.porcGanancia)
-                                : null,
-                            tieneDescuento: Boolean(i.tieneDescuento),
-                            porcentaje: i.tieneDescuento
-                                ? normalizarDescuento(i.porcentaje)
-                                : 0,
-                            tieneIVA: Boolean(i.tieneIVA),
-                            // OTROS
-                            sku: i.sku && i.sku.trim() !== ""
-                                ? i.sku
-                                : generarSKU(),
-                            imagen: i.imagen ?? null,
-                            productoId: i.productoId != null
-                                ? Number(i.productoId)
-                                : null,
-                            equipoId: i.equipoId ? Number(i.equipoId) : null,
-                        };
-                    }),
+        const secciones = parseSecciones(req.body.secciones) ?? [];
+        const nueva = await prisma.$transaction(async (tx) => {
+            const creada = await tx.cotizacionGestioo.create({
+                data: {
+                    ...data,
+                    comentariosCotizacion: req.body.comentariosCotizacion ?? null,
+                    imagen: req.body.imagen ?? null,
+                    tecnicoId: userId,
                 },
-            },
-            include: {
-                entidad: true,
-                items: true,
-                tecnico: {
-                    select: {
-                        id_tecnico: true,
-                        nombre: true,
-                        email: true,
+            });
+            /* Secciones: clave temporal del frontend → id real */
+            const mapaSecciones = new Map();
+            for (const seccion of secciones) {
+                const creadaSeccion = await tx.cotizacionSeccionGestioo.create({
+                    data: {
+                        cotizacionId: creada.id,
+                        nombre: seccion.nombre,
+                        descripcion: seccion.descripcion,
+                        orden: seccion.orden,
+                    },
+                });
+                if (seccion.clave !== null) {
+                    mapaSecciones.set(seccion.clave, creadaSeccion.id);
+                }
+            }
+            await tx.cotizacionItemGestioo.createMany({
+                data: items.map((i) => {
+                    const precioCLP = redondearDinero(parseDecimalInput(i.precioOriginalCLP ??
+                        i.precio, 0));
+                    return {
+                        cotizacionId: creada.id,
+                        seccionId: resolverSeccionId(i.seccionId, mapaSecciones),
+                        tipo: i.tipo,
+                        // TEXTO
+                        nombre: i.nombre?.trim() ?? i.descripcion?.trim() ?? "",
+                        descripcion: i.descripcion?.trim() && i.descripcion.trim() !== ""
+                            ? i.descripcion.trim()
+                            : "", // <-- Cambiar null por string vacío
+                        cantidad: normalizarCantidad(i.cantidad),
+                        precio: precioCLP,
+                        precioOriginalCLP: precioCLP,
+                        precioCosto: i.precioCosto != null
+                            ? redondearDinero(parseDecimalInput(i.precioCosto, 0))
+                            : null,
+                        porcGanancia: i.porcGanancia != null
+                            ? normalizarGanancia(i.porcGanancia)
+                            : null,
+                        tieneDescuento: Boolean(i.tieneDescuento),
+                        porcentaje: i.tieneDescuento
+                            ? normalizarDescuento(i.porcentaje)
+                            : 0,
+                        tieneIVA: Boolean(i.tieneIVA),
+                        // OTROS
+                        sku: i.sku && i.sku.trim() !== ""
+                            ? i.sku
+                            : generarSKU(),
+                        imagen: i.imagen ?? null,
+                        productoId: i.productoId != null
+                            ? Number(i.productoId)
+                            : null,
+                        equipoId: i.equipoId ? Number(i.equipoId) : null,
+                    };
+                }),
+            });
+            return tx.cotizacionGestioo.findUniqueOrThrow({
+                where: { id: creada.id },
+                include: {
+                    entidad: true,
+                    items: { orderBy: { id: "asc" } },
+                    secciones: { orderBy: ORDEN_SECCIONES },
+                    tecnico: {
+                        select: {
+                            id_tecnico: true,
+                            nombre: true,
+                            email: true,
+                        },
                     },
                 },
-            },
+            });
         });
         return res.status(201).json({ data: nueva });
     }
@@ -443,6 +511,7 @@ export async function updateCotizacion(req, res) {
             where: { id },
             include: {
                 items: true,
+                secciones: { select: { id: true } },
             },
         });
         if (!existe) {
@@ -455,6 +524,8 @@ export async function updateCotizacion(req, res) {
             }
         }
         const data = normalizeCotizacionData(rest);
+        /* undefined = no se tocan secciones ni el seccionId de los ítems */
+        const secciones = parseSecciones(req.body.secciones);
         if (Array.isArray(items)) {
             const totalesCalculados = calcularTotalesCotizacionBackend(items);
             data.subtotal =
@@ -480,6 +551,54 @@ export async function updateCotizacion(req, res) {
                     }),
                 },
             });
+            // 1.5️⃣ Sincronizar secciones (solo si vienen en el body)
+            let mapaSecciones = null;
+            if (secciones !== undefined) {
+                mapaSecciones = new Map();
+                const idsSeccionesBD = new Set(existe.secciones.map((sec) => sec.id));
+                const idsQueSiguen = new Set();
+                for (const seccion of secciones) {
+                    if (seccion.clave !== null && idsSeccionesBD.has(seccion.clave)) {
+                        await tx.cotizacionSeccionGestioo.update({
+                            where: { id: seccion.clave },
+                            data: {
+                                nombre: seccion.nombre,
+                                descripcion: seccion.descripcion,
+                                orden: seccion.orden,
+                            },
+                        });
+                        mapaSecciones.set(seccion.clave, seccion.clave);
+                        idsQueSiguen.add(seccion.clave);
+                    }
+                    else {
+                        const creadaSeccion = await tx.cotizacionSeccionGestioo.create({
+                            data: {
+                                cotizacionId: id,
+                                nombre: seccion.nombre,
+                                descripcion: seccion.descripcion,
+                                orden: seccion.orden,
+                            },
+                        });
+                        if (seccion.clave !== null) {
+                            mapaSecciones.set(seccion.clave, creadaSeccion.id);
+                        }
+                    }
+                }
+                const idsSeccionesAEliminar = [...idsSeccionesBD].filter((seccionId) => !idsQueSiguen.has(seccionId));
+                if (idsSeccionesAEliminar.length > 0) {
+                    /* relationMode = "prisma": se desvinculan los ítems a mano */
+                    await tx.cotizacionItemGestioo.updateMany({
+                        where: { cotizacionId: id, seccionId: { in: idsSeccionesAEliminar } },
+                        data: { seccionId: null },
+                    });
+                    await tx.cotizacionSeccionGestioo.deleteMany({
+                        where: { cotizacionId: id, id: { in: idsSeccionesAEliminar } },
+                    });
+                }
+            }
+            const seccionDeItem = (i) => mapaSecciones
+                ? { seccionId: resolverSeccionId(i.seccionId, mapaSecciones) }
+                : {};
             // 2️⃣ Si se incluyen items, procesar actualizaciones, eliminaciones y creaciones
             if (items !== undefined) {
                 const idsExistentesBD = existe.items.map((item) => item.id);
@@ -526,6 +645,7 @@ export async function updateCotizacion(req, res) {
                             sku: i.sku?.trim() || generarSKU(),
                             imagen: i.imagen ?? null,
                             equipoId: i.equipoId ? Number(i.equipoId) : null,
+                            ...seccionDeItem(i),
                         },
                     });
                 }
@@ -538,6 +658,7 @@ export async function updateCotizacion(req, res) {
                                 i.precio, 0));
                             return {
                                 cotizacionId: id,
+                                ...seccionDeItem(i),
                                 tipo: i.tipo,
                                 nombre: i.nombre?.trim() ?? "",
                                 descripcion: i.descripcion?.trim() ?? "",
@@ -581,6 +702,7 @@ export async function updateCotizacion(req, res) {
             where: { id },
             include: {
                 entidad: true,
+                secciones: { orderBy: ORDEN_SECCIONES },
                 items: {
                     include: {
                         equipo: {

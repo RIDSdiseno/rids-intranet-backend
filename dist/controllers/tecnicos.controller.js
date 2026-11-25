@@ -229,7 +229,7 @@ export async function deleteTecnico(req, res) {
             message: error?.message,
             meta: error?.meta,
         });
-        if (error?.code === "P2003") {
+        if (error?.code === "P2003" || error?.code === "P2014") {
             return res.status(409).json({
                 error: "No se puede eliminar este técnico porque tiene registros asociados. Puedes desactivarlo para conservar el historial.",
             });

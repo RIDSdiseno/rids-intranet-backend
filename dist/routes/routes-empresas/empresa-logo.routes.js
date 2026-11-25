@@ -2,9 +2,11 @@
 import { Router, } from "express";
 import multer from "multer";
 import { onlyRole } from "../../middlewares/roles.js";
-import { eliminarLogoEmpresaController, obtenerLogoEmpresaController, subirLogoEmpresaController, } from "../../controllers/controllers-empresas/empresa-logo.controller.js";
+import { validarEmpresaParam } from "../../middlewares/auth.js";
+import { eliminarLogoEmpresaController, obtenerLogoEmpresaController, obtenerLogoEmpresaPngController, subirLogoEmpresaController, } from "../../controllers/controllers-empresas/empresa-logo.controller.js";
 import { MAX_BYTES_LOGO } from "../../service/empresas/empresa-logo.service.js";
 const empresaLogoRouter = Router();
+empresaLogoRouter.param("empresaId", validarEmpresaParam);
 /* Archivo en memoria: el service valida el contenido y lo sube a Cloudinary. */
 const uploadLogo = multer({
     storage: multer.memoryStorage(),
@@ -26,6 +28,8 @@ function recibirLogo(req, res, next) {
 }
 /* Ver: cualquier rol interno. Cambiar/quitar: mismos roles que editan la ficha. */
 empresaLogoRouter.get("/:empresaId", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), obtenerLogoEmpresaController);
+/* PNG para incrustar en documentos (Word IA de reportes). */
+empresaLogoRouter.get("/:empresaId/png", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"), obtenerLogoEmpresaPngController);
 empresaLogoRouter.put("/:empresaId", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), recibirLogo, subirLogoEmpresaController);
 empresaLogoRouter.delete("/:empresaId", onlyRole("ADMIN", "ADMINISTRACION", "TECNICO"), eliminarLogoEmpresaController);
 export default empresaLogoRouter;

@@ -7,6 +7,15 @@ export declare function getSlaTargets(priority: TicketPriority | string | null |
     firstResponseMinutes: number;
     resolutionMinutes: number;
 };
+export declare function getPendingPauseMs(ticket: {
+    status?: TicketStatus | string | null;
+    events?: Array<{
+        type?: string | null;
+        oldValue?: string | null;
+        newValue?: string | null;
+        createdAt?: Date | string | null;
+    }>;
+}, from: Date, until: Date): number;
 export declare function buildTicketSla(ticket: {
     createdAt: Date;
     assigneeId?: number | null;

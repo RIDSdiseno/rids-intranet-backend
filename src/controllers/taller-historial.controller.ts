@@ -20,6 +20,7 @@ const CAMPOS: Record<string, string> = {
     tipoTrabajo: "Tipo de trabajo",
     descripcion: "Descripción",
     notas: "Notas",
+    detalleTrabajo: "Detalle del trabajo",
     tecnicoId: "Técnico",
     entidadId: "Cliente",
     equipoId: "Equipo",
@@ -50,6 +51,12 @@ type CambioHistorial = {
     despues: Valor;
 };
 
+/** Texto largo del trabajo (análisis de entrada / trabajo realizado en la salida) */
+type DetalleHistorial = {
+    label: string;
+    texto: string;
+};
+
 type ItemHistorial = {
     id: string;
     tipo: "CREACION" | "CAMBIO" | "ELIMINACION" | "INGRESO" | "FIRMA" | "SALIDA";
@@ -63,6 +70,21 @@ type ItemHistorial = {
     /** true = reconstruido desde la orden, no viene de la auditoría */
     reconstruido: boolean;
 };
+
+/** Agrega `detalle` solo si hay texto (exactOptionalPropertyTypes: nunca undefined). */
+function detalleDe(area: unknown, texto: unknown): { detalle?: DetalleHistorial } {
+    if (typeof texto !== "string" || !texto.trim()) return {};
+
+    return {
+        detalle: {
+            label:
+                String(area ?? "").toUpperCase() === "SALIDA"
+                    ? "Trabajo realizado / motivo de salida"
+                    : "Análisis de entrada / trabajo a realizar",
+            texto: texto.trim(),
+        },
+    };
+}
 
 function esPrimitivo(v: unknown): v is Valor {
     return v === null || ["string", "number", "boolean"].includes(typeof v);
@@ -118,6 +140,7 @@ export async function getHistorialOrdenTaller(req: Request, res: Response) {
                 numeroOrden: true,
                 destinoEquipo: true,
                 destinoEquipoNota: true,
+                detalleTrabajo: true,
                 firmaEntradaAt: true,
                 nombreFirmanteEntrada: true,
                 tecnico: { select: { nombre: true } },
@@ -217,6 +240,9 @@ export async function getHistorialOrdenTaller(req: Request, res: Response) {
                         changes.destinoEquipo && changes.area === "SALIDA"
                             ? `Destino: ${mostrar("destinoEquipo", changes.destinoEquipo)}`
                             : null,
+                        typeof changes.destinoEquipoNota === "string" && changes.area === "SALIDA"
+                            ? changes.destinoEquipoNota.trim() || null
+                            : null,
                     ]
                         .filter(Boolean)
                         .join(" · ") || null,
@@ -226,6 +252,7 @@ export async function getHistorialOrdenTaller(req: Request, res: Response) {
                     area: (changes.area as string | undefined) ?? area,
                     cambios: [],
                     reconstruido: false,
+                    ...detalleDe(changes.area ?? area, changes.detalleTrabajo),
                 });
                 continue;
             }
@@ -331,6 +358,7 @@ export async function getHistorialOrdenTaller(req: Request, res: Response) {
                         area: r.area,
                         cambios: [],
                         reconstruido: true,
+                        ...detalleDe(r.area, r.detalleTrabajo),
                     });
                 } else {
                     depurados.push({
@@ -344,6 +372,7 @@ export async function getHistorialOrdenTaller(req: Request, res: Response) {
                         area: r.area,
                         cambios: [],
                         reconstruido: true,
+                        ...detalleDe(r.area, r.detalleTrabajo),
                     });
                 }
             }

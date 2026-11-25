@@ -18,6 +18,61 @@ const INVENTORY_EVENT_TYPES = [
 
 const CHILE_TIMEZONE = "America/Santiago";
 
+/*
+ * Solo estos tipos pueden ejecutar el agente (son PC).
+ * GENERICO se incluye porque es el tipo por defecto de los PC
+ * creados por el agente o registrados sin tipo.
+ */
+const TIPOS_PC = new Set<string>([
+    "GENERICO",
+    "NOTEBOOK",
+    "ALL_IN_ONE",
+    "DESKTOP",
+    "CPU",
+    "EQUIPO_ARMADO",
+]);
+
+/* Equipos que no están en uso por el cliente: se muestran aparte. */
+const ESTADOS_FUERA_OPERACION = new Set<string>([
+    "EN_STOCK",
+    "EN_RIDS",
+]);
+
+type MotivoExclusion = "DADO_DE_BAJA" | "VENDIDO" | "NO_ES_PC";
+
+/** "8.0.0" -> [8, 0, 0]; "1.0.0-mac" -> [1, 0, 0]. null si no se puede leer. */
+function parseVersion(version: string | null | undefined): number[] | null {
+    const match = String(version ?? "").trim().match(/^v?(\d+(?:\.\d+)*)/i);
+    if (!match?.[1]) return null;
+    return match[1].split(".").map((parte) => Number(parte));
+}
+
+/** true si `actual` es MENOR que `recomendada`. Si no se pueden leer, compara el texto. */
+function esVersionAnterior(actual: string, recomendada: string): boolean {
+    const a = parseVersion(actual);
+    const r = parseVersion(recomendada);
+
+    if (!a || !r) return actual.trim() !== recomendada.trim();
+
+    for (let i = 0; i < Math.max(a.length, r.length); i++) {
+        const x = a[i] ?? 0;
+        const y = r[i] ?? 0;
+        if (x !== y) return x < y;
+    }
+
+    return false;
+}
+
+function esAgenteMac(
+    agenteVersion: string | null,
+    sistemaOperativo: string | null | undefined,
+): boolean {
+    return (
+        /mac/i.test(agenteVersion ?? "") ||
+        /mac\s?os|darwin/i.test(sistemaOperativo ?? "")
+    );
+}
+
 const dashboardQuerySchema = z.object({
     year: z.coerce
         .number()
@@ -555,11 +610,15 @@ export async function getEquipoAgentDashboard(
             Number.isFinite(horasSinConexionEnv) &&
                 horasSinConexionEnv > 0
                 ? horasSinConexionEnv
-                : 384;
+                : 504; // 21 días: el agente corre cada 14 días + 1 semana de margen
 
         const versionRecomendada =
-            process.env.AGENT_RECOMMENDED_VERSION?.trim() ??
+            process.env.AGENT_RECOMMENDED_VERSION?.trim() ||
             "11.0.0";
+
+        const versionRecomendadaMac =
+            process.env.AGENT_RECOMMENDED_VERSION_MAC?.trim() ||
+            "1.0.0";
 
         const { desde, hasta } =
             getChileMonthRange(year, month);
@@ -801,7 +860,7 @@ export async function getEquipoAgentDashboard(
                 ],
             });
 
-        const itemsBase =
+        const itemsTodos =
             equipos.map((equipo) => {
                 const empresaFinal =
                     equipo.empresa ??
@@ -840,12 +899,27 @@ export async function getEquipoAgentDashboard(
                         )
                     );
 
+                const plataformaAgente =
+                    esAgenteMac(
+                        equipo.agenteVersion,
+                        equipo.detalle?.so,
+                    )
+                        ? "MACOS"
+                        : "WINDOWS";
+
+                const versionRecomendadaEquipo =
+                    plataformaAgente === "MACOS"
+                        ? versionRecomendadaMac
+                        : versionRecomendada;
+
+                /* Solo se marca si la versión es ANTERIOR a la recomendada. */
                 const versionDesactualizada =
                     Boolean(
-                        versionRecomendada &&
                         equipo.agenteVersion &&
-                        equipo.agenteVersion !==
-                        versionRecomendada
+                        esVersionAnterior(
+                            equipo.agenteVersion,
+                            versionRecomendadaEquipo,
+                        )
                     );
 
                 const alertas: string[] = [];
@@ -870,7 +944,7 @@ export async function getEquipoAgentDashboard(
 
                 if (versionDesactualizada) {
                     alertas.push(
-                        "La versión del agente no coincide con la recomendada."
+                        `La versión del agente es anterior a la recomendada (${versionRecomendadaEquipo}).`
                     );
                 }
 
@@ -1017,7 +1091,11 @@ export async function getEquipoAgentDashboard(
                         version:
                             equipo.agenteVersion,
 
-                        versionRecomendada,
+                        plataforma:
+                            plataformaAgente,
+
+                        versionRecomendada:
+                            versionRecomendadaEquipo,
 
                         versionDesactualizada,
 
@@ -1145,8 +1223,120 @@ export async function getEquipoAgentDashboard(
             });
 
         /* =========================================================
-   COBERTURA POR EMPRESA
+   SEPARACIÓN: DASHBOARD / FUERA DE OPERACIÓN / EXCLUIDOS
+   - Excluidos: dados de baja o tipos que no son PC (no pueden
+     ejecutar el agente). Se informan con conteo y listado.
+   - Fuera de operación: EN_STOCK / EN_RIDS. Se muestran aparte.
+   - itemsBase: el resto, que es lo que mide el dashboard.
 ========================================================= */
+
+        const motivosExclusion = (item: (typeof itemsTodos)[number]): MotivoExclusion[] => {
+            const motivos: MotivoExclusion[] = [];
+            if (item.estadoEquipo === "DADO_DE_BAJA") motivos.push("DADO_DE_BAJA");
+            if (item.estadoEquipo === "VENDIDO") motivos.push("VENDIDO");
+            if (!TIPOS_PC.has(String(item.tipo))) motivos.push("NO_ES_PC");
+            return motivos;
+        };
+
+        const excluidosLista: Array<{
+            idEquipo: number;
+            serial: string | null;
+            marca: string;
+            modelo: string;
+            tipo: string;
+            estadoEquipo: string;
+            empresa: { id: number; nombre: string } | null;
+            hostname: string | null;
+            ultimaConexion: Date | null;
+            estadoAgente: EstadoAgenteCalculado;
+            motivos: MotivoExclusion[];
+        }> = [];
+
+        const fueraDeOperacionItems: typeof itemsTodos = [];
+        const itemsBase: typeof itemsTodos = [];
+
+        for (const item of itemsTodos) {
+            const motivos = motivosExclusion(item);
+
+            if (motivos.length > 0) {
+                excluidosLista.push({
+                    idEquipo: item.idEquipo,
+                    serial: item.serial,
+                    marca: item.marca,
+                    modelo: item.modelo,
+                    tipo: String(item.tipo),
+                    estadoEquipo: String(item.estadoEquipo),
+                    empresa: item.empresa,
+                    hostname: item.agente.hostname,
+                    ultimaConexion: item.agente.ultimaConexion,
+                    estadoAgente: item.agente.estado,
+                    motivos,
+                });
+                continue;
+            }
+
+            if (ESTADOS_FUERA_OPERACION.has(String(item.estadoEquipo))) {
+                fueraDeOperacionItems.push(item);
+                continue;
+            }
+
+            itemsBase.push(item);
+        }
+
+        const dadosDeBaja = excluidosLista.filter((e) =>
+            e.motivos.includes("DADO_DE_BAJA"),
+        );
+
+        const vendidos = excluidosLista.filter((e) =>
+            e.motivos.includes("VENDIDO"),
+        );
+
+        const noPc = excluidosLista.filter((e) =>
+            e.motivos.includes("NO_ES_PC"),
+        );
+
+        const noPcPorTipoMap = new Map<string, number>();
+        for (const e of noPc) {
+            noPcPorTipoMap.set(e.tipo, (noPcPorTipoMap.get(e.tipo) ?? 0) + 1);
+        }
+
+        const excluidos = {
+            total: excluidosLista.length,
+            dadosDeBaja: {
+                total: dadosDeBaja.length,
+                /* Tienen agente registrado alguna vez */
+                conAgente: dadosDeBaja.filter((e) => e.ultimaConexion !== null).length,
+                /* Siguen reportando: el equipo aún está encendido */
+                conAgenteActivo: dadosDeBaja.filter((e) => e.estadoAgente === "ACTIVO").length,
+            },
+            vendidos: {
+                total: vendidos.length,
+                conAgente: vendidos.filter((e) => e.ultimaConexion !== null).length,
+                /* Un equipo vendido que sigue reportando aún tiene el agente instalado */
+                conAgenteActivo: vendidos.filter((e) => e.estadoAgente === "ACTIVO").length,
+            },
+            noPc: {
+                total: noPc.length,
+                porTipo: Array.from(noPcPorTipoMap.entries())
+                    .map(([tipo, cantidad]) => ({ tipo, cantidad }))
+                    .sort((a, b) => b.cantidad - a.cantidad),
+            },
+            equipos: excluidosLista.sort(
+                (a, b) =>
+                    a.motivos[0]!.localeCompare(b.motivos[0]!) ||
+                    (a.empresa?.nombre ?? "").localeCompare(b.empresa?.nombre ?? "", "es"),
+            ),
+        };
+
+        const fueraDeOperacion = {
+            total: fueraDeOperacionItems.length,
+            enStock: fueraDeOperacionItems.filter((i) => i.estadoEquipo === "EN_STOCK").length,
+            enRids: fueraDeOperacionItems.filter((i) => i.estadoEquipo === "EN_RIDS").length,
+            items: fueraDeOperacionItems,
+        };
+
+        /* =========================================================
+   COBERTURA POR EMPRESA
 
         /*
          * Se calcula desde itemsBase antes de aplicar filtros como:
@@ -1632,6 +1822,10 @@ export async function getEquipoAgentDashboard(
                 horasSinConexion,
                 versionAgenteRecomendada:
                     versionRecomendada,
+                versionAgenteRecomendadaMac:
+                    versionRecomendadaMac,
+                tiposPcIncluidos: [...TIPOS_PC],
+                estadosFueraDeOperacion: [...ESTADOS_FUERA_OPERACION],
 
                 criteriosOneDrive: {
                     requiereInstalado: true,
@@ -1663,6 +1857,12 @@ export async function getEquipoAgentDashboard(
             },
 
             items,
+
+            /* Equipos que no entran al dashboard, con su explicación */
+            excluidos,
+
+            /* EN_STOCK / EN_RIDS: se muestran en una sección aparte */
+            fueraDeOperacion,
         });
     } catch (error) {
         console.error(

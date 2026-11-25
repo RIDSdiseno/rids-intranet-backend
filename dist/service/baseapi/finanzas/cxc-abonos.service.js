@@ -9,6 +9,7 @@
 // - Las conciliaciones antiguas sin abonos (Duemint, «Registrar pago» anterior) no se tocan.
 import { prisma } from "../../../lib/prisma.js";
 import { conciliarDocumentoRcv, desconciliarDocumentoRcv } from "../baseapi-rcv-conciliacion.service.js";
+import { notificarPagoRecibido } from "../cobranza/pago-recibido.service.js";
 export class AbonoCxcError extends Error {
 }
 /* =========================================================
@@ -132,7 +133,21 @@ export async function registrarAbonoCxc(params) {
             enviarCorreo: false,
         });
     }
-    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa, abonoId: abono.id };
+    // «Pago recibido»: solo cuando la factura queda pagada y se pidió avisar.
+    const aviso = completa && params.avisarCliente
+        ? await notificarPagoRecibido({
+            empresaKey,
+            tipoDoc: doc.tipoDoc,
+            folio: doc.folio,
+            rutContraparte: doc.rutContraparte,
+            razonSocial: doc.razonSocial,
+            montoFactura: actual.saldoNc,
+            montoPago: params.monto,
+            fechaPago: params.fechaPago,
+            formaPago: params.formaPago,
+        })
+        : null;
+    return { pagos: await obtenerPagosDocumentoCxc(empresaKey, doc), conciliada: completa, abonoId: abono.id, aviso };
 }
 /* =========================================================
    ELIMINAR

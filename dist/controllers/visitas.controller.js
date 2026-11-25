@@ -142,6 +142,18 @@ const CreateVisitaSchema = z
     inicio: z.string(),
     fin: z.string().optional().nullable(),
     status: StatusEnum.optional().default("PENDIENTE"),
+    /*
+     * VARIAS FECHAS (opcional): se crea la misma visita en cada fecha,
+     * para cada solicitante. Si no viene, se usa inicio/fin.
+     */
+    fechas: z
+        .array(z.object({
+        inicio: z.string(),
+        fin: z.string().optional().nullable(),
+    }))
+        .min(1)
+        .max(31, "Máximo 31 fechas por creación")
+        .optional(),
 })
     .extend(baseFlags.shape)
     .superRefine((d, ctx) => {
@@ -352,6 +364,27 @@ export const createVisita = async (req, res) => {
         const inicioDate = parseLocalDateTime(payload.inicio);
         if (!inicioDate)
             return res.status(400).json({ error: "Fecha de inicio inválida" });
+        /*
+         * Rangos de fecha a crear: los de `fechas` (varias fechas) o,
+         * si no vienen, el inicio/fin de siempre.
+         */
+        const rangos = [];
+        if (payload.fechas?.length) {
+            for (const f of payload.fechas) {
+                const ini = parseLocalDateTime(f.inicio);
+                const fn = parseLocalDateTime(f.fin ?? null);
+                if (!ini) {
+                    return res.status(400).json({ error: `Fecha de inicio inválida: ${f.inicio}` });
+                }
+                if (fn && fn.getTime() < ini.getTime()) {
+                    return res.status(400).json({ error: "La hora de fin no puede ser anterior a la de inicio." });
+                }
+                rangos.push({ inicio: ini, fin: fn });
+            }
+        }
+        else {
+            rangos.push({ inicio: inicioDate, fin: parseLocalDateTime(payload.fin ?? null) });
+        }
         // Datos comunes para todas las visitas
         const commonData = {
             empresaId: payload.empresaId,
@@ -391,11 +424,32 @@ export const createVisita = async (req, res) => {
             if (!solicitante) {
                 return res.status(400).json({ error: "Debe indicar 'solicitante' o 'solicitanteId' válido" });
             }
-            const created = await prisma.visita.create({
-                data: { ...commonData, solicitanteId, solicitante },
+            if (rangos.length === 1) {
+                const created = await prisma.visita.create({
+                    data: {
+                        ...commonData,
+                        inicio: rangos[0].inicio,
+                        fin: rangos[0].fin,
+                        solicitanteId,
+                        solicitante,
+                    },
+                    select: visitaSelect,
+                });
+                return res.status(201).json(created);
+            }
+            // Un solicitante en varias fechas
+            const solicitanteFinal = solicitante;
+            const createdVarias = await prisma.$transaction(rangos.map((r) => prisma.visita.create({
+                data: {
+                    ...commonData,
+                    inicio: r.inicio,
+                    fin: r.fin,
+                    solicitanteId,
+                    solicitante: solicitanteFinal,
+                },
                 select: visitaSelect,
-            });
-            return res.status(201).json(created);
+            })));
+            return res.status(201).json({ createdCount: createdVarias.length, visitas: createdVarias });
         }
         // ===== MODO "LOTE"
         // 1) Resolver los que llegan por ID
@@ -430,15 +484,23 @@ export const createVisita = async (req, res) => {
         if (allTargets.length === 0) {
             return res.status(400).json({ error: "No hay solicitantes válidos para crear visitas" });
         }
-        // 4) Crear todas en transacción
-        const createdList = await prisma.$transaction(allTargets.map(t => prisma.visita.create({
+        // 4) Crear todas en transacción: cada solicitante en cada fecha
+        const totalVisitas = allTargets.length * rangos.length;
+        if (totalVisitas > 300) {
+            return res.status(400).json({
+                error: `Se crearían ${totalVisitas} visitas. Reduce la cantidad de fechas o de solicitantes (máximo 300).`,
+            });
+        }
+        const createdList = await prisma.$transaction(rangos.flatMap(r => allTargets.map(t => prisma.visita.create({
             data: {
                 ...commonData,
+                inicio: r.inicio,
+                fin: r.fin,
                 solicitanteId: t.solicitanteId,
                 solicitante: t.solicitante,
             },
             select: visitaSelect,
-        })));
+        }))));
         return res.status(201).json({ createdCount: createdList.length, visitas: createdList });
     }
     catch (err) {
@@ -570,8 +632,12 @@ export const getVisitasMetrics = async (req, res) => {
         const endDefault = new Date(y, m + 1, 1);
         const from = fromQ ? new Date(fromQ) : startDefault;
         const to = toQ ? new Date(toQ) : endDefault;
+        /* CLIENTE: solo visitas de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+        const usuario = req.user;
+        const filtroEmpresa = usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
         const total = await prisma.visita.count({
             where: {
+                ...filtroEmpresa,
                 inicio: {
                     gte: from,
                     lt: to,
@@ -586,6 +652,7 @@ export const getVisitasMetrics = async (req, res) => {
         const grouped = await prisma.visita.groupBy({
             by: ["tecnicoId"],
             where: {
+                ...filtroEmpresa,
                 inicio: {
                     gte: from,
                     lt: to,
@@ -626,8 +693,12 @@ export const getVisitasMetrics = async (req, res) => {
 export const visitasMetrics = async (req, res) => {
     const from = new Date(`${req.query.from}T00:00:00`);
     const to = new Date(`${req.query.to}T00:00:00`);
+    /* CLIENTE: solo visitas de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+    const usuario = req.user;
+    const filtroEmpresa = usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
     const total = await prisma.visita.count({
         where: {
+            ...filtroEmpresa,
             inicio: { gte: from, lt: to },
             empresa: {
                 is: {
@@ -639,6 +710,7 @@ export const visitasMetrics = async (req, res) => {
     const rows = await prisma.visita.groupBy({
         by: ["tecnicoId"],
         where: {
+            ...filtroEmpresa,
             inicio: { gte: from, lt: to }, empresa: {
                 is: {
                     isActive: true,
@@ -655,6 +727,7 @@ export const visitasMetrics = async (req, res) => {
     const porTecnicoEmpresaRaw = await prisma.visita.groupBy({
         by: ["tecnicoId", "empresaId"],
         where: {
+            ...filtroEmpresa,
             inicio: { gte: from, lt: to }, empresa: {
                 is: {
                     isActive: true,
@@ -699,7 +772,35 @@ export const visitasMetrics = async (req, res) => {
 /* ------------------------------------ */
 /* Filtros                               */
 /* ------------------------------------ */
-export const getVisitasFilters = async (_req, res) => {
+export const getVisitasFilters = async (req, res) => {
+    /* CLIENTE: solo su empresa y los técnicos que la han visitado (sin correo ni rol) */
+    const usuario = req.user;
+    if (usuario?.rol === "CLIENTE") {
+        const empresaId = Number(usuario.empresaId);
+        const [empresa, visitasPorTecnico] = await Promise.all([
+            prisma.empresa.findUnique({
+                where: { id_empresa: empresaId },
+                select: { id_empresa: true, nombre: true },
+            }),
+            prisma.visita.groupBy({
+                by: ["tecnicoId"],
+                where: { empresaId },
+            }),
+        ]);
+        const tecnicoIds = visitasPorTecnico.map((v) => v.tecnicoId);
+        const tecnicosCliente = tecnicoIds.length
+            ? await prisma.tecnico.findMany({
+                where: { id_tecnico: { in: tecnicoIds } },
+                orderBy: { nombre: "asc" },
+                select: { id_tecnico: true, nombre: true },
+            })
+            : [];
+        res.json({
+            tecnicos: tecnicosCliente.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
+            empresas: empresa ? [{ id: empresa.id_empresa, nombre: empresa.nombre }] : [],
+        });
+        return;
+    }
     const [tecnicos, empresas] = await Promise.all([
         prisma.tecnico.findMany({
             where: {

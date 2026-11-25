@@ -1,4 +1,5 @@
 import type { EmpresaKey } from "../cobranza/cobranza-estado.service.js";
+import { type ResultadoAvisoPago } from "../cobranza/pago-recibido.service.js";
 /** Lo que se usa del documento del núcleo (DocumentoCxc). */
 export type DocumentoAbonoCxc = {
     tipoDoc: string;
@@ -49,10 +50,13 @@ export declare function registrarAbonoCxc(params: {
     /** Fase 4b: abono creado al conciliar un movimiento de la cartola. */
     origen?: "MANUAL" | "CARTOLA";
     movimientoId?: number | null;
+    /** Si la factura queda pagada, enviar «Pago recibido» a los contactos de Cobranza. */
+    avisarCliente?: boolean;
 }): Promise<{
     pagos: PagosDocumentoCxc;
     conciliada: boolean;
     abonoId: number;
+    aviso: ResultadoAvisoPago | null;
 }>;
 export declare function eliminarAbonoCxc(params: {
     empresaKey: EmpresaKey;

@@ -172,6 +172,21 @@ const CreateVisitaSchema = z
     inicio: z.string(),
     fin: z.string().optional().nullable(),
     status: StatusEnum.optional().default("PENDIENTE"),
+
+    /*
+     * VARIAS FECHAS (opcional): se crea la misma visita en cada fecha,
+     * para cada solicitante. Si no viene, se usa inicio/fin.
+     */
+    fechas: z
+      .array(
+        z.object({
+          inicio: z.string(),
+          fin: z.string().optional().nullable(),
+        }),
+      )
+      .min(1)
+      .max(31, "Máximo 31 fechas por creación")
+      .optional(),
   })
   .extend(baseFlags.shape)
   .superRefine((d, ctx) => {
@@ -435,6 +450,31 @@ export const createVisita = async (req: Request, res: Response) => {
     const inicioDate = parseLocalDateTime(payload.inicio);
     if (!inicioDate) return res.status(400).json({ error: "Fecha de inicio inválida" });
 
+    /*
+     * Rangos de fecha a crear: los de `fechas` (varias fechas) o,
+     * si no vienen, el inicio/fin de siempre.
+     */
+    const rangos: Array<{ inicio: Date; fin: Date | null }> = [];
+
+    if (payload.fechas?.length) {
+      for (const f of payload.fechas) {
+        const ini = parseLocalDateTime(f.inicio);
+        const fn = parseLocalDateTime(f.fin ?? null);
+
+        if (!ini) {
+          return res.status(400).json({ error: `Fecha de inicio inválida: ${f.inicio}` });
+        }
+
+        if (fn && fn.getTime() < ini.getTime()) {
+          return res.status(400).json({ error: "La hora de fin no puede ser anterior a la de inicio." });
+        }
+
+        rangos.push({ inicio: ini, fin: fn });
+      }
+    } else {
+      rangos.push({ inicio: inicioDate, fin: parseLocalDateTime(payload.fin ?? null) });
+    }
+
     // Datos comunes para todas las visitas
     const commonData = {
       empresaId: payload.empresaId,
@@ -478,11 +518,38 @@ export const createVisita = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Debe indicar 'solicitante' o 'solicitanteId' válido" });
       }
 
-      const created = await prisma.visita.create({
-        data: { ...commonData, solicitanteId, solicitante },
-        select: visitaSelect,
-      });
-      return res.status(201).json(created);
+      if (rangos.length === 1) {
+        const created = await prisma.visita.create({
+          data: {
+            ...commonData,
+            inicio: rangos[0]!.inicio,
+            fin: rangos[0]!.fin,
+            solicitanteId,
+            solicitante,
+          },
+          select: visitaSelect,
+        });
+        return res.status(201).json(created);
+      }
+
+      // Un solicitante en varias fechas
+      const solicitanteFinal = solicitante;
+      const createdVarias = await prisma.$transaction(
+        rangos.map((r) =>
+          prisma.visita.create({
+            data: {
+              ...commonData,
+              inicio: r.inicio,
+              fin: r.fin,
+              solicitanteId,
+              solicitante: solicitanteFinal,
+            },
+            select: visitaSelect,
+          })
+        )
+      );
+
+      return res.status(201).json({ createdCount: createdVarias.length, visitas: createdVarias });
     }
 
     // ===== MODO "LOTE"
@@ -522,17 +589,29 @@ export const createVisita = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "No hay solicitantes válidos para crear visitas" });
     }
 
-    // 4) Crear todas en transacción
+    // 4) Crear todas en transacción: cada solicitante en cada fecha
+    const totalVisitas = allTargets.length * rangos.length;
+
+    if (totalVisitas > 300) {
+      return res.status(400).json({
+        error: `Se crearían ${totalVisitas} visitas. Reduce la cantidad de fechas o de solicitantes (máximo 300).`,
+      });
+    }
+
     const createdList = await prisma.$transaction(
-      allTargets.map(t =>
-        prisma.visita.create({
-          data: {
-            ...commonData,
-            solicitanteId: t.solicitanteId,
-            solicitante: t.solicitante,
-          },
-          select: visitaSelect,
-        })
+      rangos.flatMap(r =>
+        allTargets.map(t =>
+          prisma.visita.create({
+            data: {
+              ...commonData,
+              inicio: r.inicio,
+              fin: r.fin,
+              solicitanteId: t.solicitanteId,
+              solicitante: t.solicitante,
+            },
+            select: visitaSelect,
+          })
+        )
       )
     );
 
@@ -852,7 +931,7 @@ export const getVisitasFilters = async (req: Request, res: Response) => {
     });
     return;
   }
-  
+
   const [tecnicos, empresas] = await Promise.all([
     prisma.tecnico.findMany({
       where: {

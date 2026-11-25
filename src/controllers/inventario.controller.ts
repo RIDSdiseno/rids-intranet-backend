@@ -269,6 +269,9 @@ function formatEstadoEquipo(estado?: string | null): string {
         EN_STOCK: "En stock",
         DADO_DE_BAJA: "Dado de baja",
         EN_RIDS: "En RIDS",
+        EN_GARANTIA: "En garantía",
+        EN_TALLER_EXTERNO: "En taller externo",
+        VENDIDO: "Vendido",
     };
 
     return map[estado] ?? estado;

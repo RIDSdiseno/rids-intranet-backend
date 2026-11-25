@@ -25,7 +25,7 @@ router.get("/dashboard",
 /**
  * Protegido para el CRM.
  */
-router.get("/", auth(false), onlyOwnEmpresa(), listEquiposAgent);
-router.get("/:id", auth(false), onlyOwnEmpresa(), getEquipoAgentById);
+router.get("/", auth(), onlyOwnEmpresa(), listEquiposAgent);
+router.get("/:id", auth(), onlyOwnEmpresa(), getEquipoAgentById);
 
 export default router;

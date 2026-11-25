@@ -602,13 +602,13 @@ model DetalleTrabajoGestioo {
   cotizacionId                 Int?
   destinoEquipo                DestinoEquipoTaller @default(SIN_DEFINIR)
   destinoEquipoNota            String?
-  detalleTrabajo               String?
   firmaEntradaAt               DateTime?
   firmaEntradaPublicId         String?
   firmaEntradaUrl              String?
   nombreFirmanteEntrada        String?
   emailFirmanteEntrada         String?
   solicitanteFirmanteEntradaId Int?
+  detalleTrabajo               String?
   cotizacion                   CotizacionGestioo?  @relation(fields: [cotizacionId], references: [id], onDelete: SetNull)
   tecnico                      Tecnico?            @relation(fields: [tecnicoId], references: [id_tecnico])
   entidad                      EntidadGestioo?     @relation(fields: [entidadId], references: [id])
@@ -3418,6 +3418,7 @@ enum EstadoEquipo {
   EN_RIDS
   EN_GARANTIA
   EN_TALLER_EXTERNO
+  VENDIDO
 }
 
 enum OrigenTrabajo {
