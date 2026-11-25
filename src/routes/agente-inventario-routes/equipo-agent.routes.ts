@@ -18,7 +18,7 @@ const router = Router();
 router.post("/inventory", receiveEquipoAgentInventory);
 
 router.get("/dashboard",
-    auth(false),
+    auth(),
     getEquipoAgentDashboard
 );
 

@@ -656,9 +656,14 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
 
     const from = fromQ ? new Date(fromQ) : startDefault;
     const to = toQ ? new Date(toQ) : endDefault;
+    /* CLIENTE: solo visitas de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+    const usuario = (req as any).user;
+    const filtroEmpresa =
+      usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
 
     const total = await prisma.visita.count({
       where: {
+        ...filtroEmpresa,
         inicio: {
           gte: from,
           lt: to,
@@ -674,6 +679,7 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
     const grouped = await prisma.visita.groupBy({
       by: ["tecnicoId"],
       where: {
+        ...filtroEmpresa,
         inicio: {
           gte: from,
           lt: to,
@@ -717,9 +723,14 @@ export const getVisitasMetrics = async (req: Request, res: Response) => {
 export const visitasMetrics = async (req: Request, res: Response) => {
   const from = new Date(`${req.query.from as string}T00:00:00`);
   const to = new Date(`${req.query.to as string}T00:00:00`);
+  /* CLIENTE: solo visitas de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+  const usuario = (req as any).user;
+  const filtroEmpresa =
+    usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
 
   const total = await prisma.visita.count({
     where: {
+      ...filtroEmpresa,
       inicio: { gte: from, lt: to },
       empresa: {
         is: {
@@ -732,6 +743,7 @@ export const visitasMetrics = async (req: Request, res: Response) => {
   const rows = await prisma.visita.groupBy({
     by: ["tecnicoId"],
     where: {
+      ...filtroEmpresa,
       inicio: { gte: from, lt: to }, empresa: {
         is: {
           isActive: true,
@@ -750,6 +762,7 @@ export const visitasMetrics = async (req: Request, res: Response) => {
   const porTecnicoEmpresaRaw = await prisma.visita.groupBy({
     by: ["tecnicoId", "empresaId"],
     where: {
+      ...filtroEmpresa,
       inicio: { gte: from, lt: to }, empresa: {
         is: {
           isActive: true,
@@ -805,7 +818,41 @@ export const visitasMetrics = async (req: Request, res: Response) => {
 /* Filtros                               */
 /* ------------------------------------ */
 
-export const getVisitasFilters = async (_req: Request, res: Response) => {
+export const getVisitasFilters = async (req: Request, res: Response) => {
+  /* CLIENTE: solo su empresa y los técnicos que la han visitado (sin correo ni rol) */
+  const usuario = (req as any).user;
+
+  if (usuario?.rol === "CLIENTE") {
+    const empresaId = Number(usuario.empresaId);
+
+    const [empresa, visitasPorTecnico] = await Promise.all([
+      prisma.empresa.findUnique({
+        where: { id_empresa: empresaId },
+        select: { id_empresa: true, nombre: true },
+      }),
+      prisma.visita.groupBy({
+        by: ["tecnicoId"],
+        where: { empresaId },
+      }),
+    ]);
+
+    const tecnicoIds = visitasPorTecnico.map((v) => v.tecnicoId);
+
+    const tecnicosCliente = tecnicoIds.length
+      ? await prisma.tecnico.findMany({
+        where: { id_tecnico: { in: tecnicoIds } },
+        orderBy: { nombre: "asc" },
+        select: { id_tecnico: true, nombre: true },
+      })
+      : [];
+
+    res.json({
+      tecnicos: tecnicosCliente.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
+      empresas: empresa ? [{ id: empresa.id_empresa, nombre: empresa.nombre }] : [],
+    });
+    return;
+  }
+  
   const [tecnicos, empresas] = await Promise.all([
     prisma.tecnico.findMany({
       where: {

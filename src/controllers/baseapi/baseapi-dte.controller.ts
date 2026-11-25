@@ -1,7 +1,7 @@
 // src/controllers/baseapi/baseapi-dte.controller.ts
 import type { Request, Response } from "express";
 import { consultarDtePorFolioBaseApi } from "../../service/baseapi/baseapi-dte.service.js";
-
+import { prisma } from "../../lib/prisma.js";
 import {
     generarDtePdfBuffer,
 } from "../../service/baseapi/baseapi-dte-pdf.service.js";
@@ -59,6 +59,50 @@ function parseForceRefresh(value: unknown): boolean {
 }
 
 // Función para consultar un DTE por folio en BaseAPI, dado la empresa, el periodo, el folio, el tipo de DTE, y si se debe forzar la actualización. Maneja la construcción del endpoint, el body de la petición, y la normalización de errores.
+/* ===================== Acceso del CLIENTE ===================== */
+
+function normalizarRutDte(value: unknown): string {
+    return String(value ?? "")
+        .replace(/\./g, "")
+        .replace(/-/g, "")
+        .replace(/\s/g, "")
+        .toUpperCase()
+        .trim();
+}
+
+function esClienteDte(req: Request): boolean {
+    return String((req as any).user?.rol ?? "").toUpperCase().trim() === "CLIENTE";
+}
+
+/**
+ * Internos: siempre true. CLIENTE: true solo si el RUT de su empresa aparece en
+ * el documento (mismo criterio de respaldo que el filtro de RCV ventas).
+ */
+async function documentoEsDelCliente(req: Request, data: unknown): Promise<boolean> {
+    if (!esClienteDte(req)) return true;
+
+    const empresaId = Number((req as any).user?.empresaId);
+    if (!empresaId) return false;
+
+    const empresa = await prisma.empresa.findUnique({
+        where: { id_empresa: empresaId },
+        select: { detalleEmpresa: { select: { rut: true } } },
+    });
+
+    const rut = normalizarRutDte(empresa?.detalleEmpresa?.rut);
+    if (!rut) return false;
+
+    return normalizarRutDte(JSON.stringify(data ?? "")).includes(rut);
+}
+
+function responderDteNoPermitido(res: Response): void {
+    res.status(403).json({
+        ok: false,
+        provider: "baseapi",
+        error: "No tienes acceso a este documento",
+    });
+}
+
 export async function getDtePorFolioBaseApi(req: Request, res: Response) {
     try {
         const empresa = parseEmpresa(req.query.empresa);
@@ -83,6 +127,11 @@ export async function getDtePorFolioBaseApi(req: Request, res: Response) {
             tipoDTE,
             forceRefresh,
         });
+
+        if (!(await documentoEsDelCliente(req, resultado.data))) {
+            responderDteNoPermitido(res);
+            return;
+        }
 
         // Exponer ted_xml (bloque <TED> completo, usado para el PDF417 del Timbre Electrónico SII) a nivel superior también, para acceso rápido
         const documento = resultado.data?.data?.documento as
@@ -162,6 +211,22 @@ export async function getDtePdfPorFolioBaseApi(
                 });
 
             return;
+        }
+
+        /* CLIENTE: antes de generar el PDF, confirmar que el documento es suyo */
+        if (esClienteDte(req)) {
+            const dte = await consultarDtePorFolioBaseApi({
+                empresa,
+                periodo,
+                folio,
+                tipoDTE,
+                forceRefresh: false,
+            });
+
+            if (!(await documentoEsDelCliente(req, dte.data))) {
+                responderDteNoPermitido(res);
+                return;
+            }
         }
 
         const resultado =

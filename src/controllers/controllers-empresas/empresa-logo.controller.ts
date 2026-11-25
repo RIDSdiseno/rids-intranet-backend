@@ -6,6 +6,7 @@ import {
     EmpresaLogoNoEncontradaError,
     LogoEmpresaInvalidoError,
     eliminarLogoEmpresa,
+    logoEmpresaPngParaPdf,
     obtenerLogoEmpresa,
     subirLogoEmpresa,
 } from "../../service/empresas/empresa-logo.service.js";
@@ -36,6 +37,29 @@ export async function obtenerLogoEmpresaController(req: Request, res: Response) 
         return res.json({ success: true, data });
     } catch (error) {
         return manejarError(error, res, "Obtener");
+    }
+}
+
+/**
+ * GET /empresas-logo/:empresaId/png
+ * Logo de la empresa en PNG, para incrustarlo en documentos (Word IA).
+ * Sin logo → 404 SIN_LOGO (el informe sale solo con el logo de RIDS).
+ */
+export async function obtenerLogoEmpresaPngController(req: Request, res: Response) {
+    const params = paramsSchema.safeParse(req.params);
+    if (!params.success) return res.status(400).json({ success: false, code: "ID_INVALIDO" });
+
+    try {
+        const png = await logoEmpresaPngParaPdf(params.data.empresaId);
+        if (!png) {
+            return res.status(404).json({ success: false, code: "SIN_LOGO", message: "La empresa no tiene logo." });
+        }
+
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.send(png);
+    } catch (error) {
+        return manejarError(error, res, "Obtener PNG");
     }
 }
 

@@ -5,9 +5,11 @@ import {
     createAuditLog,
     listEmpresasAuditLogs,
 } from "../../controllers/controllers-historial-cambios/audit.controller.js";
-import { auth } from "../../middlewares/auth.js";
+import { auth, validarEmpresaParam } from "../../middlewares/auth.js";
 
 export const auditRouter = Router();
+
+auditRouter.param("empresaId", validarEmpresaParam);
 
 // Historial general de auditoría
 auditRouter.get("/", auth(true), listAuditLogs);

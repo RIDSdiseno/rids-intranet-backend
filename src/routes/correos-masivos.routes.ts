@@ -17,9 +17,16 @@ import {
   uploadPlantillaCorreo,
 } from "../service/correos-masivos/correos-masivos-upload.middleware.js";
 
+import { requireAuth } from "../middlewares/auth.js";
+import { onlyRole } from "../middlewares/roles.js";
+
 const correoMasivoRouter =
   Router();
 
+/* Antes público: cualquiera podía enviar correos masivos desde la casilla de RIDS
+ y leer o borrar plantillas. Solo internos (el menú del CLIENTE no muestra el mailer). */
+correoMasivoRouter.use(requireAuth);
+correoMasivoRouter.use(onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"));
 
 // =====================================================
 // PLANTILLAS
@@ -49,13 +56,13 @@ correoMasivoRouter.delete(
 );
 
 correoMasivoRouter.patch(
-    "/plantillas/:id",
-    actualizarPlantilla
+  "/plantillas/:id",
+  actualizarPlantilla
 );
 
 correoMasivoRouter.get(
-    "/firma-remitente",
-    obtenerFirmaRemitente
+  "/firma-remitente",
+  obtenerFirmaRemitente
 );
 
 

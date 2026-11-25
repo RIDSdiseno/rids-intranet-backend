@@ -199,7 +199,7 @@ function obtenerExpectedTokenMantGeneral(): string {
         process.env.AGENT_TOKEN ||
         process.env.RIDS_AGENT_TOKEN ||
         process.env.MANT_GENERAL_TOKEN ||
-        "test123"
+        ""
     );
 }
 

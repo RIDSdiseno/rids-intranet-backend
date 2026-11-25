@@ -1,5 +1,6 @@
 // src/routes/servicios-gestioo.routes.ts
 import { Router } from "express";
+import { requireAuth, soloLecturaCliente } from "../middlewares/auth.js";
 import {
     createServicio,
     getServicios,
@@ -9,6 +10,10 @@ import {
 } from "../controllers/servicios-gestioo.controller.js";
 
 const serviciosGestiooRouter = Router();
+
+/* Catálogo: antes sin autenticación. Exige sesión; CLIENTE solo lectura */
+serviciosGestiooRouter.use(requireAuth);
+serviciosGestiooRouter.use(soloLecturaCliente);
 
 /* ============================
    RUTAS DE POBLADO DE SERVICIOS GESTIOO

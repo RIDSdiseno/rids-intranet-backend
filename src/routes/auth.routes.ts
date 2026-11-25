@@ -2,12 +2,15 @@
 import { Router } from "express";
 import { register, login, refresh, logout, me, changePassword } from "../controllers/auth.controller.js";
 import { auth } from "../middlewares/auth.js";   // <- nombrado
+import { onlyRole } from "../middlewares/roles.js";
 import { loginMicrosoft } from "../controllers/auth.controller.js";
 import { forgotPassword, resetPassword } from "../controllers/auth.controller.js";
 
 export const authRouter = Router();
 
-authRouter.post("/register", register);
+/* Antes público: cualquiera podía crear una cuenta (rol por defecto TECNICO, activa)
+   y entrar al CRM. Los usuarios se crean desde Técnicos / Clientes externos. */
+authRouter.post("/register", auth(), onlyRole("ADMIN", "ADMINISTRACION"), register);
 authRouter.post("/login", login);
 authRouter.post("/microsoft", loginMicrosoft)
 authRouter.post("/refresh", refresh);

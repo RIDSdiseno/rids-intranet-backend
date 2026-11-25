@@ -13,9 +13,13 @@ import {
   getEquipoHistorial,
   recalcularAnioPcEquipos
 } from "../controllers/equipos.controller.js";
-import { auth } from "../middlewares/auth.js";
+import { auth, soloLecturaCliente  } from "../middlewares/auth.js";
 
 export const equiposRouter = Router();
+
+/* CLIENTE: solo lectura (crear, editar, reasignar, recalcular y borrar son internos).
+   El frontend ya deshabilitaba esas acciones; ahora también el backend. */
+equiposRouter.use(soloLecturaCliente);
 
 /* ============ Helpers ============ */
 // Async wrapper tipado para capturar rejects sin romper el proceso

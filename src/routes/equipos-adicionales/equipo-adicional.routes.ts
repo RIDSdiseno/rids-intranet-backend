@@ -1,18 +1,23 @@
 // src/routes/equipos-adicionales/equipo-adicional.routes.ts
 
 import { Router } from "express";
+import { requireAuth } from "../../middlewares/auth.js";
 
 import {
-    listEquipoAdicionales,
-    listAdicionalesByEquipo,
-    getEquipoAdicional,
-    createEquipoAdicional,
-    updateEquipoAdicional,
-    deleteEquipoAdicional,
-    exportEquipoAdicionales,
+  listEquipoAdicionales,
+  listAdicionalesByEquipo,
+  getEquipoAdicional,
+  createEquipoAdicional,
+  updateEquipoAdicional,
+  deleteEquipoAdicional,
+  exportEquipoAdicionales,
 } from "../../controllers/controllers-equipos-adicionales/equipo-adicional.controller.js";
 
 const router = Router();
+
+/* Exige sesión: sin token, el controller trataba la petición como interna
+   (buildEquipoVisibleWhere sin usuario = sin filtro de empresa). */
+router.use(requireAuth);
 
 router.get(
   "/",
@@ -25,8 +30,8 @@ router.get(
 );
 
 router.get(
-    "/export",
-    exportEquipoAdicionales
+  "/export",
+  exportEquipoAdicionales
 );
 
 router.get(

@@ -2,9 +2,21 @@
 import type { Request, Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 
-export async function listCotizacionesEnviadas(_req: Request, res: Response) {
+export async function listCotizacionesEnviadas(req: Request, res: Response) {
   try {
+    /* CLIENTE: solo envíos de cotizaciones de su empresa */
+    const usuario = (req as any).user;
+
     const rows = await prisma.cotizacionEnviada.findMany({
+      ...(usuario?.rol === "CLIENTE"
+        ? {
+          where: {
+            cotizacion: {
+              is: { entidad: { is: { empresaId: Number(usuario.empresaId) } } },
+            },
+          },
+        }
+        : {}),
       orderBy: { sentAt: "desc" },
     });
     return res.json(rows);

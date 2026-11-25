@@ -46,7 +46,8 @@ router.get(
 router.get(
   "/dashboard",
   auth(),
-  onlyRole("ADMINISTRACION", "VENTAS", "CLIENTE"),
+  /* Sin CLIENTE: el dashboard no filtra por cliente (mostraba el RCV completo de RIDS) */
+  onlyRole("ADMINISTRACION", "VENTAS"),
   getBaseApiRcvDashboardController
 );
 

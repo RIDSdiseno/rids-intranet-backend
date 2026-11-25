@@ -477,6 +477,13 @@ export async function getEntidades(req: Request, res: Response) {
             Object.assign(where, buildEntidadSearchWhere(search));
         }
 
+        /* CLIENTE: solo entidades de su empresa (la elegida con X-Empresa-Id) */
+        const usuario = (req as any).user;
+
+        if (usuario?.rol === "CLIENTE") {
+            where.empresaId = Number(usuario.empresaId);
+        }
+
         const entidades = await prisma.entidadGestioo.findMany({
             where,
             orderBy: [
@@ -547,6 +554,13 @@ export async function getEntidadById(req: Request, res: Response) {
         });
 
         if (!entidad) {
+            return res.status(404).json({ error: "Entidad no encontrada" });
+        }
+
+        /* CLIENTE: solo entidades de su empresa */
+        const usuario = (req as any).user;
+
+        if (usuario?.rol === "CLIENTE" && entidad.empresaId !== Number(usuario.empresaId)) {
             return res.status(404).json({ error: "Entidad no encontrada" });
         }
 

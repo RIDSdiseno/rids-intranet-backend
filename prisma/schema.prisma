@@ -22,6 +22,7 @@ model Empresa {
   logoActualizadoAt        DateTime?
   logoPublicId             String?
   logoUrl                  String?
+  grupoId                  Int?
   solicitantes             Solicitante[]
   visitas                  Visita[]                  @relation("Empresa_Visita")
   tickets                  FreshdeskTicket[]
@@ -59,7 +60,6 @@ model Empresa {
   campaniasProteccionDatos CampaniaProteccionDatos[]
   telefoniaParlantes       TelefoniaParlante[]
   telefoniaUsuarios        TelefoniaUsuario[]
-  grupoId                  Int?
   grupo                    GrupoEmpresa?             @relation(fields: [grupoId], references: [id])
 
   @@index([isActive])
@@ -602,6 +602,7 @@ model DetalleTrabajoGestioo {
   cotizacionId                 Int?
   destinoEquipo                DestinoEquipoTaller @default(SIN_DEFINIR)
   destinoEquipoNota            String?
+  detalleTrabajo               String?
   firmaEntradaAt               DateTime?
   firmaEntradaPublicId         String?
   firmaEntradaUrl              String?
@@ -1202,35 +1203,35 @@ model TicketRequester {
 }
 
 model CotizacionGestioo {
-  id                    Int                     @id @default(autoincrement())
-  fecha                 DateTime                @default(now())
-  estado                EstadoCotizacionGestioo @default(BORRADOR)
-  tipo                  TipoCotizacionGestioo   @default(CLIENTE)
+  id                    Int                        @id @default(autoincrement())
+  fecha                 DateTime                   @default(now())
+  estado                EstadoCotizacionGestioo    @default(BORRADOR)
+  tipo                  TipoCotizacionGestioo      @default(CLIENTE)
   entidadId             Int?
-  total                 Float                   @default(0)
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
-  iva                   Float                   @default(0)
-  moneda                MonedaGestioo           @default(CLP)
-  subtotal              Float                   @default(0)
-  descuentos            Float                   @default(0)
+  total                 Float                      @default(0)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  iva                   Float                      @default(0)
+  moneda                MonedaGestioo              @default(CLP)
+  subtotal              Float                      @default(0)
+  descuentos            Float                      @default(0)
   tasaCambio            Float?
   comentariosCotizacion String?
   personaResponsable    String?
   imagen                String?
   tecnicoId             Int?
-  ordenGenerada         Boolean                 @default(false)
+  ordenGenerada         Boolean                    @default(false)
   oportunidadVentaId    Int?
-    tecnico               Tecnico?                @relation(fields: [tecnicoId], references: [id_tecnico])
+  tecnico               Tecnico?                   @relation(fields: [tecnicoId], references: [id_tecnico])
   items                 CotizacionItemGestioo[]
   secciones             CotizacionSeccionGestioo[]
-  entidad               EntidadGestioo?         @relation(fields: [entidadId], references: [id])
+  entidad               EntidadGestioo?            @relation(fields: [entidadId], references: [id])
   facturas              Factura[]
   trabajos              DetalleTrabajoGestioo[]
-  equiposGenerados      Equipo[]                @relation("EquipoOrigenCotizacion")
+  equiposGenerados      Equipo[]                   @relation("EquipoOrigenCotizacion")
   bitacoras             BitacoraTecnico[]
   envios                CotizacionEnviada[]
-  oportunidadVenta      OportunidadVenta?       @relation(fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
+  oportunidadVenta      OportunidadVenta?          @relation(fields: [oportunidadVentaId], references: [id], onDelete: SetNull)
   recordatorios         Recordatorio[]
 
   @@index([entidadId])
@@ -1279,30 +1280,30 @@ model Factura {
 }
 
 model CotizacionItemGestioo {
-  id                Int               @id @default(autoincrement())
+  id                Int                       @id @default(autoincrement())
   cotizacionId      Int
   tipo              ItemTipoGestioo
   descripcion       String?
-  cantidad          Int               @default(1)
-  precio            Float             @default(0)
+  cantidad          Int                       @default(1)
+  precio            Float                     @default(0)
   porcentaje        Float?
-  createdAt         DateTime          @default(now())
+  createdAt         DateTime                  @default(now())
   sku               String?
-  tieneIVA          Boolean           @default(false)
-  tieneDescuento    Boolean           @default(false)
+  tieneIVA          Boolean                   @default(false)
+  tieneDescuento    Boolean                   @default(false)
   imagen            String?
   porcGanancia      Float?
   precioCosto       Float?
   nombre            String?
   precioOriginalCLP Float?
-    equipoId          Int?              @unique
+  equipoId          Int?                      @unique
   productoId        Int?
   seccionId         Int?
   seccion           CotizacionSeccionGestioo? @relation(fields: [seccionId], references: [id], onDelete: SetNull)
-  cotizacion        CotizacionGestioo @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
-  producto          ProductoGestioo?  @relation(fields: [productoId], references: [id], onDelete: SetNull)
-  equipo            Equipo?           @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
- 
+  cotizacion        CotizacionGestioo         @relation(fields: [cotizacionId], references: [id], onDelete: Cascade)
+  producto          ProductoGestioo?          @relation(fields: [productoId], references: [id], onDelete: SetNull)
+  equipo            Equipo?                   @relation("ItemEquipoGenerado", fields: [equipoId], references: [id_equipo], onDelete: SetNull)
+
   @@index([productoId])
   @@index([equipoId])
   @@index([seccionId])

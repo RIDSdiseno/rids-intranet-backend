@@ -6,6 +6,7 @@ import {
 
 import {
     auth,
+    validarEmpresaParam
 } from "../../middlewares/auth.js";
 
 import {
@@ -52,6 +53,8 @@ import {
 
 const router =
     Router();
+
+router.param("empresaId", validarEmpresaParam);
 
 /* =====================================================
    PORTAL CLIENTE

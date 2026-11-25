@@ -37,9 +37,11 @@ import {
 } from "../../controllers/controllers-empresas/grupos-empresa.controller.js";
 
 import { onlyRole } from "../../middlewares/roles.js";
-import { auth } from "../../middlewares/auth.js";
+import { auth, validarEmpresaParam } from "../../middlewares/auth.js";
 
 export const empresasRouter = Router();
+
+empresasRouter.param("empresaId", validarEmpresaParam);
 
 /*
  * Todas las rutas de este router requieren autenticación.
@@ -101,7 +103,7 @@ empresasRouter.get(
  */
 empresasRouter.patch(
   "/:id/grupo",
-  onlyRole("ADMIN","ADMINISTRACION"),
+  onlyRole("ADMIN", "ADMINISTRACION"),
   asignarGrupoEmpresa
 );
 

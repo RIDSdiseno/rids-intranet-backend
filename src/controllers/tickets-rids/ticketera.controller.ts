@@ -1149,6 +1149,8 @@ export async function listTickets(req: Request, res: Response) {
                     messages: {
                         some: {
                             bodyText: { contains: searchValue, mode: "insensitive" },
+                            /* CLIENTE: la búsqueda no mira notas internas */
+                            ...(isCliente ? { isInternal: false } : {}),
                         },
                     },
                 },
@@ -1360,6 +1362,14 @@ export async function getTicketById(req: Request, res: Response) {
         const agentId = req.user?.id ?? null;
         const isCliente = user?.rol === "CLIENTE";
         let ticketFinal = ticket;
+
+        /* CLIENTE: sin notas internas ni sus adjuntos (antes solo las ocultaba el frontend) */
+        if (isCliente) {
+            ticketFinal = {
+                ...ticket,
+                messages: ticket.messages.filter((m) => !m.isInternal),
+            };
+        }
 
         if (!isCliente) {
             const tecnicoActual = agentId
@@ -1933,6 +1943,18 @@ export async function downloadTicketAttachment(req: Request, res: Response) {
             });
         }
 
+        /* CLIENTE: solo adjuntos de tickets de su empresa y que no sean de notas internas */
+        const usuario = (req as any).user;
+
+        if (usuario?.rol === "CLIENTE") {
+            if (
+                att.message.ticket.empresaId !== usuario.empresaId ||
+                att.message.isInternal
+            ) {
+                return res.status(403).json({ ok: false, message: "No autorizado" });
+            }
+        }
+
         if (!att.url) {
             return res.status(404).json({
                 ok: false,
@@ -2461,11 +2483,17 @@ export async function getTicketsHomeSummary(req: Request, res: Response) {
                 }
                 : undefined;
 
+        /* CLIENTE: solo conteos de su empresa (la elegida con X-Empresa-Id). Internos: todo */
+        const usuario = (req as any).user;
+        const filtroEmpresa: Prisma.TicketWhereInput =
+            usuario?.rol === "CLIENTE" ? { empresaId: Number(usuario.empresaId) } : {};
+
         const [recibidos, cerrados, resueltos] = await Promise.all([
             prisma.ticket.count({
                 where: {
                     deletedAt: null,
                     ...(dateFilter ? { createdAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
             prisma.ticket.count({
@@ -2473,6 +2501,7 @@ export async function getTicketsHomeSummary(req: Request, res: Response) {
                     deletedAt: null,
                     status: "CLOSED",
                     ...(dateFilter ? { closedAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
             prisma.ticket.count({
@@ -2480,6 +2509,7 @@ export async function getTicketsHomeSummary(req: Request, res: Response) {
                     deletedAt: null,
                     status: "RESOLVED",
                     ...(dateFilter ? { resolvedAt: dateFilter } : {}),
+                    ...filtroEmpresa,
                 },
             }),
         ]);

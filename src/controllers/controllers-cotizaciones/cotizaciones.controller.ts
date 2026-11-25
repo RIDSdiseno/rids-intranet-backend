@@ -396,6 +396,13 @@ export async function getCotizaciones(req: Request, res: Response) {
             }
         }
 
+        /* CLIENTE: solo cotizaciones de su empresa (igual que /paginacion) */
+        const usuario = (req as any).user;
+
+        if (usuario?.rol === "CLIENTE") {
+            where.entidad = { is: { empresaId: Number(usuario.empresaId) } };
+        }
+
         const rows = await prisma.cotizacionGestioo.findMany({
             where,
             orderBy: { id: "desc" },

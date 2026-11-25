@@ -1137,6 +1137,40 @@ export const getMantencionesRemotasFilters = async (req: Request, res: Response)
   try {
     const user = getUser(req);
 
+    /* CLIENTE: solo su empresa y los técnicos con mantenciones remotas en ella
+    (id y nombre, sin correo ni rol). Mismo criterio que /visitas/filters. */
+    if (isCliente(user)) {
+      const empresaId = Number(user.empresaId);
+
+      const [empresa, porTecnico] = await Promise.all([
+        prisma.empresa.findUnique({
+          where: { id_empresa: empresaId },
+          select: { id_empresa: true, nombre: true },
+        }),
+        prisma.mantencionRemota.groupBy({
+          by: ["tecnicoId"],
+          where: { empresaId, tecnicoId: { not: null } },
+        }),
+      ]);
+
+      const tecnicoIds = porTecnico
+        .map((r) => r.tecnicoId)
+        .filter((id): id is number => id !== null);
+
+      const tecnicosCliente = tecnicoIds.length
+        ? await prisma.tecnico.findMany({
+          where: { id_tecnico: { in: tecnicoIds } },
+          orderBy: { nombre: "asc" },
+          select: { id_tecnico: true, nombre: true },
+        })
+        : [];
+
+      return res.json({
+        tecnicos: tecnicosCliente.map((t) => ({ id: t.id_tecnico, nombre: t.nombre })),
+        empresas: empresa ? [{ id: empresa.id_empresa, nombre: empresa.nombre }] : [],
+      });
+    }
+
     const tecnicosPromise = prisma.tecnico.findMany({
       where: {
         status: true,

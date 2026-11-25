@@ -220,7 +220,34 @@ function prepararContextoWordBeta(data: any) {
   const kpiAtencionSolicitantes =
     calcularTiempoPromedioAtencionSolicitantes(visitasDetalle);
 
+  /*
+   * Perfil del cliente en el período (Word IA adaptativo):
+   *  - REMOTO: sin visitas presenciales → el informe se enfoca en soporte
+   *    remoto, mesa de ayuda e inventario.
+   *  - CON_TERRENO: incluye además la atención en terreno.
+   */
+  const perfil: "REMOTO" | "CON_TERRENO" =
+    visitasDetalle.length > 0 ? "CON_TERRENO" : "REMOTO";
+
+  const equiposActivos = inventarioFuente.filter(
+    (e: any) => !/baja/i.test(String(e?.estadoEquipo ?? e?.estado ?? ""))
+  ).length;
+  const equiposTotal = inventarioFuente.length;
+  const equiposInactivos = equiposTotal - equiposActivos;
+
+  const minutosRemotas = Math.round(
+    (safe.mantenciones?.detalle ?? []).reduce(
+      (acc: number, m: any) => acc + getDuracionVisitaMinutos(m),
+      0
+    )
+  );
+
   return {
+    perfil,
+    equiposActivos,
+    equiposTotal,
+    equiposInactivos,
+    minutosRemotasTexto: formatMinutosAHoras(minutosRemotas),
     empresa: safe.empresa?.nombre ?? "Empresa no identificada",
     periodo: safe.month ?? safe.periodo ?? "Periodo no identificado",
     kpis: {
@@ -434,14 +461,24 @@ INVENTARIO DE EQUIPOS:
 - Si mencionas el inventario, usa únicamente los datos disponibles.
 - El detalle completo del inventario debe conservarse como datos estructurados, no como texto inventado.
 
+PERFIL DEL CLIENTE EN ESTE PERÍODO: ${contextoIA.perfil}
+${contextoIA.perfil === "REMOTO"
+      ? `- Este cliente NO tuvo atenciones presenciales en el período: su servicio fue remoto y de mesa de ayuda.
+- NO menciones visitas, terreno, atenciones presenciales ni su ausencia. No digas "no se registraron atenciones".
+- Enfoca el texto en: mantenciones remotas, tickets atendidos, horas de soporte e inventario.
+- Si no hubo licencias Microsoft asignadas, no lo menciones.`
+      : `- Este cliente tuvo atención en terreno: destaca las atenciones a solicitantes, el tiempo en terreno y la cobertura técnica, además del soporte remoto y la mesa de ayuda.`}
+
 VALORES FIJOS OBLIGATORIOS — NO MODIFICAR:
-- "Tiempo total en terreno" = "${contextoIA.observaciones.duracionTotalVisitas}"
+${contextoIA.perfil === "CON_TERRENO"
+      ? `- "Tiempo total en terreno" = "${contextoIA.observaciones.duracionTotalVisitas}"
 - "Tiempo promedio de atención de solicitantes" = "${contextoIA.observaciones.tiempoPromedioAtencionSolicitantes}"
 - "Solicitantes únicos atendidos" = ${contextoIA.observaciones.totalSolicitantesAtendidos}
-- "Atenciones a solicitantes" = ${contextoIA.observaciones.totalAtencionesRealizadas}
+- "Atenciones a solicitantes" = ${contextoIA.observaciones.totalAtencionesRealizadas}`
+      : `- "Tiempo en mantenciones remotas" = "${contextoIA.minutosRemotasTexto}"`}
 - "Total de tickets" = ${contextoIA.tickets.total}
-- "Total de mantenciones" = ${contextoIA.mantenciones.total}
-- "Total de equipos" = ${contextoIA.inventario.totalEquipos}
+- "Total de mantenciones remotas" = ${contextoIA.mantenciones.total}
+- "Equipos registrados" = ${contextoIA.equiposTotal} (${contextoIA.equiposActivos} activos y ${contextoIA.equiposInactivos} inactivos, dados de baja)
 - "Licencias Microsoft utilizadas" = ${contextoIA.licencias.total}
 - "Usuarios con licencia Microsoft" = ${contextoIA.licencias.totalUsuariosConLicencia}
 
@@ -467,14 +504,12 @@ REGLAS PARA MÉTRICAS Y GRÁFICOS:
 - Solo usa datos presentes en el contexto
 - Puedes destacar métricas existentes o derivables directamente del contexto
 - No inventes porcentajes si no se pueden calcular claramente
-- Si propones gráficos, debes usar únicamente uno de estos dataset_key:
-  "tickets_por_categoria"
-  "tickets_top_usuarios"
-  "visitas_por_tecnico"
-  "visitas_por_tipo"
-  "mantenciones_por_status"
-  "mantenciones_por_tecnico"
-  "inventario_por_marca"
+- Los gráficos los decide el sistema según el perfil. Tú solo escribes su lectura en "lecturas_graficos":
+  una frase breve (máximo 25 palabras), positiva y basada en los datos, para cada una de estas claves:
+  ${contextoIA.perfil === "CON_TERRENO"
+      ? `"mantenciones_por_fecha", "visitas_por_tecnico", "actividades_mantenimiento", "solicitudes_programadas_vs_adicionales", "distribucion_servicios", `
+      : ""}"mantenciones_por_tecnico", "mantenciones_por_status", "tickets_top_solicitantes", "tickets_por_categoria", "inventario_por_marca"
+- Si una clave no tiene datos suficientes, déjala como cadena vacía.
 - Propón entre 3 y 5 métricas destacadas
 - Propón entre 2 y 4 gráficos sugeridos
 - Cada gráfico debe incluir una lectura ejecutiva breve y positiva
@@ -511,16 +546,12 @@ ESQUEMA JSON OBLIGATORIO:
       "nombre": "",
       "valor": "",
       "lectura": ""
-    }
+       }
   ],
-  "graficos_sugeridos": [
-    {
-      "tipo": "bar|pie|doughnut|horizontalBar",
-      "titulo": "",
-      "dataset_key": "",
-      "lectura": ""
-    }
-  ],
+  "graficos_sugeridos": [],
+  "lecturas_graficos": {
+    "clave": "lectura breve"
+  },
   "kpis_interpretados": [
     { "nombre": "", "valor": "", "lectura": "" }
   ],
@@ -542,13 +573,13 @@ ESQUEMA JSON OBLIGATORIO:
 }
 
 LÍMITES DE REDACCIÓN:
-- resumen_ejecutivo: 120 a 180 palabras
-- metricas_destacadas: 3 a 5 elementos
-- graficos_sugeridos: 2 a 4 elementos
+- resumen_ejecutivo: 90 a 130 palabras (es una versión ejecutiva y resumida)
+- metricas_destacadas: devuelve un arreglo vacío (las calcula el sistema)
+- graficos_sugeridos: devuelve un arreglo vacío
 - kpis_interpretados: 4 a 6 elementos
 - hallazgos: 3 a 5 elementos
 - riesgos: 3 a 4 elementos
-- recomendaciones: 4 a 6 elementos
+- recomendaciones: 3 a 4 elementos, cada "detalle" de máximo 30 palabras
 - plan_30_60_90: 3 acciones por tramo
 - conclusion: 60 a 100 palabras
 
@@ -618,7 +649,18 @@ ${JSON.stringify(contextoIA, null, 2)}
 
   // Métricas calculadas por backend.
   // Estas NO dependen de la IA, por lo tanto no pueden quedar alteradas.
-  const metricasForzadas = [
+  const solicitantesUnicos = Number(contextoIA.observaciones.totalSolicitantesAtendidos) || 0;
+  const atencionesTerreno = Number(contextoIA.observaciones.totalAtencionesRealizadas) || 0;
+  const atencionesRepetidas = Math.max(0, atencionesTerreno - solicitantesUnicos);
+
+  // Explica en lenguaje simple qué significa el número de atenciones.
+  const textoAtenciones =
+    `Cantidad de veces que un técnico atendió presencialmente a una persona. ` +
+    (atencionesRepetidas > 0
+      ? `Las ${atencionesTerreno} atenciones corresponden a ${solicitantesUnicos} personas: algunas fueron atendidas más de una vez, lo que suma ${atencionesRepetidas} ${atencionesRepetidas === 1 ? "atención adicional" : "atenciones adicionales"}.`
+      : `Cada una de las ${solicitantesUnicos} personas fue atendida una sola vez.`);
+
+  const metricasTerreno = [
     {
       nombre: "Tiempo total en terreno",
       valor: contextoIA.observaciones.duracionTotalVisitas,
@@ -628,21 +670,53 @@ ${JSON.stringify(contextoIA, null, 2)}
     {
       nombre: "Tiempo promedio de atención de solicitantes",
       valor: contextoIA.observaciones.tiempoPromedioAtencionSolicitantes,
-      lectura: `Promedio calculado sobre ${contextoIA.observaciones.totalSolicitantesAtendidos} solicitantes únicos atendidos durante el período.`,
+      lectura: `Tiempo que, en promedio, dedicó el equipo técnico a cada persona atendida: el tiempo total en terreno (${contextoIA.observaciones.duracionTotalVisitas}) dividido entre las ${solicitantesUnicos} personas atendidas.`,
     },
     {
       nombre: "Solicitantes únicos atendidos",
-      valor: String(contextoIA.observaciones.totalSolicitantesAtendidos),
-      lectura:
-        "Cantidad de solicitantes distintos considerados en atenciones con duración válida.",
+      valor: String(solicitantesUnicos),
+      lectura: `Número de personas distintas que recibieron atención en terreno. Cada persona se cuenta una sola vez, aunque haya sido atendida en varias ocasiones.`,
     },
     {
       nombre: "Atenciones a solicitantes",
-      valor: String(contextoIA.observaciones.totalAtencionesRealizadas),
-      lectura:
-        "Cantidad de atenciones presenciales válidas registradas durante el período.",
+      valor: String(atencionesTerreno),
+      lectura: textoAtenciones,
     },
   ];
+
+  /*
+   * Word IA adaptativo: las métricas destacadas las define el sistema según
+   * el perfil. A un cliente remoto no se le muestran métricas de terreno en 0.
+   */
+  const metricasComunes = [
+    {
+      nombre: "Mantenciones remotas",
+      valor: String(contextoIA.mantenciones.total),
+      lectura: `Sesiones de soporte remoto realizadas, con un tiempo total de ${contextoIA.minutosRemotasTexto}.`,
+    },
+    {
+      nombre: "Tickets gestionados",
+      valor: String(contextoIA.tickets.total),
+      lectura: "Requerimientos atendidos por la mesa de ayuda durante el período.",
+    },
+    {
+      nombre: "Equipos registrados",
+      valor: String(contextoIA.equiposTotal),
+      lectura: `${contextoIA.equiposActivos} ${contextoIA.equiposActivos === 1 ? "equipo activo" : "equipos activos"} y ${contextoIA.equiposInactivos} ${contextoIA.equiposInactivos === 1 ? "inactivo" : "inactivos"} (dados de baja) en el inventario del cliente.`,
+    },
+    ...(Number(contextoIA.licencias.totalUsuariosConLicencia) > 0
+      ? [{
+        nombre: "Usuarios con licencia Microsoft",
+        valor: String(contextoIA.licencias.totalUsuariosConLicencia),
+        lectura: "Usuarios con licencias Microsoft 365 asignadas y gestionadas.",
+      }]
+      : []),
+  ].filter((m) => m.valor !== "0" || m.nombre === "Tickets gestionados");
+
+  const metricasForzadas =
+    contextoIA.perfil === "CON_TERRENO"
+      ? [...metricasTerreno, ...metricasComunes]
+      : metricasComunes;
 
   const limpiarMetricasRepetidas = (items: any[]) =>
     items.filter((m: any) => {
@@ -659,9 +733,8 @@ ${JSON.stringify(contextoIA, null, 2)}
       );
     });
 
-  parsed.metricas_destacadas = Array.isArray(parsed.metricas_destacadas)
-    ? limpiarMetricasRepetidas(parsed.metricas_destacadas)
-    : [];
+  // Solo las métricas calculadas por el sistema (la IA ya no agrega otras).
+  parsed.metricas_destacadas = [];
 
   parsed.kpis_interpretados = Array.isArray(parsed.kpis_interpretados)
     ? limpiarMetricasRepetidas(parsed.kpis_interpretados)
@@ -670,6 +743,18 @@ ${JSON.stringify(contextoIA, null, 2)}
   // Insertamos primero los valores validados por backend.
   parsed.metricas_destacadas.unshift(...metricasForzadas);
   parsed.kpis_interpretados.unshift(...metricasForzadas);
+
+  // Perfil y lecturas de gráficos (las reglas del frontend eligen los gráficos)
+  parsed.perfil = contextoIA.perfil;
+  parsed.graficos_sugeridos = [];
+  parsed.lecturas_graficos =
+    parsed.lecturas_graficos && typeof parsed.lecturas_graficos === "object"
+      ? Object.fromEntries(
+        Object.entries(parsed.lecturas_graficos)
+          .filter(([, v]) => typeof v === "string" && v.trim())
+          .map(([k, v]) => [k, normalizarTextoInformeIA(String(v))])
+      )
+      : {};
 
   return parsed;
 }

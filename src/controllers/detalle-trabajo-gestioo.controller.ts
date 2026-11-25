@@ -211,6 +211,18 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        /* Detalle del trabajo: opcional en ENTRADA, obligatorio en SALIDA */
+        const detalleTrabajo =
+            typeof data.detalleTrabajo === "string" && data.detalleTrabajo.trim()
+                ? data.detalleTrabajo.trim()
+                : null;
+
+        if (data.area === "SALIDA" && !detalleTrabajo) {
+            return res.status(400).json({
+                error: "Debe detallar el trabajo realizado o el motivo de salida.",
+            });
+        }
+
         const trabajoFinal = await prisma.$transaction(async (tx) => {
             // Si es SALIDA, cerrar únicamente la ENTRADA
             // perteneciente a esta misma orden/grupo.
@@ -248,6 +260,7 @@ export async function createDetalleTrabajo(req: Request, res: Response) {
                     tipoTrabajo: data.tipoTrabajo || "General",
                     descripcion: data.descripcion ?? null,
                     notas: data.notas ?? null,
+                    detalleTrabajo,
                     area: data.area ?? "ENTRADA",
                     estado:
                         data.area === "SALIDA"
@@ -367,6 +380,12 @@ export async function getDetallesTrabajo(req: Request, res: Response) {
                         },
                         {
                             descripcion: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            detalleTrabajo: {
                                 contains: search,
                                 mode: "insensitive",
                             },
@@ -595,6 +614,20 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
             });
         }
 
+        /* Detalle del trabajo: si no viene en el body se conserva; en SALIDA es obligatorio */
+        const detalleTrabajoFinal =
+            data.detalleTrabajo !== undefined
+                ? typeof data.detalleTrabajo === "string" && data.detalleTrabajo.trim()
+                    ? data.detalleTrabajo.trim()
+                    : null
+                : existing.detalleTrabajo;
+
+        if ((data.area ?? existing.area) === "SALIDA" && !detalleTrabajoFinal) {
+            return res.status(400).json({
+                error: "Debe detallar el trabajo realizado o el motivo de salida.",
+            });
+        }
+
         // Si se está cambiando a ENTRADA sin número de orden → generar número de orden
         const updateData: any = {
             tipoTrabajo: data.tipoTrabajo,
@@ -605,6 +638,7 @@ export async function updateDetalleTrabajo(req: Request, res: Response) {
                     : data.estado ?? existing.estado,
             prioridad: data.prioridad,
             notas: data.notas ?? null,
+            detalleTrabajo: detalleTrabajoFinal,
             area: data.area,
             fecha: data.fecha ? new Date(data.fecha) : existing.fecha,
             ordenGrupoId: existing.ordenGrupoId,

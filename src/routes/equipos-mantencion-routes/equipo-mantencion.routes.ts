@@ -1,6 +1,9 @@
 // src/routes/equipos-mantencion-routes/equipos-mantencion.routes.ts
 import { Router } from "express";
 
+import { auth } from "../../middlewares/auth.js";
+import { empresaIdDeEquipo, validarRecursoEnRuta } from "../../middlewares/recurso-empresa-cliente.js";
+
 import {
     listarMantencionesPorEquipo,
     listarTecnicosParaMantencion,
@@ -11,10 +14,16 @@ import {
 
 const router = Router();
 
-router.get("/export", exportarMantencionesGenerales);
+router.get("/export", auth(), exportarMantencionesGenerales);
 router.post("/mantencion", registrarMantencionEquipo);
 router.post("/instalacion", registrarInstalacionMantGeneral);
 router.get("/tecnicos/select", listarTecnicosParaMantencion);
-router.get("/:id/mantenciones", listarMantencionesPorEquipo);
+/* CRM (JWT). CLIENTE: solo equipos de su empresa */
+router.get(
+    "/:id/mantenciones",
+    auth(),
+    validarRecursoEnRuta("id", empresaIdDeEquipo),
+    listarMantencionesPorEquipo
+);
 
 export default router;

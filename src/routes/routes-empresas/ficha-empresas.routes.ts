@@ -61,7 +61,13 @@ import {
 
 import multer from "multer";
 
-import { auth, onlyOwnEmpresa } from "../../middlewares/auth.js";
+import { auth, onlyOwnEmpresa, requireAuth, soloLecturaCliente, validarEmpresaParam } from "../../middlewares/auth.js";
+import {
+  empresaIdDeServidor,
+  empresaIdDeSucursal,
+  validarRecursoEnRuta,
+  validarRecursoParam,
+} from "../../middlewares/recurso-empresa-cliente.js";
 import { descargarFichaEmpresaPdf } from "../../controllers/controllers-empresas/ficha-empresa-pdf.controller.js";
 import { onlyRole } from "../../middlewares/roles.js";
 
@@ -78,6 +84,14 @@ import {
 } from "../../controllers/controllers-empresas/telefonia.controller.js";
 
 export const fichaEmpresasRouter = Router();
+
+/* Todas las rutas exigen sesión (api usa auth(false), que deja pasar sin token) */
+fichaEmpresasRouter.use(requireAuth);
+/* CLIENTE: solo lectura y solo recursos de su empresa */
+fichaEmpresasRouter.use(soloLecturaCliente);
+fichaEmpresasRouter.param("empresaId", validarEmpresaParam);
+fichaEmpresasRouter.param("servidorId", validarRecursoParam(empresaIdDeServidor));
+fichaEmpresasRouter.param("sucursalId", validarRecursoParam(empresaIdDeSucursal));
 
 const uploadContrato =
   multer({
@@ -153,7 +167,7 @@ fichaEmpresasRouter.delete(
 
 /* ===================== SERVIDORES ===================== */
 fichaEmpresasRouter.get("/:empresaId/servidores", getServidoresByEmpresa);
-fichaEmpresasRouter.get("/servidores/:id", getServidorById);
+fichaEmpresasRouter.get("/servidores/:id", validarRecursoEnRuta("id", empresaIdDeServidor), getServidorById);
 fichaEmpresasRouter.post("/servidores", createServidor);
 fichaEmpresasRouter.put("/servidores/:id", updateServidor);
 fichaEmpresasRouter.patch("/servidores/:id/probado", toggleServidorProbado);

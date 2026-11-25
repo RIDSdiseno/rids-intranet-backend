@@ -1,5 +1,5 @@
 // src/middlewares/auth.ts
-import type { Request, Response, NextFunction, RequestHandler } from "express";
+import type { Request, Response, NextFunction, RequestHandler, RequestParamHandler } from "express";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { asyncLocalStorage, setRequestContext, clearRequestContext } from "../lib/request-context.js";
@@ -27,7 +27,33 @@ interface JwtPayloadCustom {
   empresaId?: number | null;
 }
 
-// Middleware de autenticación que verifica el token JWT y enriquece el request con la información del usuario
+/**
+ * Exige un usuario autenticado. Se usa en routers montados después de
+ * `api.use(auth(false))`, que deja pasar requests sin token.
+ */
+export const requireAuth: RequestHandler = (req, res, next): void => {
+  if (!(req as any).user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+};
+
+/**
+ * El rol CLIENTE solo puede leer (GET/HEAD). Se usa en routers que el portal
+ * muestra en modo «solo visualización» (p. ej. la ficha de empresa).
+ */
+export const soloLecturaCliente: RequestHandler = (req, res, next): void => {
+  const user = (req as any).user;
+
+  if (user?.rol === "CLIENTE" && req.method !== "GET" && req.method !== "HEAD") {
+    res.status(403).json({ error: "Tu cuenta solo puede visualizar esta información" });
+    return;
+  }
+
+  next();
+};
+
 export function auth(required = true): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const header = req.headers.authorization;
@@ -128,6 +154,29 @@ export function auth(required = true): RequestHandler {
     }
   };
 }
+
+/**
+ * G2c: valida el `:empresaId` de la URL para el rol CLIENTE.
+ * `onlyOwnEmpresa()` corre a nivel de `api`, donde `req.params` todavía está vacío,
+ * así que cada router con `:empresaId` lo registra con
+ * `router.param("empresaId", validarEmpresaParam)`. Compara contra `req.user.empresaId`,
+ * que ya trae la empresa elegida con `X-Empresa-Id` (G2a). Para roles internos no hace nada.
+ */
+export const validarEmpresaParam: RequestParamHandler = (req, res, next, valor) => {
+  const user = (req as any).user;
+
+  if (!user || user.rol !== "CLIENTE") {
+    next();
+    return;
+  }
+
+  if (Number(valor) !== user.empresaId) {
+    res.status(403).json({ error: "No tienes acceso a los datos de esta empresa" });
+    return;
+  }
+
+  next();
+};
 
 export function onlyOwnEmpresa(): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
