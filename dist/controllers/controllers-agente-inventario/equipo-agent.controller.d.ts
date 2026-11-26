@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+export declare function esBateriaDeUps(nombre: unknown, fabricante: unknown): boolean;
 export declare function receiveEquipoAgentInventory(req: Request, res: Response): Promise<void>;
 export declare function listEquiposAgent(req: Request, res: Response): Promise<void>;
 export declare function getEquipoAgentById(req: Request, res: Response): Promise<void>;

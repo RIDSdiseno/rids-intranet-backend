@@ -665,6 +665,9 @@ model Equipo {
   anioPcOrigen                String?                 @default("AUTO")
   agenteActivo                Boolean                 @default(false)
   agenteVersion               String?
+  /// Identificador interno del hardware (UUID SMBIOS o serial de placa) enviado por el agente.
+  /// Permite reconocer equipos armados con serial de BIOS genérico.
+  hardwareId                  String?
   diskFreeGb                  Float?
   diskTotalGb                 Float?
   dominio                     String?
@@ -722,6 +725,7 @@ model Equipo {
   @@index([mantGeneralInstalado])
   @@index([mantGeneralLastSeenAt])
   @@index([mantGeneralTecnicoId])
+   @@index([hardwareId])
 }
 
 model Adicional {

@@ -2594,6 +2594,9 @@ function filterEquipoHistoryChanges(value) {
             "lastSeenAt",
             "agenteActivo",
             "estadoAgente",
+            // Metadatos del agente (siempre null -> valor): no son cambios del equipo
+            "origen",
+            "accionAgente",
         ].includes(normalizedField)) {
             continue;
         }
@@ -2695,7 +2698,7 @@ export async function getEquipoHistorial(req, res) {
                 where: {
                     equipoId: id,
                     tipo: {
-                        in: ["INVENTORY_CREATED", "REVISION_SOLICITANTE"],
+                        in: ["INVENTORY_CREATED", "REVISION_SOLICITANTE", "HOSTNAME_RENOMBRADO"],
                     },
                 },
                 orderBy: {

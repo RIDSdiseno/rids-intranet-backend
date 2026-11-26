@@ -119,6 +119,7 @@ export declare function getInventarioByEmpresa(params: InventarioParams): Promis
     anioPcOrigen: string | null;
     agenteActivo: boolean;
     agenteVersion: string | null;
+    hardwareId: string | null;
     diskFreeGb: number | null;
     diskTotalGb: number | null;
     dominio: string | null;

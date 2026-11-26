@@ -1,4 +1,5 @@
 import { prisma, prismaBase } from "../../lib/prisma.js";
+import { obtenerHostnameSugerido } from "../../service/equipos/hostname-sugerido.service.js";
 /* =========================
    HELPERS
 ========================= */
@@ -108,11 +109,56 @@ function boolOrNull(value) {
         return value;
     return null;
 }
+/* Batería de una UPS conectada por USB (Windows la muestra como batería): no indica notebook */
+export function esBateriaDeUps(nombre, fabricante) {
+    const texto = `${cleanString(nombre) ?? ""} ${cleanString(fabricante) ?? ""}`;
+    return /\b(UPS|APC|CYBERPOWER|CYBER POWER|EATON|TRIPP|FORZA|POWERCOM)\b/i.test(texto);
+}
 function boolFromUnknown(value) {
     if (typeof value === "boolean")
         return value;
     if (typeof value === "string")
         return value.toLowerCase() === "true";
+    return false;
+}
+/*
+ * Seriales/UUID genéricos que traen las placas sin programar
+ * (equipos armados): «To be filled by O.E.M.», «Default string», ceros, etc.
+ * No identifican un equipo, así que se tratan como «sin serial».
+ * Misma lista que Test-IdentificadorGenerico del agente.
+ */
+const SERIALES_GENERICOS = new Set([
+    "TO BE FILLED BY O.E.M.",
+    "DEFAULT STRING",
+    "SYSTEM SERIAL NUMBER",
+    "CHASSIS SERIAL NUMBER",
+    "BASE BOARD SERIAL NUMBER",
+    "NOT APPLICABLE",
+    "NOT SPECIFIED",
+    "SERIAL NUMBER",
+    "NONE",
+    "INVALID",
+    "UNKNOWN",
+    "O.E.M.",
+    "OEM",
+]);
+function esIdentificadorGenerico(value) {
+    const v = String(value ?? "").trim().toUpperCase();
+    if (v.length < 4)
+        return true;
+    if (SERIALES_GENERICOS.has(v))
+        return true;
+    if (/TO BE FILLED|O\.E\.M|DEFAULT STRING|SYSTEM SERIAL/.test(v))
+        return true;
+    const alnum = v.replace(/[^A-Z0-9]/g, "");
+    if (alnum.length < 4)
+        return true;
+    if (/^(0+|F+|X+|1+)$/.test(alnum))
+        return true;
+    if (["123456789", "1234567890", "0123456789"].includes(alnum))
+        return true;
+    if (alnum === "03000200040005000006000700080009")
+        return true;
     return false;
 }
 function validateAgentApiKey(req) {
@@ -897,6 +943,24 @@ function addAgentAuditChange(changes, field, before, after) {
         after: after ?? null,
     };
 }
+/* Hostname sugerido para la respuesta al agente: si falla, no interrumpe el envío */
+async function hostnameSugeridoParaAgente(idEquipo) {
+    try {
+        const r = await obtenerHostnameSugerido(idEquipo);
+        return r
+            ? {
+                actual: r.actual,
+                sugerido: r.sugerido,
+                coincide: r.coincide,
+                motivo: r.motivo,
+            }
+            : null;
+    }
+    catch (error) {
+        console.error("⚠️ Hostname sugerido (agente):", error);
+        return null;
+    }
+}
 /* =========================
    POST /api/equipos/agent/inventory
 ========================= */
@@ -942,7 +1006,25 @@ export async function receiveEquipoAgentInventory(req, res) {
                 },
             })
             : null;
-        const serial = cleanString(body.serial)?.toUpperCase() ?? null;
+        const serialRecibido = cleanString(body.serial)?.toUpperCase() ?? null;
+        /*
+         * Los agentes antiguos envían el serial genérico de la BIOS de los
+         * equipos armados (mezclaba varios PC en un mismo equipo): se ignora.
+         */
+        const serial = serialRecibido && !esIdentificadorGenerico(serialRecibido)
+            ? serialRecibido
+            : null;
+        const hardwareIdRecibido = cleanString(body.hardwareId)?.toUpperCase() ?? null;
+        const hardwareId = hardwareIdRecibido && !esIdentificadorGenerico(hardwareIdRecibido)
+            ? hardwareIdRecibido
+            : null;
+        /* Armado: lo informa el agente >= 12, o el serial de BIOS recibido era genérico */
+        const esEquipoArmado = boolFromUnknown(body.esEquipoArmado) ||
+            (serialRecibido !== null && serial === null);
+        /* Notebook: el agente detectó una batería interna (no una UPS). Un armado tiene prioridad. */
+        const esNotebookPorBateria = !esEquipoArmado &&
+            boolFromUnknown(body.bateriaPresente) &&
+            !esBateriaDeUps(body.bateriaNombre, body.bateriaFabricante);
         const hostname = cleanString(body.hostname);
         const solicitanteEmail = normalizeEmailFromUnknown(body.solicitanteEmail);
         const solicitanteEmailFuente = cleanString(body.solicitanteEmailFuente) ?? null;
@@ -1026,6 +1108,30 @@ export async function receiveEquipoAgentInventory(req, res) {
                         },
                     },
                 });
+        }
+        /* Sin coincidencia por serial: se busca por el identificador de hardware */
+        if (!equipo && hardwareId) {
+            equipo = await prisma.equipo.findFirst({
+                where: {
+                    hardwareId,
+                },
+                orderBy: {
+                    id_equipo: "asc",
+                },
+                include: {
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                            empresaId: true,
+                            deletedAt: true,
+                            deactivatedAt: true,
+                            isActive: true,
+                        },
+                    },
+                },
+            });
         }
         if (!equipo && hostname && empresaDetectada?.id_empresa) {
             equipo = await prisma.equipo.findFirst({
@@ -1209,6 +1315,15 @@ export async function receiveEquipoAgentInventory(req, res) {
         };
         if (serial)
             equipoUpdateData.serial = serial;
+        if (hardwareId)
+            equipoUpdateData.hardwareId = hardwareId;
+        /* Equipo armado: solo se corrige el tipo si sigue como GENERICO (no pisa un tipo elegido a mano) */
+        if (esEquipoArmado && equipo && equipo.tipo === "GENERICO") {
+            equipoUpdateData.tipo = "EQUIPO_ARMADO";
+        }
+        else if (esNotebookPorBateria && equipo && equipo.tipo === "GENERICO") {
+            equipoUpdateData.tipo = "NOTEBOOK";
+        }
         if (hostname)
             equipoUpdateData.hostname = hostname;
         if (marca)
@@ -1291,7 +1406,11 @@ export async function receiveEquipoAgentInventory(req, res) {
                             serial: serialForCreate,
                             marca,
                             modelo,
-                            tipo: "GENERICO",
+                            tipo: esEquipoArmado
+                                ? "EQUIPO_ARMADO"
+                                : esNotebookPorBateria
+                                    ? "NOTEBOOK"
+                                    : "GENERICO",
                             propiedad: "Empresa",
                         },
                     });
@@ -1674,6 +1793,27 @@ export async function receiveEquipoAgentInventory(req, res) {
                 },
             });
         }
+        /* Renombrado confirmado por el técnico en el agente (se informa después del reinicio) */
+        const renombrado = body.hostnameRenombrado;
+        const hostnameAnterior = cleanString(renombrado?.anterior);
+        const hostnameNuevo = cleanString(renombrado?.nuevo);
+        if (hostnameAnterior && hostnameNuevo) {
+            const renombradoPor = cleanString(renombrado?.tecnicoEmail) ??
+                cleanString(renombrado?.usuarioWindows) ??
+                "técnico";
+            await prisma.equipoAgenteEvento.create({
+                data: {
+                    equipoId: equipo.id_equipo,
+                    tipo: "HOSTNAME_RENOMBRADO",
+                    mensaje: `Hostname renombrado por ${renombradoPor}: ${hostnameAnterior} → ${hostnameNuevo}`,
+                    metadata: {
+                        Hostname: { before: hostnameAnterior, after: hostnameNuevo },
+                        "Renombrado por": { before: null, after: renombradoPor },
+                        fechaRenombrado: cleanString(renombrado?.fecha),
+                    },
+                },
+            });
+        }
         await syncSoftwares(equipo.id_equipo, body.softwares);
         await syncAdicionalesDetectados(equipo.id_equipo, body.adicionalesDetectados);
         await prisma.equipoAgenteEvento.create({
@@ -1716,6 +1856,14 @@ export async function receiveEquipoAgentInventory(req, res) {
                     fileVaultEstado,
                     solicitanteEmail: solicitanteDetectadoEmailFinal,
                     solicitanteEmailFuente,
+                    /* Identificación de hardware (agente >= 12) */
+                    serialRecibido,
+                    serialFuente: cleanString(body.serialFuente),
+                    serialBios: cleanString(body.serialBios),
+                    serialPlaca: cleanString(body.serialPlaca),
+                    uuidEquipo: cleanString(body.uuidEquipo),
+                    hardwareId,
+                    esEquipoArmado,
                     conflictoCorreos,
                     correoSeleccionadoPorTecnico,
                     seleccionManualPersistida,
@@ -1833,6 +1981,7 @@ export async function receiveEquipoAgentInventory(req, res) {
             motivoRevisionSolicitante,
             clasificado: Boolean(empresaIdFinal && idSolicitanteFinal),
             requiereClasificacion: !empresaIdFinal || !idSolicitanteFinal || requiereRevisionSolicitante,
+            hostnameSugerido: await hostnameSugeridoParaAgente(equipo.id_equipo),
         });
     }
     catch (error) {

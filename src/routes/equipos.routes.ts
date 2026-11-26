@@ -15,6 +15,9 @@ import {
 } from "../controllers/equipos.controller.js";
 import { auth, soloLecturaCliente  } from "../middlewares/auth.js";
 
+import { onlyRole } from "../middlewares/roles.js";
+import { getHostnameSugerido } from "../controllers/equipo-hostname.controller.js";
+
 export const equiposRouter = Router();
 
 /* CLIENTE: solo lectura (crear, editar, reasignar, recalcular y borrar son internos).
@@ -53,6 +56,14 @@ equiposRouter.patch("/reasignar",asyncHandler(reassignEquipos));
 equiposRouter.post("/recalcular-anio-pc",recalcularAnioPcEquipos);
 
 equiposRouter.get("/:id/historial", getEquipoHistorial);
+
+// Hostname sugerido (solo internos, solo lectura)
+equiposRouter.get(
+  "/:id/hostname-sugerido",
+  requireNumericId,
+  onlyRole("ADMIN", "ADMINISTRACION", "TECNICO", "VENTAS"),
+  asyncHandler(getHostnameSugerido)
+);
 
 // Leer uno
 equiposRouter.get("/:id", requireNumericId, asyncHandler(getEquipoById));
