@@ -11,6 +11,8 @@ import {
   normalizarAnioPc,
 } from "../utils/equipos/anio-pc.util.js";
 
+import { estadoAgenteEfectivo, horasSinConexionAgente } from "../service/equipos/estado-agente.service.js";
+
 // Define AuditAction manualmente aquí para que no rompa el código de abajo
 enum AuditAction {
   CREATE = 'CREATE',
@@ -78,7 +80,7 @@ const listQuerySchema = z.object({
 
   // Filtros Agente / Script RIDS
   agente: z
-    .enum(["TODOS", "INSTALADO", "NO_INSTALADO", "ACTIVO", "SIN_CONEXION"])
+    .enum(["TODOS", "INSTALADO", "NO_INSTALADO", "ACTIVO", "SIN_CONEXION", "DESINSTALADO"])
     .default("TODOS")
     .optional(),
 
@@ -827,7 +829,8 @@ function flattenRow(e: any) {
     lastSeenAt: e.lastSeenAt ?? null,
     agenteVersion: e.agenteVersion ?? null,
     agenteActivo: e.agenteActivo ?? false,
-    estadoAgente: e.estadoAgente ?? "SIN_AGENTE",
+    // Mismo criterio que el dashboard de agentes (umbral AGENT_OFFLINE_AFTER_HOURS)
+    estadoAgente: estadoAgenteEfectivo(e.estadoAgente, e.lastSeenAt),
 
     // ===============================
     // MANT.GENERAL RIDS
@@ -1481,10 +1484,21 @@ export async function listEquipos(req: Request, res: Response) {
     /* =========================
     Filtro Agente / Script RIDS
     ========================= */
+    /*
+ * Mismo criterio que el dashboard de agentes: ACTIVO / SIN_CONEXION según
+ * el umbral AGENT_OFFLINE_AFTER_HOURS, y los desinstalados aparte.
+ */
+    const limiteConexionAgente = new Date(
+      Date.now() - horasSinConexionAgente() * 60 * 60 * 1000
+    );
+
     if (q.agente === "INSTALADO") {
       andConditions.push({
         lastSeenAt: {
           not: null,
+        },
+        estadoAgente: {
+          not: "DESINSTALADO",
         },
       });
     }
@@ -1497,13 +1511,29 @@ export async function listEquipos(req: Request, res: Response) {
 
     if (q.agente === "ACTIVO") {
       andConditions.push({
-        agenteActivo: true,
+        lastSeenAt: {
+          gte: limiteConexionAgente,
+        },
+        estadoAgente: {
+          not: "DESINSTALADO",
+        },
       });
     }
 
     if (q.agente === "SIN_CONEXION") {
       andConditions.push({
-        estadoAgente: "SIN_CONEXION",
+        lastSeenAt: {
+          lt: limiteConexionAgente,
+        },
+        estadoAgente: {
+          not: "DESINSTALADO",
+        },
+      });
+    }
+
+    if (q.agente === "DESINSTALADO") {
+      andConditions.push({
+        estadoAgente: "DESINSTALADO",
       });
     }
 
@@ -3501,7 +3531,7 @@ export async function getEquipoHistorial(req: Request, res: Response) {
         where: {
           equipoId: id,
           tipo: {
-            in: ["INVENTORY_CREATED", "REVISION_SOLICITANTE", "HOSTNAME_RENOMBRADO"],
+            in: ["INVENTORY_CREATED", "REVISION_SOLICITANTE", "HOSTNAME_RENOMBRADO", "AGENTE_DESINSTALADO"],
           },
         },
         orderBy: {

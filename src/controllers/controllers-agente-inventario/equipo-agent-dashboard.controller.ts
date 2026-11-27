@@ -9,6 +9,10 @@ import {
     calcularHostnamesEmpresas,
     type HostnameControl,
 } from "../../service/equipos/hostname-sugerido.service.js";
+import {
+    estadoAgenteEfectivo,
+    horasSinConexionAgente,
+} from "../../service/equipos/estado-agente.service.js";
 
 /* =========================================================
    CONSTANTES
@@ -108,6 +112,7 @@ const dashboardQuerySchema = z.object({
         "ACTIVO",
         "SIN_CONEXION",
         "SIN_AGENTE",
+        "DESINSTALADO",
     ]).default("TODOS"),
 
     estadoOneDrive: z.enum([
@@ -139,7 +144,8 @@ const dashboardQuerySchema = z.object({
 type EstadoAgenteCalculado =
     | "ACTIVO"
     | "SIN_CONEXION"
-    | "SIN_AGENTE";
+    | "SIN_AGENTE"
+    | "DESINSTALADO";
 
 type EstadoOneDriveCalculado =
     | "OPERATIVO"
@@ -348,21 +354,33 @@ function buildEquipoEmpresaActivaWhere():
 
 function calcularEstadoAgente(
     lastSeenAt: Date | null,
-    horasSinConexion: number
+    horasSinConexion: number,
+    desinstaladoAt: Date | null = null,
+    estadoGuardado: string | null = null
 ): EstadoAgenteCalculado {
-    if (!lastSeenAt) {
-        return "SIN_AGENTE";
+    /*
+     * El desinstalador avisó después del último envío: el agente ya no está.
+     * Si el agente se reinstala y envía, lastSeenAt queda posterior y vuelve
+     * a calcularse normal.
+     */
+    if (
+        desinstaladoAt &&
+        (!lastSeenAt || desinstaladoAt.getTime() >= lastSeenAt.getTime())
+    ) {
+        return "DESINSTALADO";
     }
 
-    const diferenciaMs =
-        Date.now() - lastSeenAt.getTime();
+    /* Mismo criterio que la ficha del equipo y el listado de Equipos */
+    const estado = estadoAgenteEfectivo(
+        estadoGuardado,
+        lastSeenAt,
+        horasSinConexion
+    );
 
-    const limiteMs =
-        horasSinConexion * 60 * 60 * 1000;
-
-    return diferenciaMs <= limiteMs
+    /* El dashboard no distingue ADVERTENCIA / CRITICO: cuentan como activos */
+    return estado === "ADVERTENCIA" || estado === "CRITICO"
         ? "ACTIVO"
-        : "SIN_CONEXION";
+        : estado;
 }
 
 /* =========================================================
@@ -606,15 +624,8 @@ export async function getEquipoAgentDashboard(
  * Se valida la variable para evitar que un valor inválido
  * deje todos los agentes en un estado incorrecto.
  */
-        const horasSinConexionEnv = Number(
-            process.env.AGENT_OFFLINE_AFTER_HOURS
-        );
-
-        const horasSinConexion =
-            Number.isFinite(horasSinConexionEnv) &&
-                horasSinConexionEnv > 0
-                ? horasSinConexionEnv
-                : 504; // 21 días: el agente corre cada 14 días + 1 semana de margen
+        /* AGENT_OFFLINE_AFTER_HOURS, 504 h (21 días) por defecto: estado-agente.service */
+        const horasSinConexion = horasSinConexionAgente();
 
         const versionRecomendada =
             process.env.AGENT_RECOMMENDED_VERSION?.trim() ||
@@ -864,6 +875,75 @@ export async function getEquipoAgentDashboard(
                 ],
             });
 
+        /*
+ * Último aviso de desinstalación de cada equipo (evento del desinstalador).
+ */
+        const eventosDesinstalacion =
+            equipos.length > 0
+                ? await prisma.equipoAgenteEvento.findMany({
+                    where: {
+                        tipo: "AGENTE_DESINSTALADO",
+                        equipoId: {
+                            in: equipos.map((e) => e.id_equipo),
+                        },
+                    },
+                    select: {
+                        equipoId: true,
+                        createdAt: true,
+                        metadata: true,
+                    },
+                    orderBy: {
+                        createdAt: "desc",
+                    },
+                })
+                : [];
+
+        const desinstalacionPorEquipo =
+            new Map<number, { fecha: Date; por: string | null }>();
+
+        for (const evento of eventosDesinstalacion) {
+            if (desinstalacionPorEquipo.has(evento.equipoId)) continue;
+
+            const metadata = evento.metadata as Record<string, any> | null;
+            const por = metadata?.["Desinstalado por"]?.after;
+
+            desinstalacionPorEquipo.set(evento.equipoId, {
+                fecha: evento.createdAt,
+                por: typeof por === "string" ? por : null,
+            });
+        }
+
+        /*
+  * Tokens de cada equipo:
+  *   - con un token activo            → TOKEN
+  *   - con tokens, pero todos revocados → REVOCADO (no cuenta como key antigua)
+  *   - sin tokens                     → KEY_GLOBAL
+  */
+        const tokensEquipos =
+            equipos.length > 0
+                ? await prisma.agenteToken.findMany({
+                    where: {
+                        equipoId: {
+                            in: equipos.map((e) => e.id_equipo),
+                        },
+                    },
+                    select: { equipoId: true, revocadoAt: true },
+                })
+                : [];
+
+        const equiposConToken = new Set<number>();
+        const equiposConTokenRevocado = new Set<number>();
+
+        for (const t of tokensEquipos) {
+            if (t.equipoId === null) continue;
+
+            if (t.revocadoAt === null) {
+                equiposConToken.add(t.equipoId);
+            } else {
+                equiposConTokenRevocado.add(t.equipoId);
+            }
+        }
+
         const itemsTodos =
             equipos.map((equipo) => {
                 const empresaFinal =
@@ -871,10 +951,15 @@ export async function getEquipoAgentDashboard(
                     equipo.solicitante?.empresa ??
                     null;
 
+                const desinstalacion =
+                    desinstalacionPorEquipo.get(equipo.id_equipo) ?? null;
+
                 const estadoAgenteCalculado =
                     calcularEstadoAgente(
                         equipo.lastSeenAt,
-                        horasSinConexion
+                        horasSinConexion,
+                        desinstalacion?.fecha ?? null,
+                        equipo.estadoAgente
                     );
 
                 const estadoOneDriveCalculado =
@@ -1091,6 +1176,25 @@ export async function getEquipoAgentDashboard(
 
                         estado:
                             estadoAgenteCalculado,
+
+                        /* TOKEN | REVOCADO | KEY_GLOBAL; null si no tiene agente o está desinstalado */
+                        autenticacion:
+                            estadoAgenteCalculado === "SIN_AGENTE" ||
+                                estadoAgenteCalculado === "DESINSTALADO"
+                                ? null
+                                : equiposConToken.has(equipo.id_equipo)
+                                    ? "TOKEN"
+                                    : equiposConTokenRevocado.has(equipo.id_equipo)
+                                        ? "REVOCADO"
+                                        : "KEY_GLOBAL",
+
+                        desinstalado:
+                            estadoAgenteCalculado === "DESINSTALADO" && desinstalacion
+                                ? {
+                                    fecha: desinstalacion.fecha,
+                                    por: desinstalacion.por,
+                                }
+                                : null,
 
                         version:
                             equipo.agenteVersion,
@@ -1563,6 +1667,20 @@ export async function getEquipoAgentDashboard(
                     (item) =>
                         item.agente.estado ===
                         "SIN_AGENTE"
+                ).length,
+
+            agentesDesinstalados:
+                items.filter(
+                    (item) =>
+                        item.agente.estado ===
+                        "DESINSTALADO"
+                ).length,
+
+            agentesKeyGlobal:
+                items.filter(
+                    (item) =>
+                        item.agente.autenticacion ===
+                        "KEY_GLOBAL"
                 ).length,
 
             agentesDesactualizados:

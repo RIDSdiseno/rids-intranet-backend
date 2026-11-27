@@ -349,11 +349,24 @@ export async function calcularHostnamesEmpresas(
             conteoEmpresa.set(h, (conteoEmpresa.get(h) ?? 0) + 1);
         }
 
-        const calcular = (e: (typeof lista)[number], reservados: Set<string>) => {
+        /*
+ * ignorarPropio (solo paso 1): los otros equipos con el MISMO nombre no
+ * cuentan como ocupado; el primero (menor id) lo reserva y los demas
+ * quedan para el paso 2.
+ */
+        const calcular = (
+            e: (typeof lista)[number],
+            reservados: Set<string>,
+            ignorarPropio = false
+        ) => {
             const ocupados = new Set<string>(reservados);
+            const propio = e.hostname?.trim().toUpperCase() ?? "";
 
             for (const [id, h] of hostnames) {
-                if (id !== e.id_equipo) ocupados.add(h);
+                if (id === e.id_equipo) continue;
+                if (ignorarPropio && h === propio) continue;
+
+                ocupados.add(h);
             }
 
             return sugerirHostname({
@@ -373,9 +386,13 @@ export async function calcularHostnamesEmpresas(
         const asignados = new Map<number, ReturnType<typeof sugerirHostname>>();
         const reservados = new Set<string>();
 
-        /* 1) Conservan su nombre los que ya lo tienen valido */
+        /*
+  * 1) Conservan su nombre los que ya lo tienen valido. Si varios equipos
+  *    comparten el mismo nombre valido (imagen clonada), lo conserva el
+  *    de menor id y el resto recibe uno nuevo en el paso 2.
+  */
         for (const e of participantes) {
-            const r = calcular(e, new Set());
+            const r = calcular(e, reservados, true);
             const actual = e.hostname?.trim().toUpperCase() ?? "";
 
             if (r.sugerido && actual === r.sugerido) {

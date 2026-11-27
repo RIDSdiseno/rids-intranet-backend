@@ -3,6 +3,14 @@ import type { Request, Response } from "express";
 import { prisma, prismaBase } from "../../lib/prisma.js";
 
 import { obtenerHostnameSugerido } from "../../service/equipos/hostname-sugerido.service.js";
+import { estadoAgenteEfectivo } from "../../service/equipos/estado-agente.service.js";
+
+import {
+    autenticarAgente,
+    equipoTuvoToken,
+    MENSAJE_KEY_GLOBAL_RECHAZADA,
+    vincularTokenAEquipo,
+} from "../../service/agente/agente-auth.service.js";
 
 type EquipoAgentPayload = {
     empresaId?: number | string | null;
@@ -169,7 +177,7 @@ type EquipoAgentPayload = {
    HELPERS
 ========================= */
 
-function cleanString(
+export function cleanString(
     value: unknown
 ): string | null {
 
@@ -360,7 +368,7 @@ const SERIALES_GENERICOS = new Set([
     "OEM",
 ]);
 
-function esIdentificadorGenerico(value: string | null | undefined): boolean {
+export function esIdentificadorGenerico(value: string | null | undefined): boolean {
     const v = String(value ?? "").trim().toUpperCase();
 
     if (v.length < 4) return true;
@@ -377,7 +385,7 @@ function esIdentificadorGenerico(value: string | null | undefined): boolean {
     return false;
 }
 
-function validateAgentApiKey(req: Request): boolean {
+export function validateAgentApiKey(req: Request): boolean {
     const expected = process.env.WINDOWS_AGENT_API_KEY?.trim();
     const received = req.header("x-agent-api-key")?.trim();
 
@@ -1900,7 +1908,10 @@ async function hostnameSugeridoParaAgente(idEquipo: number) {
 
 export async function receiveEquipoAgentInventory(req: Request, res: Response) {
     try {
-        if (!validateAgentApiKey(req)) {
+        /* Token del equipo (agente >= 12.1) o key global (agentes antiguos) */
+        const autenticacion = await autenticarAgente(req);
+
+        if (!autenticacion) {
             res.status(401).json({
                 ok: false,
                 error: "No autorizado",
@@ -2107,7 +2118,38 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
 
         let equipo: any = null;
 
-        if (serial) {
+        /*
+         * Token ya asociado a un equipo: se actualiza ESE equipo, sin buscar por
+         * serial / hardwareId / hostname (un token no puede escribir en otro equipo).
+         */
+        if (autenticacion.tipo === "TOKEN" && autenticacion.equipoId) {
+            equipo = await prisma.equipo.findFirst({
+                where: { id_equipo: autenticacion.equipoId },
+                include: {
+                    solicitante: {
+                        select: {
+                            id_solicitante: true,
+                            nombre: true,
+                            email: true,
+                            empresaId: true,
+                            deletedAt: true,
+                            deactivatedAt: true,
+                            isActive: true,
+                        },
+                    },
+                },
+            });
+
+            if (!equipo) {
+                res.status(401).json({
+                    ok: false,
+                    error: "El equipo del token ya no existe en el CRM. Reinstale el agente con un código de instalación.",
+                });
+                return;
+            }
+        }
+
+        if (!equipo && serial) {
             equipo =
                 await prisma.equipo.findFirst({
                     where: {
@@ -2195,6 +2237,19 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
                     },
                 },
             });
+        }
+
+        /*
+ * Key global contra un equipo que ya tuvo token: se rechaza ANTES de
+ * modificar nada. Así un token revocado no se reemplaza con la key antigua.
+ */
+        if (
+            autenticacion.tipo === "KEY_GLOBAL" &&
+            equipo &&
+            (await equipoTuvoToken(equipo.id_equipo))
+        ) {
+            res.status(403).json({ ok: false, error: MENSAJE_KEY_GLOBAL_RECHAZADA });
+            return;
         }
 
         const solicitanteActualId = equipo?.idSolicitante ?? null;
@@ -3445,6 +3500,11 @@ export async function receiveEquipoAgentInventory(req: Request, res: Response) {
             });
         }
 
+        /* Token de una instalación nueva: se asocia al equipo en su primer inventario */
+        if (autenticacion.tipo === "TOKEN" && !autenticacion.equipoId) {
+            await vincularTokenAEquipo(autenticacion.tokenId, equipo.id_equipo);
+        }
+
         await syncSoftwares(equipo.id_equipo, body.softwares);
 
         await syncAdicionalesDetectados(
@@ -3996,6 +4056,17 @@ export async function getEquipoAgentById(req: Request, res: Response) {
 
             equipo: {
                 ...equipo,
+
+                /*
+                 * Estado que ve el usuario: mismo criterio que el dashboard
+                 * (Desinstalado / Sin conexión / Sin agente / Activo).
+                 * El valor guardado sigue disponible en estadoAgenteGuardado.
+                 */
+                estadoAgente: estadoAgenteEfectivo(
+                    equipo.estadoAgente,
+                    equipo.lastSeenAt
+                ),
+                estadoAgenteGuardado: equipo.estadoAgente,
 
                 /*
                  * Compatibilidad temporal con

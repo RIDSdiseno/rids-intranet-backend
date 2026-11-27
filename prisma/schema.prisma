@@ -665,9 +665,6 @@ model Equipo {
   anioPcOrigen                String?                 @default("AUTO")
   agenteActivo                Boolean                 @default(false)
   agenteVersion               String?
-  /// Identificador interno del hardware (UUID SMBIOS o serial de placa) enviado por el agente.
-  /// Permite reconocer equipos armados con serial de BIOS genérico.
-  hardwareId                  String?
   diskFreeGb                  Float?
   diskTotalGb                 Float?
   dominio                     String?
@@ -696,6 +693,9 @@ model Equipo {
   mantGeneralTecnicoId        Int?
   mantGeneralVersion          String?
   propietarioExterno          String?
+  /// Identificador interno del hardware (UUID SMBIOS o serial de placa) enviado por el agente.
+  /// Permite reconocer equipos armados con serial de BIOS genérico.
+  hardwareId                  String?
   solicitante                 Solicitante?            @relation(fields: [idSolicitante], references: [id_solicitante])
   detalle                     DetalleEquipo?
   detalleTrabajosGestioo      DetalleTrabajoGestioo[] @relation("EquipoToTrabajoGestioo")
@@ -725,7 +725,7 @@ model Equipo {
   @@index([mantGeneralInstalado])
   @@index([mantGeneralLastSeenAt])
   @@index([mantGeneralTecnicoId])
-   @@index([hardwareId])
+  @@index([hardwareId])
 }
 
 model Adicional {
@@ -872,6 +872,41 @@ model EquipoAgenteEvento {
   @@index([equipoId])
   @@index([tipo])
   @@index([createdAt])
+}
+
+/// Código de instalación del agente (generado en el CRM, vigencia 24 h, varios equipos).
+/// Solo se guarda el hash; el código en claro se muestra una vez al generarlo.
+model AgenteCodigoInstalacion {
+  id             Int       @id @default(autoincrement())
+  codigoHash     String    @unique
+  /// Últimos 4 caracteres, para identificarlo en el listado
+  codigoFin      String
+  creadoPorId    Int?
+  creadoPorEmail String?
+  expiraAt       DateTime
+  revocadoAt     DateTime?
+  usos           Int       @default(0)
+  createdAt      DateTime  @default(now())
+
+  @@index([expiraAt])
+}
+
+/// Token del agente por equipo (x-agent-token). Solo se guarda el hash.
+/// equipoId queda null hasta el primer inventario si el equipo aún no existía.
+model AgenteToken {
+  id               Int       @id @default(autoincrement())
+  equipoId         Int?
+  tokenHash        String    @unique
+  /// CODIGO (instalación con código del CRM) | MIGRACION (agente ya instalado, con la key global)
+  origen           String
+  codigoId         Int?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime?
+  revocadoAt       DateTime?
+  /// REEMPLAZADO | DESINSTALADO | REVOCADO_CRM
+  motivoRevocacion String?
+
+  @@index([equipoId])
 }
 
 model EquipoMantencion {
@@ -3436,6 +3471,7 @@ enum EstadoAgenteEquipo {
   SIN_CONEXION
   ADVERTENCIA
   CRITICO
+  DESINSTALADO
 }
 
 enum OrigenVisita {

@@ -6,6 +6,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { api } from "./routes.js";
+import { parserCuerpoAgente } from "./middlewares/agent-body-encoding.js";
 import { prisma } from "./lib/prisma.js";
 
 //import path from "path";
@@ -132,6 +133,17 @@ app.options(/.*/, cors(corsOptions));
 app.use(
   ["/api/public", "/api/proteccion-datos/publico"],
   express.json({ limit: "128kb" })
+);
+
+/*
+ * Agente de inventario: los agentes antiguos (PowerShell 5.1) envían el JSON en
+ * Windows-1252. Este parser lo detecta y lo convierte a UTF-8 (si no, cada tilde
+ * quedaba como «�»). Debe ir ANTES del parser general: al leer el body, el de
+ * 60 MB lo omite.
+ */
+app.use(
+  ["/api/equipos/agent/inventory", "/api/equipos/agent/uninstall", "/api/equipos/agent/registro"],
+  parserCuerpoAgente
 );
 
 /* ========= Parsers ========= */
