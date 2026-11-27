@@ -5,6 +5,10 @@ import { fromZonedTime } from "date-fns-tz";
 import { z } from "zod";
 
 import { prisma } from "../../lib/prisma.js";
+import {
+    calcularHostnamesEmpresas,
+    type HostnameControl,
+} from "../../service/equipos/hostname-sugerido.service.js";
 
 /* =========================================================
    CONSTANTES
@@ -1456,6 +1460,18 @@ export async function getEquipoAgentDashboard(
                         )
                 );
 
+        /*
+ * Hostname sugerido y repetidos (solo usuarios internos).
+ * Se calcula sobre itemsBase, con el solicitante actual de cada equipo.
+ */
+        const hostnamesControl: Map<number, HostnameControl> = isCliente
+            ? new Map()
+            : await calcularHostnamesEmpresas(
+                itemsBase
+                    .map((item) => item.empresa?.id)
+                    .filter((id): id is number => typeof id === "number")
+            );
+
         const items =
             itemsBase.filter((item) => {
                 if (
@@ -1627,6 +1643,17 @@ export async function getEquipoAgentDashboard(
                         "CON_FALLAS"
                 ).length,
         };
+
+        const hostnameNoEstandar = isCliente
+            ? null
+            : items.filter((item) => {
+                const h = hostnamesControl.get(item.idEquipo);
+                return Boolean(h?.sugerido && !h.coincide);
+            }).length;
+
+        const hostnameRepetidos = isCliente
+            ? null
+            : items.filter((item) => hostnamesControl.get(item.idEquipo)?.repetido).length;
 
         const porcentajeAnalizados =
             resumen.totalEquipos > 0
@@ -1842,6 +1869,8 @@ export async function getEquipoAgentDashboard(
             resumen: {
                 ...resumen,
                 porcentajeAnalizados,
+                hostnameNoEstandar,
+                hostnameRepetidos,
             },
 
             graficos: {
@@ -1856,7 +1885,10 @@ export async function getEquipoAgentDashboard(
                 coberturaPorEmpresa,
             },
 
-            items,
+            items: items.map((item) => ({
+                ...item,
+                hostnameControl: hostnamesControl.get(item.idEquipo) ?? null,
+            })),
 
             /* Equipos que no entran al dashboard, con su explicación */
             excluidos,

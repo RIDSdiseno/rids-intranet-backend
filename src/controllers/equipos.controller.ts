@@ -24,11 +24,32 @@ type PropiedadEquipo = (typeof PROPIEDADES_EQUIPO)[number];
 
 /* ================== Schemas ================== */
 
+/* Campos del selector «Buscar en:» (antes del esquema, que los usa) */
+const CAMPOS_BUSQUEDA_EQUIPO = [
+  "GENERAL",
+  "ID",
+  "SERIAL",
+  "HOSTNAME",
+  "SOLICITANTE",
+  "EMPRESA",
+  "MARCA_MODELO",
+  "IP",
+  "MAC",
+  "RUT",
+] as const;
+
+type CampoBusquedaEquipo = (typeof CAMPOS_BUSQUEDA_EQUIPO)[number];
+
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(1000).default(20),
 
   search: z.string().trim().optional(),
+  // Selector «Buscar en:» (GENERAL = búsqueda en todos los campos, como siempre)
+  searchField: z
+    .enum(CAMPOS_BUSQUEDA_EQUIPO)
+    .default("GENERAL")
+    .optional(),
   marca: z.string().trim().optional(),
   tipo: z.nativeEnum(TipoEquipo).optional(),
 
@@ -303,6 +324,125 @@ function normalizeDateOnly(value?: string | null): string | null {
   }
 
   return null;
+}
+/* =========================
+   Búsqueda por campo (selector «Buscar en:»)
+========================= */
+/* Variantes de una MAC escrita sin separadores: F0D5BF -> F0-D5-BF y F0:D5:BF */
+function variantesMac(texto: string): string[] {
+  const limpia = normalizeMacSearch(texto);
+  const variantes = new Set<string>([texto.trim()]);
+
+  if (limpia.length >= 2) {
+    const pares = limpia.match(/.{1,2}/g) ?? [];
+
+    variantes.add(limpia);
+    variantes.add(pares.join("-"));
+    variantes.add(pares.join(":"));
+  }
+
+  return Array.from(variantes).filter(Boolean);
+}
+
+function buildBusquedaPorCampo(
+  campo: Exclude<CampoBusquedaEquipo, "GENERAL">,
+  texto: string,
+  INS: Prisma.QueryMode,
+  solicitanteIdsByRut: number[]
+): Prisma.EquipoWhereInput {
+  const contiene = { contains: texto, mode: INS };
+
+  switch (campo) {
+    case "ID": {
+      const id = Number(texto.replace(/^#/, "").trim());
+
+      return Number.isInteger(id) && id > 0
+        ? { id_equipo: id }
+        : { id_equipo: -1 };
+    }
+
+    case "SERIAL":
+      return { serial: contiene };
+
+    case "HOSTNAME":
+      return { hostname: contiene };
+
+    case "SOLICITANTE":
+      return {
+        solicitante: {
+          is: {
+            OR: [{ nombre: contiene }, { email: contiene }],
+          },
+        },
+      };
+
+    case "EMPRESA": {
+      const empresaCoincide: Prisma.EmpresaWhereInput = {
+        OR: [{ nombre: contiene }, { razonSocial: contiene }],
+      };
+
+      return {
+        OR: [
+          { empresa: { is: empresaCoincide } },
+          { solicitante: { is: { empresa: { is: empresaCoincide } } } },
+        ],
+      };
+    }
+
+    case "MARCA_MODELO": {
+      /* Cada palabra debe estar en la marca o en el modelo: «HP EliteBook» */
+      const palabras = texto.split(/\s+/).filter(Boolean);
+
+      return {
+        AND: palabras.map((palabra) => ({
+          OR: [
+            { marca: { contains: palabra, mode: INS } },
+            { modelo: { contains: palabra, mode: INS } },
+          ],
+        })),
+      };
+    }
+
+    case "IP":
+      return {
+        OR: [{ localIp: contiene }, { publicIp: contiene }],
+      };
+
+    case "MAC": {
+      const condiciones: Prisma.EquipoWhereInput[] = [];
+
+      for (const variante of variantesMac(texto)) {
+        const c = { contains: variante, mode: INS };
+
+        condiciones.push(
+          { macAddress: c },
+          { detalle: { is: { macWifi: c } } },
+          { detalle: { is: { redEthernet: c } } },
+        );
+      }
+
+      return { OR: condiciones };
+    }
+
+    case "RUT": {
+      const rutLimpio = normalizeRutSearch(texto);
+      const condiciones: Prisma.EquipoWhereInput[] = [
+        { solicitante: { is: { rut: contiene } } },
+      ];
+
+      if (rutLimpio) {
+        condiciones.push({
+          solicitante: { is: { rut: { contains: rutLimpio, mode: INS } } },
+        });
+      }
+
+      if (solicitanteIdsByRut.length > 0) {
+        condiciones.push({ idSolicitante: { in: solicitanteIdsByRut } });
+      }
+
+      return { OR: condiciones };
+    }
+  }
 }
 
 function normalizeRutSearch(value?: string | null): string {
@@ -1381,9 +1521,25 @@ export async function listEquipos(req: Request, res: Response) {
     }
 
     /* =========================
+   Búsqueda por campo específico (selector «Buscar en:»)
+========================= */
+    const campoBusqueda: CampoBusquedaEquipo = q.searchField ?? "GENERAL";
+
+    if (searchText && campoBusqueda !== "GENERAL") {
+      andConditions.push(
+        buildBusquedaPorCampo(
+          campoBusqueda,
+          searchText,
+          INS,
+          solicitanteIdsByRut
+        )
+      );
+    }
+
+    /* =========================
        Búsqueda general
     ========================= */
-    if (searchText) {
+    if (searchText && campoBusqueda === "GENERAL") {
       const orConditions: Prisma.EquipoWhereInput[] = [
         // Datos principales del equipo
         {

@@ -88,6 +88,24 @@ export function calcularParteSolicitante(nombre: string): string | null {
     return `${primera.charAt(0)}${apellido}`;
 }
 
+/** Solicitante de relleno «[SIN SOLICITANTE]»: se trata como equipo sin solicitante. */
+export function esSolicitanteDeRelleno(nombre: string): boolean {
+    return nombre.trim().toUpperCase() === "[SIN SOLICITANTE]";
+}
+
+/** Equipo Mac (marca Apple, agente Mac o macOS): no recibe hostname sugerido. */
+export function esEquipoMac(datos: {
+    marca?: string | null;
+    agenteVersion?: string | null;
+    sistemaOperativo?: string | null;
+}): boolean {
+    return (
+        /^apple$/i.test((datos.marca ?? "").trim()) ||
+        /mac/i.test(datos.agenteVersion ?? "") ||
+        /mac\s?os|darwin/i.test(datos.sistemaOperativo ?? "")
+    );
+}
+
 export function prefijoTipo(tipo: string): string {
     return tipo === "NOTEBOOK" ? "NT" : "WS";
 }
@@ -121,6 +139,7 @@ export type HostnameSugeridoResultado = {
  */
 export function sugerirHostname(params: {
     tipo: string;
+    esMac?: boolean;
     hostnameActual: string | null;
     nombreEmpresa: string | null;
     nombreSolicitante: string | null;
@@ -132,6 +151,16 @@ export function sugerirHostname(params: {
     sigla: string | null;
     parteSolicitante: string | null;
 } {
+    if (params.esMac) {
+        return {
+            sugerido: null,
+            motivo: "Los equipos Mac no reciben hostname sugerido.",
+            prefijo: null,
+            sigla: null,
+            parteSolicitante: null,
+        };
+    }
+
     if (!TIPOS_PC.has(params.tipo)) {
         return {
             sugerido: null,
@@ -157,9 +186,10 @@ export function sugerirHostname(params: {
     const base = `${prefijo}-${sigla}-`;
     const actual = (params.hostnameActual ?? "").trim().toUpperCase();
 
-    const parteSolicitante = params.nombreSolicitante
-        ? calcularParteSolicitante(params.nombreSolicitante)
-        : null;
+    const parteSolicitante =
+        params.nombreSolicitante && !esSolicitanteDeRelleno(params.nombreSolicitante)
+            ? calcularParteSolicitante(params.nombreSolicitante)
+            : null;
 
     // Sin solicitante: correlativo 01..99 dentro de la empresa
     if (!parteSolicitante) {
@@ -207,6 +237,193 @@ export function sugerirHostname(params: {
     };
 }
 
+export type HostnameControl = {
+    sugerido: string | null;
+    coincide: boolean;
+    motivo: string | null;
+    prefijo: string | null;
+    sigla: string | null;
+    parteSolicitante: string | null;
+    sinSolicitante: boolean;
+    /* El hostname actual lo tienen otros equipos de la MISMA empresa */
+    repetido: boolean;
+    /* Equipos de la empresa con ese hostname (1 = único) */
+    repeticiones: number;
+    /* Equipos de todo el CRM con ese hostname (informativo) */
+    repeticionesCrm: number;
+};
+
+/* Estados que no reciben sugerencia (ya no estan en uso por la empresa) */
+const ESTADOS_SIN_SUGERENCIA = new Set(["DADO_DE_BAJA", "VENDIDO"]);
+
+/**
+ * Hostname sugerido para TODOS los equipos de las empresas indicadas.
+ *
+ * Se calcula por empresa completa (no depende de filtros ni busquedas) para que
+ * cada equipo reciba un nombre distinto:
+ *   1) los equipos cuyo hostname actual ya es valido lo conservan;
+ *   2) el resto, en orden de id, toma el primer candidato libre que no este
+ *      ocupado por otro equipo ni reservado para otro equipo de la empresa
+ *      (correlativos 01, 02, 03... y sufijos 2, 3... para nombres repetidos).
+ *
+ * El detalle del equipo y el agente usan esta misma funcion, asi que todos
+ * muestran la misma sugerencia. Usa 3 consultas en total.
+ */
+export async function calcularHostnamesEmpresas(
+    empresaIds: number[]
+): Promise<Map<number, HostnameControl>> {
+    const resultado = new Map<number, HostnameControl>();
+
+    const ids = Array.from(new Set(empresaIds.filter((id) => Number.isInteger(id) && id > 0)));
+
+    if (ids.length === 0) return resultado;
+
+    const equipos = await prisma.equipo.findMany({
+        where: {
+            deletedAt: null,
+            OR: [
+                { empresaId: { in: ids } },
+                { empresaId: null, solicitante: { is: { empresaId: { in: ids } } } },
+            ],
+        },
+        select: {
+            id_equipo: true,
+            tipo: true,
+            estado: true,
+            hostname: true,
+            marca: true,
+            agenteVersion: true,
+            empresaId: true,
+            detalle: { select: { so: true } },
+            solicitante: { select: { nombre: true, empresaId: true } },
+        },
+        orderBy: { id_equipo: "asc" },
+    });
+
+    const empresas = await prisma.empresa.findMany({
+        where: { id_empresa: { in: ids } },
+        select: { id_empresa: true, nombre: true },
+    });
+
+    const nombreEmpresa = new Map(empresas.map((e) => [e.id_empresa, e.nombre]));
+
+    /* Hostnames repetidos en todo el CRM (informativo) */
+    const filasRepetidos = await prisma.$queryRaw<Array<{ h: string; n: number }>>`
+        SELECT upper(trim(hostname)) AS h, count(*)::int AS n
+        FROM "Equipo"
+        WHERE "deletedAt" IS NULL AND hostname IS NOT NULL AND trim(hostname) <> ''
+        GROUP BY 1
+        HAVING count(*) > 1
+    `;
+
+    const repetidosCrm = new Map(filasRepetidos.map((r) => [r.h, Number(r.n)]));
+
+    /* Agrupar por empresa */
+    const porEmpresa = new Map<number, typeof equipos>();
+
+    for (const e of equipos) {
+        const empresaId = e.empresaId ?? e.solicitante?.empresaId ?? null;
+
+        if (empresaId === null) continue;
+
+        const lista = porEmpresa.get(empresaId) ?? [];
+        lista.push(e);
+        porEmpresa.set(empresaId, lista);
+    }
+
+    for (const [empresaId, lista] of porEmpresa) {
+        /* Dados de baja y vendidos: no reciben sugerencia y su nombre queda libre */
+        const participantes = lista.filter((e) => !ESTADOS_SIN_SUGERENCIA.has(String(e.estado)));
+
+        /* idEquipo -> HOSTNAME actual de los equipos en uso de la empresa */
+        const hostnames = new Map<number, string>();
+
+        for (const e of participantes) {
+            const h = e.hostname?.trim().toUpperCase();
+            if (h) hostnames.set(e.id_equipo, h);
+        }
+
+        const conteoEmpresa = new Map<string, number>();
+
+        for (const h of hostnames.values()) {
+            conteoEmpresa.set(h, (conteoEmpresa.get(h) ?? 0) + 1);
+        }
+
+        const calcular = (e: (typeof lista)[number], reservados: Set<string>) => {
+            const ocupados = new Set<string>(reservados);
+
+            for (const [id, h] of hostnames) {
+                if (id !== e.id_equipo) ocupados.add(h);
+            }
+
+            return sugerirHostname({
+                tipo: String(e.tipo),
+                esMac: esEquipoMac({
+                    marca: e.marca,
+                    agenteVersion: e.agenteVersion,
+                    sistemaOperativo: e.detalle?.so ?? null,
+                }),
+                hostnameActual: e.hostname,
+                nombreEmpresa: nombreEmpresa.get(empresaId) ?? null,
+                nombreSolicitante: e.solicitante?.nombre ?? null,
+                ocupados,
+            });
+        };
+
+        const asignados = new Map<number, ReturnType<typeof sugerirHostname>>();
+        const reservados = new Set<string>();
+
+        /* 1) Conservan su nombre los que ya lo tienen valido */
+        for (const e of participantes) {
+            const r = calcular(e, new Set());
+            const actual = e.hostname?.trim().toUpperCase() ?? "";
+
+            if (r.sugerido && actual === r.sugerido) {
+                asignados.set(e.id_equipo, r);
+                reservados.add(r.sugerido);
+            }
+        }
+
+        /* 2) El resto toma el primer candidato libre, en orden de id */
+        for (const e of participantes) {
+            if (asignados.has(e.id_equipo)) continue;
+
+            const r = calcular(e, reservados);
+            asignados.set(e.id_equipo, r);
+
+            if (r.sugerido) reservados.add(r.sugerido);
+        }
+
+        for (const e of participantes) {
+            const r = asignados.get(e.id_equipo)!;
+            const actual = e.hostname?.trim().toUpperCase() ?? "";
+            const esMac = esEquipoMac({
+                marca: e.marca,
+                agenteVersion: e.agenteVersion,
+                sistemaOperativo: e.detalle?.so ?? null,
+            });
+            const repeticiones = actual ? conteoEmpresa.get(actual) ?? 1 : 0;
+
+            resultado.set(e.id_equipo, {
+                sugerido: r.sugerido,
+                coincide: Boolean(r.sugerido && actual === r.sugerido),
+                motivo: r.motivo,
+                prefijo: r.prefijo,
+                sigla: r.sigla,
+                parteSolicitante: r.parteSolicitante,
+                sinSolicitante:
+                    !e.solicitante || esSolicitanteDeRelleno(e.solicitante.nombre),
+                /* Los Mac quedan fuera del control de hostnames */
+                repetido: !esMac && repeticiones > 1,
+                repeticiones,
+                repeticionesCrm: actual ? repetidosCrm.get(actual) ?? 1 : 0,
+            });
+        }
+    }
+
+    return resultado;
+}
+
 /** Carga los datos del equipo y calcula el hostname sugerido. null = equipo no existe. */
 export async function obtenerHostnameSugerido(
     idEquipo: number
@@ -217,15 +434,46 @@ export async function obtenerHostnameSugerido(
             id_equipo: true,
             tipo: true,
             hostname: true,
+            marca: true,
+            agenteVersion: true,
             empresaId: true,
             empresa: { select: { nombre: true } },
             solicitante: { select: { nombre: true, empresaId: true } },
+            detalle: { select: { so: true } },
         },
     });
 
     if (!equipo) return null;
 
     const empresaId = equipo.empresaId ?? equipo.solicitante?.empresaId ?? null;
+
+    /*
+     * Mismo calculo que el dashboard (por empresa completa), para que cada
+     * equipo reciba un nombre distinto. Los dados de baja / vendidos no estan
+     * en el calculo por empresa y siguen con el calculo individual de abajo.
+     */
+    if (empresaId) {
+        const h = (await calcularHostnamesEmpresas([empresaId])).get(equipo.id_equipo);
+
+        if (h) {
+            const actualEquipo = equipo.hostname?.trim() || null;
+
+            return {
+                ok: true,
+                idEquipo: equipo.id_equipo,
+                actual: actualEquipo,
+                sugerido: h.sugerido,
+                coincide: h.coincide,
+                motivo: h.motivo,
+                detalle: {
+                    prefijo: h.prefijo,
+                    sigla: h.sigla,
+                    parteSolicitante: h.parteSolicitante,
+                    sinSolicitante: h.sinSolicitante,
+                },
+            };
+        }
+    }
 
     let nombreEmpresa = equipo.empresa?.nombre ?? null;
 
@@ -264,6 +512,11 @@ export async function obtenerHostnameSugerido(
         hostnameActual: equipo.hostname,
         nombreEmpresa,
         nombreSolicitante: equipo.solicitante?.nombre ?? null,
+        esMac: esEquipoMac({
+            marca: equipo.marca,
+            agenteVersion: equipo.agenteVersion,
+            sistemaOperativo: equipo.detalle?.so ?? null,
+        }),
         ocupados,
     });
 
@@ -280,7 +533,9 @@ export async function obtenerHostnameSugerido(
             prefijo: r.prefijo,
             sigla: r.sigla,
             parteSolicitante: r.parteSolicitante,
-            sinSolicitante: !equipo.solicitante,
+            sinSolicitante:
+                !equipo.solicitante ||
+                esSolicitanteDeRelleno(equipo.solicitante.nombre),
         },
     };
 }
